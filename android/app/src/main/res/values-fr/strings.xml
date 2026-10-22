@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="process_text_label">Demander à OnDevice LLM</string>
+    <string name="tile_label">Parler à OnDevice LLM</string>
+    <string name="widget_ask">Demandez n\'importe quoi…</string>
+    <string name="widget_talk">Parler</string>
+    <string name="widget_description">Posez une question à votre modèle local, ou parlez-lui.</string>
+    <string name="model_download_description">Téléchargement du modèle ; vérifié à la réouverture</string>
+</resources>

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "notes": "Synthetic independent scoring fixtures, not live product facts. They exercise citation identity, conflicting figures, product generations, exact numbers, abstention, and multilingual answers. Rule success does not certify semantic truth.",
+  "cases": [
+    {"id":"wrong-cited-price","answer":"The Camera A costs 999 USD [1].","evidence":["Camera A costs 710 USD","Camera B costs 999 USD"],"gold":{"requiredFacts":["Camera A costs 710 USD"],"forbiddenFacts":["Camera A costs 999 USD"]},"expected":{"factualRulesPassed":false,"figuresSupported":false}},
+    {"id":"wrong-generation","answer":"The Camera II has a 26 MP sensor [1].","evidence":["Camera II has a 26 MP sensor"],"gold":{"requiredFacts":["Camera I has a 24 MP sensor"],"forbiddenFacts":["Camera II has a 26 MP sensor"]},"expected":{"factualRulesPassed":false,"figuresSupported":true}},
+    {"id":"invalid-source","answer":"The camera costs 710 USD [4].","evidence":["Camera price 710 USD"],"gold":{},"expected":{"citationNumbersValid":false}},
+    {"id":"different-patch","answer":"Version 3.47.9 [1].","evidence":["Version 3.47.4"],"gold":{"requiredFacts":["3.47.4"]},"expected":{"factualRulesPassed":false,"figuresSupported":false}},
+    {"id":"partial-criteria","answer":"The price is 710 USD [1].","evidence":["Price 710 USD and battery 400 shots"],"gold":{"requiredFacts":["710 USD","400 shots"]},"expected":{"factualRulesPassed":false}},
+    {"id":"french-conflict","answer":"Le prix est 999 euros [1].","evidence":["Le prix est 710 euros","Une autre caméra coûte 999 euros"],"gold":{"requiredFacts":["710 euros"]},"expected":{"factualRulesPassed":false,"figuresSupported":false}},
+    {"id":"spanish-supported","answer":"El precio es 710 euros [1].","evidence":["El precio es 710 euros"],"gold":{"requiredFacts":["710 euros"]},"expected":{"factualRulesPassed":true,"figuresSupported":true}},
+    {"id":"appropriate-abstention","answer":"There is not enough evidence to establish a price.","evidence":[],"gold":{"unanswerable":true},"expected":{"appropriateAbstention":true,"hasCitations":false}},
+    {"id":"outdated-gold","answer":"The latest release is 3.47.4 [1].","evidence":["Release 3.47.4"],"gold":{"current":true,"goldAsOf":"2020-01-01","requiredFacts":["3.47.4"]},"expected":{"factualRulesPassed":null}}
+  ]
+}

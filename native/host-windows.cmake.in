@@ -1,0 +1,8 @@
+# Host toolchain for llama.cpp's vulkan-shaders-gen when cross-compiling for
+# Android from Windows. Configured by native/CMakeLists.txt so the inner build
+# inherits the SDK's ninja (ExternalProject does not pass CMAKE_MAKE_PROGRAM).
+set(CMAKE_SYSTEM_NAME Windows)
+set(CMAKE_C_COMPILER "@ODLLM_ROOT@/.tools/llvm-mingw-20250709-ucrt-x86_64/bin/clang.exe")
+set(CMAKE_CXX_COMPILER "@ODLLM_ROOT@/.tools/llvm-mingw-20250709-ucrt-x86_64/bin/clang++.exe")
+set(CMAKE_MAKE_PROGRAM "@ODLLM_MAKE_PROGRAM@" CACHE FILEPATH "" FORCE)
+set(CMAKE_EXE_LINKER_FLAGS_INIT "-static")

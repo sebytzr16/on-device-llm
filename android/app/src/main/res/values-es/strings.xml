@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="process_text_label">Preguntar a OnDevice LLM</string>
+    <string name="tile_label">Hablar con OnDevice LLM</string>
+    <string name="widget_ask">Pregunta lo que quieras…</string>
+    <string name="widget_talk">Hablar</string>
+    <string name="widget_description">Pregunta a tu modelo en el dispositivo o habla con él.</string>
+    <string name="model_download_description">Descarga del modelo; se verifica al reabrir la aplicación</string>
+</resources>

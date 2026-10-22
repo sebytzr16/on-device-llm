@@ -1,0 +1,75 @@
+name: ondevice_llm
+description: Offline-first on-device LLM runtime for iOS and Android.
+publish_to: 'none'
+version: 1.0.0+3
+
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+  flutter: '>=3.44.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.4.3
+  drift: ^2.20.0
+  path_provider: ^2.1.4
+  path: ^1.9.0
+  dio: ^5.7.0
+  crypto: ^3.0.5
+  html: ^0.15.4
+  ffi: ^2.1.3
+  uuid: ^4.5.1
+  collection: ^1.19.0
+  logging: ^1.2.0
+  shared_preferences: ^2.3.2
+  flutter_markdown_plus: ^1.0.0
+  flutter_math_fork: 0.7.4
+  file_picker: ^13.1.0
+  url_launcher: ^6.3.2
+  archive: ^4.3.0
+  share_plus: ^13.3.0
+  image_picker: ^1.2.3
+  pdfrx: ^2.4.8
+  speech_to_text: ^7.5.0
+  flutter_tts: ^4.2.5
+  # On-device voice (Whisper + Silero VAD + Kokoro), owner 2026-10-07.
+  sherpa_onnx: 1.13.8
+  flutter_localizations:
+    sdk: flutter
+  # Flutter 3.44 pins flutter_localizations to 0.20.2.
+  intl: ^0.20.2
+  flutter_secure_storage: ^11.2.0
+  pdf: 3.13.1
+  markdown: ^7.3.1
+  # Pairing QR code on the device-server page (already resolved via pdf).
+  qr: ^3.0.2
+  # RSS/Atom publisher feeds for news briefings (already resolved via pdf).
+  xml: ^7.0.1
+  cryptography: 2.9.0
+  sqlite3: 3.5.2
+  mobile_scanner: ^7.4.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  # Newer releases require a meta version newer than Flutter 3.44 pins.
+  build_runner: ^2.15.1
+  drift_dev: ^2.20.0
+  integration_test:
+    sdk: flutter
+  path_provider_platform_interface: 2.1.2
+
+flutter:
+  uses-material-design: true
+  generate: true
+  fonts:
+    - family: Fraunces
+      fonts:
+        - asset: assets/fonts/Fraunces.ttf
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter.ttf
+    - family: JetBrainsMono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono.ttf

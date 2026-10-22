@@ -1,0 +1,1510 @@
+{
+ "version": 1,
+ "about": "Labelled messages for the keyword gates (RetrievalPlan web gate, NewsIntent, ToolAliases). web: should the Auto gate search without asking the model? news: is it a news briefing/topic request? Messages were written to cover everyday phrasing, not tuned to the regexes. Scored by test/keyword_gate_eval_test.dart. web_holdout was written after the lists were tuned and is never tuned against: it is the honest estimate. web_holdout2 was written on 2026-09-24 before the category lists (web_terms.dart) existed and is never tuned against. web_negatives (2026-09-24) are general-knowledge and writing requests full of trap words, written after the category lists to catch over-broad entries. web_phone_misses (2026-09-24) are questions sent to the web by hand from the phone (Settings > Reasoning & search log) plus paraphrases; web_negatives gained person-word traps the same day. Since 2026-10-19 how-to questions always search when web search is on, so the how-to items are labelled web: true.",
+ "web": [
+  {
+   "lang": "en",
+   "text": "What's the weather in Toronto tomorrow?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Who won the Blue Jays game last night?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "What is the current price of bitcoin?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Search for the best budget phones of 2026",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Look up the opening hours of the ROM",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "What's the latest Flutter version?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Is the 401 closed right now?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "When is the next federal election in Canada?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "What did the Bank of Canada decide today?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Find out if the Galaxy S26 has been announced",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Can you check the exchange rate from CAD to EUR?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "What are people saying online about the new iPhone?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Give me sources on the health effects of intermittent fasting",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Who is the CEO of OpenAI these days?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "What movies are playing this weekend?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "How much does a Tesla Model 3 cost now?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Did it snow in Montreal yesterday?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "What's the score of the Leafs game?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Google the release date of GTA 6",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Recent research on long COVID treatments",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Is there a recall on Tylenol this month?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "What's the population of Canada in 2026?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "hi",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Thanks, that was helpful!",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Write a poem about autumn leaves",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "What is 17 times 23?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Explain how photosynthesis works",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Translate 'good morning' into Italian",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Write a Python function that reverses a linked list",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Summarize the text I pasted above",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "What's the difference between a list and a tuple in Python?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Give me three ideas for a birthday party",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Can you help me rewrite this email to sound more polite?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Who wrote Pride and Prejudice?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "What does the word ephemeral mean?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Tell me a joke",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "How do I center a div in CSS?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Now make it shorter",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "What's your name?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Plan a 3-day workout routine for beginners",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Solve x^2 - 5x + 6 = 0",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Is a tomato a fruit or a vegetable?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Check my grammar: me and him goes to the store",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "What is the capital of Australia?",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Quel temps fait-il à Montréal aujourd'hui ?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Cherche les meilleurs restaurants à Québec",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Qui a gagné le match des Canadiens hier soir ?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Quel est le prix actuel de l'essence au Québec ?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Quelle est la dernière version d'Android ?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Vérifie sur internet si le musée est ouvert",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Quand est la prochaine élection au Canada ?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Trouve des sources sur les effets du jeûne",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Combien coûte un iPhone 17 maintenant ?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Bonjour",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Merci beaucoup !",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Écris un poème sur la mer",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Explique-moi la photosynthèse",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Combien font 12 fois 8 ?",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Traduis « bonne nuit » en anglais",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Qui a écrit Les Misérables ?",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Corrige les fautes de ce paragraphe",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Donne-moi une recette de crêpes",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Écris une fonction JavaScript qui trie un tableau",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "¿Qué tiempo hace hoy en Madrid?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "Busca los mejores hoteles en Barcelona",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "¿Quién ganó el partido del Real Madrid anoche?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "¿Cuál es el precio actual del dólar en México?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "¿Cuál es la última versión de iOS?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "Comprueba en internet si el museo está abierto",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "¿Cuándo son las próximas elecciones en España?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "Encuentra fuentes sobre los efectos del ayuno",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "¿Cuánto cuesta ahora un Samsung Galaxy S26?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "Hola",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "¡Muchas gracias!",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "Escribe un poema sobre la luna",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "Explícame cómo funciona la fotosíntesis",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "¿Cuánto es 15 por 4?",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "Traduce «buenos días» al francés",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "¿Quién escribió Don Quijote?",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "Corrige la ortografía de este texto",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "Dame una receta de paella",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "Escribe una función en Python que ordene una lista",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "who's the CEO of OpenAI ?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Who’s the president of France?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Tell me the prime minister of Japan",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Qui est le PDG de Tesla ?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Le maire de Montréal, c’est qui ?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "¿Quién es el CEO de Apple?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "Dime el presidente de Chile",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Who are you?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Who wrote the Declaration of Independence?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "who's the CEO of OpenAI ?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Who’s the president of France?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Qui est le PDG de Tesla ?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "¿Quién es el CEO de Apple?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Who are you?",
+   "web": false
+  }
+ ],
+ "news": [
+  {
+   "lang": "en",
+   "text": "What's the latest news?",
+   "news": true
+  },
+  {
+   "lang": "en",
+   "text": "Latest news in Canada today",
+   "news": true
+  },
+  {
+   "lang": "en",
+   "text": "Any news about the Blue Jays?",
+   "news": true
+  },
+  {
+   "lang": "en",
+   "text": "Top headlines this morning",
+   "news": true
+  },
+  {
+   "lang": "en",
+   "text": "What's happening in the world right now?",
+   "news": true
+  },
+  {
+   "lang": "en",
+   "text": "Tech news today",
+   "news": true
+  },
+  {
+   "lang": "en",
+   "text": "Breaking news",
+   "news": true
+  },
+  {
+   "lang": "en",
+   "text": "What happened overnight?",
+   "news": true
+  },
+  {
+   "lang": "en",
+   "text": "Give me the sports headlines",
+   "news": true
+  },
+  {
+   "lang": "en",
+   "text": "Latest news on the Ukraine war",
+   "news": true
+  },
+  {
+   "lang": "en",
+   "text": "How do news agencies verify stories?",
+   "news": false
+  },
+  {
+   "lang": "en",
+   "text": "Explain the history of news",
+   "news": false
+  },
+  {
+   "lang": "en",
+   "text": "Write a news article about a cat that became mayor",
+   "news": false
+  },
+  {
+   "lang": "en",
+   "text": "Recommend a good news app",
+   "news": false
+  },
+  {
+   "lang": "en",
+   "text": "What is fake news?",
+   "news": false
+  },
+  {
+   "lang": "en",
+   "text": "Summarize this news article for me: the city council voted on Tuesday to expand the bike lane network across downtown",
+   "news": false
+  },
+  {
+   "lang": "en",
+   "text": "What's the weather tomorrow?",
+   "news": false
+  },
+  {
+   "lang": "en",
+   "text": "I have some good news, I got the job!",
+   "news": false
+  },
+  {
+   "lang": "fr",
+   "text": "Quelles sont les dernières nouvelles ?",
+   "news": true
+  },
+  {
+   "lang": "fr",
+   "text": "Actualités du Québec aujourd'hui",
+   "news": true
+  },
+  {
+   "lang": "fr",
+   "text": "Les manchettes de ce matin",
+   "news": true
+  },
+  {
+   "lang": "fr",
+   "text": "Des nouvelles sur les Canadiens de Montréal ?",
+   "news": true
+  },
+  {
+   "lang": "fr",
+   "text": "Écris un article de nouvelles sur un chat",
+   "news": false
+  },
+  {
+   "lang": "fr",
+   "text": "Explique l'histoire des journaux",
+   "news": false
+  },
+  {
+   "lang": "es",
+   "text": "¿Cuáles son las últimas noticias?",
+   "news": true
+  },
+  {
+   "lang": "es",
+   "text": "Noticias de México hoy",
+   "news": true
+  },
+  {
+   "lang": "es",
+   "text": "Titulares de esta mañana",
+   "news": true
+  },
+  {
+   "lang": "es",
+   "text": "¿Hay noticias sobre el Barça?",
+   "news": true
+  },
+  {
+   "lang": "es",
+   "text": "Escribe una noticia inventada sobre un perro",
+   "news": false
+  },
+  {
+   "lang": "es",
+   "text": "Explica la historia del periodismo",
+   "news": false
+  }
+ ],
+ "tools": [
+  {
+   "name": "web_search",
+   "tool": "search_web"
+  },
+  {
+   "name": "Google",
+   "tool": "search_web"
+  },
+  {
+   "name": "functions.search",
+   "tool": "search_web"
+  },
+  {
+   "name": "internet-search",
+   "tool": "search_web"
+  },
+  {
+   "name": "duckduckgo_search",
+   "tool": "search_web"
+  },
+  {
+   "name": "search_web",
+   "tool": "search_web"
+  },
+  {
+   "name": "brave_search",
+   "tool": "search_web"
+  },
+  {
+   "name": "tavily_search",
+   "tool": "search_web"
+  },
+  {
+   "name": "open_url",
+   "tool": "read_url"
+  },
+  {
+   "name": "fetch",
+   "tool": "read_url"
+  },
+  {
+   "name": "browse_page",
+   "tool": "read_url"
+  },
+  {
+   "name": "visit_page",
+   "tool": "read_url"
+  },
+  {
+   "name": "get_webpage",
+   "tool": "read_url"
+  },
+  {
+   "name": "fetch_url",
+   "tool": "read_url"
+  },
+  {
+   "name": "read_webpage",
+   "tool": "read_url"
+  },
+  {
+   "name": "calculate",
+   "tool": "calculator"
+  },
+  {
+   "name": "calc",
+   "tool": "calculator"
+  },
+  {
+   "name": "math",
+   "tool": "calculator"
+  },
+  {
+   "name": "evaluate_expression",
+   "tool": "calculator"
+  },
+  {
+   "name": "python",
+   "tool": "python"
+  },
+  {
+   "name": "wolfram_alpha",
+   "tool": "calculator"
+  },
+  {
+   "name": "news_search",
+   "tool": "search_news"
+  },
+  {
+   "name": "get_news",
+   "tool": "search_news"
+  },
+  {
+   "name": "latest_news",
+   "tool": "search_news"
+  },
+  {
+   "name": "search_headlines",
+   "tool": "search_news"
+  },
+  {
+   "name": "find_in_page",
+   "tool": "find_in_page"
+  },
+  {
+   "name": "search_page",
+   "tool": "find_in_page"
+  },
+  {
+   "name": "find_text",
+   "tool": "find_in_page"
+  },
+  {
+   "name": "search_documents",
+   "tool": "search_documents"
+  },
+  {
+   "name": "search_files",
+   "tool": "search_documents"
+  },
+  {
+   "name": "knowledge_search",
+   "tool": "search_documents"
+  },
+  {
+   "name": "retrieve",
+   "tool": "search_documents"
+  },
+  {
+   "name": "file_search",
+   "tool": "search_documents"
+  }
+ ],
+ "web_holdout": [
+  {
+   "lang": "en",
+   "text": "Is Costco open on Labour Day?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "What time does the Raptors game start tonight?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "How is the stock market doing?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Who is the prime minister of the UK?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Are there any wildfires near Kelowna?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "What is the newest Pixel phone?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Did Apple release iOS 20 yet?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "How long is the wait at the Peace Bridge border?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "What are the reviews like for the new Dune movie?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Gas prices in Ottawa",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Write a haiku about coffee",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Why is the sky blue?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Give me a synonym for happy",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Convert 5 miles to kilometers",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Can you make this paragraph shorter?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "What should I name my cat?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Explain recursion like I am five",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "How many legs does a spider have?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Draft a cover letter for a barista job",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "What is the boiling point of water in Fahrenheit?",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Est-ce que la STM fonctionne normalement ce matin ?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Qui est le premier ministre du Québec ?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Quels films sortent cette semaine ?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Le Costco est-il ouvert le lundi de Pâques ?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Écris une histoire pour enfants",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Pourquoi le ciel est bleu ?",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Résume ce texte en trois phrases",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Donne-moi un synonyme de content",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "¿Está abierto el Prado los lunes?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "¿Quién es el presidente de Argentina?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "¿Qué películas se estrenan esta semana?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "¿Cómo está la bolsa?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "Escribe un cuento corto",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "¿Por qué el cielo es azul?",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "Resume este texto en tres frases",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "Dame un sinónimo de feliz",
+   "web": false
+  }
+ ],
+ "web_holdout2": [
+  {
+   "lang": "en",
+   "text": "Who's the mayor of Toronto?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Is the CN Tower open tomorrow?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "What are mortgage rates like right now?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Did the Oilers make the playoffs?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "How much does a PS5 cost?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Is Gmail down?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Where can I watch the new Batman movie?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Flight status AC 101",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Is Céline Dion still touring?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Has the new Zelda game come out?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "What is the exchange rate for the yen?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Any snow in the forecast for Ottawa?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Who owns Twitter now?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "What time is sunset in Halifax?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "How many hours are in a day?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Make me a schedule for studying",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Rate my poem from 1 to 10",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Who are you?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "What is the rate of photosynthesis affected by?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Explain how elections work in Canada",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Review my essay",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Who was the first president of the United States?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "What does CEO stand for?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Open the window in the story and continue",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Qui est le maire de Québec ?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Le Costco est-il ouvert dimanche ?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Combien coûte une PS5 ?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Est-ce que Gmail est en panne ?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Où regarder le nouveau film Batman ?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Quel est le taux de change du yen ?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Combien d’heures dans une journée ?",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Fais-moi un horaire pour étudier",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Qui était le premier roi de France ?",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "¿Quién es el alcalde de Madrid?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "¿Está abierto el Corte Inglés el domingo?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "¿Cuánto cuesta una PS5?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "¿Se cayó WhatsApp?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "¿Dónde puedo ver la nueva película de Batman?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "¿Cuál es el tipo de cambio del yen?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "¿Cuántas horas tiene un día?",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "Hazme un horario para estudiar",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "¿Quién fue el primer rey de España?",
+   "web": false
+  }
+ ],
+ "web_negatives": [
+  {
+   "lang": "en",
+   "text": "Explain price elasticity of demand",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "How do I make chicken stock?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Write a short story about a new car",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Help me update my resume",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "What is the history of the World Cup?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "How does a stock split work?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Explain how hurricanes form",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "What causes earthquakes?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Give me a workout for today",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "What should I cook tonight?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Translate this sentence to French: the weather is nice",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Is it rude to leave a party early?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "How do I open a PDF on Android?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "My laptop is not working, how do I reset it?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "What does a CEO do?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Who was the king of England in 1600?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Summarize the plot of Hamlet",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "How long should I boil an egg?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "What is the difference between weather and climate?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Plan my week: gym, groceries, study",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Explain the rules of hockey",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Is a whale a fish?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "How many players are on a soccer team?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "What is an election?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Why do prices go up with inflation?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Can you recommend a good book?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "How do I get over a breakup?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "What is the speed of sound?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Make me a grocery list for tacos",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "Tell me about the Roman Empire",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Explique l’élasticité-prix de la demande",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Comment faire un bouillon de poulet ?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Écris une histoire sur une nouvelle voiture",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Qu’est-ce qu’un PDG fait ?",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Explique comment se forment les ouragans",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Qui était le roi de France en 1700 ?",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Quelle est la différence entre météo et climat ?",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Donne-moi un plan d’entraînement pour aujourd’hui",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Résume Le Petit Prince",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Comment ouvrir un fichier PDF ?",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "Explica la elasticidad del precio",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "¿Cómo hago caldo de pollo?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "Escribe una historia sobre un coche nuevo",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "¿Qué hace un CEO?",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "Explica cómo se forman los huracanes",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "¿Quién fue el rey de España en 1800?",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "¿Cuál es la diferencia entre tiempo y clima?",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "Dame una rutina de ejercicio para hoy",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "Resume Cien años de soledad",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "¿Cómo abro un PDF?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "My wife's birthday is next week, what should I write in her card?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "How old is too old to start learning the piano?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "When is my mom's birthday party supposed to start if dinner is at 7?",
+   "web": false
+  },
+  {
+   "lang": "en",
+   "text": "How is net worth calculated in personal finance?",
+   "web": false
+  },
+  {
+   "lang": "fr",
+   "text": "Quel âge faut-il avoir pour conduire en Europe en général ?",
+   "web": false
+  },
+  {
+   "lang": "es",
+   "text": "¿Qué edad tiene mi perro en años humanos si tiene 5?",
+   "web": false
+  }
+ ],
+ "web_phone_misses": [
+  {
+   "lang": "en",
+   "text": "Can you please tell me how old is Justin Bieber",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "what day is Justin bieber birthday?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "when is Justin bieber birthday?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "How old is Taylor Swift?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "When was Drake born?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "What is Elon Musk's net worth?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "Who is Selena Gomez married to?",
+   "web": true
+  },
+  {
+   "lang": "en",
+   "text": "How tall is LeBron James?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Quel âge a Céline Dion ?",
+   "web": true
+  },
+  {
+   "lang": "fr",
+   "text": "Quelle est la date de naissance de Kylian Mbappé ?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "¿Cuántos años tiene Shakira?",
+   "web": true
+  },
+  {
+   "lang": "es",
+   "text": "¿Cuándo nació Bad Bunny?",
+   "web": true
+  }
+ ]
+}

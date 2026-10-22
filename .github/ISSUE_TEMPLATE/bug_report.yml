@@ -1,0 +1,32 @@
+name: Bug report
+description: Something isn't working.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Describe the bug and the expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device / OS
+      placeholder: e.g. iPhone 15 Pro / iOS 18, Pixel 8 / Android 15
+  - type: input
+    id: model
+    attributes:
+      label: Model + backend
+      placeholder: e.g. Llama 3.2 3B Q4_K_M, Metal
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      render: shell

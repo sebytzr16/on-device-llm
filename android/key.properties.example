@@ -1,0 +1,8 @@
+# Copy to android/key.properties (ignored by git) and fill in your own values.
+# Create the keystore once with keytool (see README, "Signing the release
+# APK"); keep it and its passwords outside the repository and back them up:
+# an update must be signed with the same key as the installed app.
+storeFile=C:/Users/<you>/keys/ondevicellm-release.jks
+storePassword=
+keyAlias=ondevicellm
+keyPassword=

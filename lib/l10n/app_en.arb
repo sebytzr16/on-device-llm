@@ -1,0 +1,2806 @@
+{
+  "settingScopeHint": "Clear a value to use the default from the previous layer. Settings marked ↻ take effect when the model loads.",
+  "settingExplicit": "Customized",
+  "settingInherited": "Inherited",
+  "settingOnePerLine": "One per line",
+  "nearbyHosts": "Find nearby hosts",
+  "nearbyHostsHint": "Find OnDevice LLM hosts on the same network. Select one, then enter its access key or use its pairing QR code.",
+  "nearbyHostsNone": "No hosts found. Start hosting on the other device and check that both devices use the same network. Manual pairing remains available.",
+  "scanConfidence": "Recognizer confidence",
+  "scanSettings": "Text recognition",
+  "scanPageLimit": "Scanned pages per PDF",
+  "scanLongHint": "Text layers are read beyond this limit. Longer scans show progress and can be stopped.",
+  "scanLanguage": "Recognition language",
+  "scanLatinHint": "Android recognizes English, French, Spanish and other Latin-script text automatically, on this device.",
+  "scanQualityHint": "Recognizer confidence can still be wrong. Check important text against the original.",
+  "modelSettingsAll": "All model settings",
+  "modelSettingsGlobal": "Your model settings",
+  "modelSettingsAllHint": "Edit or reset the settings used by model profiles, presets and chats",
+  "removeProjectHint": "Remove this project and its instructions? Its conversations and knowledge files will be kept.",
+  "downloadQueued": "Waiting for a download slot",
+  "sourceMessage": "Source message",
+  "sourceMessageMissing": "This source message is no longer available.",
+  "openConversation": "Open conversation",
+  "contextSummary": "Review context summary",
+  "contextSummaryHint": "Write a summary of these earlier messages. Review it before saving; later answers can use it in place of this part of the conversation.",
+  "contextSummaryTooShort": "More conversation history is needed before making a summary.",
+  "memoryUsed": "Memory used",
+  "unverifiedFeatures": "Features requiring verification",
+  "restoreVersion": "Use this version",
+  "originalFile": "Share original file",
+  "previousVersion": "Previous version",
+  "@@locale": "en",
+  "workspaceTitle": "Projects and conversations",
+  "project": "Project",
+  "projectName": "Project name",
+  "projectInstructions": "Instructions for this project",
+  "noProject": "No project",
+  "archivedChats": "Archived",
+  "trashChats": "Trash",
+  "archiveChats": "Archive",
+  "restoreChats": "Restore",
+  "moveToTrash": "Move to trash",
+  "permanentDeleteHint": "Permanently remove these conversations and attachments from this device. This cannot be undone.",
+  "selectAllChats": "Select all",
+  "temporaryChat": "Temporary chat",
+  "temporaryChatHint": "This chat and its draft stay in memory. Memory is off. Leaving discards it; remote and web requests still use your selected connection.",
+  "deleteAnswer": "Delete answer",
+  "deleteQuestionAnswer": "Delete question and answer",
+  "messageDeleted": "Message deleted",
+  "undo": "Undo",
+  "undoUnavailable": "Undo is unavailable while another operation is running.",
+  "appTitle": "OnDevice",
+  "noModelLoaded": "no model loaded",
+  "newChat": "New chat",
+  "drawerTemporary": "Temporary",
+  "drawerWorkspace": "Workspace",
+  "drawerProjects": "Projects & conversations",
+  "drawerProjectsHint": "Projects, archive and trash",
+  "drawerProjectsCount": "{count, plural, =0{Group chats with shared instructions} =1{1 project} other{{count} projects}}",
+  "@drawerProjectsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "previous7Days": "Previous 7 days",
+  "previous30Days": "Previous 30 days",
+  "olderChats": "Older",
+  "chatOptions": "Chat options",
+  "shareOrExport": "Share or export",
+  "thisChatSection": "This chat",
+  "conversations": "Conversations",
+  "more": "More",
+  "exportMarkdown": "Export Markdown",
+  "exportJson": "Export JSON",
+  "shareAsText": "Share as text",
+  "createDocument": "Create document",
+  "documentFormat": "Format",
+  "answersOnly": "Assistant answers only",
+  "includeBranches": "Include earlier branches",
+  "includeReasoning": "Include model reasoning",
+  "saveDocument": "Save document",
+  "models": "Models",
+  "settings": "Settings",
+  "metrics": "Metrics",
+  "loadingModel": "Loading model into memory…",
+  "messageHint": "Message your model…",
+  "listening": "Listening…",
+  "chooseModel": "Choose a model",
+  "think": "Think",
+  "thinkOff": "Off",
+  "thinkLow": "Low",
+  "thinkMedium": "Medium",
+  "thinkHigh": "High",
+  "thinkOffHint": "Answers right away. The fastest.",
+  "thinkLowHint": "A short reasoning pass first (about 500 tokens).",
+  "thinkMediumHint": "Reasons longer first (about 2,000 tokens), for harder questions.",
+  "thinkHighHint": "Reasons at length first (about 8,000 tokens). The slowest.",
+  "thinkLevelToast": "Thinking: {level}",
+  "@thinkLevelToast": {
+    "placeholders": {
+      "level": {
+        "type": "String"
+      }
+    }
+  },
+  "thinkOffToast": "Thinking off",
+  "attachTooltip": "Attach a photo or file, or choose tools",
+  "dictate": "Dictate",
+  "stopDictation": "Stop dictation",
+  "send": "Send message",
+  "stop": "Stop generation",
+  "modelPill": "Model",
+  "webLocal": "Local",
+  "webAuto": "auto",
+  "webAlways": "always",
+  "emptyTitle": "A little more intelligence.\nA lot more privacy.",
+  "emptyHasModel": "Your model is here, running entirely on this device. Ask it anything.",
+  "emptyRemote": "Answers come from your remote server ({host}); your messages are sent there. Ask it anything.",
+  "@emptyRemote": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "emptyNoModel": "No model yet. Open Models to download a starter or import your own GGUF, then come back and ask anything.",
+  "askPhoto": "Ask about a photo",
+  "askFile": "Ask about a file",
+  "generating": "generating…",
+  "runDetails": "How this was made",
+  "answerWarning": "What the source check doubted",
+  "copyRunDetails": "Copy run details",
+  "runDetailsCopied": "Run details copied",
+  "runMeasured": "MEASURED",
+  "runSettings": "Settings in force",
+  "runEngine": "ENGINE",
+  "copyResponse": "Copy response",
+  "copyQuestion": "Copy question",
+  "responseCopied": "Response copied",
+  "readAloud": "Read aloud",
+  "stopReading": "Stop reading",
+  "regenerate": "Regenerate (keeps this answer as an earlier version)",
+  "continueAnswer": "Continue this answer",
+  "compareWith": "Compare with another model",
+  "editQuestion": "Edit question",
+  "askAgain": "Ask again",
+  "cancel": "Cancel",
+  "save": "Save",
+  "earlierQuestion": "Earlier question",
+  "earlierAnswer": "Earlier answer",
+  "restoreBranch": "Restore this branch",
+  "stoppedPartial": "Stopped · partial response",
+  "interruptedClosed": "Interrupted · the app closed before the answer finished",
+  "interruptedPartial": "Interrupted · partial response",
+  "interruptedError": "Interrupted by an error",
+  "searchConversations": "Search conversations",
+  "storedOnDevice": "Stored only on this device",
+  "noConversations": "No conversations yet.\nYour chats will appear here.",
+  "nothingMatches": "Nothing matches “{query}”.",
+  "@nothingMatches": {
+    "placeholders": {
+      "query": {
+        "type": "String"
+      }
+    }
+  },
+  "pinned": "Pinned",
+  "today": "Today",
+  "yesterday": "Yesterday",
+  "earlier": "Earlier",
+  "language": "Language",
+  "languageSystem": "Follow the phone",
+  "languageEnglish": "English",
+  "languageFrench": "Français",
+  "languageSpanish": "Español",
+  "resetToDefaults": "Reset to defaults",
+  "sectionAssistant": "Assistant",
+  "thinkingMode": "Thinking mode",
+  "thinkingModeHint": "Show model-generated reasoning when supported. It may contain mistakes and is not proof of correctness.",
+  "webResearch": "Web research (keyless)",
+  "webOffHint": "Nothing leaves the phone.",
+  "webAutoHint": "The question goes to DuckDuckGo and result pages are fetched when the message needs it.",
+  "webAlwaysHint": "Every message is researched first. Slower, always current.",
+  "knowledgeLibrary": "Knowledge library",
+  "knowledgeOff": "Off · your documents, cited in answers when active",
+  "knowledgeOn": "On · {collection}",
+  "@knowledgeOn": {
+    "placeholders": {
+      "collection": {
+        "type": "Object"
+      }
+    }
+  },
+  "memory": "Memory",
+  "memoryOnHint": "On · the assistant learns durable facts about you from chats",
+  "memoryOffHint": "Off · nothing is remembered between chats",
+  "readAloudSetting": "Read answers aloud",
+  "readAloudHint": "Every finished answer is spoken with the phone's text-to-speech voice. The speaker icon on an answer reads it on demand either way.",
+  "dictationOnDevice": "Dictation stays on the phone",
+  "dictationOnDeviceHint": "Use only the on-device recognizer (needs an offline language pack in the phone's speech settings). Off allows the network recognizer.",
+  "customInstructions": "Custom system instructions",
+  "customInstructionsHint": "Add preferences for your assistant",
+  "sectionModel": "Model",
+  "remoteServer": "Remote server",
+  "sectionAdvanced": "Advanced",
+  "contextAndBatch": "Context & batch",
+  "hardware": "Hardware",
+  "sampling": "Sampling",
+  "reasoningAndSearch": "Reasoning & search",
+  "sectionAbout": "About",
+  "openSourceMit": "Open source · MIT",
+  "builtOnLlama": "Built on llama.cpp",
+  "builtOnLlamaHint": "Inference engine by the ggml project",
+  "openSourceLicences": "Open-source licences",
+  "openSourceLicencesHint": "Packages, models and voices, with their licences",
+  "resetQuestion": "Reset to defaults?",
+  "resetHint": "All assistant, model and advanced settings return to the defaults for this device. Your chats are not affected.",
+  "reset": "Reset",
+  "enableWebQuestion": "Enable web search?",
+  "enableWebHint": "The question is sent to DuckDuckGo and result pages are fetched directly from their websites (they see your IP address). No account or key is used; conversations, model and settings stay local.",
+  "enable": "Enable",
+  "systemInstructions": "System instructions",
+  "systemInstructionsHint": "e.g. Answer briefly. Prefer metric units.",
+  "couldNotOpenLink": "Could not open this link.",
+  "privateByDefault": "Private by default",
+  "privateByDefaultHint": "No accounts, analytics or cloud inference. Downloads and optional search are the only network features.",
+  "noModelLoadedTitle": "No model loaded",
+  "chooseFromLibrary": "Choose one from the library",
+  "obPrivateHeadline": "Private by construction",
+  "obPrivateBody": "A language model that runs on your phone’s own chip. There is no server on the other end.",
+  "obNoAccount": "No account",
+  "obNoAccountHint": "Nothing to sign up for, nothing to log in to.",
+  "obNoCloud": "No cloud",
+  "obNoCloudHint": "Every answer is computed here. Airplane mode works.",
+  "obStaysHere": "Models and chats stay on this phone",
+  "obStaysHereHint": "Delete the app and every byte goes with it.",
+  "continueLabel": "Continue",
+  "obPickModel": "Pick a starter model",
+  "phoneRamUnknown": "This phone · RAM unknown",
+  "phoneRam": "This phone · {gb} GB RAM",
+  "@phoneRam": {
+    "placeholders": {
+      "gb": {
+        "type": "Object"
+      }
+    }
+  },
+  "recommended": "Recommended",
+  "orChooseAnother": "Or choose another",
+  "acknowledgeLicense": "I acknowledge the publisher’s model license",
+  "download": "Download",
+  "later": "Later",
+  "obReady": "Ready.",
+  "startChatting": "Start chatting",
+  "downloadInterrupted": "Download interrupted",
+  "downloadInterruptedHint": "You can retry now, or skip and download later from the model library. The app works without a model, it just cannot answer yet.",
+  "retry": "Retry",
+  "skipForNow": "Skip for now",
+  "verifyingSha": "Verifying SHA-256…",
+  "pausedOf": "Paused · {received} of {size}",
+  "@pausedOf": {
+    "placeholders": {
+      "received": {
+        "type": "Object"
+      },
+      "size": {
+        "type": "Object"
+      }
+    }
+  },
+  "starting": "Starting…",
+  "downloading": "Downloading",
+  "downloadingHint": "Keep the app open. You can pause and resume; the file is checked against the publisher’s SHA-256 when it finishes.",
+  "resume": "Resume",
+  "verifying": "Verifying…",
+  "pause": "Pause",
+  "skip": "Skip",
+  "presets": "Presets",
+  "newLabel": "New",
+  "noExtraInstructions": "No extra instructions",
+  "edit": "Edit",
+  "duplicate": "Duplicate",
+  "delete": "Delete",
+  "presetsHint": "A preset adds its instructions to yours and can override temperature, thinking and web mode. Built-ins can be duplicated and edited.",
+  "newPreset": "New preset",
+  "editPreset": "Edit preset",
+  "name": "Name",
+  "instructions": "Instructions",
+  "instructionsHint": "How should the assistant behave?",
+  "temperature": "Temperature",
+  "useSetting": "Use setting",
+  "thinking": "Thinking",
+  "on": "On",
+  "off": "Off",
+  "webResearchShort": "Web research",
+  "unpin": "Unpin",
+  "pinToTop": "Pin to top",
+  "rename": "Rename",
+  "moveToFolder": "Move to folder",
+  "tags": "Tags",
+  "renameConversation": "Rename conversation",
+  "tagsCommaSeparated": "Tags (comma-separated)",
+  "newFolder": "New folder…",
+  "removeFromFolder": "Remove from folder",
+  "folderName": "Folder name",
+  "deleteConversationQuestion": "Delete conversation?",
+  "keep": "Keep",
+  "couldNotDelete": "Could not delete: {error}",
+  "@couldNotDelete": {
+    "placeholders": {
+      "error": {
+        "type": "Object"
+      }
+    }
+  },
+  "clear": "Clear",
+  "all": "All",
+  "knowledgeIntro": "Import documents once — PDF, Word, text, code, EPUB… — and every question is answered with the best-matching passages from the active collection, cited like web sources. Retrieval runs entirely on the phone: full-text ranking, plus meaning once the embedding model is downloaded.",
+  "newCollection": "New collection",
+  "useInChats": "Use in chats",
+  "collectionOff": "Off — no collection consulted",
+  "collectionActive": "Active: {collection}",
+  "@collectionActive": {
+    "placeholders": {
+      "collection": {
+        "type": "Object"
+      }
+    }
+  },
+  "readingAndIndexing": "Reading and indexing…",
+  "noCollections": "No collections yet. Create one with the folder icon, then add files.",
+  "addFiles": "Add files",
+  "deleteCollection": "Delete collection",
+  "searchByMeaning": "Search by meaning",
+  "ready": "Ready",
+  "indexForMeaning": "Index {count} passages for meaning",
+  "@indexForMeaning": {
+    "placeholders": {
+      "count": {
+        "type": "Object"
+      }
+    }
+  },
+  "indexingProgress": "Indexing for meaning… {done}/{total}",
+  "@indexingProgress": {
+    "placeholders": {
+      "done": {
+        "type": "Object"
+      },
+      "total": {
+        "type": "Object"
+      }
+    }
+  },
+  "downloadMb": "Download · {mb} MB",
+  "@downloadMb": {
+    "placeholders": {
+      "mb": {
+        "type": "Object"
+      }
+    }
+  },
+  "addMemory": "Add a memory",
+  "editMemory": "Edit memory",
+  "forgetEverything": "Forget everything",
+  "forgetEverythingQuestion": "Forget everything?",
+  "forgetEverythingHint": "All {count} remembered facts will be deleted. Chats are not affected.",
+  "@forgetEverythingHint": {
+    "placeholders": {
+      "count": {
+        "type": "Object"
+      }
+    }
+  },
+  "forget": "Forget",
+  "rememberAboutMe": "Remember things about me",
+  "rememberAboutMeHint": "Remember durable facts you share, such as your job and preferences. Notes are saved on this device. Remote sharing and model extraction require the connection’s opt-in. You can edit or forget notes below.",
+  "memoryStorageHint": "Notes are stored on this device. Each remote connection needs separate permission to receive or learn them.",
+  "memoryRemoteLocalHint": "Clear statements such as your job or name can be saved locally when Memory is on. Enable sharing to let this connection use your notes, and learning to extract other durable facts.",
+  "whatAssistantRemembers": "What the assistant remembers",
+  "nothingYetFills": "Nothing yet. It fills in as you chat.",
+  "nothingStoredSwitch": "Nothing stored. Turn the switch on, or add facts by hand with +.",
+  "switchModel": "Switch model",
+  "nothingOnPhone": "Nothing is on this phone yet.",
+  "modelsOnPhone": "Models on this phone. The active one answers your chats.",
+  "modelUnloaded": "Model unloaded. It loads again on your next message.",
+  "unloadModel": "Unload model · free memory",
+  "openModelLibrary": "Open model library",
+  "active": "Active",
+  "pickerEmptyHint": "Download a model from the library, or import a GGUF you already own. Chats need one model loaded; everything stays on this phone.",
+  "takePhoto": "Take a photo",
+  "attachCamera": "Camera",
+  "attachFile": "File",
+  "attachGoalShort": "Goal",
+  "photos": "Photos",
+  "photosHint": "JPEG, PNG, WebP, HEIC…",
+  "documentOrFile": "Document or file",
+  "documentHint": "PDF, Word, PowerPoint, Excel, OpenDocument, EPUB, RTF, text, code, CSV, JSON, HTML…",
+  "couldNotOpenPicker": "Could not open the picker: {error}",
+  "@couldNotOpenPicker": {
+    "placeholders": {
+      "error": {
+        "type": "Object"
+      }
+    }
+  },
+  "readingAttachments": "Reading attachments…",
+  "turnOnWebQuestion": "Turn on web search?",
+  "turnOnWebHint": "When you paste a link, ask to search, or a question looks time-sensitive, the question is sent to DuckDuckGo and result pages (three by default, Settings > Reasoning & search) are fetched directly from their websites (they see your IP address). With local inference, everything else stays on this device. If Remote server is enabled, the question and supplied context are also sent to that server.",
+  "stayLocal": "Stay local",
+  "turnOn": "Turn on",
+  "compareWithTitle": "Compare with…",
+  "compareHint": "The same question and evidence, answered by another model. Shown beside this answer; not part of the conversation.",
+  "shareFailed": "Share failed: {error}",
+  "@shareFailed": {
+    "placeholders": {
+      "error": {
+        "type": "Object"
+      }
+    }
+  },
+  "exportFailed": "Export failed: {error}",
+  "@exportFailed": {
+    "placeholders": {
+      "error": {
+        "type": "Object"
+      }
+    }
+  },
+  "dismiss": "Dismiss",
+  "licenseLabel": "License · {license}",
+  "@licenseLabel": {
+    "placeholders": {
+      "license": {
+        "type": "Object"
+      }
+    }
+  },
+  "resumeRetry": "Resume / retry",
+  "useModel": "Use model",
+  "remove": "Remove",
+  "benchmark": "Benchmark",
+  "visionPercent": "Vision {percent}%",
+  "@visionPercent": {
+    "placeholders": {
+      "percent": {
+        "type": "Object"
+      }
+    }
+  },
+  "verifyingVision": "Verifying vision…",
+  "visionReady": "Vision ready",
+  "addVisionMb": "Add vision · {mb} MB",
+  "@addVisionMb": {
+    "placeholders": {
+      "mb": {
+        "type": "Object"
+      }
+    }
+  },
+  "addFromHf": "Add from Hugging Face",
+  "importGguf": "Import a GGUF",
+  "addFromHfHint": "Paste the link to a public, single GGUF file. Its size, checksum and license will be shown before you download.",
+  "importGgufHint": "Choose a GGUF you downloaded yourself. It will be copied into your private model library; allow enough space for a second copy.",
+  "ggufLink": "GGUF file link",
+  "templateFallback": "Template fallback",
+  "automaticMetadata": "Automatic (model metadata)",
+  "ggufWarning": "Text-generation models only. A GGUF may require more RAM than its download size. New architectures and split files may not be supported.",
+  "checkModel": "Check model",
+  "chooseFile": "Choose file",
+  "checkingMetadata": "Checking model metadata…",
+  "downloadQuestion": "Download {model}?",
+  "@downloadQuestion": {
+    "placeholders": {
+      "model": {
+        "type": "Object"
+      }
+    }
+  },
+  "modelCard": "Model card",
+  "removeModelQuestion": "Remove this model?",
+  "removeModelHint": "Delete {model} from this app and free {size}? Your chats will be kept.",
+  "@removeModelHint": {
+    "placeholders": {
+      "model": {
+        "type": "Object"
+      },
+      "size": {
+        "type": "Object"
+      }
+    }
+  },
+  "browseHf": "Browse Hugging Face",
+  "yourModelLibrary": "Your model library",
+  "libraryHint": "Download a starter model, add a Hugging Face file link, or import a GGUF you already own. After download, inference works offline.",
+  "searchHf": "Search Hugging Face",
+  "pasteLink": "Paste link",
+  "importGgufButton": "Import GGUF",
+  "checkingCopying": "Checking and copying model…",
+  "preparingLibrary": "Preparing your library…",
+  "onThisDevice": "On this device",
+  "nothingDownloaded": "Nothing downloaded yet. Pick a model below to get started.",
+  "availableToDownload": "Available to download",
+  "everythingOnPhone": "Everything in the catalog is on this phone.",
+  "justNow": "just now",
+  "minutesAgo": "{n} min ago",
+  "@minutesAgo": {
+    "placeholders": {
+      "n": {
+        "type": "Object"
+      }
+    }
+  },
+  "hoursAgo": "{n} h ago",
+  "@hoursAgo": {
+    "placeholders": {
+      "n": {
+        "type": "Object"
+      }
+    }
+  },
+  "webModeOff": "Off · stays local",
+  "webModeAuto": "Auto · links, search requests and timely questions",
+  "webModeAlways": "Always · research every message",
+  "rememberedOne": "Remembered: {fact}",
+  "@rememberedOne": {
+    "placeholders": {
+      "fact": {
+        "type": "Object"
+      }
+    }
+  },
+  "rememberedMore": "Remembered: {fact} (+{more})",
+  "@rememberedMore": {
+    "placeholders": {
+      "fact": {
+        "type": "Object"
+      },
+      "more": {
+        "type": "Object"
+      }
+    }
+  },
+  "reviewMemory": "Review what was remembered",
+  "memoryDialogTitle": "Memory",
+  "memoryDialogHint": "Memory keeps short facts you state about yourself so later chats already know them. It is stored only on this phone and you can change it any time under Settings > Memory. Here is what was just noted — edit it, keep it, or discard it.",
+  "memoryDialogFieldHint": "One fact per line; empty lines are deleted",
+  "discard": "Discard",
+  "goalDescribeFirst": "Describe the goal first.",
+  "goalLimitsInvalid": "Enter positive step, time, token and tool limits.",
+  "goalsTitle": "Goals",
+  "goalIntro": "Give the model a goal. It plans the questions to research, looks each one up, checks the findings against your criteria, fills the gaps, and writes a cited report.",
+  "goalWebOff": "Web research is off, so the goal can only use what the model already knows. Turn it on with the globe pill in the chat composer for sourced research.",
+  "goalLabel": "Goal",
+  "goalExample": "Compare the three most popular electric cars in Canada for a family of four",
+  "goalKindTitle": "Kind of research",
+  "goalCriteriaLabel": "What a good result includes (optional)",
+  "goalBudgetTitle": "How much work",
+  "goalMaxSteps": "Maximum research steps",
+  "goalMaxMinutes": "Maximum minutes",
+  "goalMaxTokens": "Approximate token budget",
+  "goalMaxToolCalls": "Maximum tool calls",
+  "goalKeepOpen": "Keep the app open: Android may stop it in the background. Progress is saved after every step.",
+  "goalStart": "Start goal",
+  "goalBudgetQuick": "Quick",
+  "goalBudgetQuickHint": "About 4 searches · up to 10 min",
+  "goalBudgetStandard": "Standard",
+  "goalBudgetStandardHint": "About 8 searches · up to 30 min",
+  "goalBudgetDeep": "Deep",
+  "goalBudgetDeepHint": "About 14 searches · up to 60 min",
+  "goalBudgetUnlimited": "Unlimited",
+  "goalBudgetUnlimitedHint": "Until done, paused or stopped",
+  "goalBudgetCustom": "Custom",
+  "goalBudgetCustomHint": "Set your own limits",
+  "goalPhasePlanning": "Planning the research",
+  "goalPhaseResearching": "Researching",
+  "goalPhaseChecking": "Checking the findings against your criteria",
+  "goalPhaseWriting": "Writing the report",
+  "goalPhaseDone": "Done",
+  "goalPaused": "Paused",
+  "goalPausedBudget": "Paused — the budget is used up",
+  "goalCompleted": "Completed",
+  "goalStopped": "Stopped",
+  "goalFailed": "Something went wrong",
+  "goalReady": "Ready",
+  "goalStepsOf": "{done} of {total, plural, =1{1 step} other{{total} steps}}",
+  "@goalStepsOf": {
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "goalSources": "{count, plural, =1{1 source} other{{count} sources}}",
+  "@goalSources": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "goalTokensWord": "tokens",
+  "goalToolCallsWord": "tool calls",
+  "goalPauseAfterStep": "Pause after this step",
+  "goalStop": "Stop",
+  "goalContinue": "Continue",
+  "goalOpenChat": "Open chat",
+  "goalNew": "New goal",
+  "goalHowMade": "How this report was made",
+  "goalPastTitle": "Past goals",
+  "goalPastReopen": "Refine or continue",
+  "drawerGoalsPast": "{count, plural, =1{1 past goal} other{{count} past goals}} · Start a new one",
+  "@drawerGoalsPast": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "goalReport": "Report",
+  "goalInterimReport": "Interim report",
+  "goalCopyReport": "Copy report",
+  "goalReportCopied": "Report copied",
+  "goalPlan": "Plan",
+  "goalNotCovered": "Not covered by the report",
+  "goalStillMissing": "Still missing",
+  "goalSourcesTitle": "Sources",
+  "goalKindGeneral": "General",
+  "goalKindGeneralHint": "Any topic: a balanced, cited report",
+  "goalKindGeneralCriteria": "The goal answered completely, each claim with a source",
+  "goalKindCode": "Code",
+  "goalKindCodeHint": "APIs, errors, libraries: working code and versions",
+  "goalKindCodeCriteria": "A working approach with code, the versions it applies to and known pitfalls",
+  "goalKindScience": "Scientific",
+  "goalKindScienceHint": "What the evidence says: studies, consensus, limits",
+  "goalKindScienceCriteria": "The main findings with study type, year and size, where scientists agree and disagree, and the limitations",
+  "goalKindMath": "Math",
+  "goalKindMathHint": "Definitions, derivations, checked results",
+  "goalKindMathCriteria": "The final result, every step of the derivation, and a check of the answer",
+  "goalKindNews": "Current events",
+  "goalKindNewsHint": "What happened, when, who says what",
+  "goalKindNewsCriteria": "A dated timeline, the people and organisations involved, their positions, and what comes next",
+  "goalKindProduct": "Product comparison",
+  "goalKindProductHint": "Options side by side, then a pick",
+  "goalKindProductCriteria": "Price, key specifications, strengths and weaknesses of each option, and which suits whom",
+  "drawerGoalsHint": "Research with a plan and a cited report",
+  "drawerGoalRunning": "Running · step {step} of {total}",
+  "@drawerGoalRunning": {
+    "placeholders": {
+      "step": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "drawerGoalReport": "Report ready · {goal}",
+  "@drawerGoalReport": {
+    "placeholders": {
+      "goal": {
+        "type": "String"
+      }
+    }
+  },
+  "emptyGoalTitle": "Research a goal",
+  "emptyGoalHint": "It plans the questions, researches each one and writes a cited report — for code, science, math, news or comparisons.",
+  "composerResearchGoal": "Research this as a goal",
+  "composerManageShortcuts": "Manage",
+  "shareNothing": "Nothing to open in the share.",
+  "scheduledWaiting": "Your scheduled prompt is in the message box.",
+  "shareMore": "Only the first 8 files were opened.",
+  "shareSkipped": "Not opened (empty or over 64 MB): {names}",
+  "@shareSkipped": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
+  "attachGoal": "Research as a goal",
+  "attachGoalHint": "A plan, several searches, a cited report",
+  "batterySaver": "Battery saver",
+  "batterySaverOff": "Lighter answers on this phone when the battery is low or it is hot",
+  "batterySaverOn": "Below {level}% and not charging, or when the phone is hot: no thinking, shorter answers, fewer pages read",
+  "@batterySaverOn": {
+    "placeholders": {
+      "level": {
+        "type": "int"
+      }
+    }
+  },
+  "batterySaverLevel": "Battery saver starts at",
+  "scheduleTitle": "Scheduled prompts",
+  "scheduleRowHint": "A daily notification that asks a saved prompt when tapped",
+  "shortcutsTitle": "Prompt shortcuts",
+  "shortcutsRowHint": "Type / in a message: /summarize, /translate fr, your own",
+  "hostTitle": "Use this device as a server",
+  "hostRowHint": "Share a loaded model with another device",
+  "shortcutNew": "New shortcut",
+  "shortcutsIntro": "Type / in the message box to pick one. \"/summarize\" followed by your text sends the saved prompt with the text in it; \"/translate fr …\" takes a language first.",
+  "shortcutBuiltIn": "built-in",
+  "shortcutDelete": "Delete /{name}",
+  "@shortcutDelete": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "shortcutNameRule": "Lower-case letters, digits and dashes, up to 24.",
+  "shortcutYourVersion": "Your version of /{name}",
+  "@shortcutYourVersion": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "shortcutEdit": "Edit /{name}",
+  "@shortcutEdit": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "shortcutName": "Name",
+  "shortcutDescription": "Description",
+  "shortcutPrompt": "Prompt",
+  "shortcutPromptHelp": "{token} is replaced by the text after the command; without it the text is added at the end.",
+  "@shortcutPromptHelp": {
+    "placeholders": {
+      "token": {
+        "type": "String"
+      }
+    }
+  },
+  "commonCancel": "Cancel",
+  "commonSave": "Save",
+  "scheduleFailed": "Could not set the reminder: {error}",
+  "@scheduleFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "scheduleNeedsNotifications": "Allow notifications when Android asks, or the reminder cannot appear.",
+  "scheduleNew": "New",
+  "scheduleIntro": "Once a day at the time you choose, a notification offers the prompt. Tap it and the app asks it in a new chat (or opens it as a goal). Nothing runs in the background and nothing is sent until you tap.",
+  "scheduleEmpty": "None yet. Try a morning news briefing or a weekly goal.",
+  "scheduleChat": "Chat",
+  "commonDelete": "Delete",
+  "scheduleNewTitle": "New scheduled prompt",
+  "commonEdit": "Edit",
+  "scheduleEveryDay": "Every day at {time}",
+  "@scheduleEveryDay": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "scheduleAskChat": "Ask in a chat",
+  "scheduleOpenGoal": "Open as a goal",
+  "scheduleExample": "What are the top news stories in Canada today?",
+  "scheduleNotificationTitle": "Notification title (optional)",
+  "hostPortRange": "Use a number from 1 to 65535.",
+  "hostPortReserved": "Ports below 1024 are reserved on Android.",
+  "hostCopied": "{what} copied",
+  "@hostCopied": {
+    "placeholders": {
+      "what": {
+        "type": "String"
+      }
+    }
+  },
+  "hostPickModel": "Model to serve",
+  "hostPickHint": "Loading takes a few seconds. A running server restarts with the new model; connected devices keep the same address and token.",
+  "hostChangeModel": "Change",
+  "hostManageModels": "Download or import models",
+  "hostModel": "Model",
+  "hostNoModel": "No model loaded",
+  "hostLoadFirst": "Choose a model to serve.",
+  "hostModelHint": "Other devices chat with this model while the server runs.",
+  "hostConnection": "Connection",
+  "hostPort": "Port",
+  "hostPortHint": "The other device connects to this port.",
+  "hostStarting": "Starting…",
+  "hostStart": "Start server",
+  "hostToken": "Access token",
+  "hostRotate": "Rotate access token",
+  "hostRotateHint": "Devices using the current token must reconnect with the new one.",
+  "hostRotated": "A new token is used on the next start.",
+  "hostWaiting": "Serving · waiting for requests",
+  "hostAnswering": "Answering {client}",
+  "@hostAnswering": {
+    "placeholders": {
+      "client": {
+        "type": "String"
+      }
+    }
+  },
+  "hostUp": "up {duration}",
+  "@hostUp": {
+    "placeholders": {
+      "duration": {
+        "type": "String"
+      }
+    }
+  },
+  "hostLive": "Live",
+  "hostAnswered": "answered",
+  "hostRefused": "refused",
+  "hostFailed": "failed",
+  "hostTokensIn": "tokens in",
+  "hostTokensOut": "tokens out",
+  "hostAvgSpeed": "avg speed",
+  "hostDevices": "devices",
+  "hostBattery": "battery",
+  "hostHeat": "heat",
+  "hostLowBattery": "Stop on low battery",
+  "hostLowBatteryHint": "The server also stops when the phone reports severe heat. The screen stays on while it runs.",
+  "commonOff": "Off",
+  "hostConnect": "Connect another device",
+  "hostServerUrl": "Server URL",
+  "hostModelId": "Model ID",
+  "hostHideToken": "Hide token",
+  "hostShowToken": "Show token",
+  "hostCopyConnection": "Copy connection",
+  "hostPairHint": "On the other phone: scan this code with the camera and copy the text, or paste the copied connection, then in OnDevice LLM open Settings > Remote server > Add > Paste connection. Any OpenAI-compatible app works too, with the URL, model and token.",
+  "hostRecent": "Recent requests",
+  "hostNoneYet": "None yet.",
+  "hostCopy": "Copy {what}",
+  "@hostCopy": {
+    "placeholders": {
+      "what": {
+        "type": "String"
+      }
+    }
+  },
+  "hostInOut": "{prompt} in · {completion} out",
+  "@hostInOut": {
+    "placeholders": {
+      "prompt": {
+        "type": "int"
+      },
+      "completion": {
+        "type": "int"
+      }
+    }
+  },
+  "remotePasteNone": "The clipboard has no connection. On the other phone, tap Copy connection (or scan its QR code) first.",
+  "remotePasted": "Added {name}. Turn on Use remote server to chat with it.",
+  "@remotePasted": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "remotePaste": "Paste connection",
+  "remoteAdd": "Add connection",
+  "configCopied": "Configuration copied as text",
+  "configTooLarge": "That file is too large to be a configuration.",
+  "configNotAFile": "That file is not an OnDevice LLM model configuration.",
+  "configNotInClipboard": "The clipboard has no model configuration. Copy one first.",
+  "configMadeFor": "Made for {model}",
+  "@configMadeFor": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "configNotDownloaded": "This model is in the catalog but not downloaded: get it from Models, or apply to one you have.",
+  "configNotOnPhone": "This model is not on this phone. Apply the settings to one you have:",
+  "configSameModel": "{model} (same model)",
+  "@configSameModel": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "configEmpty": "The card sets nothing: the model would run on your own settings.",
+  "configLeftOut": "Left out (web access, phone hardware, context size or unknown): {keys}",
+  "@configLeftOut": {
+    "placeholders": {
+      "keys": {
+        "type": "String"
+      }
+    }
+  },
+  "configApply": "Apply",
+  "hostShowQr": "Show pairing code",
+  "voiceConversation": "Voice conversation",
+  "chatPinModel": "Pin a model to this chat",
+  "chatPinHint": "This chat always answers with the pinned model, whatever the model picker says.",
+  "chatPinNone": "No pin: use the selected model",
+  "chatPinned": "📌 {model}",
+  "@chatPinned": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "readerSummarize": "Summarize article",
+  "readerKeyPoints": "Key points",
+  "readerExplain": "Explain simply",
+  "readerSummarizePrompt": "Read this article and summarize it in a few short paragraphs, keeping names, figures and dates exact, and cite it: {url}",
+  "@readerSummarizePrompt": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  },
+  "readerKeyPointsPrompt": "Read this article and list its key points as short bullets, citing it: {url}",
+  "@readerKeyPointsPrompt": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  },
+  "readerExplainPrompt": "Read this article and explain what it says in plain language for someone new to the topic, citing it: {url}",
+  "@readerExplainPrompt": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  },
+  "readerNeedsWeb": "Reading a link needs web research: turn it on with the globe pill.",
+  "saveToKnowledge": "Save to knowledge",
+  "knowledgeSaveHint": "Choose a collection and the messages to save. Only visible message text and its source links are included; private reasoning stays out.",
+  "knowledgeCollectionName": "Collection name",
+  "knowledgeDocumentTitle": "Document title",
+  "knowledgeSelectMessages": "Messages to save",
+  "knowledgeChatTitle": "Saved conversation",
+  "knowledgeNameRequired": "Enter a collection name and document title.",
+  "knowledgeSaved": "Saved to {collection}.",
+  "@knowledgeSaved": {
+    "placeholders": {
+      "collection": {
+        "type": "String"
+      }
+    }
+  },
+  "knowledgeSaveFailed": "Could not save to knowledge: {error}",
+  "@knowledgeSaveFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "you": "You",
+  "assistant": "Assistant",
+  "backupPasswordTooShort": "Use at least 12 characters for the backup password.",
+  "backupPasswordsMismatch": "The passwords do not match.",
+  "backupSaveDialog": "Save encrypted backup",
+  "backupSaveCancelled": "Save cancelled.",
+  "backupSavedNotice": "Encrypted backup saved. Keep the password safe; it cannot be recovered.",
+  "backupFailedNotice": "Backup failed: {error}",
+  "@backupFailedNotice": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "backupEnterPassword": "Enter the backup password.",
+  "backupReplaceQuestion": "Replace this device’s library?",
+  "backupReplaceHint": "Restoring replaces chats, knowledge, attachments, and app settings the next time the app starts. Local model files and saved API keys are not included in the backup.",
+  "backupRestoreAction": "Restore",
+  "backupTooLarge": "Backup exceeds the safety limit.",
+  "backupVerifiedNotice": "Backup verified. Fully close and reopen the app to apply the restore.",
+  "backupRestoreFailed": "Restore failed: {error}",
+  "@backupRestoreFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "backupTitle": "Encrypted backup",
+  "backupIntro": "Back up chats, knowledge, attachments, Goals, and settings to a password-protected file. Model weights and saved API keys stay on this device. The backup limit is 96 MB.",
+  "backupPasswordLabel": "Backup password",
+  "backupConfirmPassword": "Confirm password for a new backup",
+  "backupCreateAction": "Create encrypted backup",
+  "backupRestoreBackup": "Restore backup",
+  "uiRemoteProfilePageDeleteConnection": "Delete connection?",
+  "uiRemoteProfilePageCancel": "Cancel",
+  "uiRemoteProfilePageDelete": "Delete",
+  "uiRemoteProfilePageConnection": "Connection",
+  "uiRemoteProfilePageThisConnectionWasRemoved": "This connection was removed.",
+  "uiRemoteProfilePageDeleteConnection2": "Delete connection",
+  "uiRemoteProfilePageProvider": "Provider",
+  "uiRemoteProfilePageName": "Name",
+  "uiRemoteProfilePageServerURL": "Server URL",
+  "uiRemoteProfilePageGetAKeyInTheBrowser": "Get a key in the browser",
+  "uiRemoteProfilePageModel": "Model",
+  "uiRemoteProfilePageModelsOnTheServer": "Models on the server",
+  "uiRemoteProfilePageRequestsPerMinute": "Requests per minute",
+  "uiRemoteProfilePageNone": "none",
+  "uiRemoteProfilePageRequestsPerDay": "Requests per day",
+  "uiRemoteProfilePageExtraHeaders": "Extra headers",
+  "uiAdvancedPagesContextBatch": "Context & batch",
+  "uiAdvancedPagesContextSize": "Context size",
+  "uiAdvancedPagesTokensTheModelCanSeeAt": "Tokens the model can see at once: the conversation, web evidence and the answer. Memory grows with it; if the phone cannot hold it, the model loads with a shorter context and a note says so.",
+  "uiAdvancedPagesContextSizeTokens": "Context size (tokens)",
+  "uiAdvancedPagesBatchSize": "Batch size",
+  "uiAdvancedPagesPromptTokensSubmittedPerStepAuto": "Prompt tokens submitted per step. Auto is 512, the measured optimum on this phone; larger mostly helps GPU prefill of long prompts.",
+  "uiAdvancedPagesMicroBatch": "Micro-batch",
+  "uiAdvancedPagesTokensPerComputeStepWithinA": "Tokens per compute step within a batch. Auto matches the batch size. Never above the batch size.",
+  "uiAdvancedPagesKeepConversationInContext": "Keep conversation in context",
+  "uiAdvancedPagesOnlyNewTextIsEvaluatedOn": "Only new text is evaluated on each turn; earlier turns stay resident. Off re-reads the whole conversation every message.",
+  "uiAdvancedPagesHardware": "Hardware",
+  "uiAdvancedPagesBackend": "Backend",
+  "uiAdvancedPagesAutomaticUsesCPUOpenCL2Faster": "Automatic uses CPU. OpenCL: ~2× faster prompt reading for research, ~15 % slower answers; the model reloads when you change it.",
+  "uiAdvancedPagesGPULayers": "GPU layers",
+  "uiAdvancedPagesLayersOffloadedToTheGPUIgnored": "Layers offloaded to the GPU. Ignored when the backend is CPU only.",
+  "uiAdvancedPagesCPUThreadsDecode": "CPU threads (decode)",
+  "uiAdvancedPagesWorkerThreadsWhileTheAnswerStreams": "Worker threads while the answer streams. Auto uses 6 on 8-core phones (measured fastest), otherwise half the cores.",
+  "uiAdvancedPagesCPUThreadsPrefill": "CPU threads (prefill)",
+  "uiAdvancedPagesThreadsWhileThePromptIsRead": "Threads while the prompt is read. Auto uses every core: prefill kept speeding up to 8 threads where decode slowed down.",
+  "uiAdvancedPagesFlashAttention": "Flash attention",
+  "uiAdvancedPagesFasterAttentionKernelWithLowerMemory": "Faster attention kernel with lower memory use.",
+  "uiAdvancedPagesKVCache": "KV cache",
+  "uiAdvancedPagesPrecisionOfCachedAttentionState": "Precision of cached attention state",
+  "uiAdvancedPagesSampling": "Sampling",
+  "uiAdvancedPagesTemperature": "Temperature",
+  "uiAdvancedPagesRandomnessLowerIsMoreFocusedHigher": "Randomness. Lower is more focused, higher is more varied.",
+  "uiAdvancedPagesTopP": "Top-P",
+  "uiAdvancedPagesSampleFromTheSmallestSetOf": "Sample from the smallest set of tokens whose probability adds up to P.",
+  "uiAdvancedPagesMinP": "Min-P",
+  "uiAdvancedPagesDropTokensLessLikelyThanThis": "Drop tokens less likely than this fraction of the top token.",
+  "uiAdvancedPagesTopK": "Top-K",
+  "uiAdvancedPagesOnlyTheKMostLikelyTokens": "Only the K most likely tokens are considered. 0 disables.",
+  "uiAdvancedPagesRepetitionPenalty": "Repetition penalty",
+  "uiAdvancedPagesDiscouragesRepeatingRecentTokens100": "Discourages repeating recent tokens. 1.00 is off.",
+  "uiAdvancedPagesMaxTokens": "Max tokens",
+  "uiAdvancedPagesUpperBoundOnOneResponseReasoning": "Upper bound on one response, reasoning included. It is reserved inside the context, so it must fit alongside the prompt.",
+  "uiAdvancedPagesMaxTokensPerResponse": "Max tokens per response",
+  "uiAdvancedPagesReasoningSearch": "Reasoning & search",
+  "uiAdvancedPagesThinkingMode": "Thinking mode",
+  "uiAdvancedPagesShowModelGeneratedReasoningWhenSupported": "Show model-generated reasoning when supported. It may contain mistakes and is not proof of correctness.",
+  "uiAdvancedPagesThinkingBudget": "Thinking budget",
+  "uiAdvancedPagesReasoningTokensAllowedBeforeTheBlock": "Reasoning tokens allowed before the block is closed and the answer starts. Bounds the wait on hard questions; unlimited lets the model decide.",
+  "uiAdvancedPagesThinkingBudgetTokens0Unlimited": "Thinking budget (tokens, 0 = unlimited)",
+  "uiAdvancedPagesSearchAndNewsRegion": "Search and news region",
+  "uiAdvancedPagesSearchResults": "Search results",
+  "uiAdvancedPagesCandidatesTakenFromDuckDuckGoPerQuery": "Candidates taken from DuckDuckGo per query.",
+  "uiAdvancedPagesPagesToRead": "Pages to read",
+  "uiAdvancedPagesResultPagesFetchedAndRankedFor": "Result pages fetched and ranked for evidence. Unreadable pages are skipped for the next candidate. More is slower and uses more context.",
+  "uiAdvancedPagesResearchTimeBudget": "Research time budget",
+  "uiAdvancedPagesWallClockLimitForReadingAll": "Wall-clock limit for reading all pages of one question. Slow sites are cut at the limit and the answer proceeds with what was read.",
+  "uiAdvancedPagesModelDrivenResearchExperimental": "Model-driven research (experimental)",
+  "uiAdvancedPagesModelWritesTheSearchQueries": "Model writes the search queries",
+  "uiAdvancedPagesTheLocalModelTurnsYourQuestion": "The local model turns your question into one or two search-engine queries before searching. Costs a few seconds; off sends the question as typed.",
+  "uiAdvancedPagesPassagesGivenToTheModel": "Passages given to the model",
+  "uiAdvancedPagesBestMatchingPassagesAbout250Tokens": "Best-matching passages (about 250 tokens each) across all read pages. More evidence, longer prefill.",
+  "uiAdvancedPagesFlagUnsupportedFigures": "Flag unsupported figures",
+  "uiAdvancedPagesAfterAGroundedAnswerNumbersVersions": "After a grounded answer, numbers, versions and dates that appear in no supplied passage are called out as unverified.",
+  "supportCheckTitle": "Check sentences by meaning",
+  "supportCheckHint": "A small model (Qwen3 Reranker 0.6B) reads the closest source passage before a sentence is flagged, so a correct sentence in other words is not called unsupported. A separate download; it runs for a few seconds after an answer from sources.",
+  "uiHfSearchPageSearchHuggingFace": "Search Hugging Face",
+  "uiHfSearchPageModelNameEGQwen34B": "Model name, e.g. Qwen3 4B, Phi-4, Llama 3.2",
+  "uiHfSearchPageNoGGUFRepositoriesMatch": "No GGUF repositories match.",
+  "uiHfSearchPageNoSingleFileGGUFWeightsIn": "No single-file GGUF weights in this repository.",
+  "uiHfSearchPageNotAddableHere": "Not addable here",
+  "uiBenchmarkDialogBenchmarkCopied": "Benchmark copied",
+  "uiBenchmarkDialogCopy": "Copy",
+  "uiBenchmarkDialogShare": "Share",
+  "uiBenchmarkDialogDone": "Done",
+  "uiModelReadinessPageModelReadiness": "Model readiness",
+  "uiModelReadinessPageDeviceCapacity": "Device capacity",
+  "uiModelReadinessPagePhysicalRAM": "Physical RAM",
+  "uiModelReadinessPageModelStorageVolume": "Model storage volume",
+  "uiModelReadinessPageInstalledModelWeights": "Installed model weights",
+  "uiModelReadinessPageCurrentContextAndBackend": "Current context and backend",
+  "uiModelReadinessPageModels": "Models",
+  "uiModelReadinessPageRAMFitIsARoughEstimate": "RAM fit is a rough estimate. Actual context memory and speed depend on the model, backend, and device temperature.",
+  "uiToolsQuickPanelLetTheModelCallTools": "Let the model call tools",
+  "uiToolsQuickPanelTHISMODELMAYCALL": "This model may call",
+  "uiToolsQuickPanelCalculator": "calculator",
+  "uiToolsQuickPanelExactArithmetic": "Exact arithmetic.",
+  "uiToolsQuickPanelSearchWebReadUrlFindIn": "search_web · read_url · find_in_page",
+  "uiToolsQuickPanelSearchDocuments": "search_documents",
+  "uiToolsQuickPanelToolUse": "Tool use",
+  "uiToolsQuickPanelAuto": "Auto",
+  "uiToolsQuickPanelRequired": "Required",
+  "uiAdvancedAdaptersPageLoRAAdapters": "LoRA adapters",
+  "uiAdvancedAdaptersPageImportAdapter": "Import adapter",
+  "uiAdvancedAdaptersPageDelete": "Delete",
+  "uiAdvancedAppearancePageAppearance": "Appearance",
+  "uiAdvancedAppearancePageTheme": "Theme",
+  "uiAdvancedAppearancePageDarkIsTheDesignedDefaultLight": "Dark is the designed default; light follows the phone if you choose System.",
+  "uiAdvancedAppearancePageAccentColour": "Accent colour",
+  "uiAdvancedAppearancePageTextSize": "Text size",
+  "uiAdvancedAppearancePageCompactBubbles": "Compact bubbles",
+  "uiAdvancedAppearancePageTighterSpacingInTheConversation": "Tighter spacing in the conversation.",
+  "motionLabel": "Motion",
+  "motionHint": "Springs, morphing controls and soft blurs. Your phone's Remove animations setting turns motion off.",
+  "motionFull": "Full",
+  "motionSubtle": "Subtle",
+  "motionOff": "Off",
+  "islandLoadingModel": "Loading {model}",
+  "@islandLoadingModel": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "islandModelReady": "Model ready",
+  "islandResearchDone": "Research done",
+  "islandAnswered": "Answered",
+  "jumpToLatest": "Jump to the latest message",
+  "uiAdvancedMemoryRopePageMemoryRoPESpeculation": "Memory, RoPE & speculation",
+  "uiAdvancedMemoryRopePageKCache": "K cache",
+  "uiAdvancedMemoryRopePagePrecisionOfCachedKeys": "Precision of cached keys",
+  "uiAdvancedMemoryRopePageVCache": "V cache",
+  "uiAdvancedMemoryRopePagePrecisionOfCachedValuesQuantisingV": "Precision of cached values. Quantising V needs flash attention, which is enabled automatically.",
+  "uiAdvancedMemoryRopePageRoPEScaling": "RoPE scaling",
+  "uiAdvancedMemoryRopePageHowPositionsBeyondTheTrainedContext": "How positions beyond the trained context are stretched. \"Model\" keeps what the GGUF declares; YaRN is the usual choice for longer contexts on models that support it.",
+  "uiAdvancedMemoryRopePageRoPEFrequencyBase": "RoPE frequency base",
+  "uiAdvancedMemoryRopePageEG1000000ForModelsThat": "e.g. 1000000 for models that document it",
+  "uiAdvancedMemoryRopePageRoPEFrequencyScale": "RoPE frequency scale",
+  "uiAdvancedMemoryRopePage0Scale1EG0": "0 < scale ≤ 1, e.g. 0.25 for 4× the trained context",
+  "uiAdvancedMemoryRopePageYaRNOriginalContext": "YaRN original context",
+  "uiAdvancedMemoryRopePageTheContextTheModelWasTrained": "The context the model was trained for",
+  "uiAdvancedMemoryRopePageYaRNExtrapolationMix": "YaRN extrapolation mix",
+  "uiAdvancedMemoryRopePage0InterpolationOnly1FullExtrapolation": "0 = interpolation only, 1 = full extrapolation",
+  "uiAdvancedMemoryRopePageYaRNAttentionFactor": "YaRN attention factor",
+  "uiAdvancedMemoryRopePageMagnitudeScalingUsually10": "Magnitude scaling, usually 1.0",
+  "uiAdvancedMemoryRopePageYaRNBetaFast": "YaRN beta fast",
+  "uiAdvancedMemoryRopePageLowCorrectionDimension": "Low correction dimension",
+  "uiAdvancedMemoryRopePageYaRNBetaSlow": "YaRN beta slow",
+  "uiAdvancedMemoryRopePageHighCorrectionDimension": "High correction dimension",
+  "uiAdvancedMemoryRopePageDraftModel": "Draft model",
+  "uiAdvancedMemoryRopePageASmallerModelWithTheSame": "A smaller model with the same vocabulary proposes several tokens; the main model verifies them in one pass. Helps on long, predictable answers; measure it — it costs memory and can be slower.",
+  "uiAdvancedMemoryRopePageDraftTokensPerRound": "Draft tokens per round",
+  "uiAdvancedMemoryRopePageHowManyTokensTheDraftProposes": "How many tokens the draft proposes before verification. Higher wins more when the draft is right and wastes more when it is wrong.",
+  "uiAdvancedPages2Cancel": "Cancel",
+  "uiAdvancedPages2NotAValidValue": "Not a valid value.",
+  "uiAdvancedPages2Save": "Save",
+  "uiAdvancedSamplingPageMoreSampling": "More sampling",
+  "uiAdvancedSamplingPageSeed": "Seed",
+  "uiAdvancedSamplingPageSeed0Random": "Seed (0 = random)",
+  "uiAdvancedSamplingPageStopSequences": "Stop sequences",
+  "uiAdvancedSamplingPagePresencePenalty": "Presence penalty",
+  "uiAdvancedSamplingPageOnceATokenHasAppearedIt": "Once a token has appeared it is discouraged, regardless of how often. 0 is off; negatives encourage reuse.",
+  "uiAdvancedSamplingPageFrequencyPenalty": "Frequency penalty",
+  "uiAdvancedSamplingPageEachRepetitionAddsToThePenalty": "Each repetition adds to the penalty. 0 is off.",
+  "uiAdvancedSamplingPagePenaltyWindow": "Penalty window",
+  "uiAdvancedSamplingPageHowManyRecentTokensTheRepetition": "How many recent tokens the repetition, presence and frequency penalties look at. 0 turns them off.",
+  "uiAdvancedSamplingPageDRYMultiplier": "DRY multiplier",
+  "uiAdvancedSamplingPageDRYPenalisesRepeatingWholeSequencesRather": "DRY penalises repeating whole sequences rather than single tokens. 0 is off; 0.8 is the usual strength.",
+  "uiAdvancedSamplingPageDRYBase": "DRY base",
+  "uiAdvancedSamplingPageGrowthOfThePenaltyWithThe": "Growth of the penalty with the repeated length.",
+  "uiAdvancedSamplingPageDRYAllowedLength": "DRY allowed length",
+  "uiAdvancedSamplingPageRepeatsShorterThanThisAreFree": "Repeats shorter than this are free.",
+  "uiAdvancedSamplingPageTypicalP": "Typical-P",
+  "uiAdvancedSamplingPageKeepsTokensWhoseSurpriseIsClose": "Keeps tokens whose surprise is close to the expected one. 1.00 is off.",
+  "uiAdvancedSamplingPageXTCProbability": "XTC probability",
+  "uiAdvancedSamplingPageWithThisProbabilityTheMostLikely": "With this probability the most likely tokens above the threshold are removed, except the last one — for more varied prose. 0 is off.",
+  "uiAdvancedSamplingPageXTCThreshold": "XTC threshold",
+  "uiAdvancedSamplingPageTokensAboveThisProbabilityAreCandidates": "Tokens above this probability are candidates for removal.",
+  "uiAdvancedSamplingPageTopNSigma": "Top-n-sigma",
+  "uiAdvancedSamplingPageKeepsTokensWithinNStandardDeviations": "Keeps tokens within n standard deviations of the best logit; works well with high temperatures. Off at 0.",
+  "uiAdvancedSamplingPageResetOrder": "Reset order",
+  "uiAdvancedSamplingPageOnePerLineUpTo8": "One per line, up to 8. The answer ends when one appears; it is never shown.",
+  "uiAdvancedSamplingPageCancel": "Cancel",
+  "uiAdvancedSamplingPageSave": "Save",
+  "uiAdvancedStructuredOutputPageStructuredOutput": "Structured output",
+  "uiAdvancedStructuredOutputPageResponseFormat": "Response format",
+  "uiAdvancedStructuredOutputPageConstrainsEveryTokenTheModelProduces": "Constrains every token the model produces. Thinking is turned off for constrained answers, and tools are not offered.",
+  "uiAdvancedStructuredOutputPageJSONSchema": "JSON schema",
+  "uiAdvancedStructuredOutputPageGBNFGrammar": "GBNF grammar",
+  "uiAdvancedStructuredOutputPageCancel": "Cancel",
+  "uiAdvancedStructuredOutputPageSave": "Save",
+  "uiAdvancedToolsPageTools": "Tools",
+  "uiAdvancedToolsPageLetTheModelCallTools": "Let the model call tools",
+  "uiAdvancedToolsPageTheModelCanDecideToSearch": "The model can decide to search the web, read a page, search your documents or calculate, then answer from the results. Each tool stays behind its own permission below.",
+  "uiAdvancedToolsPageToolUse": "Tool use",
+  "uiAdvancedToolsPageAutoLetsTheModelDecideWhether": "Auto lets the model decide whether a tool is needed. Required makes it call one before its first answer (later rounds are up to it again): use it when the model keeps answering from memory instead of searching.",
+  "uiAdvancedToolsPageRoundsPerAnswer": "Rounds per answer",
+  "uiAdvancedToolsPageHowManyTimesTheModelMay": "How many times the model may call tools before it must answer. Each round is another model pass.",
+  "uiAdvancedToolsPageCalculator": "calculator",
+  "uiAdvancedToolsPageExactArithmeticNoPermissionNeeded": "Exact arithmetic. No permission needed.",
+  "uiAdvancedToolsPageSearchWebReadUrlFindIn": "search_web · read_url · find_in_page",
+  "uiAdvancedToolsPageSearchDocuments": "search_documents",
+  "uiEffectiveSettingsPageEffectiveSettings": "Effective settings",
+  "uiEffectiveSettingsPageAppliesWhenTheModelLoads": "Applies when the model loads.",
+  "uiEffectiveSettingsPageClose": "Close",
+  "uiKnowledgePageOK": "OK",
+  "uiKnowledgePageVerifying": "Verifying…",
+  "uiMemoryPageEGTheUserIsA": "e.g. The user is a nurse in Lisbon and prefers metric units.",
+  "uiOverridesPageClearAll": "Clear all",
+  "uiOverridesPageInherit": "Inherit",
+  "uiOverridesPageOn": "On",
+  "uiOverridesPageOff": "Off",
+  "uiOverridesPageCancel": "Cancel",
+  "uiOverridesPageNotAValidValue": "Not a valid value.",
+  "uiOverridesPageSave": "Save",
+  "uiRemoteServerPageUseRemoteServer": "Use remote server",
+  "uiRemoteServerPageNoConnectionsYet": "No connections yet",
+  "uiRemoteServerPageAddOneToChooseAProvider": "Add one to choose a provider, URL, API key and model.",
+  "uiRemoteServerPageEditConnection": "Edit connection",
+  "uiRemoteServerPageWebResearch": "Web research",
+  "uiRemoteServerPageTheAppSearchesDuckDuckGoAndReads": "The remote model decides whether a question needs the web, writes its own searches and picks the pages to read; the app runs them on DuckDuckGo and Wikipedia without a key.",
+  "uiRemoteServerPageImageUnderstanding": "Image understanding",
+  "uiRemoteServerPageSendAttachedImagesToTheModel": "Send attached images to the model. Enable only for a vision-capable model.",
+  "uiRemoteServerPageDocumentUnderstanding": "Document understanding",
+  "uiRemoteServerPageExtractDocumentsSafelyOnThePhone": "Extract documents safely on the phone, then send their text in the prompt. Original files are not uploaded.",
+  "uiRemoteServerPageStreamingIdleTimeout": "Streaming idle timeout",
+  "uiRemoteServerPageHowLongToWaitBetweenResponse": "How long to wait between response chunks from a slow or heavily loaded server.",
+  "uiRemoteServerPageChooseAProvider": "Choose a provider",
+  "uiSettingsScreenEncryptedBackup": "Encrypted backup",
+  "uiSettingsScreenMoreSampling": "More sampling",
+  "uiSettingsScreenMemoryRoPESpeculation": "Memory, RoPE & speculation",
+  "uiSettingsScreenStructuredOutput": "Structured output",
+  "uiSettingsScreenTools": "Tools",
+  "uiSettingsScreenLoRAAdapters": "LoRA adapters",
+  "uiSettingsScreenEffectiveSettings": "Effective settings",
+  "uiSettingsScreenAppearance": "Appearance",
+  "uiMetricsSheetInstrumentPanel": "Instrument panel",
+  "uiMetricsSheetDisplay": "Display",
+  "uiMetricsSheetBenchmarkThisModel": "Benchmark this model",
+  "uiMetricsSheetMeasuredOnThisDeviceNothingIs": "Measured on this device. Nothing is transmitted.",
+  "uiMetricsSheetSendAMessageToSeeLive": "Send a message to see live numbers.",
+  "uiMetricsSheetBackend": "Backend",
+  "uiMetricsSheetNativeLibrary": "Native library",
+  "uiMetricsSheetStages": "Stages",
+  "uiMetricsSheetTokensSec": "Tokens/sec",
+  "uiMetricsSheetFirstToken": "First token",
+  "uiMetricsSheetTokens": "Tokens",
+  "uiMetricsSheetContext": "Context",
+  "uiMetricsSheetPeakRSS": "Peak RSS",
+  "uiMetricsSheetTemplate": "Template",
+  "uiMetricsSheetThinking": "Thinking",
+  "uiMetricsSheetModel": "Model",
+  "uiSettingsWidgetsCancel": "Cancel",
+  "uiSettingsWidgetsApply": "Apply",
+  "uiPresetSheet00Exact": "0.0 · exact",
+  "uiPresetSheet03Focused": "0.3 · focused",
+  "uiPresetSheet07Balanced": "0.7 · balanced",
+  "uiPresetSheet10Creative": "1.0 · creative",
+  "uiModelsScreenHttpsHuggingfaceCo": "https://huggingface.co/…",
+  "uiModelsScreenModelReadiness": "Model readiness",
+  "uiModelsScreenImportConfiguration": "Import configuration",
+  "uiModelsScreenImportConfigurationFromClipboard": "Import configuration from clipboard",
+  "uiModelsScreenImportConfigurationFromAFile": "Import configuration from a file",
+  "uiModelsScreenShareOrImportAConfiguration": "Share or import a configuration",
+  "uiModelsScreenShareConfiguration": "Share configuration",
+  "uiModelsScreenCopyAsText": "Copy as text",
+  "uiModelsScreenImportFromClipboard": "Import from clipboard",
+  "uiModelsScreenImportFromAFile": "Import from a file",
+  "uiModelCardRemoveFromList": "Remove from list",
+  "uiModelPickerSheetRemoteConnections": "Remote connections",
+  "uiModelPickerSheetAnswersComeFromTheConnectionInstead": "Answers come from the connection instead of a model on this phone.",
+  "uiQrViewQRCodeWithTheConnectionDetails": "QR code with the connection details",
+  "uiChatScreenActionsTitle": "Title",
+  "uiChatScreenActionsDocumentType": "Document type",
+  "uiChatScreenActionsWordDocx": "Word (.docx)",
+  "uiChatScreenActionsPDF": "PDF",
+  "uiChatScreenActionsPlainTextTxt": "Plain text (.txt)",
+  "uiChatScreenActionsMarkdownMd": "Markdown (.md)",
+  "uiChatScreenActionsHTML": "HTML",
+  "uiChatScreenActionsSelectIndividualMessages": "Select individual messages",
+  "uiChatScreenActionsRedactTermsCommaSeparated": "Redact terms (comma separated)",
+  "uiChatScreenActionsChooseMessages": "Choose messages",
+  "uiChatScreenActionsUseSelection": "Use selection",
+  "uiChatScreenActionsReviewDocument": "Review document",
+  "uiChatBubbleChooseQuestionVersion": "Choose question version",
+  "uiChatBubbleSources": "Sources",
+  "uiChatBubbleKnowledgeLibrary": "Knowledge library",
+  "uiChatBubbleSponsoredNotUsed": "Sponsored (not used)",
+  "uiChatBubbleOpenInBrowser": "Open in browser",
+  "uiCodeBlockCopyCode": "Copy code",
+  "uiCodeBlockCodeCopied": "Code copied",
+  "readinessUnavailable": "Unavailable on this device",
+  "readinessMemory": "{total} total · {available} available now",
+  "@readinessMemory": {
+    "placeholders": {
+      "total": {
+        "type": "Object"
+      },
+      "available": {
+        "type": "Object"
+      }
+    }
+  },
+  "readinessStorage": "{free} free of {total}",
+  "@readinessStorage": {
+    "placeholders": {
+      "free": {
+        "type": "Object"
+      },
+      "total": {
+        "type": "Object"
+      }
+    }
+  },
+  "readinessInstalledWeights": "{size} across {count} models",
+  "@readinessInstalledWeights": {
+    "placeholders": {
+      "size": {
+        "type": "Object"
+      },
+      "count": {
+        "type": "Object"
+      }
+    }
+  },
+  "readinessContext": "{count} tokens · {backend}",
+  "@readinessContext": {
+    "placeholders": {
+      "count": {
+        "type": "Object"
+      },
+      "backend": {
+        "type": "Object"
+      }
+    }
+  },
+  "readinessInstalled": "Installed",
+  "readinessDownload": "Download: {size}",
+  "@readinessDownload": {
+    "placeholders": {
+      "size": {
+        "type": "Object"
+      }
+    }
+  },
+  "readinessRamFits": "RAM estimate: likely fits",
+  "readinessRamMayNotFit": "RAM estimate: may not fit",
+  "readinessDiskAvailable": "Disk space available",
+  "readinessDiskInsufficient": "Disk space may be insufficient",
+  "readinessMeasured": "Measured: {speed} tok/s",
+  "@readinessMeasured": {
+    "placeholders": {
+      "speed": {
+        "type": "Object"
+      }
+    }
+  },
+  "benchmarkFailed": "Benchmark failed: {error}",
+  "@benchmarkFailed": {
+    "placeholders": {
+      "error": {
+        "type": "Object"
+      }
+    }
+  },
+  "benchmarkRunning": "Benchmarking {model}…\nLoading, then {runs} runs of a ~380-token prefill and 128 greedy tokens (first discarded, medians reported), then a chat with the app's system prompt, with and without the tools.",
+  "@benchmarkRunning": {
+    "placeholders": {
+      "model": {
+        "type": "Object"
+      },
+      "runs": {
+        "type": "Object"
+      }
+    }
+  },
+  "hfIntro": "Public GGUF repositories only, most downloaded first. Each download is pinned to the repository revision and verified against the Hub's SHA-256, like the built-in catalog. Vision projectors (mmproj) and split files are shown but cannot be added yet.",
+  "hfAdded": "{model} added · {size} · template {template}",
+  "@hfAdded": {
+    "placeholders": {
+      "model": {
+        "type": "Object"
+      },
+      "size": {
+        "type": "Object"
+      },
+      "template": {
+        "type": "Object"
+      }
+    }
+  },
+  "hfFromMetadata": "from metadata",
+  "hfRepoStats": "{downloads} downloads · {likes} likes",
+  "@hfRepoStats": {
+    "placeholders": {
+      "downloads": {
+        "type": "Object"
+      },
+      "likes": {
+        "type": "Object"
+      }
+    }
+  },
+  "hfInLibrary": "in library",
+  "hfLicenseRevision": "License: {license} · revision {revision}",
+  "@hfLicenseRevision": {
+    "placeholders": {
+      "license": {
+        "type": "Object"
+      },
+      "revision": {
+        "type": "Object"
+      }
+    }
+  },
+  "hfVisionProjector": "vision projector",
+  "hfSplitFile": "split file",
+  "remoteDeleteHint": "“{name}” and its API key will be removed from this phone.",
+  "@remoteDeleteHint": {
+    "placeholders": {
+      "name": {
+        "type": "Object"
+      }
+    }
+  },
+  "remoteOwnServer": "A server on your own hardware.",
+  "remoteHostedBilling": "Hosted API billed to your key.",
+  "remoteNameHelp": "How this connection is listed.",
+  "remoteOwnUrlHelp": "LM Studio: port 1234 · Ollama: 11434 · llama-server: 8080. “{path}” is added automatically.",
+  "@remoteOwnUrlHelp": {
+    "placeholders": {
+      "path": {
+        "type": "Object"
+      }
+    }
+  },
+  "remoteHostedUrlHelp": "Prefilled for {provider}; change it only for a proxy or a regional endpoint.",
+  "@remoteHostedUrlHelp": {
+    "placeholders": {
+      "provider": {
+        "type": "Object"
+      }
+    }
+  },
+  "remoteInvalidUrl": "Enter an http(s) URL.",
+  "remoteApiKey": "API key",
+  "remoteApiKeyOptional": "API key (optional)",
+  "remoteKeyHostedHelp": "Stored in the Android keystore; sent only to {provider}.",
+  "@remoteKeyHostedHelp": {
+    "placeholders": {
+      "provider": {
+        "type": "Object"
+      }
+    }
+  },
+  "remoteKeySelfHelp": "Only if the server was started with a key. Stored in the Android keystore.",
+  "remoteHideKey": "Hide key",
+  "remoteShowKey": "Show key",
+  "remoteServerDefaultModel": "Leave empty for the server default",
+  "remoteModelId": "Model ID",
+  "remoteModelListHelp": "Test the connection to pick from the models this provider lists.",
+  "remoteModelManualHelp": "This provider has no model list; type the ID from its docs.",
+  "remoteTestList": "Test & list models",
+  "remoteTestConnection": "Test connection",
+  "remoteExtraHeadersHelp": "One “Name: value” per line, sent with every request (e.g. OpenAI-Organization, OpenRouter attribution). The key header is set for you.",
+  "remoteConnectedNoList": "Connected. This provider has no model list; type the model ID.",
+  "remoteConnectedServerNoModels": "Connected, but the server lists no models. Load one in LM Studio / start one in Ollama.",
+  "remoteConnectedNoModels": "Connected, but no models were listed for this key.",
+  "remoteCapabilities": "Capabilities",
+  "remoteRequestLimits": "Request limits",
+  "remoteAdvanced": "Advanced",
+  "remoteAnthropicNote": "Anthropic: thinking mode enables adaptive thinking with summaries; temperature/top-p are not sent because the current models reject them. Tool calls, images and JSON-schema output are supported.",
+  "remoteGeminiNote": "Gemini: thinking mode shows thought summaries; function calling, images and JSON output are supported. Function-call signatures are kept for the session.",
+  "remoteSelfHostedNote": "Only connect to machines you control. The connection is as private as the network between them: use HTTPS or a VPN over the internet.",
+  "remoteHostedNote": "Requests are billed to your {provider} account. Set a daily cap above if you share the key across apps.",
+  "@remoteHostedNote": {
+    "placeholders": {
+      "provider": {
+        "type": "Object"
+      }
+    }
+  },
+  "remoteNoTools": "none",
+  "remoteToolsDetected": " Server tools detected: {tools}; they are not executed automatically.",
+  "@remoteToolsDetected": {
+    "placeholders": {
+      "tools": {
+        "type": "Object"
+      }
+    }
+  },
+  "remoteContextWindow": " Context window {count} tokens.",
+  "@remoteContextWindow": {
+    "placeholders": {
+      "count": {
+        "type": "Object"
+      }
+    }
+  },
+  "remoteAdvertises": "{model} advertises: {capabilities}.{context}{tools}",
+  "@remoteAdvertises": {
+    "placeholders": {
+      "model": {
+        "type": "Object"
+      },
+      "capabilities": {
+        "type": "Object"
+      },
+      "context": {
+        "type": "Object"
+      },
+      "tools": {
+        "type": "Object"
+      }
+    }
+  },
+  "remoteContextOnly": "{model}: context window {count} tokens.{tools}",
+  "@remoteContextOnly": {
+    "placeholders": {
+      "model": {
+        "type": "Object"
+      },
+      "count": {
+        "type": "Object"
+      },
+      "tools": {
+        "type": "Object"
+      }
+    }
+  },
+  "remoteNoCapabilities": "This provider does not advertise capabilities for the selected model. Keep the switches on the previous page aligned with the model you use.{tools}",
+  "@remoteNoCapabilities": {
+    "placeholders": {
+      "tools": {
+        "type": "Object"
+      }
+    }
+  },
+  "remoteDefaultModel": "the default model",
+  "remoteCapsHint": "Caps for {model} on this connection. The app refuses to send once a cap is reached; each tool round counts as one request. Empty means no cap.",
+  "@remoteCapsHint": {
+    "placeholders": {
+      "model": {
+        "type": "Object"
+      }
+    }
+  },
+  "remoteUsed": "Used: {minute} this minute · {day} today",
+  "@remoteUsed": {
+    "placeholders": {
+      "minute": {
+        "type": "Object"
+      },
+      "day": {
+        "type": "Object"
+      }
+    }
+  },
+  "remoteOtherCaps": "Other models with caps here: {models}.",
+  "@remoteOtherCaps": {
+    "placeholders": {
+      "models": {
+        "type": "Object"
+      }
+    }
+  },
+  "scheduleLoadFailed": "Could not load scheduled prompts: {error}",
+  "@scheduleLoadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "Object"
+      }
+    }
+  },
+  "noticeCheckingSearch": "Checking whether to search…",
+  "noticeResearchingTools": "Researching with tools…",
+  "noticeNamingChat": "Naming the chat…",
+  "noticeSearchingAgain": "Searching again for what the pages left out…",
+  "noticeFollowUpSearch": "The pages read earlier do not answer this. Searching again…",
+  "answerSourcesDated": "Sources last updated {date}.",
+  "@answerSourcesDated": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "answerSourcesUndated": "The sources do not say when they were last updated.",
+  "sourceUpdated": "updated {date}",
+  "@sourceUpdated": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "thinkOnSearchSetting": "Think before answering from sources",
+  "thinkOnSearchHint": "A model that can reason weighs the pages first (up to about 1,000 tokens), even with Thinking mode off.",
+  "searchAgainSetting": "Search again when pages fall short",
+  "searchAgainHint": "When the pages read leave part of the question unanswered, one more search and up to two more pages.",
+  "wikipediaLookupSetting": "Add the Wikipedia article",
+  "wikipediaLookupHint": "The Wikipedia article about the subject joins the sources, in the question's language, when one matches.",
+  "zimSetting": "Offline Wikipedia",
+  "zimHint": "Import a Kiwix .zim file (from library.kiwix.org) to answer from Wikipedia with no connection.",
+  "zimImport": "Import",
+  "zimRemove": "Remove",
+  "zimImporting": "Copying… {percent}",
+  "@zimImporting": {
+    "placeholders": {
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "zimNotAZim": "That file is not a .zim file.",
+  "autoTitlesSetting": "Name chats automatically",
+  "autoTitlesHint": "After the first answer the model gives the chat a short title. Off: the first message is the title.",
+  "webModeNote": "Web research mode (Off / Auto / Always) is set on the main Settings screen or the composer pill.",
+  "thinkingBudgetUnlimited": "Unlimited",
+  "adapterImporting": "Checking and copying the adapter…",
+  "adapterEmpty": "No adapters yet. Import a LoRA GGUF (made with llama.cpp's convert_lora_to_gguf.py) with +, then attach it to a model of the same architecture. The model is reloaded with the adapter applied at the chosen scale.",
+  "versionPrevious": "Previous version",
+  "versionNext": "Next version",
+  "sourceFallbackTitle": "Source",
+  "sourcePublished": "published {date}",
+  "@sourcePublished": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "sourceReadEarlier": "read earlier",
+  "sourceMayBeOutdated": "may be outdated",
+  "sourceSponsored": "Sponsored result",
+  "sourceSponsoredDetail": "Sponsored result · shown for transparency · not read or given to the model as evidence",
+  "sourceNewsStory": "News story · {outlet}",
+  "@sourceNewsStory": {
+    "placeholders": {
+      "outlet": {
+        "type": "String"
+      }
+    }
+  },
+  "sourceNewsGiven": "the headline and summary below were given to the model",
+  "sourcePageRead": "Page read",
+  "sourceKeptCopy": "kept copy, the site could not be reached; may be outdated",
+  "sourcePassagesGiven": "the passages below were given to the model",
+  "sourceReadFailed": "Page could not be read ({error}) · only the search snippet was available",
+  "@sourceReadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "sourceSnippetOnly": "Search snippet only · the page was not read",
+  "sourceHeadlineOnly": "Headline and listing only · article body unavailable",
+  "sourceExtractedSection": "Extracted passages · check the quoted text for support",
+  "sourceArchiveSnapshot": "Offline archive · {date} · {language}",
+  "@sourceArchiveSnapshot": {"placeholders": {"date": {"type": "String"}, "language": {"type": "String"}}},
+  "sourceOfflineLimitation": "This archive cannot verify current or changing facts.",
+  "sourceArchiveUnavailable": "The original archive is unavailable. Showing the saved excerpt.",
+  "sourceNoText": "No text.",
+  "sourceGivenHeading": "What the model was given",
+  "sourcePassageCount": "{count, plural, =1{1 passage} other{{count} passages}}",
+  "@sourcePassageCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sourceReadAt": "Read {time}",
+  "@sourceReadAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "sourceOpenArchived": "Open offline article",
+  "sourceCopyLink": "Copy link",
+  "sourceLinkCopied": "Link copied",
+  "sourceAddress": "Full address",
+  "sourceFromKnowledge": "From your knowledge library ({title}).",
+  "@sourceFromKnowledge": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "fitFits": "Fits this phone",
+  "fitTight": "Tight on RAM",
+  "fitTooLarge": "Too large for this phone",
+  "configApplyNote": "Applying replaces that model's profile. Web research and hardware stay as you set them.",
+  "configApplied": "Applied to {model}. It takes effect on the next answer.",
+  "@configApplied": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "storageUnavailable": "Unavailable on this device",
+  "modelProfileTitle": "{model} profile",
+  "@modelProfileTitle": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "modelProfileScope": "Model profile",
+  "conversationsLoadFailed": "Could not load conversations.\n{error}",
+  "@conversationsLoadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "adapterUnknownArchitecture": "unknown architecture",
+  "adapterAppliedAt": "Applied at scale {scale}",
+  "@adapterAppliedAt": {
+    "placeholders": {
+      "scale": {
+        "type": "String"
+      }
+    }
+  },
+  "adapterNotApplied": "Not applied",
+  "noticeUpdatingMemory": "Updating memory…",
+  "noticeWeatherLoading": "Weather for {place} from DuckDuckGo…",
+  "@noticeWeatherLoading": {
+    "placeholders": {
+      "place": {
+        "type": "String"
+      }
+    }
+  },
+  "noticeWeatherDone": "Weather for {place} from DuckDuckGo (Apple WeatherKit).",
+  "@noticeWeatherDone": {
+    "placeholders": {
+      "place": {
+        "type": "String"
+      }
+    }
+  },
+  "noticeCollectingNews": "Collecting the latest news…",
+  "noticeWebOffUnverified": "Web search is off. Current information has not been verified.",
+  "noticeOpeningStory": "Opening that story…",
+  "noticeStopping": "Stopping…",
+  "noticeSearching": "Searching DuckDuckGo…",
+  "noticeCheckingWikipedia": "Checking Wikipedia…",
+  "noticeRecallArticle": "Read the article behind that story, plus {count, plural, =1{1 earlier source} other{{count} earlier sources}} from this chat.",
+  "@noticeRecallArticle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noticeRecallPages": "Answering from {count, plural, =1{1 page} other{{count} pages}} already read in this chat.",
+  "@noticeRecallPages": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noticeImageRemoteOff": "Image input is disabled for the remote server. Enable it in Remote server settings if the selected model supports vision.",
+  "noticeImageNoVision": "This model cannot see photos. Add its vision file under Models, or pick a vision model.",
+  "noticeKnowledgeDocs": "{count, plural, =1{1 document} other{{count} documents}} from “{collection}”",
+  "@noticeKnowledgeDocs": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "collection": {
+        "type": "String"
+      }
+    }
+  },
+  "noticePlusWebResults": " plus {count, plural, =1{1 web result} other{{count} web results}}",
+  "@noticePlusWebResults": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noticeUsingTool": "Using {tool}{args}…",
+  "@noticeUsingTool": {
+    "placeholders": {
+      "tool": {
+        "type": "String"
+      },
+      "args": {
+        "type": "String"
+      }
+    }
+  },
+  "noticeStopped": "Generation stopped. Any partial response was kept.",
+  "noticeTrimmed": "{count, plural, =1{1 earlier message was} other{{count} earlier messages were}} omitted from the model context; they remain in your history.",
+  "@noticeTrimmed": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noticeTokenLimit": "The answer stopped at the {count}-token limit. Tap Continue, or raise Max tokens under Settings > Sampling.",
+  "@noticeTokenLimit": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noticeStopSequence": "The answer ended at a stop sequence.",
+  "noticeResearchSkipped": "The model answered without searching, so nothing here was verified this turn. Regenerate, or turn Model-driven research off to use the fixed search.",
+  "noticeNoSourcesWebOff": "Web research is off, so the model had no sources. Tap the Local pill to turn it on.",
+  "noticeNoSourcesNoSearch": "No search ran for this message, so the model had no sources. Switch the pill to Web · always, or ask with \"search for …\".",
+  "noticeStoriesCount": "{count, plural, =1{1 story} other{{count} stories}}",
+  "@noticeStoriesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noticeOutletsCount": "{count, plural, =1{1 outlet} other{{count} outlets}}",
+  "@noticeOutletsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noticeArticlesRead": "{count, plural, =1{1 article read} other{{count} articles read}}",
+  "@noticeArticlesRead": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noticeNewsSummary": "{stories} from {outlets}{articles} in {seconds} s.",
+  "@noticeNewsSummary": {
+    "placeholders": {
+      "stories": {
+        "type": "String"
+      },
+      "outlets": {
+        "type": "String"
+      },
+      "articles": {
+        "type": "String"
+      },
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "noticeLinkUnreadable": "The linked page could not be read.",
+  "noticeNoWebResults": "No web results. Current information could not be verified.",
+  "noticeLinkedRead": "{read} of {total, plural, =1{1 linked page} other{{total} linked pages}} read.",
+  "@noticeLinkedRead": {
+    "placeholders": {
+      "read": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "noticePagesRead": "{read, plural, =1{1 page} other{{read} pages}} read from {results} results{queries}.",
+  "@noticePagesRead": {
+    "placeholders": {
+      "read": {
+        "type": "int"
+      },
+      "results": {
+        "type": "int"
+      },
+      "queries": {
+        "type": "String"
+      }
+    }
+  },
+  "noticeQueries": " ({count} queries)",
+  "@noticeQueries": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noticeEvidenceNoFit": "Web evidence could not fit. Increase context or reduce response length.",
+  "noticeWaitingServer": "Waiting for the device server to finish a request from {client}…",
+  "@noticeWaitingServer": {
+    "placeholders": {
+      "client": {
+        "type": "String"
+      }
+    }
+  },
+  "noticeReadingPage": "Reading {n} of {limit}{host}…",
+  "@noticeReadingPage": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      },
+      "limit": {
+        "type": "int"
+      },
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "noticeToolCut": "Tool results were cut to fit the context ({count, plural, =1{1 cut} other{{count} cuts}}). Raise the context size or lower the per-tool output budget.",
+  "@noticeToolCut": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noticeDocCut": "Attached text was cut to fit the context ({percent}% kept). Raise the context size for the whole file.",
+  "@noticeDocCut": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "noticeRefusal": "The model said it cannot browse even though {count, plural, =1{1 source was} other{{count} sources were}} supplied. Regenerate, or try a different model.",
+  "@noticeRefusal": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noticeNoCitations": "The answer cites none of the {count, plural, =1{1 supplied source} other{{count} supplied sources}}; treat it as unverified.",
+  "@noticeNoCitations": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noticeBogusCitations": "The answer cites source {cited}, which was not supplied; only [1]–[{count}] exist.",
+  "@noticeBogusCitations": {
+    "placeholders": {
+      "cited": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noticeFigures": "Not found in the sources: {figures}{more}. Treat these figures as unverified.",
+  "@noticeFigures": {
+    "placeholders": {
+      "figures": {
+        "type": "String"
+      },
+      "more": {
+        "type": "String"
+      }
+    }
+  },
+  "noticeFiguresMiscited": "Not in the source cited for them: {figures}{more}. Another source has them; check the citation.",
+  "@noticeFiguresMiscited": {
+    "placeholders": {
+      "figures": {
+        "type": "String"
+      },
+      "more": {
+        "type": "String"
+      }
+    }
+  },
+  "noticeCitationsMatched": "The model cited no sources; the [n] marks were matched to the sources by their words and figures.",
+  "noticeAndMore": " and {count} more",
+  "@noticeAndMore": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "searchChallenge": "DuckDuckGo asked for a bot check, so automatic search is paused for a minute. Pasted links still work.",
+  "searchCooldown": "Search is paused after a DuckDuckGo block; it resumes in {seconds} s. Pasted links still work.",
+  "@searchCooldown": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "searchRateLimit": "DuckDuckGo is rate-limiting searches; paused for a minute. Pasted links still work.",
+  "searchMarkup": "DuckDuckGo changed its results page and they could not be parsed. Pasted links still work; an app update is needed for search.",
+  "searchUnavailable": "Web search unavailable (no connection or DuckDuckGo unreachable). Current information could not be verified.",
+  "noticeThrottle": "Speed dropped {drop}% ({from} → {to} tok/s). The phone may be throttling; try a shorter context, fewer GPU layers, or a smaller model.",
+  "@noticeThrottle": {
+    "placeholders": {
+      "drop": {
+        "type": "int"
+      },
+      "from": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      }
+    }
+  },
+  "outputGrammarCut": "The grammar-constrained output was cut at the token limit.",
+  "outputSchemaMismatch": "The output is valid JSON but not the object the schema asks for.",
+  "outputJsonCut": "The JSON output was cut at the {count}-token limit and does not parse. Raise Max tokens.",
+  "@outputJsonCut": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "outputNotJson": "The output is not valid JSON.",
+  "noticeBatterySaver": "Battery saver ({reason}): no thinking, answers up to {tokens} tokens, fewer pages read.",
+  "@noticeBatterySaver": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      },
+      "tokens": {
+        "type": "int"
+      }
+    }
+  },
+  "saverReasonBattery": "battery {level}%",
+  "@saverReasonBattery": {
+    "placeholders": {
+      "level": {
+        "type": "int"
+      }
+    }
+  },
+  "saverReasonHot": "phone hot: {label}",
+  "@saverReasonHot": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "newsCollecting": "Collecting today's stories from DuckDuckGo News and {count, plural, =1{1 publisher} other{{count} publishers}}…",
+  "@newsCollecting": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "newsReadingArticles": "Reading {count, plural, =1{1 article} other{{count} articles}}…",
+  "@newsReadingArticles": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chatErrorNoModel": "Add a model in the Models tab, then send your message.",
+  "chatErrorSave": "Could not save response: {error}. Copy the response before leaving this chat.",
+  "@chatErrorSave": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "chatErrorNoText": "The model produced no text. Try a different template or model.",
+  "chatErrorServing": "This phone is serving {model} to another device. Stop the device server (Settings) to chat with another model.",
+  "@chatErrorServing": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "chatErrorServerBusy": "The device server is still answering {client}. Try again when it has finished.",
+  "@chatErrorServerBusy": {
+    "placeholders": {
+      "client": {
+        "type": "String"
+      }
+    }
+  },
+  "settingGroupGeneration": "Generation",
+  "settingGroupReasoning": "Reasoning",
+  "settingGroupWeb": "Web research",
+  "settingGroupTools": "Tools",
+  "settingGroupOutput": "Structured output",
+  "settingGroupContext": "Context",
+  "settingGroupHardware": "Hardware",
+  "settingGroupPrompt": "Prompt",
+  "settingLabelSystemPrompt": "Custom instructions",
+  "settingLabelTemperature": "Temperature",
+  "settingLabelTopP": "Top-P",
+  "settingLabelMinP": "Min-P",
+  "settingLabelTopK": "Top-K",
+  "settingLabelTypicalP": "Typical-P",
+  "settingLabelRepetitionPenalty": "Repetition penalty",
+  "settingLabelPresencePenalty": "Presence penalty",
+  "settingLabelFrequencyPenalty": "Frequency penalty",
+  "settingLabelRepeatLastN": "Penalty window (tokens)",
+  "settingLabelMaxTokens": "Max tokens",
+  "settingLabelSeed": "Seed (0 = random)",
+  "settingLabelStopSequences": "Stop sequences",
+  "settingLabelThinkingModeEnabled": "Thinking mode",
+  "settingLabelThinkingBudgetTokens": "Thinking budget (0 = unlimited)",
+  "settingLabelWebMode": "Web research",
+  "settingLabelResearchLoop": "Model-driven research",
+  "settingLabelMaxPagesRead": "Pages to read",
+  "settingLabelEvidencePassages": "Passages given to the model",
+  "settingLabelKnowledgeCollection": "Knowledge collection",
+  "settingLabelToolsEnabled": "Tool calling",
+  "settingLabelToolChoice": "Tool use",
+  "settingLabelToolMaxRounds": "Tool rounds per answer",
+  "settingLabelResponseFormat": "Response format",
+  "settingLabelJsonSchema": "JSON schema",
+  "settingLabelGrammar": "GBNF grammar",
+  "settingLabelContextSize": "Context size",
+  "settingLabelPromptCache": "Keep conversation in context",
+  "settingLabelBackend": "Backend",
+  "settingLabelNGpuLayers": "GPU layers",
+  "settingLabelCpuThreads": "CPU threads (decode, 0 = auto)",
+  "settingLabelBatchThreads": "CPU threads (prefill, 0 = auto)",
+  "settingLabelFlashAttention": "Flash attention",
+  "settingLabelKvCacheType": "K cache type",
+  "settingLabelVCacheType": "V cache type (empty = same as K)",
+  "settingLabelRopeScaling": "RoPE scaling",
+  "settingLabelDraftModelId": "Draft model (speculative decoding)",
+  "hostLocalOnly": "Local network and VPN only",
+  "hostLocalOnlyHint": "Devices on this Wi-Fi, your hotspot or your VPN (Tailscale, WireGuard…) can connect with the token. Requests from the public internet are refused.",
+  "settingEmptyMeans": "Empty = {value}",
+  "@settingEmptyMeans": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "settingEffectiveValue": "Effective: {value}",
+  "@settingEffectiveValue": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "settingInherit": "Inherit ({value})",
+  "@settingInherit": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "remoteScanQr": "Scan QR code",
+  "remoteScanHint": "Point the camera at the QR code on the other phone (Settings > Use this device as a server).",
+  "remoteScanInvalid": "That QR code is not an OnDevice LLM connection. Keep aiming at the server’s code.",
+  "remoteScanNoCamera": "The camera is unavailable: {error}",
+  "@remoteScanNoCamera": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "remoteNameConnection": "Name this connection",
+  "remoteNameHint": "For example: Living-room PC",
+  "answerFromMemory": "From the model’s memory — may be out of date.",
+  "searchTheWeb": "Search the web",
+  "searchMissesTitle": "Questions sent to the web by hand",
+  "searchMissesHint": "{count, plural, =0{None yet. When an answer came from memory and you tapped Search the web, the question is kept here (on this phone only) so the search keywords can be improved.} =1{1 question. Copy them to improve the search keywords; they never leave this phone otherwise.} other{{count} questions. Copy them to improve the search keywords; they never leave this phone otherwise.}}",
+  "@searchMissesHint": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "commonCopied": "Copied.",
+  "settingsSearchSection": "Search",
+  "searchRegionHint": "Where news briefings and search results come from. Automatic follows the app language and the phone’s country setting (now {region}).",
+  "@searchRegionHint": {
+    "placeholders": {
+      "region": {
+        "type": "String"
+      }
+    }
+  },
+  "searchRegionAutomatic": "Automatic",
+  "researchLoopHint": "Questions that would be searched are researched by the model itself: it searches, picks pages to read, searches again if needed, then answers with citations. Pasted links are still read directly. Slower per question; compare on your own questions.",
+  "researchLoopNeedsTools": "Needs tool calling on with the web tools (Settings > Tools).",
+  "selectionTitle": "What should I do with the selected text?",
+  "selectionExplain": "Explain it",
+  "selectionSummarize": "Summarize it",
+  "selectionTranslate": "Translate it",
+  "selectionFix": "Fix spelling and grammar",
+  "selectionAsk": "Ask about it",
+  "quickDescribe": "Describe",
+  "quickDescribePrompt": "Describe this photo in detail.",
+  "quickExtractText": "Extract text",
+  "quickExtractTextPrompt": "Transcribe all the text in this image exactly as written, keeping the layout.",
+  "quickTranslate": "Translate",
+  "quickTranslatePrompt": "Translate all the text in this image into English.",
+  "quickSolve": "Solve",
+  "quickSolvePrompt": "Solve the problem shown in this image and explain each step.",
+  "quickExplain": "Explain",
+  "quickExplainPrompt": "Explain what this image shows and why it matters.",
+  "quickIdentify": "Identify",
+  "quickIdentifyPrompt": "What is this? Identify it and tell me what you know about it.",
+  "quickSummarise": "Summarise",
+  "quickSummarisePrompt": "Summarise this document: one-sentence takeaway, then the key points.",
+  "quickKeyPoints": "Key points",
+  "quickKeyPointsPrompt": "List the key points of this document as short bullets.",
+  "quickExplainSimply": "Explain simply",
+  "quickExplainSimplyPrompt": "Explain this document in plain language for someone new to the topic.",
+  "quickActionItems": "Action items",
+  "quickActionItemsPrompt": "List every action item, deadline and decision in this document.",
+  "quickQuestions": "Questions",
+  "quickQuestionsPrompt": "What questions should I ask about this document before relying on it?",
+  "sectionVoice": "Voice",
+  "sectionAutomation": "Shortcuts & automation",
+  "sectionModelConnections": "Model & connections",
+  "sectionAppearanceLanguage": "Appearance & language",
+  "sectionData": "Your data",
+  "advancedNote": "The defaults work well. These are for fine-tuning speed, memory use and output.",
+  "remoteRowOff": "Off · the model runs on this phone",
+  "backupRowHint": "Save or restore chats, attachments and settings",
+  "remoteRowOn": "On · {name}",
+  "@remoteRowOn": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "sectionCachePrecision": "Cache precision",
+  "sectionCapabilities": "Capabilities",
+  "sectionConnections": "Connections",
+  "sectionEvidence": "Sources given to the model",
+  "sectionExtraSamplers": "Extra samplers",
+  "sectionLayers": "Layers, lowest first",
+  "sectionPenalties": "Penalties",
+  "sectionRope": "Position encoding (RoPE / YaRN)",
+  "sectionReasoning": "Reasoning",
+  "sectionReproducibility": "Reproducibility",
+  "sectionSamplerOrder": "Sampler order",
+  "sectionSpeculative": "Speculative decoding (experimental)",
+  "sectionTools": "Tools",
+  "chatSettingsMenu": "This chat's settings",
+  "chatSettingsMenuCount": "This chat's settings · {count}",
+  "@chatSettingsMenuCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "remoteUsingSummary": "Chats run on {name} ({host}). Local models are not loaded.",
+  "remoteNeedsConnection": "Add a connection below to turn it on.",
+  "remoteNeedsUrl": "The selected connection needs a valid http(s) address.",
+  "remoteNoUrl": "no address",
+  "remoteNoKey": "no key",
+  "remoteScanShort": "Scan QR",
+  "remotePasteShort": "Paste",
+  "@remoteUsingSummary": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "modelProfile": "Profile",
+  "modelProfileCount": "Profile · {count}",
+  "@modelProfileCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "modelsFootnote": "Larger models give better answers but are slower and use more memory. The badge on each model says whether it fits this phone.",
+  "benchmarkRunAgain": "Run again",
+  "benchmarkMeasuredAt": "Measured {date}",
+  "@benchmarkMeasuredAt": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "unloadShort": "Unload",
+  "unsavedChanges": "Unsaved changes",
+  "savedNotice": "Saved",
+  "pickerLibrary": "Library",
+  "pickerConnections": "Connections",
+  "pickerReasoning": "reasoning",
+  "pickerTightRam": "tight on RAM",
+  "pickerTooLarge": "too large for this phone",
+  "pickerNoKey": "no key yet",
+  "goalPhaseVerifying": "Checking the report against the findings",
+  "goalGuardrails": "Guardrails",
+  "goalSubjectTitle": "Stay on these names",
+  "goalSubjectHint": "Found in your goal. The model must use them exactly; pages about similar models, versions or generations are left out.",
+  "goalSubjectNone": "No names found yet: products, people and places in your goal appear here as you type.",
+  "goalSubjectAdd": "Add a name",
+  "goalSubjectExample": "e.g. Sony ZV-E10",
+  "goalSubjectReset": "Reset",
+  "goalRulesLabel": "Your rules (optional)",
+  "goalRulesHint": "One per line, e.g. Prices in CAD · Only 2026 sources · No rumours",
+  "goalRulesBuiltIn": "Rules every goal follows",
+  "goalRuleSubject": "Uses your names exactly; never swaps in a similar model, version or generation.",
+  "goalRuleEvidence": "States only facts from the sources, each with its citation; nothing from memory.",
+  "goalRuleOffTopic": "Ignores sources about something else and says what is missing; never asks you for sources.",
+  "goalRuleFigures": "Copies numbers, dates and prices exactly; gives both sides when sources disagree.",
+  "goalRuleThinking": "Thinks briefly before the plan and the evidence review; the steps and the report answer directly, so a run is faster.",
+  "goalRuleCheck": "Every step and the report are checked automatically; a failed check is redone once.",
+  "goalCheckDrift": "Mentions {names}, not the goal's subject",
+  "@goalCheckDrift": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
+  "goalCheckOffTarget": "Researched {names} instead: left out of the report",
+  "@goalCheckOffTarget": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
+  "goalCheckNoSources": "No sources found",
+  "goalCheckNoCitations": "Cites no sources",
+  "goalCheckBadCitations": "Cites sources that do not exist: {numbers}",
+  "@goalCheckBadCitations": {
+    "placeholders": {
+      "numbers": {
+        "type": "String"
+      }
+    }
+  },
+  "goalCheckFigures": "Figures found in no source: {figures}",
+  "@goalCheckFigures": {
+    "placeholders": {
+      "figures": {
+        "type": "String"
+      }
+    }
+  },
+  "goalCheckDroppedFigures": "Left out figures no source states: {figures}",
+  "@goalCheckDroppedFigures": {
+    "placeholders": {
+      "figures": {
+        "type": "String"
+      }
+    }
+  },
+  "goalCheckAskedUser": "Asked you for information",
+  "goalCheckRetried": "Researched again after a failed check",
+  "goalCheckRevised": "Rewritten once to fix the check",
+  "goalReportChecked": "Checked: names, citations and figures match the findings",
+  "goalStepSearched": "Searched",
+  "goalStepTools": "Tool calls",
+  "goalStepSources": "Sources",
+  "goalStepReasoning": "Reasoning",
+  "goalStepStats": "{prompt} prompt + {tokens} generated tokens · {seconds} s · {tps} tok/s",
+  "@goalStepStats": {
+    "placeholders": {
+      "prompt": {
+        "type": "int"
+      },
+      "tokens": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "String"
+      },
+      "tps": {
+        "type": "String"
+      }
+    }
+  },
+  "goalStepSearchCount": "{count, plural, =1{1 search} other{{count} searches}}",
+  "@goalStepSearchCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "goalStepToolCount": "{count, plural, =1{1 tool call} other{{count} tool calls}}",
+  "@goalStepToolCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "goalPlanNotes": "How the plan was made",
+  "goalReviewNotes": "Reviewer's reasoning",
+  "goalCheckLeak": "Reasoning that ran into the answer was removed",
+  "goalSmallModel": "{model} is a small model: goals are much more accurate with Gemma 4 E2B or a larger model (it stays on the subject and cites its sources).",
+  "@goalSmallModel": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "goalPartial": "Partial result — more evidence needed",
+  "goalCriteriaReview": "Success criteria",
+  "goalEvidenceSteps": "Evidence: steps {steps}",
+  "@goalEvidenceSteps": {
+    "placeholders": {
+      "steps": {
+        "type": "String"
+      }
+    }
+  },
+  "backupExportReady": "Encrypted backup handed to the export sheet.",
+  "remoteShareMemory": "Share memory with this connection",
+  "remoteShareMemoryHint": "Allow selected notes to be included in requests to this server.",
+  "remoteLearnMemory": "Learn memory using this connection",
+  "remoteLearnMemoryHint": "Allow a separate server request to extract durable facts from your messages. Simple explicit facts can still be saved locally when Memory is on.",
+  "memoryPin": "Always consider this note",
+  "memoryUnpin": "Unpin note",
+  "memoryReconfirm": "Confirm this is still accurate",
+  "memoryExpire": "Expire in 30 days",
+  "memoryNoExpiry": "Remove expiry",
+  "memoryExpires": "Expires {date}",
+  "settingsSearch": "Search settings",
+  "settingsFaster": "Faster replies",
+  "settingsDetailed": "More detail",
+  "settingsLessMemory": "Use less RAM",
+  "imageTokenBudget": "Photo token budget",
+  "imageTokenBudgetHint": "More detail uses more memory and time. Reloads the model.",
+  "documentPreview": "Preview",
+  "documentEdit": "Edit",
+  "documentDraftSaved": "Draft saved on this device",
+  "@memoryExpires": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "documentVersions": "Version history",
+  "goalQuestionsTitle": "A few questions first",
+  "goalQuestionsHint": "Your preferences can make the report more useful. Choose an answer, type your own, or skip. Research waits until you continue.",
+  "goalYourAnswer": "Your answer (optional)",
+  "goalQuestionsLater": "Later",
+  "goalQuestionsSkip": "Skip and continue",
+  "goalPhaseClarifying": "Checking whether clarification would help…",
+  "goalWaitingAnswers": "Waiting for your answers",
+  "goalAnswerQuestions": "Answer questions",
+  "goalClarificationAnswers": "Your clarification answers",
+  "goalAssumptionsAllowed": "Skipped — the report will state its assumptions.",
+  "goalSearchGuidance": "Search and report direction",
+  "goalSearchGuidanceHint": "Explain what the report missed, which questions to search, and what to emphasize.",
+  "goalRefineRun": "Save and research",
+  "goalCriteriaSeparate": "One requirement per line, so coverage can be measured.",
+  "goalCoverage": "Supported requirements: {percent}% · target {target}%",
+  "goalCompletionHint": "Stop when this share of requirements is supported. Remaining gaps stay visible; citations and factual checks still apply.",
+  "goalCompletionTarget": "Completion target",
+  "goalRefine": "Edit goal / steer research",
+  "memoryScanResult": "Recovered {count} memories from saved chats.",
+  "memoryScanHistory": "Scan saved chats for missed memories",
+  "goalEvidenceWorkspace": "Compare evidence",
+  "goalEvidenceSnapshotHint": "Compare the saved source excerpts with the step findings. These are the excerpts the model used; a page opened today may have changed. A source or a passed automatic check does not by itself prove a claim.",
+  "goalEvidenceSupported": "Requirement supported",
+  "goalEvidenceGap": "Requirement needs evidence",
+  "goalEvidenceMissing": "No retrieved excerpt was saved for this source.",
+  "goalEvidenceFind": "Find text in these sources",
+  "goalEvidencePublished": "Published",
+  "goalEvidenceRetrieved": "Retrieved",
+  "goalEvidenceOpen": "Open page",
+  "goalEvidenceCopy": "Copy excerpt",
+  "goalEvidenceNoMatch": "No match in this saved excerpt.",
+  "goalEvidenceExcluded": "This step was excluded from report evidence.",
+  "contextInspector": "Context inspector",
+  "contextSnapshotHint": "Saved context selection for this answer. Excerpts help you inspect it; they are not automatically used as summaries in future answers.",
+  "contextSnapshotMissing": "This older answer has no saved context snapshot.",
+  "contextTokens": "Context tokens",
+  "contextIsolated": "This request used its current question without earlier chat turns.",
+  "contextInstructions": "Instructions given to the model",
+  "contextCharacters": "characters",
+  "contextMessages": "Conversation messages",
+  "contextIncluded": "Included",
+  "contextOmittedIsolated": "Omitted for this independent request",
+  "contextOmittedLimit": "Omitted to fit the context limit; kept in history",
+  "contextImages": "images",
+  "contextDocuments": "documents",
+  "contextSnippetOnly": "Search snippet only; page was not read",
+  "contextStale": "Cached evidence may be outdated",
+  "goalModelLabel": "Model",
+  "goalModelNone": "No local model ready",
+  "goalModelOnStart": "loads when the Goal starts",
+  "contextOmitted": "Omitted",
+  "contextEarlierHidden": "Earlier message previews not shown",
+  "contextCapTrain": "Context set to {size} tokens, the most this model was trained for.",
+  "@contextCapTrain": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "contextCapMemory": "Context set to {size} tokens so the model fits in free memory.",
+  "@contextCapMemory": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "notEnoughMemory": "Not enough free memory for this model: it needs about {need} MB and {free} MB is free. Close other apps or choose a smaller model.",
+  "@notEnoughMemory": {
+    "placeholders": {
+      "need": {
+        "type": "int",
+        "format": "decimalPattern"
+      },
+      "free": {
+        "type": "int",
+        "format": "decimalPattern"
+      }
+    }
+  },
+  "contextTrainedFor": "The loaded model was trained for {size} tokens.",
+  "@contextTrainedFor": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "contextTrainedForCapped": "The loaded model was trained for {size} tokens. A larger context is shortened to that when the model loads, unless RoPE scaling is set under Memory, RoPE & speculation.",
+  "@contextTrainedForCapped": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "contextTrainedForStretched": "The loaded model was trained for {size} tokens; RoPE scaling stretches it past that, and quality can drop.",
+  "@contextTrainedForStretched": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "photosAndVoiceNotes": "Photos and voice notes",
+  "photosAndVoiceNotesBody": "Find photos by what they show and recordings by what they say, with the same questions as your documents. Runs on the phone; ~{mb} MB once.",
+  "@photosAndVoiceNotesBody": {
+    "placeholders": {
+      "mb": {
+        "type": "Object"
+      }
+    }
+  },
+  "photosAndVoiceNotesReady": "Photos and recordings are matched by what they show or say.",
+  "noticeClaimsNotInSources": "Not backed by the sources: {claims}{more}. Check these statements before relying on them.",
+  "@noticeClaimsNotInSources": {
+    "placeholders": {
+      "claims": {
+        "type": "String"
+      },
+      "more": {
+        "type": "String"
+      }
+    }
+  },
+  "noticeClaimsNames": "names or dates no source mentions: {details}",
+  "@noticeClaimsNames": {
+    "placeholders": {
+      "details": {
+        "type": "String"
+      }
+    }
+  },
+  "naturalVoiceTitle": "Natural on-device voice",
+  "naturalVoiceHint": "Whisper listens and Kokoro speaks, entirely on this phone. Falls back to the system voice when not downloaded.",
+  "talkOverTitle": "Talk over the answer",
+  "talkOverHint": "In a conversation, interrupt by speaking. The answer then sounds like a phone call. Off: clear sound, tap to interrupt.",
+  "spokenLengthTitle": "Spoken answer length",
+  "spokenLengthHint": "How much of an answer Conversation says out loud. Lists are always read in full.",
+  "spokenLengthShort": "Short (3 sentences)",
+  "spokenLengthLonger": "Longer (6 sentences)",
+  "spokenLengthFull": "Whole answer",
+  "voiceListeningPack": "Listening (Whisper)",
+  "voiceSpeakingPack": "Speaking (Kokoro)",
+  "listeningModelTitle": "Listening model",
+  "listeningModelHint": "Parakeet v3 heard every test phrase on the phone and answers faster than Whisper; it also understands French and Spanish better. It is a separate download and uses more memory while you talk. Parakeet TDT 0.6B v3 by NVIDIA, CC BY 4.0.",
+  "listeningWhisper": "Whisper base",
+  "listeningParakeet": "Parakeet v3",
+  "voiceUnpacking": "Unpacking…",
+  "voicePick": "Voice",
+  "voiceTry": "Try",
+  "voiceSample": "Hi! This is how I sound when I read your answers aloud.",
+  "voiceDownloadBoth": "Download the on-device voice",
+  "conversationTitle": "Conversation",
+  "convListening": "Listening…",
+  "convThinking": "Thinking…",
+  "convLookingUp": "Looking it up…",
+  "convSpeaking": "Speaking · talk to interrupt",
+  "convSpeakingTap": "Speaking · tap to interrupt",
+  "convPaused": "Microphone off",
+  "convNeedsVoice": "For a natural, hands-free conversation, download the on-device voice (about 290 MB). Until then the system voice is used.",
+  "convModelMissing": "{model} is not downloaded, so another downloaded model answers. Download it in Models, or pick a model with the button at the top right.",
+  "@convModelMissing": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "convNoModel": "Load a model first.",
+  "convModelTitle": "Conversation model",
+  "convModelHint": "Conversation answers with Qwen3.5 0.8B on the phone: it starts speaking in a few seconds. With a remote connection on, its model can answer instead.",
+  "convModelRemote": "Searches by itself when needed and remembers the whole conversation",
+  "convRemoteFailed": "The remote connection did not answer ({error}). Answering on the phone.",
+  "@convRemoteFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "convModelFastest": "fastest",
+  "convMicDenied": "The microphone is not allowed. Allow it in the phone's settings to talk.",
+  "convEnd": "End conversation",
+  "convStopAnswer": "Stop answer",
+  "convMute": "Mute microphone",
+  "convUnmute": "Turn microphone on",
+  "convLoadingModel": "Loading {model}…",
+  "@convLoadingModel": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "convHint": "Just talk. I answer out loud; talk over me to interrupt.",
+  "convInterrupt": "Interrupt",
+  "actionEvent": "Add to calendar",
+  "actionReminder": "Add reminder",
+  "actionAlarm": "Set alarm",
+  "actionTimer": "Start timer",
+  "actionMessage": "Open draft",
+  "actionFile": "Save or share",
+  "actionNoApp": "No app on this phone can do this.",
+  "actionConfirmHint": "Prepared for you: you confirm in the app that opens.",
+  "actionConfirmDone": "I completed this action",
+  "actionConfirmedAt": "Confirmed at {time}",
+  "@actionConfirmedAt": {"placeholders": {"time": {"type": "String"}}},
+  "goalAwaitingActions": "Waiting for your action confirmation",
+  "actionReadyAnswer": "Ready. Check the card below and tap its button to finish.",
+  "@actionReadyAnswer": {
+    "description": "The answer text when the model prepared a phone action but wrote nothing."
+  },
+  "echoedAnswer": "The model copied its instructions instead of answering, so no answer is shown. Open the sources below, or ask again in other words.",
+  "@echoedAnswer": {
+    "description": "The answer text when the model copied its prompt twice instead of answering from the sources."
+  },
+  "goalActionsTitle": "Ready to do",
+  "goalSaveReport": "Save report as file",
+  "goalWatch": "Watch daily",
+  "goalWatchSet": "Watching daily at {time}. A background search checks for changes and notifies you when a new result or figure changes. The full goal runs again only when you ask.",
+  "@goalWatchSet": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "goalPreparingActions": "Preparing actions…",
+  "goalPhaseDelivering": "Preparing what the goal asked for",
+  "goalNotPrepared": "Not prepared: {item} ({reason})",
+  "@goalNotPrepared": {
+    "placeholders": {
+      "item": {
+        "type": "String"
+      },
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "goalDeliverableFile": "the {format} file",
+  "@goalDeliverableFile": {
+    "placeholders": {
+      "format": {
+        "type": "String"
+      }
+    }
+  },
+  "goalDeliverableEvent": "the calendar event",
+  "goalDeliverableReminder": "the reminder",
+  "goalDeliverableAlarm": "the alarm",
+  "goalDeliverableTimer": "the timer",
+  "goalDeliverableMessage": "the message draft",
+  "goalNotPreparedStopped": "the goal was stopped",
+  "goalNotPreparedBudget": "the goal's budget ran out",
+  "goalNotPreparedUnreadable": "the model's reply could not be read",
+  "goalNotPreparedTooLong": "the report is too long for one file",
+  "goalNotPreparedNone": "the model proposed none",
+  "goalNotPreparedInvalid": "the model's proposal was incomplete: {problem}",
+  "@goalNotPreparedInvalid": {
+    "placeholders": {
+      "problem": {
+        "type": "String"
+      }
+    }
+  },
+  "goalWatchesTitle": "Watched goals",
+  "goalWatchChecking": "Checking…",
+  "goalWatchWebOff": "Web search is off",
+  "goalWatchNoResults": "The search found nothing",
+  "goalWatchOffline": "Could not search (offline?)",
+  "goalWatchNotYet": "Not checked yet",
+  "goalWatchBaseline": "First results kept {when}",
+  "@goalWatchBaseline": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "goalWatchNoChange": "No change · {when}",
+  "@goalWatchNoChange": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "goalWatchChanged": "{fresh} new, {figures} changed figures · {when}",
+  "@goalWatchChanged": {
+    "placeholders": {
+      "fresh": {
+        "type": "int"
+      },
+      "figures": {
+        "type": "int"
+      },
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "goalWatchDailyAt": "daily at {time}",
+  "@goalWatchDailyAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "goalWatchNewResult": "New: {title}",
+  "@goalWatchNewResult": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "goalWatchCheckNow": "Check now",
+  "goalWatchRunAgain": "Run the goal again",
+  "goalWatchStop": "Stop watching",
+  "actionOpenedAt": "Opened at {time}: confirm it there",
+  "@actionOpenedAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "remoteServerSettings": "Use the server's own settings",
+  "remoteServerSettingsHint": "Temperature, sampling, answer length and context come from the model on this connection (Gemini's defaults, the settings LM Studio loaded it with…), not from the phone's presets.",
+  "sheetAttachments": "Attachments and tools",
+  "sheetNotice": "Notice"
+}

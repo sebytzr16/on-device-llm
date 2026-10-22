@@ -1,0 +1,69 @@
+name: Release research and Goal device checks
+
+# Requires a maintained Windows runner with a USB Android phone and Android SDK.
+# Keep physical-device work separate from ordinary pull-request validation.
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: ADB serial of the attached Android phone
+        required: true
+        type: string
+      scenario:
+        description: Release probe to run on the phone
+        required: true
+        default: basic
+        type: choice
+        options:
+          - basic
+          - recovery
+          - recipes
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-android-phone
+  cancel-in-progress: false
+
+jobs:
+  release-quality:
+    runs-on: [self-hosted, Windows, android-phone]
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.5'
+          channel: stable
+      - name: Prepare pinned native dependencies and test model
+        shell: pwsh
+        run: |
+          if (-not $env:ODLLM_QUALITY_MODEL -or -not (Test-Path -LiteralPath $env:ODLLM_QUALITY_MODEL -PathType Leaf)) {
+            throw 'Configure ODLLM_QUALITY_MODEL on the runner with the Qwen3.5-2B-IQ4_NL.gguf acceptance model.'
+          }
+          New-Item -ItemType Directory -Force test-assets | Out-Null
+          Copy-Item -LiteralPath $env:ODLLM_QUALITY_MODEL -Destination test-assets/Qwen3.5-2B-IQ4_NL.gguf
+          ./scripts/bootstrap.ps1
+          ./scripts/build-native-variant.ps1 -Remove
+      - name: Run production-mode research and Goal acceptance
+        shell: pwsh
+        env:
+          QUALITY_DEVICE: ${{ inputs.device }}
+          QUALITY_SCENARIO: ${{ inputs.scenario }}
+        run: |
+          switch ($env:QUALITY_SCENARIO) {
+            'recovery' { ./scripts/test-release-quality.ps1 -Device $env:QUALITY_DEVICE -Recovery -TimeoutSeconds 2400 }
+            'recipes' { ./scripts/test-release-quality.ps1 -Device $env:QUALITY_DEVICE -Eval eval/research_recipes_gold.json -TimeoutSeconds 2400 }
+            default { ./scripts/test-release-quality.ps1 -Device $env:QUALITY_DEVICE }
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-device-quality
+          path: |
+            artifacts/release-quality.log
+            artifacts/quality-smoke-release.apk
+          retention-days: 14

@@ -1,0 +1,1659 @@
+{
+ "version": 1,
+ "frozenAt": "2026-10-11",
+ "about": "D1 benchmark: the search-pipeline comparison set. Every configuration (A model only, B current search, C D1, D rules + EmbeddingGemma 2) answers these questions against the same frozen web record (integration_test/support/frozen_web.dart). web: true = should search, false = should answer without the web, null = either is acceptable (graded on the answer). requiredFacts: every group must be stated (any alternative); a model-drafted rubric, checked by hand. goldFromFrozenWeb: the answer changes over time; its gold is what the frozen web record states. Ages are as of the freeze date. Router and claim tie-breaker cases stay in their own files. Built by scripts/build-d1-benchmark.py.",
+ "routerCases": "eval/keyword_cases.json",
+ "claimCases": "eval/research_adversarial.json",
+ "questions": [
+  {
+   "id": "flutter-version",
+   "set": "research",
+   "kind": "recent",
+   "lang": "en",
+   "q": "What is the latest stable version of the Flutter SDK?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "3.47",
+     "3.47.0",
+     "3.47.1",
+     "3.47.2",
+     "3.47.3",
+     "3.47.4",
+     "3.47.5",
+     "3.47.6",
+     "3.47.7",
+     "3.47.8",
+     "3.47.9",
+     "3.47.10",
+     "3.47.11",
+     "3.47.12"
+    ]
+   ],
+   "goldFromFrozenWeb": true,
+   "expect": [
+    "3.4",
+    "3.5"
+   ]
+  },
+  {
+   "id": "qualcomm-ceo",
+   "set": "research",
+   "kind": "recent",
+   "lang": "en",
+   "q": "Who is the current CEO of Qualcomm?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "Amon"
+    ]
+   ],
+   "goldFromFrozenWeb": true,
+   "expect": [
+    "Amon"
+   ]
+  },
+  {
+   "id": "python-version",
+   "set": "research",
+   "kind": "recent",
+   "lang": "en",
+   "q": "What is the latest stable version of Python?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "3.15",
+     "3.15.0",
+     "3.15.1",
+     "3.15.2",
+     "3.15.3"
+    ]
+   ],
+   "goldFromFrozenWeb": true,
+   "expect": [
+    "3.1"
+   ]
+  },
+  {
+   "id": "linux-kernel",
+   "set": "research",
+   "kind": "recent",
+   "lang": "en",
+   "q": "What is the newest stable Linux kernel release?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "7.2",
+     "7.2.0",
+     "7.2.1",
+     "7.2.2",
+     "7.2.3",
+     "7.2.4",
+     "7.2.5",
+     "7.2.6",
+     "7.2.7",
+     "7.2.8",
+     "7.2.9",
+     "7.2.10",
+     "7.2.11",
+     "7.2.12",
+     "7.2.13",
+     "7.2.14",
+     "7.2.15",
+     "7.3",
+     "7.3.0",
+     "7.3.1",
+     "7.3.2",
+     "7.3.3",
+     "7.3.4",
+     "7.3.5"
+    ]
+   ],
+   "goldFromFrozenWeb": true,
+   "expect": [
+    "6.",
+    "7."
+   ]
+  },
+  {
+   "id": "un-secretary",
+   "set": "research",
+   "kind": "recent",
+   "lang": "en",
+   "q": "Who is the current Secretary-General of the United Nations?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "Guterres"
+    ]
+   ],
+   "goldFromFrozenWeb": true,
+   "expect": [
+    "Guterres"
+   ]
+  },
+  {
+   "id": "spain-eclipse",
+   "set": "research",
+   "kind": "recent",
+   "lang": "en",
+   "q": "When is the next total solar eclipse visible from Spain?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "August 2, 2027",
+     "2 August 2027",
+     "August 2nd, 2027",
+     "2nd August 2027"
+    ]
+   ],
+   "goldFromFrozenWeb": true,
+   "expect": [
+    "2027",
+    "2026"
+   ]
+  },
+  {
+   "id": "8elite-gpu",
+   "set": "research",
+   "kind": "fact",
+   "lang": "en",
+   "q": "What GPU is inside the Snapdragon 8 Elite chip?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "Adreno 830",
+     "Adreno"
+    ]
+   ],
+   "expect": [
+    "Adreno 830",
+    "Adreno"
+   ]
+  },
+  {
+   "id": "llamacpp-license",
+   "set": "research",
+   "kind": "fact",
+   "lang": "en",
+   "q": "What open-source license does llama.cpp use?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "MIT"
+    ]
+   ],
+   "expect": [
+    "MIT"
+   ]
+  },
+  {
+   "id": "dart-company",
+   "set": "research",
+   "kind": "fact",
+   "lang": "en",
+   "q": "Which company created the Dart programming language?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "Google"
+    ]
+   ],
+   "expect": [
+    "Google"
+   ]
+  },
+  {
+   "id": "australia-capital",
+   "set": "research",
+   "kind": "fact",
+   "lang": "en",
+   "q": "What is the capital city of Australia?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "Canberra"
+    ]
+   ],
+   "expect": [
+    "Canberra"
+   ]
+  },
+  {
+   "id": "gguf",
+   "set": "research",
+   "kind": "fact",
+   "lang": "en",
+   "q": "What is the GGUF file format used for?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "llama.cpp",
+     "GGML",
+     "language model",
+     "language models",
+     "model weights"
+    ]
+   ],
+   "expect": [
+    "llama.cpp",
+    "model",
+    "GGML"
+   ]
+  },
+  {
+   "id": "solitude-author",
+   "set": "research",
+   "kind": "fact",
+   "lang": "en",
+   "q": "Who wrote the novel One Hundred Years of Solitude?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "García Márquez",
+     "Garcia Marquez",
+     "Márquez",
+     "Marquez"
+    ]
+   ],
+   "expect": [
+    "Márquez",
+    "Marquez"
+   ]
+  },
+  {
+   "id": "symbol-w",
+   "set": "research",
+   "kind": "fact",
+   "lang": "en",
+   "q": "Which chemical element has the symbol W?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "tungsten",
+     "wolfram"
+    ]
+   ],
+   "expect": [
+    "tungsten",
+    "wolfram"
+   ]
+  },
+  {
+   "id": "budapest-river",
+   "set": "research",
+   "kind": "fact",
+   "lang": "en",
+   "q": "Which river flows through Budapest?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "Danube"
+    ]
+   ],
+   "expect": [
+    "Danube"
+   ]
+  },
+  {
+   "id": "http-418",
+   "set": "research",
+   "kind": "fact",
+   "lang": "en",
+   "q": "What does HTTP status code 418 mean?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "teapot"
+    ]
+   ],
+   "expect": [
+    "teapot"
+   ]
+  },
+  {
+   "id": "postgres-port",
+   "set": "research",
+   "kind": "number",
+   "lang": "en",
+   "q": "What is the default TCP port for PostgreSQL?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "5432"
+    ]
+   ],
+   "expect": [
+    "5432"
+   ]
+  },
+  {
+   "id": "ethanol-boiling",
+   "set": "research",
+   "kind": "number",
+   "lang": "en",
+   "q": "What is the boiling point of ethanol in degrees Celsius?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "78",
+     "78.3",
+     "78.37",
+     "78.4",
+     "78.5"
+    ]
+   ],
+   "expect": [
+    "78"
+   ]
+  },
+  {
+   "id": "ipv6-bits",
+   "set": "research",
+   "kind": "number",
+   "lang": "en",
+   "q": "How many bits are in an IPv6 address?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "128"
+    ]
+   ],
+   "expect": [
+    "128"
+   ]
+  },
+  {
+   "id": "iphone-year",
+   "set": "research",
+   "kind": "number",
+   "lang": "en",
+   "q": "In what year was the first iPhone released?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "2007"
+    ]
+   ],
+   "expect": [
+    "2007"
+   ]
+  },
+  {
+   "id": "android-16kb",
+   "set": "research",
+   "kind": "number",
+   "lang": "en",
+   "q": "Starting with which Android version does Google require apps to support 16 KB page sizes?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "Android 15",
+     "15"
+    ]
+   ],
+   "expect": [
+    "15",
+    "16"
+   ]
+  },
+  {
+   "id": "mars-moons",
+   "set": "research",
+   "kind": "number",
+   "lang": "en",
+   "q": "How many moons does Mars have?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "two",
+     "2"
+    ]
+   ],
+   "expect": [
+    "two",
+    " 2 ",
+    "2 moons",
+    "2 natural"
+   ]
+  },
+  {
+   "id": "light-speed",
+   "set": "research",
+   "kind": "number",
+   "lang": "en",
+   "q": "What is the speed of light in a vacuum, in kilometres per second?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "299,792",
+     "299 792",
+     "299792",
+     "300,000",
+     "300 000",
+     "300000"
+    ]
+   ],
+   "expect": [
+    "299",
+    "300"
+   ]
+  },
+  {
+   "id": "kilimanjaro",
+   "set": "research",
+   "kind": "number",
+   "lang": "en",
+   "q": "How tall is Mount Kilimanjaro in metres?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "5,895",
+     "5895",
+     "5 895"
+    ]
+   ],
+   "expect": [
+    "5,895",
+    "5895",
+    "5 895"
+   ]
+  },
+  {
+   "id": "ssh-port",
+   "set": "research",
+   "kind": "number",
+   "lang": "en",
+   "q": "What is the default port of the SSH protocol?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "22"
+    ]
+   ],
+   "expect": [
+    "22"
+   ]
+  },
+  {
+   "id": "kibibyte",
+   "set": "research",
+   "kind": "number",
+   "lang": "en",
+   "q": "How many bytes are in a kibibyte?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "1024",
+     "1,024"
+    ]
+   ],
+   "expect": [
+    "1024",
+    "1,024"
+   ]
+  },
+  {
+   "id": "ls-hidden",
+   "set": "research",
+   "kind": "howto",
+   "lang": "en",
+   "q": "How do I list hidden files in a directory with the ls command?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "ls -a",
+     "ls -A",
+     "ls -la",
+     "ls -al",
+     "ls -lA",
+     "-a"
+    ]
+   ],
+   "expect": [
+    "ls -a",
+    "ls -A",
+    "ls -la",
+    "-a "
+   ]
+  },
+  {
+   "id": "git-undo",
+   "set": "research",
+   "kind": "howto",
+   "lang": "en",
+   "q": "How do I undo the last git commit but keep the changes in my working tree?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "--soft",
+     "--mixed",
+     "HEAD~1",
+     "HEAD~",
+     "HEAD^"
+    ]
+   ],
+   "expect": [
+    "--soft",
+    "reset HEAD~",
+    "reset --mixed",
+    "git reset"
+   ]
+  },
+  {
+   "id": "adb-version",
+   "set": "research",
+   "kind": "howto",
+   "lang": "en",
+   "q": "How do I check a phone's Android version from adb?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "ro.build.version.release"
+    ]
+   ],
+   "expect": [
+    "ro.build.version.release",
+    "getprop"
+   ]
+  },
+  {
+   "id": "c-to-f",
+   "set": "research",
+   "kind": "howto",
+   "lang": "en",
+   "q": "How do you convert a temperature from Celsius to Fahrenheit?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "9/5",
+     "1.8",
+     "9 / 5"
+    ],
+    [
+     "32"
+    ]
+   ],
+   "expect": [
+    "9/5",
+    "1.8",
+    "32"
+   ]
+  },
+  {
+   "id": "vancouver-tz",
+   "set": "research",
+   "kind": "local",
+   "lang": "en",
+   "q": "What time zone is Vancouver in?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "Pacific",
+     "PST",
+     "PDT",
+     "UTC-8",
+     "UTC−8",
+     "UTC-7",
+     "UTC−7"
+    ]
+   ],
+   "expect": [
+    "Pacific",
+    "PST",
+    "PDT",
+    "UTC-8",
+    "UTC−8",
+    "UTC-7",
+    "UTC−7"
+   ]
+  },
+  {
+   "id": "japan-currency",
+   "set": "research",
+   "kind": "local",
+   "lang": "en",
+   "q": "What is the currency of Japan?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "yen",
+     "JPY"
+    ]
+   ],
+   "expect": [
+    "yen",
+    "JPY"
+   ]
+  },
+  {
+   "id": "yyz",
+   "set": "research",
+   "kind": "local",
+   "lang": "en",
+   "q": "Which airport has the IATA code YYZ?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "Pearson",
+     "Toronto"
+    ]
+   ],
+   "expect": [
+    "Toronto",
+    "Pearson"
+   ]
+  },
+  {
+   "id": "mercury",
+   "set": "research",
+   "kind": "ambiguous",
+   "lang": "en",
+   "q": "What is Mercury?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "planet",
+     "element",
+     "metal"
+    ]
+   ],
+   "expect": [
+    "planet",
+    "element",
+    "metal",
+    "god"
+   ]
+  },
+  {
+   "id": "fly-to-paris",
+   "set": "research",
+   "kind": "ambiguous",
+   "lang": "en",
+   "q": "How long does it take to fly to Paris?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "depend",
+     "depends",
+     "depending",
+     "where you",
+     "from where"
+    ]
+   ],
+   "expect": [
+    "depend",
+    "where",
+    "from"
+   ]
+  },
+  {
+   "id": "georgia-population",
+   "set": "research",
+   "kind": "ambiguous",
+   "lang": "en",
+   "q": "What is the population of Georgia?",
+   "web": null,
+   "requiredFacts": [
+    [
+     "million"
+    ]
+   ],
+   "expect": [
+    "million"
+   ]
+  },
+  {
+   "id": "adreno-hq",
+   "set": "research",
+   "kind": "multihop",
+   "lang": "en",
+   "q": "Which company makes the GPU inside the Snapdragon 8 Elite, and in which city is that company headquartered?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "San Diego"
+    ]
+   ],
+   "expect": [
+    "San Diego"
+   ]
+  },
+  {
+   "id": "dart-founded",
+   "set": "research",
+   "kind": "multihop",
+   "lang": "en",
+   "q": "In what year was the company that created the Dart programming language founded?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "1998"
+    ]
+   ],
+   "expect": [
+    "1998"
+   ]
+  },
+  {
+   "id": "android15-ios18",
+   "set": "research",
+   "kind": "multihop",
+   "lang": "en",
+   "q": "In which year were Android 15 and iOS 18 released?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "2024"
+    ]
+   ],
+   "expect": [
+    "2024"
+   ]
+  },
+  {
+   "id": "url-adreno",
+   "set": "research",
+   "kind": "url",
+   "lang": "en",
+   "q": "Summarize the main points of https://en.wikipedia.org/wiki/Adreno in three sentences.",
+   "web": true,
+   "requiredFacts": [
+    [
+     "Qualcomm"
+    ]
+   ],
+   "expect": [
+    "Qualcomm"
+   ]
+  },
+  {
+   "id": "url-robots",
+   "set": "research",
+   "kind": "url",
+   "lang": "en",
+   "q": "According to https://www.rfc-editor.org/rfc/rfc9309.html, which file do crawlers fetch to find the access rules?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "robots.txt"
+    ]
+   ],
+   "expect": [
+    "robots.txt"
+   ]
+  },
+  {
+   "id": "url-rfc2324",
+   "set": "research",
+   "kind": "url",
+   "lang": "en",
+   "q": "What does https://www.rfc-editor.org/rfc/rfc2324.html define?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "HTCPCP",
+     "Hyper Text Coffee Pot",
+     "coffee"
+    ]
+   ],
+   "expect": [
+    "coffee",
+    "HTCPCP",
+    "teapot"
+   ]
+  },
+  {
+   "id": "pdf-attention",
+   "set": "research",
+   "kind": "pdf",
+   "lang": "en",
+   "q": "What architecture does the paper at https://arxiv.org/pdf/1706.03762 propose?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "Transformer"
+    ]
+   ],
+   "expect": [
+    "Transformer",
+    "attention"
+   ]
+  },
+  {
+   "id": "future-weather",
+   "set": "research",
+   "kind": "none",
+   "lang": "en",
+   "q": "What will the weather be in Toronto on 1 January 2031?",
+   "web": null,
+   "unanswerable": true,
+   "expect": []
+  },
+  {
+   "id": "future-stock",
+   "set": "research",
+   "kind": "none",
+   "lang": "en",
+   "q": "What was the closing price of Apple stock on 3 March 2043?",
+   "web": null,
+   "unanswerable": true,
+   "expect": []
+  },
+  {
+   "id": "future-worldcup",
+   "set": "research",
+   "kind": "none",
+   "lang": "en",
+   "q": "Who will win the 2034 FIFA World Cup?",
+   "web": null,
+   "unanswerable": true,
+   "expect": []
+  },
+  {
+   "id": "health-measles-doses",
+   "recipe": "health",
+   "kind": "number",
+   "q": "According to WHO health guidance, how many measles vaccine doses should children receive to ensure immunity?",
+   "requiredFacts": [
+    [
+     "two doses",
+     "2 doses"
+    ]
+   ],
+   "referenceAnswer": "WHO recommends two doses of measles vaccine for children.",
+   "referenceSources": [
+    "https://www.who.int/news-room/fact-sheets/detail/measles"
+   ],
+   "set": "gold",
+   "lang": "en",
+   "web": true
+  },
+  {
+   "id": "law-ontario-majority",
+   "recipe": "law",
+   "kind": "number",
+   "q": "Under Ontario's Age of Majority and Accountability Act, at what age does a person cease to be a minor?",
+   "requiredFacts": [
+    [
+     "18",
+     "eighteen"
+    ]
+   ],
+   "referenceAnswer": "Ontario's statute sets the age of majority at eighteen years.",
+   "referenceSources": [
+    "https://www.ontario.ca/laws/statute/90a07"
+   ],
+   "set": "gold",
+   "lang": "en",
+   "web": true
+  },
+  {
+   "id": "finance-sec-10k",
+   "recipe": "finance",
+   "kind": "fact",
+   "q": "For SEC financial filings, is Form 10-K an annual or quarterly report, and does it include audited financial statements?",
+   "requiredFacts": [
+    "annual",
+    "audited financial statements"
+   ],
+   "referenceAnswer": "Form 10-K is an annual report including audited financial statements.",
+   "referenceSources": [
+    "https://www.investor.gov/introduction-investing/investing-basics/glossary/form-10-k"
+   ],
+   "set": "gold",
+   "lang": "en",
+   "web": true
+  },
+  {
+   "id": "news-pandemic-date",
+   "recipe": "news",
+   "kind": "fact",
+   "q": "In news coverage, on what date did WHO first characterize COVID-19 as a pandemic?",
+   "requiredFacts": [
+    [
+     "11 March 2020",
+     "March 11, 2020",
+     "March 11 2020"
+    ]
+   ],
+   "referenceAnswer": "WHO characterized COVID-19 as a pandemic on 11 March 2020.",
+   "referenceSources": [
+    "https://www.who.int/news-room/speeches/item/who-director-general-s-opening-remarks-at-the-media-briefing-on-covid-19---11-march-2020"
+   ],
+   "set": "gold",
+   "lang": "en",
+   "web": true
+  },
+  {
+   "id": "weather-metric-unit",
+   "recipe": "weather",
+   "kind": "fact",
+   "q": "Which temperature unit does Environment Canada's Toronto hourly weather forecast use in metric mode?",
+   "requiredFacts": [
+    [
+     "Celsius",
+     "°C",
+     "degrees C"
+    ]
+   ],
+   "referenceAnswer": "The metric hourly forecast uses degrees Celsius.",
+   "referenceSources": [
+    "https://weather.gc.ca/en/forecast/hourly/index.html?coords=43.651%2C-79.347"
+   ],
+   "set": "gold",
+   "lang": "en",
+   "web": true
+  },
+  {
+   "id": "biography-curie-birth",
+   "recipe": "biography",
+   "kind": "fact",
+   "q": "For a biography of Marie Curie, in which city and year was she born?",
+   "requiredFacts": [
+    "Warsaw",
+    "1867"
+   ],
+   "referenceAnswer": "Marie Curie was born in Warsaw in 1867.",
+   "referenceSources": [
+    "https://www.nobelprize.org/prizes/chemistry/1911/marie-curie/biographical/?print=1"
+   ],
+   "set": "gold",
+   "lang": "en",
+   "web": true
+  },
+  {
+   "id": "science-attention-architecture",
+   "recipe": "science",
+   "kind": "fact",
+   "q": "What architecture did the scientific paper Attention Is All You Need propose?",
+   "requiredFacts": [
+    "Transformer"
+   ],
+   "referenceAnswer": "The paper proposes the Transformer architecture.",
+   "referenceSources": [
+    "https://arxiv.org/abs/1706.03762"
+   ],
+   "set": "gold",
+   "lang": "en",
+   "web": true
+  },
+  {
+   "id": "product-original-camera-sensors",
+   "recipe": "product",
+   "kind": "number",
+   "q": "Compare the effective sensor megapixels of the Nikon Z30 camera and the original Sony ZV-E10, using manufacturer specifications.",
+   "requiredFacts": [
+    "20.9",
+    "24.2"
+   ],
+   "referenceAnswer": "Nikon Z30 has 20.9 effective megapixels; the original Sony ZV-E10 has approximately 24.2.",
+   "referenceSources": [
+    "https://www.nikonusa.com/p/z-30/1737/overview",
+    "https://www.sony.ca/en/electronics/support/e-mount-body-zv-e-series/zv-e10/specifications"
+   ],
+   "set": "gold",
+   "lang": "en",
+   "web": true
+  },
+  {
+   "id": "software-postgres-port",
+   "recipe": "software",
+   "kind": "number",
+   "q": "What is the default TCP port of the PostgreSQL database software?",
+   "requiredFacts": [
+    "5432"
+   ],
+   "referenceAnswer": "PostgreSQL listens on TCP port 5432 by default.",
+   "referenceSources": [
+    "https://www.postgresql.org/docs/current/runtime-config-connection.html"
+   ],
+   "set": "gold",
+   "lang": "en",
+   "web": true
+  },
+  {
+   "id": "travel-passport-document",
+   "recipe": "travel",
+   "kind": "fact",
+   "q": "For Canadian travel, which universally accepted identification document proves a citizen's right to return to Canada?",
+   "requiredFacts": [
+    "passport"
+   ],
+   "referenceAnswer": "A passport is the universally accepted travel identification document that proves the right to return to Canada.",
+   "referenceSources": [
+    "https://travel.gc.ca/voyager/documents"
+   ],
+   "set": "gold",
+   "lang": "en",
+   "web": true
+  },
+  {
+   "id": "sports-ifab-halves",
+   "recipe": "sports",
+   "kind": "number",
+   "q": "How long are the two normal halves of an IFAB football match, excluding added time?",
+   "requiredFacts": [
+    [
+     "45",
+     "forty-five"
+    ]
+   ],
+   "referenceAnswer": "Normal play consists of two equal halves of 45 minutes.",
+   "referenceSources": [
+    "https://www.theifab.com/laws/latest/the-duration-of-the-match/"
+   ],
+   "set": "gold",
+   "lang": "en",
+   "web": true
+  },
+  {
+   "id": "weather-unpredictable",
+   "recipe": "weather",
+   "kind": "none",
+   "q": "What will the exact temperature in Toronto be at noon on 1 January 2031?",
+   "unanswerable": true,
+   "referenceAnswer": "An exact temperature that far ahead cannot be established.",
+   "set": "gold",
+   "lang": "en",
+   "web": null
+  },
+  {
+   "id": "finance-future-close",
+   "recipe": "finance",
+   "kind": "none",
+   "q": "What was Apple's closing stock price on 3 March 2043?",
+   "unanswerable": true,
+   "referenceAnswer": "That future closing price cannot be established.",
+   "set": "gold",
+   "lang": "en",
+   "web": null
+  },
+  {
+   "id": "phone-01",
+   "set": "phone",
+   "kind": "person",
+   "lang": "en",
+   "q": "Can you please tell me how old is Justin Bieber",
+   "web": true,
+   "requiredFacts": [
+    [
+     "32"
+    ]
+   ]
+  },
+  {
+   "id": "phone-02",
+   "set": "phone",
+   "kind": "person",
+   "lang": "en",
+   "q": "what day is Justin bieber birthday?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "March 1",
+     "1 March",
+     "March 1st"
+    ]
+   ]
+  },
+  {
+   "id": "phone-03",
+   "set": "phone",
+   "kind": "person",
+   "lang": "en",
+   "q": "when is Justin bieber birthday?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "March 1",
+     "1 March",
+     "March 1st"
+    ]
+   ]
+  },
+  {
+   "id": "phone-04",
+   "set": "phone",
+   "kind": "person",
+   "lang": "en",
+   "q": "How old is Taylor Swift?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "36"
+    ]
+   ]
+  },
+  {
+   "id": "phone-05",
+   "set": "phone",
+   "kind": "person",
+   "lang": "en",
+   "q": "When was Drake born?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "October 24, 1986",
+     "24 October 1986",
+     "October 24 1986"
+    ]
+   ]
+  },
+  {
+   "id": "phone-06",
+   "set": "phone",
+   "kind": "person",
+   "lang": "en",
+   "q": "What is Elon Musk's net worth?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "trillion",
+     "trillionaire"
+    ]
+   ],
+   "goldFromFrozenWeb": true
+  },
+  {
+   "id": "phone-07",
+   "set": "phone",
+   "kind": "person",
+   "lang": "en",
+   "q": "Who is Selena Gomez married to?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "Benny Blanco"
+    ]
+   ]
+  },
+  {
+   "id": "phone-08",
+   "set": "phone",
+   "kind": "person",
+   "lang": "en",
+   "q": "How tall is LeBron James?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "6 ft 9",
+     "6'9",
+     "6 feet 9",
+     "2.06",
+     "206 cm",
+     "206"
+    ]
+   ]
+  },
+  {
+   "id": "phone-09",
+   "set": "phone",
+   "kind": "person",
+   "lang": "fr",
+   "q": "Quel âge a Céline Dion ?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "58"
+    ]
+   ]
+  },
+  {
+   "id": "phone-10",
+   "set": "phone",
+   "kind": "person",
+   "lang": "fr",
+   "q": "Quelle est la date de naissance de Kylian Mbappé ?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "20 décembre 1998",
+     "20 December 1998"
+    ]
+   ]
+  },
+  {
+   "id": "phone-11",
+   "set": "phone",
+   "kind": "person",
+   "lang": "es",
+   "q": "¿Cuántos años tiene Shakira?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "49"
+    ]
+   ]
+  },
+  {
+   "id": "phone-12",
+   "set": "phone",
+   "kind": "person",
+   "lang": "es",
+   "q": "¿Cuándo nació Bad Bunny?",
+   "web": true,
+   "requiredFacts": [
+    [
+     "10 de marzo de 1994",
+     "10 de marzo",
+     "March 10, 1994"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-01",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "en",
+   "q": "Explain price elasticity of demand",
+   "web": false,
+   "requiredFacts": [
+    [
+     "percentage change",
+     "% change",
+     "responsive",
+     "responsiveness",
+     "sensitive",
+     "sensitivity"
+    ],
+    [
+     "quantity demanded",
+     "demand"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-02",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "en",
+   "q": "What causes earthquakes?",
+   "web": false,
+   "requiredFacts": [
+    [
+     "tectonic",
+     "plates",
+     "fault",
+     "faults"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-03",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "en",
+   "q": "Explain how hurricanes form",
+   "web": false,
+   "requiredFacts": [
+    [
+     "warm"
+    ],
+    [
+     "evaporation",
+     "evaporates",
+     "low pressure",
+     "low-pressure",
+     "rotation",
+     "rotate",
+     "Coriolis"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-04",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "en",
+   "q": "Who was the king of England in 1600?",
+   "web": false,
+   "requiredFacts": [
+    [
+     "Elizabeth"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-05",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "en",
+   "q": "Summarize the plot of Hamlet",
+   "web": false,
+   "requiredFacts": [
+    [
+     "Claudius",
+     "uncle"
+    ],
+    [
+     "revenge",
+     "avenge",
+     "avenging"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-06",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "en",
+   "q": "How long should I boil an egg?",
+   "web": false,
+   "requiredFacts": [
+    [
+     "minutes",
+     "minute"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-07",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "en",
+   "q": "What is the difference between weather and climate?",
+   "web": false,
+   "requiredFacts": [
+    [
+     "short-term",
+     "short term",
+     "day to day",
+     "day-to-day",
+     "daily"
+    ],
+    [
+     "long-term",
+     "long term",
+     "decades",
+     "30 years",
+     "average",
+     "averages"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-08",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "en",
+   "q": "Is a whale a fish?",
+   "web": false,
+   "requiredFacts": [
+    [
+     "mammal",
+     "mammals"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-09",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "en",
+   "q": "How many players are on a soccer team?",
+   "web": false,
+   "requiredFacts": [
+    [
+     "11",
+     "eleven"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-10",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "en",
+   "q": "What is the speed of sound?",
+   "web": false,
+   "requiredFacts": [
+    [
+     "343",
+     "1,235",
+     "1235",
+     "767",
+     "1,225",
+     "1225"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-11",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "en",
+   "q": "How does a stock split work?",
+   "web": false,
+   "requiredFacts": [
+    [
+     "shares"
+    ],
+    [
+     "price"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-12",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "en",
+   "q": "What does a CEO do?",
+   "web": false,
+   "requiredFacts": [
+    [
+     "chief executive",
+     "Chief Executive Officer"
+    ],
+    [
+     "decisions",
+     "strategy",
+     "strategic",
+     "leads",
+     "manages",
+     "oversees"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-13",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "en",
+   "q": "Why do prices go up with inflation?",
+   "web": false,
+   "requiredFacts": [
+    [
+     "money",
+     "purchasing power",
+     "demand",
+     "costs"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-14",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "en",
+   "q": "Tell me about the Roman Empire",
+   "web": false,
+   "requiredFacts": [
+    [
+     "Rome",
+     "Augustus",
+     "emperor",
+     "emperors"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-15",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "en",
+   "q": "Translate this sentence to French: the weather is nice",
+   "web": false,
+   "requiredFacts": [
+    [
+     "fait beau"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-16",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "en",
+   "q": "Explain the rules of hockey",
+   "web": false,
+   "requiredFacts": [
+    [
+     "puck"
+    ],
+    [
+     "goal",
+     "goals"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-17",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "en",
+   "q": "How old is too old to start learning the piano?",
+   "web": false,
+   "requiredFacts": [
+    [
+     "never too old",
+     "no age",
+     "any age",
+     "never too late"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-18",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "en",
+   "q": "Make me a grocery list for tacos",
+   "web": false,
+   "requiredFacts": [
+    [
+     "tortillas",
+     "tortilla",
+     "taco shells"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-19",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "en",
+   "q": "Write a short story about a new car",
+   "web": false
+  },
+  {
+   "id": "noweb-20",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "fr",
+   "q": "Qui était le roi de France en 1700 ?",
+   "web": false,
+   "requiredFacts": [
+    [
+     "Louis XIV",
+     "Louis 14"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-21",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "fr",
+   "q": "Résume Le Petit Prince",
+   "web": false,
+   "requiredFacts": [
+    [
+     "rose",
+     "renard",
+     "aviateur",
+     "pilote",
+     "planète",
+     "astéroïde"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-22",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "fr",
+   "q": "Quelle est la différence entre météo et climat ?",
+   "web": false,
+   "requiredFacts": [
+    [
+     "court terme",
+     "quotidien",
+     "quotidienne",
+     "jour"
+    ],
+    [
+     "long terme",
+     "moyenne",
+     "moyennes",
+     "décennies",
+     "30 ans"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-23",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "es",
+   "q": "¿Quién fue el rey de España en 1800?",
+   "web": false,
+   "requiredFacts": [
+    [
+     "Carlos IV",
+     "Carlos 4"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-24",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "es",
+   "q": "Resume Cien años de soledad",
+   "web": false,
+   "requiredFacts": [
+    [
+     "Buendía",
+     "Macondo"
+    ]
+   ]
+  },
+  {
+   "id": "noweb-25",
+   "set": "noweb",
+   "kind": "noweb",
+   "lang": "es",
+   "q": "¿Qué edad tiene mi perro en años humanos si tiene 5?",
+   "web": false,
+   "requiredFacts": [
+    [
+     "35",
+     "36",
+     "37"
+    ]
+   ]
+  }
+ ]
+}

@@ -1,0 +1,30 @@
+name: Model request
+description: Ask us to add a model to the curated catalog.
+labels: [model]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Model name
+    validations:
+      required: true
+  - type: input
+    id: url
+    attributes:
+      label: Hugging Face GGUF URL
+    validations:
+      required: true
+  - type: input
+    id: sha
+    attributes:
+      label: sha256
+      description: Required. Compute it from the exact file.
+    validations:
+      required: true
+  - type: input
+    id: license
+    attributes:
+      label: License
+      description: Must permit redistribution.
+    validations:
+      required: true

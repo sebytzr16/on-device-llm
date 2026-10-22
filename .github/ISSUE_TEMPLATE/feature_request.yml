@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest an idea.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+  - type: checkboxes
+    id: test
+    attributes:
+      label: One-sentence test
+      description: >
+        Confirm this feature passes the test — it makes private, offline,
+        on-device intelligence more useful, trustworthy, or accessible
+        without adding a network dependency, an account, or a hidden cost.
+      options:
+        - label: It passes.
+          required: true
