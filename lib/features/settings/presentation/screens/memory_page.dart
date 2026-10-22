@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../chat/presentation/screens/message_source_page.dart';
@@ -243,12 +245,14 @@ class MemoryPage extends ConsumerWidget {
                                   case 'source':
                                     if (m.sourceChatId != null &&
                                         m.sourceMessageId != null) {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute<void>(
-                                          builder: (_) => MessageSourcePage(
-                                            chatId: m.sourceChatId!,
-                                            messageId: m.sourceMessageId!,
+                                      unawaited(
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute<void>(
+                                            builder: (_) => MessageSourcePage(
+                                              chatId: m.sourceChatId!,
+                                              messageId: m.sourceMessageId!,
+                                            ),
                                           ),
                                         ),
                                       );

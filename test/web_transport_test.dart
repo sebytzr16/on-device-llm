@@ -255,9 +255,10 @@ void main() {
       ),
     );
     // Chunked with no length: the reader must stop reading at the cap, not
-    // buffer the whole thing.
+    // buffer the whole thing. The overshoot is far larger than any socket
+    // buffer, or a fast loopback (Linux CI) takes it all before the hang-up.
     var sent = 0;
-    const flood = WebPageReader.maxBytes + 2 * 1024 * 1024;
+    const flood = WebPageReader.maxBytes + 32 * 1024 * 1024;
     routes['/big-stream'] = (r) async {
       r.response.headers.contentType = ContentType.html;
       final chunk = List.filled(64 * 1024, 0x61);

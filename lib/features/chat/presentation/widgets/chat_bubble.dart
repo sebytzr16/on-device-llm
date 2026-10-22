@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -1154,14 +1155,16 @@ Future<void> showSourceSheet(
             : FilledButton.icon(
                 onPressed: () async {
                   if (zim) {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => ZimArticlePage(
-                          url: url,
-                          title: '${s['title']}',
-                          excerpt: excerpt ?? '',
-                          archiveDate: s['archiveDate'] as String?,
-                          archiveId: s['archiveId'] as String?,
+                    unawaited(
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ZimArticlePage(
+                            url: url,
+                            title: '${s['title']}',
+                            excerpt: excerpt ?? '',
+                            archiveDate: s['archiveDate'] as String?,
+                            archiveId: s['archiveId'] as String?,
+                          ),
                         ),
                       ),
                     );
