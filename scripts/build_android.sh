@@ -13,7 +13,10 @@ ndk="$sdk_root/ndk/28.2.13676358"
 cmake_bin="$sdk_root/cmake/3.22.1/bin/cmake"
 ninja_bin="$sdk_root/cmake/3.22.1/bin/ninja"
 if [[ ! -x "$cmake_bin" || ! -d "$ndk" ]]; then
-  sdkmanager "cmake;3.22.1" "ndk;28.2.13676358"
+  # sdkmanager is not on PATH on the GitHub runners.
+  sdkmanager_bin="$sdk_root/cmdline-tools/latest/bin/sdkmanager"
+  [[ -x "$sdkmanager_bin" ]] || sdkmanager_bin=sdkmanager
+  "$sdkmanager_bin" "cmake;3.22.1" "ndk;28.2.13676358"
 fi
 "$cmake_bin" -S native -B build/native-cpu-i8mm/arm64-v8a -G Ninja \
   "-DCMAKE_MAKE_PROGRAM=$ninja_bin" -DCMAKE_BUILD_TYPE=Release \

@@ -261,35 +261,33 @@ void main() {
     timeout: const Timeout(Duration(minutes: 2)),
   );
 
-  testWidgets(
-    'native discovery advertises and completes a bounded LAN scan',
-    (tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(body: Text('Nearby hosting integration')),
-        ),
+  testWidgets('native discovery advertises and completes a bounded LAN scan', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: Text('Nearby hosting integration')),
+      ),
+    );
+    final server = await HttpServer.bind(InternetAddress.anyIPv4, 0);
+    final watch = Stopwatch()..start();
+    try {
+      await HostDiscovery.advertise(server.port);
+      final hosts = await HostDiscovery.browse().timeout(
+        const Duration(seconds: 12),
       );
-      final server = await HttpServer.bind(InternetAddress.anyIPv4, 0);
-      final watch = Stopwatch()..start();
-      try {
-        await HostDiscovery.advertise(server.port);
-        final hosts = await HostDiscovery.browse().timeout(
-          const Duration(seconds: 12),
-        );
-        expect(watch.elapsed, lessThan(const Duration(seconds: 12)));
-        for (final host in hosts) {
-          expect(Uri.parse(host.endpoint).scheme, 'http');
-          expect(host.endpoint, isNot(contains('key=')));
-        }
-        // ignore: avoid_print
-        print(
-          'PLATFORM_DISCOVERY_OK hosts=${hosts.length} elapsedMs=${watch.elapsedMilliseconds}',
-        );
-      } finally {
-        await HostDiscovery.stop();
-        await server.close(force: true);
+      expect(watch.elapsed, lessThan(const Duration(seconds: 12)));
+      for (final host in hosts) {
+        expect(Uri.parse(host.endpoint).scheme, 'http');
+        expect(host.endpoint, isNot(contains('key=')));
       }
-    },
-    timeout: const Timeout(Duration(seconds: 30)),
-  );
+      // ignore: avoid_print
+      print(
+        'PLATFORM_DISCOVERY_OK hosts=${hosts.length} elapsedMs=${watch.elapsedMilliseconds}',
+      );
+    } finally {
+      await HostDiscovery.stop();
+      await server.close(force: true);
+    }
+  }, timeout: const Timeout(Duration(seconds: 30)));
 }

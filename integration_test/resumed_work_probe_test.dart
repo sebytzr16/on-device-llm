@@ -238,48 +238,46 @@ void main() {
       'RESUME_AUDIO: ${jsonEncode({'build': BuildIdentity.toJson(), 'tones': measurements, 'cancelMs': stopMs, 'inputSeconds': 180, 'inputBytes': await long.length(), 'rssMb': ProcessInfo.currentRss ~/ (1024 * 1024)})}',
     );
   });
-  testWidgets(
-    'Qwen reuses its prompt after a prepared phone action',
-    (tester) async {
-      final engine = LlamaEngine();
-      final db = AppDatabase.forTesting(NativeDatabase.memory());
-      final container = ProviderContainer(
-        overrides: [
-          llamaEngineProvider.overrideWithValue(engine),
-          appDatabaseProvider.overrideWithValue(db),
-          settingsProvider.overrideWith(_ActionProbeSettings.new),
-          modelManagerProvider.overrideWith(_ActionProbeModels.new),
-        ],
-      );
-      addTearDown(() async {
-        container.dispose();
-        engine.dispose();
-        await db.close();
-      });
-      await engine.loadModel(
-        modelPath: _actionModel,
-        settings: container.read(settingsProvider),
-      );
-      final chat = container.read(chatProvider.notifier);
-      await chat.send('Set a timer for five minutes', spoken: true);
-      final first = container.read(chatProvider).messages.last;
-      expect(first.content, isNotEmpty);
-      final timer = Stopwatch()..start();
-      await chat.send('Hello', spoken: true);
-      final cached = engine.metrics['cachedPromptTokens'] as num? ?? 0;
-      // Printed before the assertion so a failure still shows the boundary.
-      // ignore: avoid_print
-      print(
-        'RESUME_ACTION_CACHE: ${jsonEncode({'build': BuildIdentity.toJson(), 'cachedPromptTokens': cached, 'promptTokens': engine.metrics['promptTokens'], 'firstTokenMs': engine.metrics['firstTokenMs'], 'totalMs': timer.elapsedMilliseconds, 'answer': container.read(chatProvider).messages.last.content})}',
-      );
-      expect(
-        cached,
-        greaterThan(100),
-        reason: 'the native system/schema prefix survives the action',
-      );
-    },
-    skip: _actionModel.isEmpty,
-  );
+  testWidgets('Qwen reuses its prompt after a prepared phone action', (
+    tester,
+  ) async {
+    final engine = LlamaEngine();
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final container = ProviderContainer(
+      overrides: [
+        llamaEngineProvider.overrideWithValue(engine),
+        appDatabaseProvider.overrideWithValue(db),
+        settingsProvider.overrideWith(_ActionProbeSettings.new),
+        modelManagerProvider.overrideWith(_ActionProbeModels.new),
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      engine.dispose();
+      await db.close();
+    });
+    await engine.loadModel(
+      modelPath: _actionModel,
+      settings: container.read(settingsProvider),
+    );
+    final chat = container.read(chatProvider.notifier);
+    await chat.send('Set a timer for five minutes', spoken: true);
+    final first = container.read(chatProvider).messages.last;
+    expect(first.content, isNotEmpty);
+    final timer = Stopwatch()..start();
+    await chat.send('Hello', spoken: true);
+    final cached = engine.metrics['cachedPromptTokens'] as num? ?? 0;
+    // Printed before the assertion so a failure still shows the boundary.
+    // ignore: avoid_print
+    print(
+      'RESUME_ACTION_CACHE: ${jsonEncode({'build': BuildIdentity.toJson(), 'cachedPromptTokens': cached, 'promptTokens': engine.metrics['promptTokens'], 'firstTokenMs': engine.metrics['firstTokenMs'], 'totalMs': timer.elapsedMilliseconds, 'answer': container.read(chatProvider).messages.last.content})}',
+    );
+    expect(
+      cached,
+      greaterThan(100),
+      reason: 'the native system/schema prefix survives the action',
+    );
+  }, skip: _actionModel.isEmpty);
   if (const String.fromEnvironment('BENCH_MODEL').isNotEmpty) embedding.main();
   const captionModel = String.fromEnvironment('CAPTION_MODEL');
   const captionProjector = String.fromEnvironment('CAPTION_MMPROJ');

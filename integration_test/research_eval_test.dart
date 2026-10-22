@@ -115,183 +115,178 @@ class _Models extends ModelManagerNotifier {
 void main() {
   if (_trim.isNotEmpty) SemanticRerank.trimShare = double.parse(_trim);
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-  testWidgets(
-    'scored live research evaluation',
-    (tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(home: Scaffold(body: Text('Research evaluation'))),
+  testWidgets('scored live research evaluation', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: Text('Research evaluation'))),
+    );
+    expect(_modelPath, isNotEmpty, reason: 'Pass -Model to test-android.ps1');
+    expect(_evalPath, isNotEmpty, reason: 'Pass -Eval to test-android.ps1');
+    final set =
+        jsonDecode(await File(_evalPath).readAsString())
+            as Map<String, dynamic>;
+    final questions = (set['questions'] as List).cast<Map<String, dynamic>>();
+    if (_eg2) {
+      final pushed = File(
+        '${(await getApplicationSupportDirectory()).path}/${embeddingModel.fileName}',
       );
-      expect(_modelPath, isNotEmpty, reason: 'Pass -Model to test-android.ps1');
-      expect(_evalPath, isNotEmpty, reason: 'Pass -Eval to test-android.ps1');
-      final set =
-          jsonDecode(await File(_evalPath).readAsString())
-              as Map<String, dynamic>;
-      final questions = (set['questions'] as List).cast<Map<String, dynamic>>();
-      if (_eg2) {
-        final pushed = File(
-          '${(await getApplicationSupportDirectory()).path}/${embeddingModel.fileName}',
-        );
-        final target = await ModelStorage.modelFile(embeddingModel.fileName);
-        expect(
-          pushed.existsSync() || target.existsSync(),
-          isTrue,
-          reason:
-              'Pass -AuxiliaryModels test-assets/${embeddingModel.fileName}',
-        );
-        if (pushed.existsSync() &&
-            (!target.existsSync() ||
-                target.lengthSync() != pushed.lengthSync())) {
-          await pushed.copy(target.path);
-        }
+      final target = await ModelStorage.modelFile(embeddingModel.fileName);
+      expect(
+        pushed.existsSync() || target.existsSync(),
+        isTrue,
+        reason: 'Pass -AuxiliaryModels test-assets/${embeddingModel.fileName}',
+      );
+      if (pushed.existsSync() &&
+          (!target.existsSync() ||
+              target.lengthSync() != pushed.lengthSync())) {
+        await pushed.copy(target.path);
       }
-      final frozen = _frozenMode.isEmpty
-          ? null
-          : await FrozenWeb.open(
-              _frozenFile,
-              FrozenMode.values.byName(_frozenMode),
-              latency: _frozenLatency,
-            );
-      final db = AppDatabase.forTesting(NativeDatabase.memory());
-      final engine = LlamaEngine(
-        cacheDirectory: () async => (await getApplicationCacheDirectory()).path,
-      );
-      final container = ProviderContainer(
-        overrides: [
-          appDatabaseProvider.overrideWithValue(db),
-          llamaEngineProvider.overrideWithValue(engine),
-          settingsProvider.overrideWith(_Settings.new),
-          modelManagerProvider.overrideWith(_Models.new),
-          ...?frozen?.overrides,
-        ],
-      );
-      addTearDown(() async {
-        container.dispose();
-        engine.dispose();
-        await db.close();
-      });
-      final totals = <String, int>{};
-      final seconds = <double>[];
-      void tally(String key, bool v) {
-        if (v) totals[key] = (totals[key] ?? 0) + 1;
-      }
+    }
+    final frozen = _frozenMode.isEmpty
+        ? null
+        : await FrozenWeb.open(
+            _frozenFile,
+            FrozenMode.values.byName(_frozenMode),
+            latency: _frozenLatency,
+          );
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final engine = LlamaEngine(
+      cacheDirectory: () async => (await getApplicationCacheDirectory()).path,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        appDatabaseProvider.overrideWithValue(db),
+        llamaEngineProvider.overrideWithValue(engine),
+        settingsProvider.overrideWith(_Settings.new),
+        modelManagerProvider.overrideWith(_Models.new),
+        ...?frozen?.overrides,
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      engine.dispose();
+      await db.close();
+    });
+    final totals = <String, int>{};
+    final seconds = <double>[];
+    void tally(String key, bool v) {
+      if (v) totals[key] = (totals[key] ?? 0) + 1;
+    }
 
-      for (final item in questions) {
-        final q = item['q'] as String;
-        final expects = (item['expect'] as List? ?? const []).cast<String>();
-        final unanswerable = item['unanswerable'] == true;
-        SemanticRerank.lastTrim = null;
-        final n = container.read(chatProvider.notifier);
-        n.newChat();
-        final before = {...?frozen?.calls};
-        final clock = Stopwatch()..start();
-        final ok = await n.send(q);
-        clock.stop();
-        final webCalls = {
-          for (final e in (frozen?.calls ?? const <String, int>{}).entries)
-            if (e.value - (before[e.key] ?? 0) > 0)
-              e.key: e.value - (before[e.key] ?? 0),
-        };
-        await frozen?.save(_frozenFile);
-        final s = container.read(chatProvider);
-        final answer = s.messages.isNotEmpty ? s.messages.last : null;
-        final text = answer?.content ?? '';
-        final sources = answer == null
-            ? const []
-            : jsonDecode(answer.sourcesJson) as List;
-        final pages = sources
-            .where((x) => x['retrievalStatus'] == 'page_read')
-            .length;
-        final read = pages > 0;
-        final cited = RegExp(r'\[\d+(?:\s*,\s*\d+)*\]').hasMatch(text);
-        final grounding = sources.isEmpty
-            ? null
-            : AnswerChecks.groundingNotice(text, sources.length);
-        final lower = text.toLowerCase();
-        final score = ResearchEvaluation.score(
-          answer: text,
-          evidence: [
-            for (final src in sources)
-              '${src['title'] ?? ''}\n${src['excerpt'] ?? ''}',
-          ],
-          gold: item,
-        );
-        final correct = unanswerable
-            ? score.appropriateAbstention
-            : score.factualRulesPassed;
-        // Did it go to the web for this question, and should it have?
-        final searched =
-            sources.isNotEmpty || webCalls.keys.any((k) => k != 'read');
-        final wanted = item['web'] as bool?;
-        final routerOk = wanted == null ? null : wanted == searched;
-        final mechanicallyGrounded =
-            sources.isNotEmpty &&
-            score.hasCitations &&
-            score.citationNumbersValid &&
-            score.figuresSupported;
-        final row = {
-          'id': item['id'],
-          'kind': item['kind'] ?? 'fact',
-          'family': _family,
-          'mode': _mode,
-          'set': item['set'],
-          'lang': item['lang'],
-          'frozen': _frozenMode.isEmpty ? null : _frozenMode,
-          'searched': searched,
-          'webWanted': wanted,
-          'routerOk': routerOk,
-          'webCalls': webCalls,
-          'accepted': ok,
-          'error': s.error,
-          'notice': s.notice,
-          'seconds': clock.elapsed.inMilliseconds / 1000,
-          'sources': sources.length,
-          'pages': pages,
-          'read': read,
-          'cited': cited,
-          'grounded': mechanicallyGrounded,
-          'semanticSupportRequiresReview': true,
-          'grounding': grounding,
-          'correct': correct,
-          if (SemanticRerank.lastTrim != null) 'trim': SemanticRerank.lastTrim,
-          'quality': score.toJson(),
-          'legacyKeywordMatch': expects.any(
-            (e) => lower.contains(e.toLowerCase()),
-          ),
-          'requiresGoldReview': correct == null,
-          'current': item['current'] == true,
-          'backend': s.metrics['backend'],
-          'stages': s.metrics['stages'],
-          'promptTokens': s.metrics['promptTokens'],
-          // Where the generation time goes: reading the prompt (first token)
-          // or writing the answer (tokens at tokensPerSecond).
-          'cachedPromptTokens': s.metrics['cachedPromptTokens'],
-          'firstTokenMs': s.metrics['firstTokenMs'],
-          'tokens': s.metrics['tokens'],
-          'tokensPerSecond': s.metrics['tokensPerSecond'],
-          'generationRounds': s.metrics['generationRounds'],
-          'finishReason': s.metrics['finishReason'],
-          'answer': text,
-        };
-        // ignore: avoid_print
-        print('EVAL: ${jsonEncode(row)}');
-        tally('retrieved', sources.isNotEmpty);
-        tally('read', read);
-        tally('cited', cited);
-        tally('grounded', mechanicallyGrounded);
-        tally('correct', correct == true);
-        tally('scorable', correct != null);
-        tally('errors', s.error != null);
-        tally('searched', searched);
-        tally('routerOk', routerOk == true);
-        tally('routerScored', routerOk != null);
-        seconds.add(clock.elapsed.inMilliseconds / 1000);
-      }
-      seconds.sort();
-      // ignore: avoid_print
-      print(
-        'EVAL_SUMMARY: ${jsonEncode({'family': _family, 'mode': _mode, if (_pages > 0) 'pages': _pages, if (_passages > 0) 'passages': _passages, if (_trim.isNotEmpty) 'trim': _trim, if (_eg2) 'eg2': true, if (AnswerShapes.concise) 'concise': true, 'frozen': _frozenMode.isEmpty ? null : _frozenMode, 'questions': questions.length, ...totals, if (seconds.isNotEmpty) 'medianSeconds': seconds[seconds.length ~/ 2], if (frozen != null) 'webCalls': frozen.calls, if (frozen != null) 'frozenMisses': frozen.misses})}',
+    for (final item in questions) {
+      final q = item['q'] as String;
+      final expects = (item['expect'] as List? ?? const []).cast<String>();
+      final unanswerable = item['unanswerable'] == true;
+      SemanticRerank.lastTrim = null;
+      final n = container.read(chatProvider.notifier);
+      n.newChat();
+      final before = {...?frozen?.calls};
+      final clock = Stopwatch()..start();
+      final ok = await n.send(q);
+      clock.stop();
+      final webCalls = {
+        for (final e in (frozen?.calls ?? const <String, int>{}).entries)
+          if (e.value - (before[e.key] ?? 0) > 0)
+            e.key: e.value - (before[e.key] ?? 0),
+      };
+      await frozen?.save(_frozenFile);
+      final s = container.read(chatProvider);
+      final answer = s.messages.isNotEmpty ? s.messages.last : null;
+      final text = answer?.content ?? '';
+      final sources = answer == null
+          ? const []
+          : jsonDecode(answer.sourcesJson) as List;
+      final pages = sources
+          .where((x) => x['retrievalStatus'] == 'page_read')
+          .length;
+      final read = pages > 0;
+      final cited = RegExp(r'\[\d+(?:\s*,\s*\d+)*\]').hasMatch(text);
+      final grounding = sources.isEmpty
+          ? null
+          : AnswerChecks.groundingNotice(text, sources.length);
+      final lower = text.toLowerCase();
+      final score = ResearchEvaluation.score(
+        answer: text,
+        evidence: [
+          for (final src in sources)
+            '${src['title'] ?? ''}\n${src['excerpt'] ?? ''}',
+        ],
+        gold: item,
       );
-    },
-    timeout: const Timeout(Duration(minutes: 90)),
-  );
+      final correct = unanswerable
+          ? score.appropriateAbstention
+          : score.factualRulesPassed;
+      // Did it go to the web for this question, and should it have?
+      final searched =
+          sources.isNotEmpty || webCalls.keys.any((k) => k != 'read');
+      final wanted = item['web'] as bool?;
+      final routerOk = wanted == null ? null : wanted == searched;
+      final mechanicallyGrounded =
+          sources.isNotEmpty &&
+          score.hasCitations &&
+          score.citationNumbersValid &&
+          score.figuresSupported;
+      final row = {
+        'id': item['id'],
+        'kind': item['kind'] ?? 'fact',
+        'family': _family,
+        'mode': _mode,
+        'set': item['set'],
+        'lang': item['lang'],
+        'frozen': _frozenMode.isEmpty ? null : _frozenMode,
+        'searched': searched,
+        'webWanted': wanted,
+        'routerOk': routerOk,
+        'webCalls': webCalls,
+        'accepted': ok,
+        'error': s.error,
+        'notice': s.notice,
+        'seconds': clock.elapsed.inMilliseconds / 1000,
+        'sources': sources.length,
+        'pages': pages,
+        'read': read,
+        'cited': cited,
+        'grounded': mechanicallyGrounded,
+        'semanticSupportRequiresReview': true,
+        'grounding': grounding,
+        'correct': correct,
+        if (SemanticRerank.lastTrim != null) 'trim': SemanticRerank.lastTrim,
+        'quality': score.toJson(),
+        'legacyKeywordMatch': expects.any(
+          (e) => lower.contains(e.toLowerCase()),
+        ),
+        'requiresGoldReview': correct == null,
+        'current': item['current'] == true,
+        'backend': s.metrics['backend'],
+        'stages': s.metrics['stages'],
+        'promptTokens': s.metrics['promptTokens'],
+        // Where the generation time goes: reading the prompt (first token)
+        // or writing the answer (tokens at tokensPerSecond).
+        'cachedPromptTokens': s.metrics['cachedPromptTokens'],
+        'firstTokenMs': s.metrics['firstTokenMs'],
+        'tokens': s.metrics['tokens'],
+        'tokensPerSecond': s.metrics['tokensPerSecond'],
+        'generationRounds': s.metrics['generationRounds'],
+        'finishReason': s.metrics['finishReason'],
+        'answer': text,
+      };
+      // ignore: avoid_print
+      print('EVAL: ${jsonEncode(row)}');
+      tally('retrieved', sources.isNotEmpty);
+      tally('read', read);
+      tally('cited', cited);
+      tally('grounded', mechanicallyGrounded);
+      tally('correct', correct == true);
+      tally('scorable', correct != null);
+      tally('errors', s.error != null);
+      tally('searched', searched);
+      tally('routerOk', routerOk == true);
+      tally('routerScored', routerOk != null);
+      seconds.add(clock.elapsed.inMilliseconds / 1000);
+    }
+    seconds.sort();
+    // ignore: avoid_print
+    print(
+      'EVAL_SUMMARY: ${jsonEncode({'family': _family, 'mode': _mode, if (_pages > 0) 'pages': _pages, if (_passages > 0) 'passages': _passages, if (_trim.isNotEmpty) 'trim': _trim, if (_eg2) 'eg2': true, if (AnswerShapes.concise) 'concise': true, 'frozen': _frozenMode.isEmpty ? null : _frozenMode, 'questions': questions.length, ...totals, if (seconds.isNotEmpty) 'medianSeconds': seconds[seconds.length ~/ 2], if (frozen != null) 'webCalls': frozen.calls, if (frozen != null) 'frozenMisses': frozen.misses})}',
+    );
+  }, timeout: const Timeout(Duration(minutes: 90)));
 }

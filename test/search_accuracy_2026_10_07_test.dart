@@ -123,30 +123,40 @@ void main() {
       expect(embedder.passages, 1);
     });
 
-    test('sentence trimming keeps the sentences closest to the question',
-        () async {
-      final embedder = AxisEmbedder(['tower']);
-      final chunks = [
-        chunk(0, 0, 'Paris is busy. The tower opened in 1889. Cafés line the '
-            'river. Tickets cost more in summer.'),
-        chunk(1, 0, 'Short page. Two lines.'),
-      ];
-      expect(
-        await SemanticRerank.trimSentences('tower', chunks, embedder: embedder),
-        same(chunks),
-        reason: 'off unless the experiment sets a share',
-      );
-      SemanticRerank.trimShare = 0.25;
-      addTearDown(() => SemanticRerank.trimShare = null);
-      final out = await SemanticRerank.trimSentences(
-        'tower',
-        chunks,
-        embedder: embedder,
-      );
-      expect(out.first.text, '… The tower opened in 1889. …');
-      expect(out.last.text, chunks.last.text, reason: 'under four sentences');
-      expect(SemanticRerank.lastTrim?['trimmed'], 1);
-    });
+    test(
+      'sentence trimming keeps the sentences closest to the question',
+      () async {
+        final embedder = AxisEmbedder(['tower']);
+        final chunks = [
+          chunk(
+            0,
+            0,
+            'Paris is busy. The tower opened in 1889. Cafés line the '
+            'river. Tickets cost more in summer.',
+          ),
+          chunk(1, 0, 'Short page. Two lines.'),
+        ];
+        expect(
+          await SemanticRerank.trimSentences(
+            'tower',
+            chunks,
+            embedder: embedder,
+          ),
+          same(chunks),
+          reason: 'off unless the experiment sets a share',
+        );
+        SemanticRerank.trimShare = 0.25;
+        addTearDown(() => SemanticRerank.trimShare = null);
+        final out = await SemanticRerank.trimSentences(
+          'tower',
+          chunks,
+          embedder: embedder,
+        );
+        expect(out.first.text, '… The tower opened in 1889. …');
+        expect(out.last.text, chunks.last.text, reason: 'under four sentences');
+        expect(SemanticRerank.lastTrim?['trimmed'], 1);
+      },
+    );
   });
 
   group('ClaimCheck', () {

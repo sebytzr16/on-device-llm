@@ -78,91 +78,87 @@ class _Models extends ModelManagerNotifier {
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-  testWidgets(
-    'live web research answers with citations',
-    (tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(home: Scaffold(body: Text('Research test'))),
-      );
-      expect(_modelPath, isNotEmpty, reason: 'Pass -Model to test-android.ps1');
-      expect(await File(_modelPath).exists(), true);
-      final db = AppDatabase.forTesting(NativeDatabase.memory());
-      final engine = LlamaEngine(
-        cacheDirectory: () async => (await getApplicationCacheDirectory()).path,
-      );
-      final container = ProviderContainer(
-        overrides: [
-          appDatabaseProvider.overrideWithValue(db),
-          llamaEngineProvider.overrideWithValue(engine),
-          settingsProvider.overrideWith(_Settings.new),
-          modelManagerProvider.overrideWith(_Models.new),
+  testWidgets('live web research answers with citations', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: Text('Research test'))),
+    );
+    expect(_modelPath, isNotEmpty, reason: 'Pass -Model to test-android.ps1');
+    expect(await File(_modelPath).exists(), true);
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final engine = LlamaEngine(
+      cacheDirectory: () async => (await getApplicationCacheDirectory()).path,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        appDatabaseProvider.overrideWithValue(db),
+        llamaEngineProvider.overrideWithValue(engine),
+        settingsProvider.overrideWith(_Settings.new),
+        modelManagerProvider.overrideWith(_Models.new),
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      engine.dispose();
+      await db.close();
+    });
+    final questions = [
+      // Discovery + body reading; the answer changes over time, so only the
+      // mechanics are asserted, and the text is printed for review.
+      'What is the latest stable version of the Flutter SDK and when was it released?',
+      // Direct URL reading, no search.
+      'Summarize the main points of https://en.wikipedia.org/wiki/Adreno in three sentences.',
+    ];
+    for (final q in questions) {
+      final n = container.read(chatProvider.notifier);
+      // Keep both turns in one conversation to exercise repeated retrieval,
+      // SQLite writes and native prompt reuse after the first response.
+      final clock = Stopwatch()..start();
+      final ok = await n.send(q);
+      clock.stop();
+      final s = container.read(chatProvider);
+      final answer = s.messages.last;
+      final sources = jsonDecode(answer.sourcesJson) as List;
+      final report = {
+        'family': _family,
+        'question': q,
+        'accepted': ok,
+        'error': s.error,
+        'notice': s.notice,
+        'seconds': clock.elapsed.inMilliseconds / 1000,
+        'sources': [
+          for (final src in sources)
+            {
+              'n': src['number'],
+              'status': src['retrievalStatus'],
+              'url': src['url'],
+              'excerptChars': (src['excerpt'] as String?)?.length ?? 0,
+            },
         ],
+        'metrics': {
+          'promptTokens': s.metrics['promptTokens'],
+          'tokens': s.metrics['tokens'],
+          'tokensPerSecond': s.metrics['tokensPerSecond'],
+          'backend': s.metrics['backend'],
+        },
+        'answer': answer.content,
+      };
+      // ignore: avoid_print
+      print('RESEARCH: ${jsonEncode(report)}');
+      expect(ok, true);
+      expect(s.error, isNull);
+      expect(answer.role.name, 'assistant');
+      expect(answer.content.trim(), isNotEmpty);
+      expect(sources, isNotEmpty, reason: 'retrieval produced no sources');
+      expect(
+        sources.any((src) => src['retrievalStatus'] == 'page_read'),
+        true,
+        reason: 'no destination page was read',
       );
-      addTearDown(() async {
-        container.dispose();
-        engine.dispose();
-        await db.close();
-      });
-      final questions = [
-        // Discovery + body reading; the answer changes over time, so only the
-        // mechanics are asserted, and the text is printed for review.
-        'What is the latest stable version of the Flutter SDK and when was it released?',
-        // Direct URL reading, no search.
-        'Summarize the main points of https://en.wikipedia.org/wiki/Adreno in three sentences.',
-      ];
-      for (final q in questions) {
-        final n = container.read(chatProvider.notifier);
-        // Keep both turns in one conversation to exercise repeated retrieval,
-        // SQLite writes and native prompt reuse after the first response.
-        final clock = Stopwatch()..start();
-        final ok = await n.send(q);
-        clock.stop();
-        final s = container.read(chatProvider);
-        final answer = s.messages.last;
-        final sources = jsonDecode(answer.sourcesJson) as List;
-        final report = {
-          'family': _family,
-          'question': q,
-          'accepted': ok,
-          'error': s.error,
-          'notice': s.notice,
-          'seconds': clock.elapsed.inMilliseconds / 1000,
-          'sources': [
-            for (final src in sources)
-              {
-                'n': src['number'],
-                'status': src['retrievalStatus'],
-                'url': src['url'],
-                'excerptChars': (src['excerpt'] as String?)?.length ?? 0,
-              },
-          ],
-          'metrics': {
-            'promptTokens': s.metrics['promptTokens'],
-            'tokens': s.metrics['tokens'],
-            'tokensPerSecond': s.metrics['tokensPerSecond'],
-            'backend': s.metrics['backend'],
-          },
-          'answer': answer.content,
-        };
-        // ignore: avoid_print
-        print('RESEARCH: ${jsonEncode(report)}');
-        expect(ok, true);
-        expect(s.error, isNull);
-        expect(answer.role.name, 'assistant');
-        expect(answer.content.trim(), isNotEmpty);
-        expect(sources, isNotEmpty, reason: 'retrieval produced no sources');
-        expect(
-          sources.any((src) => src['retrievalStatus'] == 'page_read'),
-          true,
-          reason: 'no destination page was read',
-        );
-        expect(
-          AnswerChecks.groundingNotice(answer.content, sources.length),
-          isNot(contains('cannot browse')),
-          reason: 'the model refused despite supplied sources',
-        );
-      }
-    },
-    timeout: const Timeout(Duration(minutes: 15)),
-  );
+      expect(
+        AnswerChecks.groundingNotice(answer.content, sources.length),
+        isNot(contains('cannot browse')),
+        reason: 'the model refused despite supplied sources',
+      );
+    }
+  }, timeout: const Timeout(Duration(minutes: 15)));
 }

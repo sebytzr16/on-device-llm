@@ -32,61 +32,55 @@ void main() {
     expect(results.every((r) => r.url.startsWith('http')), isTrue);
   }, skip: skip);
 
-  test(
-    'live suite yields useful coverage, including a maker manual',
-    () async {
-      final ddg = DuckDuckGoScraper();
-      var useful = 0;
-      var primary = false;
-      for (final (query, anchor) in [
-        ('Nikon Z30 weight', 'z30'),
-        ('Dart Map API documentation', 'map'),
-        ('site:nikonusa.com Z30 specifications manual', 'z30'),
-      ]) {
-        List<SearchResult> results;
-        try {
-          results = await ddg.search(query, limit: 8, region: 'ca-en');
-        } catch (_) {
-          // A blocked provider is observed, never counted as coverage.
-          // ignore: avoid_print
-          print(
-            'COVERAGE_UNAVAILABLE: $query; ${ddg.health.toJson()}',
-          );
-          continue;
-        }
-        final relevant = results
-            .where(
-              (r) => '${r.title} ${r.snippet} ${r.url}'.toLowerCase().contains(
-                anchor,
-              ),
-            )
-            .toList();
-        show('coverage $query', relevant);
-        if (relevant.isNotEmpty) useful++;
-        primary |= relevant.any((r) {
-          final host = Uri.tryParse(r.url)?.host ?? '';
-          return [
-            'nikonusa.com',
-            'nikon.com',
-            'nikon.ca',
-            'nikonimglib.com',
-          ].any((domain) => host == domain || host.endsWith('.$domain'));
-        });
+  test('live suite yields useful coverage, including a maker manual', () async {
+    final ddg = DuckDuckGoScraper();
+    var useful = 0;
+    var primary = false;
+    for (final (query, anchor) in [
+      ('Nikon Z30 weight', 'z30'),
+      ('Dart Map API documentation', 'map'),
+      ('site:nikonusa.com Z30 specifications manual', 'z30'),
+    ]) {
+      List<SearchResult> results;
+      try {
+        results = await ddg.search(query, limit: 8, region: 'ca-en');
+      } catch (_) {
+        // A blocked provider is observed, never counted as coverage.
+        // ignore: avoid_print
+        print('COVERAGE_UNAVAILABLE: $query; ${ddg.health.toJson()}');
+        continue;
       }
-      expect(
-        useful,
-        greaterThanOrEqualTo(2),
-        reason: 'empty provider lists cannot establish coverage',
-      );
-      expect(
-        primary,
-        isTrue,
-        reason:
-            'a real primary-site result is required, even when the targeted query is blocked',
-      );
-    },
-    skip: skip,
-  );
+      final relevant = results
+          .where(
+            (r) => '${r.title} ${r.snippet} ${r.url}'.toLowerCase().contains(
+              anchor,
+            ),
+          )
+          .toList();
+      show('coverage $query', relevant);
+      if (relevant.isNotEmpty) useful++;
+      primary |= relevant.any((r) {
+        final host = Uri.tryParse(r.url)?.host ?? '';
+        return [
+          'nikonusa.com',
+          'nikon.com',
+          'nikon.ca',
+          'nikonimglib.com',
+        ].any((domain) => host == domain || host.endsWith('.$domain'));
+      });
+    }
+    expect(
+      useful,
+      greaterThanOrEqualTo(2),
+      reason: 'empty provider lists cannot establish coverage',
+    );
+    expect(
+      primary,
+      isTrue,
+      reason:
+          'a real primary-site result is required, even when the targeted query is blocked',
+    );
+  }, skip: skip);
 
   test('Wikipedia: product, person (FR) and event (ES)', () async {
     final wiki = WikipediaClient();

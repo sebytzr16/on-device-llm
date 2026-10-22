@@ -104,200 +104,196 @@ String _manual() {
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-  testWidgets(
-    'chat quality: memory, documents, actions, web',
-    (tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(home: Scaffold(body: Text('Quality probe'))),
-      );
-      expect(_modelPath, isNotEmpty, reason: 'Pass -Model to test-android.ps1');
-      expect(await File(_modelPath).exists(), true);
-      final db = AppDatabase.forTesting(NativeDatabase.memory());
-      final engine = LlamaEngine(
-        cacheDirectory: () async => (await getApplicationCacheDirectory()).path,
-      );
-      final container = ProviderContainer(
-        overrides: [
-          appDatabaseProvider.overrideWithValue(db),
-          llamaEngineProvider.overrideWithValue(engine),
-          settingsProvider.overrideWith(_Settings.new),
-          modelManagerProvider.overrideWith(_Models.new),
-        ],
-      );
-      addTearDown(() async {
-        container.dispose();
-        engine.dispose();
-        await db.close();
-      });
-      final failures = <String>[];
+  testWidgets('chat quality: memory, documents, actions, web', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: Text('Quality probe'))),
+    );
+    expect(_modelPath, isNotEmpty, reason: 'Pass -Model to test-android.ps1');
+    expect(await File(_modelPath).exists(), true);
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final engine = LlamaEngine(
+      cacheDirectory: () async => (await getApplicationCacheDirectory()).path,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        appDatabaseProvider.overrideWithValue(db),
+        llamaEngineProvider.overrideWithValue(engine),
+        settingsProvider.overrideWith(_Settings.new),
+        modelManagerProvider.overrideWith(_Models.new),
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      engine.dispose();
+      await db.close();
+    });
+    final failures = <String>[];
 
-      Future<String> turn(
-        String probe,
-        String q, {
-        List<Attachment> attachments = const [],
-        List<Pattern> expectAll = const [],
-        bool wantSources = false,
-        bool noSources = false,
-        bool wantAction = false,
-      }) async {
-        final n = container.read(chatProvider.notifier);
-        final clock = Stopwatch()..start();
-        final ok = await n.send(q, attachments: attachments);
-        clock.stop();
-        final s = container.read(chatProvider);
-        final answer = s.messages.last;
-        final sources = jsonDecode(answer.sourcesJson) as List;
-        final run = TurnRun.decode(answer.runJson);
-        final actions = PhoneActions.fromTrace(run?.toolTrace ?? const []);
-        final text = answer.content;
-        final missing = [
-          for (final p in expectAll)
-            if (!text.toLowerCase().contains(p is String ? p.toLowerCase() : p))
-              '$p',
-        ];
-        final problems = [
-          if (!ok || s.error != null) 'error: ${s.error}',
-          if (missing.isNotEmpty) 'missing: ${missing.join(', ')}',
-          if (wantSources && sources.isEmpty) 'no sources',
-          if (noSources && sources.isNotEmpty) 'searched needlessly',
-          if (wantAction && actions.isEmpty) 'no action card',
-        ];
-        if (problems.isNotEmpty) failures.add('$probe: ${problems.join('; ')}');
-        // ignore: avoid_print
-        print(
-          'QUALITY: ${jsonEncode({
-            'probe': probe,
-            'family': _family,
-            'question': q,
-            'pass': problems.isEmpty,
-            'problems': problems,
-            'seconds': clock.elapsed.inMilliseconds / 1000,
-            'notice': s.notice,
-            'sources': [for (final src in sources) src['url']],
-            'actions': [for (final a in actions) a.toJson()],
-            'metrics': {for (final e in s.metrics.entries)
-              if (e.value is num || e.value is String) e.key: e.value},
-            'answer': text,
-          })}',
-        );
-        return text;
-      }
-
+    Future<String> turn(
+      String probe,
+      String q, {
+      List<Attachment> attachments = const [],
+      List<Pattern> expectAll = const [],
+      bool wantSources = false,
+      bool noSources = false,
+      bool wantAction = false,
+    }) async {
       final n = container.read(chatProvider.notifier);
-
-      // 1. Small talk: no search, no tools, fast.
-      n.newChat();
-      await turn('small-talk', 'Hi! How are you today?', noSources: true);
-
-      // 2. Multi-turn memory across four turns.
-      n.newChat();
-      await turn(
-        'memory-1',
-        'My name is Lina. I am planning a trip to Lisbon in May with my '
-            'sister Marta, and our budget is 1,200 euros.',
-        noSources: true,
-      );
-      await turn(
-        'memory-2',
-        'Suggest three neighbourhoods to stay in, one line each.',
-      );
-      await turn(
-        'memory-3',
-        'Remind me: what is my name, who am I travelling with, where, when, '
-            'and what is our budget?',
-        expectAll: ['Lina', 'Marta', 'Lisbon', 'May', '1,200'],
-        noSources: true,
-      );
-
-      // 3. A long document with one buried fact, then a follow-up.
-      n.newChat();
-      final manual = _manual();
-      await turn(
-        'document-1',
-        'What is the Wi-Fi password in this manual?',
-        attachments: [
-          Attachment(
-            id: 'manual',
-            kind: AttachmentKind.document,
-            name: 'house-manual.txt',
-            mime: 'text/plain',
-            path: '${(await getApplicationCacheDirectory()).path}/manual.txt',
-            sizeBytes: manual.length,
-            text: manual,
-          ),
-        ],
-        expectAll: ['heron-4471'],
-      );
-      await turn(
-        'document-2',
-        'And when is glass collected, and where is the router?',
-        expectAll: ['Monday', 'cupboard'],
-      );
-
-      // 4. Code.
-      n.newChat();
-      await turn(
-        'code',
-        'Write a Python function is_palindrome(s) that ignores case, spaces '
-            'and punctuation. Code only.',
-        expectAll: ['def is_palindrome', 'lower'],
-        noSources: true,
-      );
-
-      // 5. Phone actions: a card, no web search.
-      n.newChat();
-      await turn(
-        'action-reminder',
-        'Remind me tomorrow at 9 am to call the dentist.',
-        wantAction: true,
-        noSources: true,
-      );
-      n.newChat();
-      await turn(
-        'action-timer',
-        'Set a timer for 12 minutes for the pasta.',
-        wantAction: true,
-        noSources: true,
-      );
-
-      // 6. Live web: facts that do not change.
-      n.newChat();
-      await turn(
-        'web-who',
-        'When did the WHO declare COVID-19 a pandemic?',
-        expectAll: ['11', 'March', '2020'],
-        wantSources: true,
-      );
-      n.newChat();
-      await turn(
-        'web-z30',
-        'How much does the Nikon Z30 weigh with battery?',
-        expectAll: ['405'],
-        wantSources: true,
-      );
-      // Follow-up that depends on the previous turn's subject.
-      await turn(
-        'web-followup',
-        'And how many shots does its battery last?',
-        expectAll: ['330'],
-      );
-      n.newChat();
-      await turn(
-        'web-fr',
-        'Quelle est la hauteur de la tour Eiffel ?',
-        expectAll: ['330'],
-        wantSources: true,
-      );
-
+      final clock = Stopwatch()..start();
+      final ok = await n.send(q, attachments: attachments);
+      clock.stop();
+      final s = container.read(chatProvider);
+      final answer = s.messages.last;
+      final sources = jsonDecode(answer.sourcesJson) as List;
+      final run = TurnRun.decode(answer.runJson);
+      final actions = PhoneActions.fromTrace(run?.toolTrace ?? const []);
+      final text = answer.content;
+      final missing = [
+        for (final p in expectAll)
+          if (!text.toLowerCase().contains(p is String ? p.toLowerCase() : p))
+            '$p',
+      ];
+      final problems = [
+        if (!ok || s.error != null) 'error: ${s.error}',
+        if (missing.isNotEmpty) 'missing: ${missing.join(', ')}',
+        if (wantSources && sources.isEmpty) 'no sources',
+        if (noSources && sources.isNotEmpty) 'searched needlessly',
+        if (wantAction && actions.isEmpty) 'no action card',
+      ];
+      if (problems.isNotEmpty) failures.add('$probe: ${problems.join('; ')}');
       // ignore: avoid_print
-      print('QUALITY-SUMMARY: ${jsonEncode({'failures': failures})}');
-      // The report is the deliverable; only a broken pipeline fails the run.
-      expect(
-        failures.where((f) => f.contains('error:')),
-        isEmpty,
-        reason: failures.join('\n'),
+      print(
+        'QUALITY: ${jsonEncode({
+          'probe': probe,
+          'family': _family,
+          'question': q,
+          'pass': problems.isEmpty,
+          'problems': problems,
+          'seconds': clock.elapsed.inMilliseconds / 1000,
+          'notice': s.notice,
+          'sources': [for (final src in sources) src['url']],
+          'actions': [for (final a in actions) a.toJson()],
+          'metrics': {for (final e in s.metrics.entries)
+            if (e.value is num || e.value is String) e.key: e.value},
+          'answer': text,
+        })}',
       );
-    },
-    timeout: const Timeout(Duration(minutes: 40)),
-  );
+      return text;
+    }
+
+    final n = container.read(chatProvider.notifier);
+
+    // 1. Small talk: no search, no tools, fast.
+    n.newChat();
+    await turn('small-talk', 'Hi! How are you today?', noSources: true);
+
+    // 2. Multi-turn memory across four turns.
+    n.newChat();
+    await turn(
+      'memory-1',
+      'My name is Lina. I am planning a trip to Lisbon in May with my '
+          'sister Marta, and our budget is 1,200 euros.',
+      noSources: true,
+    );
+    await turn(
+      'memory-2',
+      'Suggest three neighbourhoods to stay in, one line each.',
+    );
+    await turn(
+      'memory-3',
+      'Remind me: what is my name, who am I travelling with, where, when, '
+          'and what is our budget?',
+      expectAll: ['Lina', 'Marta', 'Lisbon', 'May', '1,200'],
+      noSources: true,
+    );
+
+    // 3. A long document with one buried fact, then a follow-up.
+    n.newChat();
+    final manual = _manual();
+    await turn(
+      'document-1',
+      'What is the Wi-Fi password in this manual?',
+      attachments: [
+        Attachment(
+          id: 'manual',
+          kind: AttachmentKind.document,
+          name: 'house-manual.txt',
+          mime: 'text/plain',
+          path: '${(await getApplicationCacheDirectory()).path}/manual.txt',
+          sizeBytes: manual.length,
+          text: manual,
+        ),
+      ],
+      expectAll: ['heron-4471'],
+    );
+    await turn(
+      'document-2',
+      'And when is glass collected, and where is the router?',
+      expectAll: ['Monday', 'cupboard'],
+    );
+
+    // 4. Code.
+    n.newChat();
+    await turn(
+      'code',
+      'Write a Python function is_palindrome(s) that ignores case, spaces '
+          'and punctuation. Code only.',
+      expectAll: ['def is_palindrome', 'lower'],
+      noSources: true,
+    );
+
+    // 5. Phone actions: a card, no web search.
+    n.newChat();
+    await turn(
+      'action-reminder',
+      'Remind me tomorrow at 9 am to call the dentist.',
+      wantAction: true,
+      noSources: true,
+    );
+    n.newChat();
+    await turn(
+      'action-timer',
+      'Set a timer for 12 minutes for the pasta.',
+      wantAction: true,
+      noSources: true,
+    );
+
+    // 6. Live web: facts that do not change.
+    n.newChat();
+    await turn(
+      'web-who',
+      'When did the WHO declare COVID-19 a pandemic?',
+      expectAll: ['11', 'March', '2020'],
+      wantSources: true,
+    );
+    n.newChat();
+    await turn(
+      'web-z30',
+      'How much does the Nikon Z30 weigh with battery?',
+      expectAll: ['405'],
+      wantSources: true,
+    );
+    // Follow-up that depends on the previous turn's subject.
+    await turn(
+      'web-followup',
+      'And how many shots does its battery last?',
+      expectAll: ['330'],
+    );
+    n.newChat();
+    await turn(
+      'web-fr',
+      'Quelle est la hauteur de la tour Eiffel ?',
+      expectAll: ['330'],
+      wantSources: true,
+    );
+
+    // ignore: avoid_print
+    print('QUALITY-SUMMARY: ${jsonEncode({'failures': failures})}');
+    // The report is the deliverable; only a broken pipeline fails the run.
+    expect(
+      failures.where((f) => f.contains('error:')),
+      isEmpty,
+      reason: failures.join('\n'),
+    );
+  }, timeout: const Timeout(Duration(minutes: 40)));
 }

@@ -40,9 +40,7 @@ class _Packs extends VoiceModelsNotifier {
   VoiceModelsState build() => VoiceModelsState({
     for (final p in VoiceModels.all)
       p.id: VoicePackState(
-        ready.contains(p.id)
-            ? VoicePackStatus.ready
-            : VoicePackStatus.missing,
+        ready.contains(p.id) ? VoicePackStatus.ready : VoicePackStatus.missing,
       ),
   });
 }

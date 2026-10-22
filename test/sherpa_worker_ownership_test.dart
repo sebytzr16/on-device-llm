@@ -8,15 +8,11 @@ import 'package:ondevice_llm/features/voice/sherpa_voice.dart';
 /// its close writes a marker, standing in for freeing Kokoro or Whisper.
 void _slowMain(SendPort boot) {
   String? marker;
-  serveSherpaWorker(
-    boot,
-    (m) {
-      marker = m['marker'] as String;
-      sleep(Duration(milliseconds: m['ms'] as int));
-      return const {};
-    },
-    () => File(marker!).writeAsStringSync('freed'),
-  );
+  serveSherpaWorker(boot, (m) {
+    marker = m['marker'] as String;
+    sleep(Duration(milliseconds: m['ms'] as int));
+    return const {};
+  }, () => File(marker!).writeAsStringSync('freed'));
 }
 
 void main() {

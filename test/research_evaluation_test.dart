@@ -85,9 +85,15 @@ void main() {
       ),
       isFalse,
     );
-    expect(passes('It is on **August 2, 2027** [1], after August 12, 2026.'), isTrue);
+    expect(
+      passes('It is on **August 2, 2027** [1], after August 12, 2026.'),
+      isTrue,
+    );
     // Today's date from the clock line is not a competing answer.
-    expect(passes('Today is October 11, 2026; the next one is 2 August 2027 [1].'), isTrue);
+    expect(
+      passes('Today is October 11, 2026; the next one is 2 August 2027 [1].'),
+      isTrue,
+    );
     expect(passes('No total eclipse is listed.'), isFalse);
     const born = {
       'requiredFacts': [
@@ -104,7 +110,8 @@ void main() {
     );
     expect(
       ResearchEvaluation.score(
-        answer: 'Nació el 3 de mayo de 1990; otras fuentes dicen 10 de marzo de 1994.',
+        answer:
+            'Nació el 3 de mayo de 1990; otras fuentes dicen 10 de marzo de 1994.',
         evidence: const [],
         gold: born,
       ).factualRulesPassed,

@@ -70,10 +70,15 @@ class _MarqueeTextState extends State<MarqueeText>
     final slide = overflow / widget.speed * 1000;
     final pause = widget.pause.inMilliseconds.toDouble();
     const back = 450.0;
-    _c.duration = Duration(milliseconds: (pause + slide + pause + back).round());
+    _c.duration = Duration(
+      milliseconds: (pause + slide + pause + back).round(),
+    );
     _offset = TweenSequence<double>([
       TweenSequenceItem(tween: ConstantTween(0), weight: pause),
-      TweenSequenceItem(tween: Tween(begin: 0, end: overflow), weight: slide),
+      TweenSequenceItem(
+        tween: Tween(begin: 0, end: overflow),
+        weight: slide,
+      ),
       TweenSequenceItem(tween: ConstantTween(overflow), weight: pause),
       TweenSequenceItem(
         tween: Tween(

@@ -108,9 +108,7 @@ class SemanticRerank {
     final out = <EvidenceChunk>[];
     Float32List? q;
     try {
-      q = (await embedder
-              .embedQueriesWithin([query], expired)
-              .timeout(budget))
+      q = (await embedder.embedQueriesWithin([query], expired).timeout(budget))
           ?.first;
     } catch (_) {}
     for (final c in chunks) {
@@ -125,8 +123,7 @@ class SemanticRerank {
         try {
           vs = await embedder
               .embedDocumentsWithin([
-                for (final u in units)
-                  u.length > 400 ? u.substring(0, 400) : u,
+                for (final u in units) u.length > 400 ? u.substring(0, 400) : u,
               ], expired)
               .timeout(budget - clock.elapsed);
         } catch (_) {}
@@ -138,8 +135,10 @@ class SemanticRerank {
       }
       final order = List.generate(units.length, (i) => i)
         ..sort(
-          (a, b) => KnowledgeStore.dot(q!, vs![b])
-              .compareTo(KnowledgeStore.dot(q, vs[a])),
+          (a, b) => KnowledgeStore.dot(
+            q!,
+            vs![b],
+          ).compareTo(KnowledgeStore.dot(q, vs[a])),
         );
       final keep = order.take((units.length * share).ceil()).toSet();
       final text = StringBuffer();

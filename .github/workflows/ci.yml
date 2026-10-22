@@ -15,7 +15,9 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: dart run build_runner build
-      - run: dart format --output=none --set-exit-if-changed lib test integration_test
+      # Formatter output differs between Dart versions; check with the build's Flutter.
+      - if: matrix.flutter == '3.47.5'
+        run: dart format --output=none --set-exit-if-changed lib test integration_test
       - run: flutter analyze
       - run: flutter test
   android:

@@ -47,30 +47,32 @@ void main() {
     return c;
   }
 
-  test('finished goals are kept, newest first, and survive a restart', () async {
-    SharedPreferences.setMockInitialValues({});
-    final a = container();
-    final history = a.read(goalHistoryProvider.notifier);
-    await history.ready;
-    await history.put(_finished('first', at: DateTime(2026, 10, 1)));
-    await history.put(_finished('second', at: DateTime(2026, 10, 2)));
-    // Saving the same goal again updates it in place.
-    await history.put(_finished('second', at: DateTime(2026, 10, 2)));
-    expect(
-      a.read(goalHistoryProvider).map((e) => e.goal.spec.objective),
-      ['second', 'first'],
-    );
+  test(
+    'finished goals are kept, newest first, and survive a restart',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final a = container();
+      final history = a.read(goalHistoryProvider.notifier);
+      await history.ready;
+      await history.put(_finished('first', at: DateTime(2026, 10, 1)));
+      await history.put(_finished('second', at: DateTime(2026, 10, 2)));
+      // Saving the same goal again updates it in place.
+      await history.put(_finished('second', at: DateTime(2026, 10, 2)));
+      expect(a.read(goalHistoryProvider).map((e) => e.goal.spec.objective), [
+        'second',
+        'first',
+      ]);
 
-    final b = container();
-    await b.read(goalHistoryProvider.notifier).ready;
-    expect(b.read(goalHistoryProvider), hasLength(2));
-    final first = b.read(goalHistoryProvider).last;
-    await b.read(goalHistoryProvider.notifier).remove(first.id);
-    expect(
-      b.read(goalHistoryProvider).map((e) => e.goal.spec.objective),
-      ['second'],
-    );
-  });
+      final b = container();
+      await b.read(goalHistoryProvider.notifier).ready;
+      expect(b.read(goalHistoryProvider), hasLength(2));
+      final first = b.read(goalHistoryProvider).last;
+      await b.read(goalHistoryProvider.notifier).remove(first.id);
+      expect(b.read(goalHistoryProvider).map((e) => e.goal.spec.objective), [
+        'second',
+      ]);
+    },
+  );
 
   testWidgets(
     'a finished report comes first; leaving puts it in the past goals',
@@ -127,7 +129,9 @@ void main() {
       expect(find.byKey(const Key('goal-objective')), findsOneWidget);
       await tester.tap(find.byKey(const Key('goal-past-jump')));
       await tester.pumpAndSettle();
-      final past = find.byKey(Key('goal-past-${GoalHistoryNotifier.idOf(goal)}'));
+      final past = find.byKey(
+        Key('goal-past-${GoalHistoryNotifier.idOf(goal)}'),
+      );
       expect(past, findsOneWidget);
       await tester.tap(past);
       await tester.pumpAndSettle();

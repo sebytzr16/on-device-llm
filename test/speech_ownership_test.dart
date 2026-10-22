@@ -187,65 +187,51 @@ void main() {
   group('C5: corrections are not echo', () {
     test('a correction after the answer is kept', () {
       expect(
-        ConversationScreen.echoOf(
-          'No, set the timer for ten minutes.',
-          ['The timer is set for five minutes.'],
-          duringSpeech: false,
-        ),
+        ConversationScreen.echoOf('No, set the timer for ten minutes.', [
+          'The timer is set for five minutes.',
+        ], duringSpeech: false),
         isFalse,
       );
       expect(
-        ConversationScreen.echoOf(
-          'Non, mets le minuteur sur dix minutes.',
-          ['Le minuteur est réglé sur cinq minutes.'],
-          duringSpeech: true,
-        ),
+        ConversationScreen.echoOf('Non, mets le minuteur sur dix minutes.', [
+          'Le minuteur est réglé sur cinq minutes.',
+        ], duringSpeech: true),
         isFalse,
       );
       expect(
-        ConversationScreen.echoOf(
-          'No, pon el temporizador en diez minutos.',
-          ['El temporizador está puesto en cinco minutos.'],
-          duringSpeech: false,
-        ),
+        ConversationScreen.echoOf('No, pon el temporizador en diez minutos.', [
+          'El temporizador está puesto en cinco minutos.',
+        ], duringSpeech: false),
         isFalse,
       );
     });
 
     test('a different number is a correction', () {
       expect(
-        ConversationScreen.echoOf(
-          'The timer is set for 10 minutes.',
-          ['The timer is set for 5 minutes.'],
-          duringSpeech: true,
-        ),
+        ConversationScreen.echoOf('The timer is set for 10 minutes.', [
+          'The timer is set for 5 minutes.',
+        ], duringSpeech: true),
         isFalse,
       );
     });
 
     test('the answer heard back is still echo', () {
       expect(
-        ConversationScreen.echoOf(
+        ConversationScreen.echoOf('The timer is set for five minutes.', [
           'The timer is set for five minutes.',
-          ['The timer is set for five minutes.'],
-          duringSpeech: true,
-        ),
+        ], duringSpeech: true),
         isTrue,
       );
       expect(
-        ConversationScreen.echoOf(
-          'set for five minutes',
-          ['The timer is set for five minutes.'],
-          duringSpeech: false,
-        ),
+        ConversationScreen.echoOf('set for five minutes', [
+          'The timer is set for five minutes.',
+        ], duringSpeech: false),
         isTrue,
       );
       expect(
-        ConversationScreen.echoOf(
-          'Yes.',
-          ['Yes. The timer is set.'],
-          duringSpeech: true,
-        ),
+        ConversationScreen.echoOf('Yes.', [
+          'Yes. The timer is set.',
+        ], duringSpeech: true),
         isTrue,
       );
     });
