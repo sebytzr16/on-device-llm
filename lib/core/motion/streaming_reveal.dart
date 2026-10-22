@@ -38,7 +38,9 @@ class _StreamingRevealState extends State<StreamingReveal>
     with SingleTickerProviderStateMixin {
   final _content = GlobalKey();
   final _edge = _RevealEdge();
-  late final Ticker _ticker = createTicker(_tick);
+  // Created on first use; dispose() must not create one on a deactivated element.
+  Ticker? _tickerOrNull;
+  Ticker get _ticker => _tickerOrNull ??= createTicker(_tick);
   Duration _last = Duration.zero;
 
   @override
@@ -65,7 +67,7 @@ class _StreamingRevealState extends State<StreamingReveal>
 
   @override
   void dispose() {
-    _ticker.dispose();
+    _tickerOrNull?.dispose();
     _edge.dispose();
     super.dispose();
   }
