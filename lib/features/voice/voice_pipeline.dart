@@ -208,7 +208,9 @@ class WhisperListener {
           final text = cleanTranscript(heard?.text ?? '');
           if (epoch == _epoch && text.isNotEmpty) onPartial?.call(text);
         })
-        .catchError((Object e) => _log.warning('Caption failed', e))
+        .catchError((Object e) {
+          _log.warning('Caption failed', e);
+        })
         .whenComplete(() => _partialBusy = false);
   }
 

@@ -126,9 +126,9 @@ Future<void> _run() async {
             'steps': checkpoint['steps'],
             'status': checkpoint['status'],
           });
-        }().catchError(
-          (Object error) => _log('QUALITY_FAILED', {'error': '$error'}),
-        ),
+        }().catchError((Object error) {
+          _log('QUALITY_FAILED', {'error': '$error'});
+        }),
       );
     });
     try {
