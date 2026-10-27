@@ -392,7 +392,7 @@ class NewsDesk {
     'de': [
       NewsFeed(
         'tagesschau',
-        'https://www.tagesschau.de/xml/rss2',
+        'https://www.tagesschau.de/infoservices/alle-meldungen-100~rss2.xml',
         NewsCategory.world,
       ),
       NewsFeed(
@@ -575,7 +575,7 @@ class NewsDesk {
     'de': [
       NewsFeed(
         'tagesschau',
-        'https://www.tagesschau.de/xml/rss2',
+        'https://www.tagesschau.de/inland/index~rss2.xml',
         NewsCategory.national,
       ),
       NewsFeed(
@@ -583,6 +583,57 @@ class NewsDesk {
         'https://www.spiegel.de/schlagzeilen/index.rss',
         NewsCategory.national,
       ),
+      NewsFeed(
+        'Der Spiegel',
+        'https://www.spiegel.de/politik/index.rss',
+        NewsCategory.politics,
+      ),
+      NewsFeed(
+        'tagesschau',
+        'https://www.tagesschau.de/wirtschaft/index~rss2.xml',
+        NewsCategory.business,
+      ),
+      NewsFeed(
+        'Der Spiegel',
+        'https://www.spiegel.de/netzwelt/index.rss',
+        NewsCategory.technology,
+      ),
+      NewsFeed(
+        'Der Spiegel',
+        'https://www.spiegel.de/wissenschaft/index.rss',
+        NewsCategory.science,
+      ),
+      NewsFeed(
+        'Der Spiegel',
+        'https://www.spiegel.de/gesundheit/index.rss',
+        NewsCategory.health,
+      ),
+      NewsFeed(
+        'Der Spiegel',
+        'https://www.spiegel.de/sport/index.rss',
+        NewsCategory.sports,
+      ),
+      NewsFeed(
+        'Der Spiegel',
+        'https://www.spiegel.de/kultur/index.rss',
+        NewsCategory.entertainment,
+      ),
+    ],
+    'at-de': [
+      NewsFeed('ORF', 'https://rss.orf.at/news.xml', NewsCategory.national),
+      NewsFeed(
+        'Der Standard',
+        'https://www.derstandard.at/rss',
+        NewsCategory.national,
+      ),
+    ],
+    'ch-de': [
+      NewsFeed(
+        'SRF News',
+        'https://www.srf.ch/news/bnf/rss/1646',
+        NewsCategory.national,
+      ),
+      NewsFeed('NZZ', 'https://www.nzz.ch/recent.rss', NewsCategory.national),
     ],
     'it': [
       NewsFeed(

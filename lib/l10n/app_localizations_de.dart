@@ -4847,7 +4847,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get naturalVoiceHint =>
-      'Whisper hört zu und Kokoro spricht, komplett auf diesem Telefon. Ohne Download wird die Systemstimme verwendet.';
+      'Whisper hört zu und Piper spricht (Stimme „Thorsten“), komplett auf diesem Telefon. Ohne Download wird die Systemstimme verwendet.';
 
   @override
   String get talkOverTitle => 'In die Antwort hineinsprechen';
@@ -4876,7 +4876,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get voiceListeningPack => 'Zuhören (Whisper)';
 
   @override
-  String get voiceSpeakingPack => 'Sprechen (Kokoro)';
+  String get voiceSpeakingPack => 'Sprechen (Piper)';
 
   @override
   String get listeningModelTitle => 'Modell zum Zuhören';
@@ -4930,7 +4930,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get convNeedsVoice =>
-      'Für eine natürliche Unterhaltung ohne Hände lade die Stimme für das Gerät herunter (etwa 290 MB). Bis dahin wird die Systemstimme verwendet.';
+      'Für eine natürliche Unterhaltung ohne Hände lade die Stimme für das Gerät herunter (etwa 230 MB). Bis dahin wird die Systemstimme verwendet.';
 
   @override
   String convModelMissing(String model) {

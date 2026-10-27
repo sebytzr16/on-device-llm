@@ -38,13 +38,13 @@ class ResearchEvaluation {
   }
 
   static const _month =
-      r'(?:janvier|janv|january|jan|enero|ene|février|fevrier|févr|february|febrero|feb|fév|mars|march|marzo|mar|avril|april|abril|apr|avr|abr|mai|mayo|may|juin|june|junio|jun|juillet|juil|july|julio|jul|août|aout|august|agosto|aug|ago|septembre|september|septiembre|sept|sep|octobre|october|octubre|oct|novembre|november|noviembre|nov|décembre|decembre|december|diciembre|dec|déc|dic)';
+      r'(?:janvier|janv|january|jan|enero|ene|février|fevrier|févr|february|febrero|feb|fév|mars|march|marzo|mar|avril|april|abril|apr|avr|abr|mai|mayo|may|juin|june|junio|jun|juillet|juil|july|julio|jul|août|aout|august|agosto|aug|ago|septembre|september|septiembre|sept|sep|octobre|october|octubre|oct|novembre|november|noviembre|nov|décembre|decembre|december|diciembre|dec|déc|dic|januar|jänner|februar|märz|maerz|juni|juli|oktober|okt|dezember|dez)';
 
   /// A date with day, month and year: "August 12, 2026", "2 août 2027",
   /// "10 de marzo de 1994".
   static final _fullDate = RegExp(
     '(?<![\\p{L}\\p{N}])(?:$_month\\.? \\d{1,2}(?:st|nd|rd|th)?,? \\d{4}|'
-    '\\d{1,2}(?:st|nd|rd|th|er)? (?:of |de )?$_month\\.?,?(?: de)? \\d{4})'
+    '\\d{1,2}(?:st|nd|rd|th|er|\\.)? (?:of |de )?$_month\\.?,?(?: de)? \\d{4})'
     '(?!\\p{N})',
     unicode: true,
     caseSensitive: false,
@@ -53,18 +53,18 @@ class ResearchEvaluation {
   static int? _monthOf(String name) {
     final n = name.toLowerCase();
     const starts = [
-      ['jan', 'ene'],
+      ['jan', 'ene', 'jän'],
       ['feb', 'fév', 'fev'],
-      ['mar'],
+      ['mar', 'mär', 'mae'],
       ['apr', 'avr', 'abr'],
       ['may', 'mai'],
       ['jun', 'juin'],
       ['jul', 'juil'],
       ['aug', 'aoû', 'aou', 'ago'],
       ['sep'],
-      ['oct'],
+      ['oct', 'okt'],
       ['nov'],
-      ['dec', 'déc', 'dic'],
+      ['dec', 'déc', 'dic', 'dez'],
     ];
     for (var m = 0; m < 12; m++) {
       if (starts[m].any(n.startsWith)) return m + 1;

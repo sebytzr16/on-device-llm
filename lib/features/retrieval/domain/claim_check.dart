@@ -86,7 +86,7 @@ class ClaimCheck {
   // pages lack, nothing about the world; the notice quoted it as "not
   // backed by the sources" (app quality probe, 2026-10-19).
   static final _sourcesLack = RegExp(
-    r"(?:sources?|pages?|search results?|results?|articles?|provided (?:information|text|context)|documents?)\s+(?:i (?:found|read)\s+)?(?:do(?:es)?\s*n[o']t|did\s*n[o']t|don['’]t|doesn['’]t)\s+(?:seem to\s+)?(?:contain|include|mention|say|provide|state|give|list|specify|cover|have)|^(?:i (?:could ?n['’]?o?t|can(?:no|['’])t|was unable to) find|there is no (?:information|mention))|sources? ne (?:contien|mentionn|pr[ée]cis|donn|dis|indiqu|pr[ée]sent)|fuentes? no (?:contien|mencion|incluy|dic|indic|especific|proporcion)",
+    r"(?:sources?|pages?|search results?|results?|articles?|provided (?:information|text|context)|documents?)\s+(?:i (?:found|read)\s+)?(?:do(?:es)?\s*n[o']t|did\s*n[o']t|don['’]t|doesn['’]t)\s+(?:seem to\s+)?(?:contain|include|mention|say|provide|state|give|list|specify|cover|have)|^(?:i (?:could ?n['’]?o?t|can(?:no|['’])t|was unable to) find|there is no (?:information|mention))|sources? ne (?:contien|mentionn|pr[ée]cis|donn|dis|indiqu|pr[ée]sent)|fuentes? no (?:contien|mencion|incluy|dic|indic|especific|proporcion)|(?:quellen?|seiten?|suchergebnisse?|ergebnisse?|artikel) (?:enth[äa]lt|enthalten|nennt|nennen|erw[äa]hnt|erw[äa]hnen|geben?|liefern?) (?:leider )?(?:keine|nicht)|^ich (?:konnte|kann) (?:leider )?(?:keine|nichts) (?:\S+ )?(?:finden|gefunden)",
     caseSensitive: false,
   );
 
@@ -100,7 +100,7 @@ class ClaimCheck {
   // specific to regions") state no fact a page could back; with no figure
   // in them they are left out (the tester's phone chat, 2026-10-19).
   static final _noClaim = RegExp(
-    r"^(?:you (?:should|can|could|may|might|will want|['’]ll want|need to)|i (?:would )?(?:recommend|suggest)|(?:please )?(?:check|consider|visit|contact)\b|(?:it(?:['’]s| is) (?:best|a good idea|worth|recommended))|(?:the )?(?:search )?(?:results?|sources?|pages?) (?:indicate|suggest|show|say|mention|note)|vous (?:devriez|pouvez)|je (?:vous )?(?:recommande|conseille|sugg[èe]re)|(?:v[ée]rifiez|consultez)\b|(?:les )?(?:r[ée]sultats|sources) (?:indiquent|montrent|sugg[èe]rent)|deber[íi]as|(?:te|le) recomiendo|(?:consulta|verifica)\b|(?:los )?(?:resultados|fuentes) (?:indican|muestran|sugieren))",
+    r"^(?:you (?:should|can|could|may|might|will want|['’]ll want|need to)|i (?:would )?(?:recommend|suggest)|(?:please )?(?:check|consider|visit|contact)\b|(?:it(?:['’]s| is) (?:best|a good idea|worth|recommended))|(?:the )?(?:search )?(?:results?|sources?|pages?) (?:indicate|suggest|show|say|mention|note)|vous (?:devriez|pouvez)|je (?:vous )?(?:recommande|conseille|sugg[èe]re)|(?:v[ée]rifiez|consultez)\b|(?:les )?(?:r[ée]sultats|sources) (?:indiquent|montrent|sugg[èe]rent)|deber[íi]as|(?:te|le) recomiendo|(?:consulta|verifica)\b|(?:los )?(?:resultados|fuentes) (?:indican|muestran|sugieren)|du (?:solltest|kannst|k[öo]nntest)|sie (?:sollten|k[öo]nnen)|ich (?:empfehle|rate)|(?:pr[üu]fe|besuche|schau)\b|(?:die )?(?:suchergebnisse|ergebnisse|quellen) (?:zeigen|deuten|legen nahe|besagen))",
     caseSensitive: false,
   );
   static final _digit = RegExp(r'\d');

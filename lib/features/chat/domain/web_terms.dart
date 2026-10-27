@@ -1,5 +1,5 @@
 /// Wording that means a question needs the web, by category and language
-/// (English, French, Spanish). On the phone these lists alone decide when
+/// (English, French, Spanish, German). On the phone these lists alone decide when
 /// Auto mode searches (no model judge, see `TurnPolicy.judgeLocalModels`),
 /// so they are broad; each entry carries enough context to stay precise
 /// ("stock price", not "stock": chicken stock is a recipe). Scored by
@@ -49,11 +49,23 @@ class WebTerms {
     ..._travelEs,
     ..._electionsEs,
     ..._peopleEs,
+    ..._timeDe,
+    ..._newsDe,
+    ..._marketsDe,
+    ..._weatherDe,
+    ..._sportsDe,
+    ..._officeDe,
+    ..._placesDe,
+    ..._productsDe,
+    ..._showsDe,
+    ..._travelDe,
+    ..._electionsDe,
+    ..._peopleDe,
   ]);
 
   /// An explicit request to go online, beyond the core verbs in
   /// `RetrievalPlan`.
-  static final explicit = _words([..._askEn, ..._askFr, ..._askEs]);
+  static final explicit = _words([..._askEn, ..._askFr, ..._askEs, ..._askDe]);
 
   static RegExp _words(List<String> parts) => RegExp(
     '(?<![\\p{L}\\p{N}])(?:${parts.join('|')})(?![\\p{L}\\p{N}])',
@@ -69,12 +81,17 @@ class WebTerms {
   static const _rolesEs =
       r"(?:ceo|director(?:a)? ejecutiv[oa]|presidente|presidenta|primer(?:a)? ministr[oa]|alcalde(?:sa)?|gobernador(?:a)?|canciller|entrenador(?:a)?|capit[áa]n|l[íi]der|jefe|jefa|due[ñn][oa]|director(?:a)?|ministr[oa]|papa|rey|reina|embajador(?:a)?)";
 
+  static const _rolesDe =
+      r"(?:ceo|chef(?:in)?|vorstandschef(?:in)?|vorstandsvorsitzende[rn]?|gesch[äa]ftsf[üu]hrer(?:in)?|pr[äa]sident(?:in)?|bundeskanzler(?:in)?|kanzler(?:in)?|ministerpr[äa]sident(?:in)?|(?:ober)?b[üu]rgermeister(?:in)?|gouverneur(?:in)?|trainer(?:in)?|coach|kapit[äa]n(?:in)?|anf[üu]hrer(?:in)?|vorsitzende[rn]?|besitzer(?:in)?|eigent[üu]mer(?:in)?|direktor(?:in)?|(?:bundes)?minister(?:in)?|generalsekret[äa]r(?:in)?|sprecher(?:in)?|papst|k[öo]nig(?:in)?|botschafter(?:in)?|chefredakteur(?:in)?)";
   static const _days =
       r"(?:sundays?|mondays?|tuesdays?|wednesdays?|thursdays?|fridays?|saturdays?|holidays?|christmas(?: eve| day)?|boxing day|new year['’]?s(?: day| eve)?|easter(?: sunday| monday)?|good friday|thanksgiving|labou?r day|victoria day|canada day|memorial day|remembrance day|family day|civic holiday|st\.? jean|july 4th|fourth of july|halloween)";
   static const _joursFr =
       r"(?:dimanche|lundi|mardi|mercredi|jeudi|vendredi|samedi|jours? f[ée]ri[ée]s?|no[ëe]l|jour de l['’]an|p[âa]ques|lundi de p[âa]ques|vendredi saint|action de gr[âa]ce|f[êe]te du travail|f[êe]te nationale|saint-jean|la f[êe]te)";
   static const _diasEs =
       r"(?:domingos?|lunes|martes|mi[ée]rcoles|jueves|viernes|s[áa]bados?|festivos?|feriados?|navidad|nochebuena|a[ñn]o nuevo|semana santa|viernes santo|pascua|d[íi]a de reyes)";
+
+  static const _tageDe =
+      r"(?:sonntags?|montags?|dienstags?|mittwochs?|donnerstags?|freitags?|samstags?|sonnabends?|feiertags?|feiertagen|heiligabend|weihnachten|silvester|neujahr|ostern|ostersonntag|ostermontag|karfreitag|pfingsten|pfingstmontag|christi himmelfahrt|fronleichnam|tag der deutschen einheit|reformationstag|allerheiligen|1\. mai|maifeiertag)";
 
   // ---- English ----
   static const _timeEn = [
@@ -714,5 +731,227 @@ class WebTerms {
     r"encu[ée]ntrame (?:fuentes|enlaces|art[íi]culos)",
     r"enlaces? (?:a|para)",
     r"seg[úu]n (?:las noticias|internet)",
+  ];
+
+  // ---- German ----
+  static const _timeDe = [
+    r"heute",
+    r"heutige[nmrs]?",
+    r"heute (?:abend|morgen|nacht|fr[üu]h)",
+    r"morgen fr[üu]h",
+    r"gestern(?: abend)?",
+    r"diese[nmrs]? (?:woche|wochenende|monat|jahr|saison|sommer|winter|herbst|fr[üu]hling)",
+    r"letzte[nmrs]? (?:nacht|woche|wochenende|monat|saison)",
+    r"gerade jetzt",
+    r"im moment",
+    r"momentan",
+    r"derzeit",
+    r"zurzeit",
+    r"aktuell(?:e[nmrs]?)?",
+    r"neueste[nmrs]?",
+    r"neuesten",
+    r"mittlerweile",
+    r"heutzutage",
+    r"in letzter zeit",
+    r"k[üu]rzlich",
+    r"demn[äa]chst",
+    r"bald erscheinend",
+    r"(?:lebt|l[äa]uft|gibt es|existiert) (?:\p{L}+ )?(?:noch|immer noch)",
+    r"noch (?:am leben|ge[öo]ffnet|verf[üu]gbar|verheiratet|zusammen|im amt)",
+  ];
+  static const _newsDe = [
+    r"nachrichten",
+    r"neuigkeiten",
+    r"schlagzeilen",
+    r"eilmeldung(?:en)?",
+    r"breaking news",
+    r"angek[üu]ndigt",
+    r"ank[üu]ndigung",
+    r"(?:ist|sind) (?:\p{L}+ )?(?:schon |bereits )?(?:erschienen|rausgekommen|draußen|ver[öo]ffentlicht)",
+    r"erscheinungsdatum",
+    r"erscheinungstermin",
+    r"release-?datum",
+    r"marktstart",
+    r"ger[üu]chte? (?:[üu]ber|zu|zum|zur)",
+    r"was ist (?:mit|bei|in) .{1,40}? (?:los|passiert)",
+    r"was ist (?:los|passiert) (?:mit|bei|in|im)",
+    r"stimmt es,? dass",
+  ];
+  static const _marketsDe = [
+    r"preise?",
+    r"was kostet",
+    r"was kosten",
+    r"wie ?viel (?:kostet|kosten|kostete)",
+    r"kostet (?:jetzt|aktuell|derzeit|heute|gerade)",
+    r"wechselkurs(?:e)?",
+    r"zinss[äa]tze?",
+    r"leitzins",
+    r"bauzinsen",
+    r"hypothekenzinsen",
+    r"inflation(?:srate)? (?:aktuell|heute|in|im|derzeit)",
+    r"aktuelle inflation",
+    r"aktienkurs(?:e)?",
+    r"aktie (?:von|der)",
+    r"b[öo]rse(?:nkurs)?",
+    r"an der b[öo]rse",
+    r"dax",
+    r"kurs (?:von|der|des)",
+    r"(?:benzin|diesel|sprit|heiz[öo]l|gas|strom)preise?",
+    r"(?:gold|silber|[öo]l)preis",
+    r"(?:bitcoin|ethereum|btc|eth)(?:-?kurs| preis| heute| aktuell)",
+    r"(?:euro|eur|dollar|usd|franken|chf|pfund|gbp|yen|jpy) (?:in|zu|zum|gegen) (?:euro|eur|dollar|usd|franken|chf|pfund|gbp|yen|jpy)",
+    r"verm[öo]gen (?:von|des|der)",
+    r"im angebot",
+    r"(?:ausverkauft|vorr[äa]tig|lieferbar|auf lager)",
+    r"angebote? (?:f[üu]r|von|bei)",
+  ];
+  static const _weatherDe = [
+    r"wetter",
+    r"wettervorhersage",
+    r"vorhersage",
+    r"wie (?:warm|kalt|hei[ßs]) (?:ist es|wird es)",
+    r"temperatur (?:drau[ßs]en|in|heute|morgen|jetzt|aktuell)",
+    r"wie viel grad",
+    r"(?:regnet|schneit|st[üu]rmt|gewittert) es",
+    r"(?:regen|schnee|sturm|gewitter|wind|hagel|nebel|glatteis) (?:heute|morgen|jetzt|am wochenende|diese)",
+    r"wird es (?:regnen|schneien|st[üu]rmen|gewittern)",
+    r"(?:unwetter|waldbr[äa]nde?|erdbeben|hochwasser|[üu]berschwemmung(?:en)?|sturm|hitzewelle|orkan|tornado)(?:warnung)? (?:heute|jetzt|aktuell|in|bei|im|diese)",
+    r"unwetterwarnung(?:en)?",
+    r"luftqualit[äa]t",
+    r"uv-?index",
+    r"pollenflug",
+    r"(?:sonnenaufgang|sonnenuntergang) (?:heute|morgen|in|um)",
+    r"wann (?:geht die sonne (?:auf|unter)|ist sonnen(?:aufgang|untergang))",
+    r"(?:ebbe|flut|gezeiten)",
+  ];
+  static const _sportsDe = [
+    r"ergebnis(?:se)? (?:von|des|der|vom)",
+    r"spielstand",
+    r"wie steht es",
+    r"wie ist das spiel ausgegangen",
+    r"tabelle",
+    r"tabellenplatz",
+    r"wer hat (?:\p{L}+ )?gewonnen",
+    r"wer gewinnt",
+    r"wer f[üu]hrt",
+    r"hat .{1,40}? (?:gewonnen|verloren)",
+    r"endstand",
+    r"torsch[üu]tzen(?:liste|k[öo]nig)",
+    r"aufstellung",
+    r"(?:spiel|partie|rennen) (?:heute|morgen|am wochenende|diese)",
+    r"n[äa]chste[snr]? (?:spiel|rennen|saison|kampf|spieltag)",
+    r"spieltag",
+    r"bundesliga",
+    r"champions league",
+    r"transfer(?:markt|ger[üu]chte|news)",
+    r"wechselger[üu]chte",
+    r"gewechselt (?:zu|nach)",
+  ];
+  static const _officeDe = [
+    "wer ist (?:der |die |das )?(?:aktuelle |neue |jetzige |derzeitige )?$_rolesDe",
+    "wer ist eigentlich (?:der |die )?$_rolesDe",
+    "(?:nenn|sag) mir (?:den |die )?(?:aktuellen? )?$_rolesDe",
+    "(?:aktuelle[rn]?|neue[rn]?|jetzige[rn]?|derzeitige[rn]?) $_rolesDe",
+    r"(?:ceo|chef(?:in)?|vorstandschef(?:in)?|gesch[äa]ftsf[üu]hrer(?:in)?|(?:ober)?b[üu]rgermeister(?:in)?|trainer(?:in)?|besitzer(?:in)?|eigent[üu]mer(?:in)?) (?:von|der|des|bei)",
+    r"wer (?:leitet|besitzt|f[üu]hrt|hat .{1,30}? gekauft|[üu]bernahm|stellt .{1,30}? her)",
+    r"welche (?:firma|unternehmen|marke) (?:stellt|produziert|besitzt|baut|hat .{1,30}? gekauft)",
+    r"[üu]bernommen von",
+    r"gek[üu]ndigt (?:bei|von)",
+    r"entlassungen bei",
+    r"zur[üu]ckgetreten",
+    r"(?:wurde|ist) (?:gew[äa]hlt|ernannt|verhaftet|entlassen)",
+  ];
+  static const _placesDe = [
+    "(?:ge[öo]ffnet|offen|auf|geschlossen|zu) (?:heute|morgen|jetzt|gerade|am $_tageDe|an $_tageDe|$_tageDe)",
+    "(?:hat|haben|ist|sind) .{1,40}? (?:heute |morgen |jetzt |am $_tageDe |an $_tageDe |$_tageDe )(?:ge[öo]ffnet|offen|auf|geschlossen|zu)",
+    "(?:hat|haben|ist|sind) .{1,40}? (?:ge[öo]ffnet|offen|geschlossen)",
+    r"[öo]ffnungszeiten",
+    r"wann (?:[öo]ffnet|schlie[ßs]t|macht .{1,30}? (?:auf|zu))",
+    r"bis wann (?:hat|ist|haben)",
+    r"in meiner n[äa]he",
+    r"in der n[äa]he",
+    r"(?:gest[öo]rt|st[öo]rung(?:en)?|ausfall)",
+    r"funktioniert (?:\p{L}+ )?(?:gerade |heute |momentan )?nicht",
+    r"wartezeit",
+    r"stromausfall",
+    r"(?:bahn|zug|s-bahn|u-bahn)(?:verkehr)? (?:heute|morgen|gerade|f[äa]hrt)",
+    r"f[äa]hrt (?:die|der) .{1,20}? (?:heute|gerade|normal|wieder)",
+    r"streik(?:s)? (?:bei|der|heute|morgen)",
+  ];
+  static const _productsDe = [
+    r"neueste version",
+    r"aktuelle version",
+    r"welche version",
+    r"neue[snrm]? (?:modell|iphone|pixel|galaxy|version|album|film|spiel|staffel|handy|smartphone)",
+    r"testbericht(?:e)?",
+    r"test (?:von|des|der)",
+    r"erfahrungen mit",
+    r"bewertungen? (?:von|f[üu]r|zu)",
+    r"lohnt (?:es )?sich",
+    r"soll(?:te)? ich .{1,40}? kaufen",
+    r"(?:erh[äa]ltlich|verf[üu]gbar) (?:in|bei|ab|jetzt)",
+    r"vorbestell(?:en|bar|ung)",
+    r"technische daten",
+    r"datenblatt",
+  ];
+  static const _showsDe = [
+    r"wo (?:kann ich .{1,40}? )?(?:schauen|sehen|streamen|gucken|anschauen)",
+    r"(?:l[äa]uft|laufen) (?:\p{L}+ )?(?:im kino|im fernsehen|auf netflix|heute)",
+    r"im kino (?:an|diese|gerade|jetzt)",
+    r"kinoprogramm",
+    r"fernsehprogramm",
+    r"tv-?programm",
+    r"auf (?:netflix|disney\+?|prime video|amazon prime|apple tv|joyn|rtl\+|ard mediathek|zdf mediathek)",
+    r"neue (?:folgen?|staffel|episoden?)",
+    r"tickets? (?:f[üu]r|zu|zum)",
+    r"karten (?:f[üu]r|zum)",
+    r"konzerte? (?:in|diese|am|heute)",
+    r"veranstaltungen (?:in|heute|am|diese)",
+  ];
+  static const _travelDe = [
+    r"fl[üu]ge? (?:nach|von|ab)",
+    r"flugstatus",
+    r"flug (?:versp[äa]tet|gestrichen|annulliert)",
+    r"versp[äa]tung(?:en)? (?:bei|der|im|heute)",
+    r"(?:stau|verkehr|verkehrslage) (?:auf|in|bei|heute|jetzt|gerade)",
+    r"(?:sperrung|vollsperrung) (?:der|auf|in)",
+    r"stra[ßs]enverh[äa]ltnisse",
+    r"grenzkontrollen?",
+    r"reisewarnung(?:en)?",
+    r"einreisebestimmungen",
+    r"brauche ich ein visum",
+    r"fahrplan",
+    r"zugverbindung(?:en)?",
+  ];
+  static const _electionsDe = [
+    r"n[äa]chste (?:bundestags|landtags|kommunal|europa)?wahl(?:en)?",
+    r"(?:bundestags|landtags|kommunal|europa)wahl",
+    r"wahlergebnis(?:se)?",
+    r"ergebnis(?:se)? der wahl",
+    r"umfragen? (?:zur|f[üu]r|zu)",
+    r"aktuelle umfragen?",
+    r"sonntagsfrage",
+    r"wer (?:hat|wird) die wahl (?:gewonnen|gewinnen)",
+  ];
+  static const _peopleDe = [
+    r"wie alt (?:ist|war|wird) (?!(?:mein|meine|dein|deine|ihr|ihre|unser|unsere|man)\b)\p{L}+",
+    r"(?:das )?alter (?:von|des|der) (?!(?:mein|meine|meinem|meiner|dein|deine|unser|unsere|universums|erde)\b)\p{L}+",
+    r"wann (?:hat|ist) (?!(?:mein|meine|dein|deine|ihr|ihre|unser|unsere)\b)\p{L}+(?: \p{L}+)? (?:geburtstag|geboren)",
+    r"wann wurde \p{L}+(?: \p{L}+)? geboren",
+    r"geburtsdatum",
+    r"geburtstag (?:von|des|der) (?!(?:mein|meine|meinem|meiner|dein|deine)\b)\p{L}+",
+    r"(?:verm[öo]gen|ehefrau|ehemann|frau|mann|partner(?:in)?|kinder|freundin|freund) (?:von) (?!(?:mein|meine|meinem|meiner|dein|deine|unser|unsere|einem|einer)\b)\p{L}+",
+    r"wie gro[ßs] ist (?!(?:mein|meine|dein|deine|der|die|das|ein|eine)\b)\p{Lu}\p{L}+",
+  ];
+
+  static const _askDe = [
+    r"such(?:e)? (?:mir )?(?:im internet|online|im netz|nach)",
+    r"finde? (?:mir )?(?:quellen|links|artikel|belege)",
+    r"schau (?:mal )?(?:im internet|online|nach)",
+    r"googl(?:e|en)",
+    r"wikipedia",
+    r"offizielle (?:webseite|website|seite)",
+    r"link (?:zu|zur|zum|f[üu]r)",
+    r"laut (?:nachrichten|internet)",
   ];
 }

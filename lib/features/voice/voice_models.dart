@@ -153,6 +153,24 @@ class VoiceModels {
     ],
   );
 
+  /// Piper "thorsten" (medium, 22 kHz) for German, which Kokoro v1.0
+  /// does not speak: a VITS model sherpa-onnx runs with its own espeak-ng
+  /// data. Dataset Thorsten-Voice, CC0.
+  static const german = VoicePack(
+    id: 'piper-de-thorsten-medium',
+    unpackTo: 'vits-piper-de_DE-thorsten-medium',
+    files: [
+      VoiceFile(
+        fileName: 'vits-piper-de_DE-thorsten-medium.tar.bz2',
+        url:
+            'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-thorsten-medium.tar.bz2',
+        sha256:
+            '50487d9c95fdf2191f31d2588569381063ba1591dcd4c7d4bdd30f12b2191714',
+        sizeBytes: 67214254,
+      ),
+    ],
+  );
+
   /// Where the int8 Kokoro of earlier versions was unpacked: still used
   /// until the full-precision one is downloaded.
   static const legacySpeakingDir = 'kokoro-int8-multi-lang-v1_0';
@@ -161,7 +179,20 @@ class VoiceModels {
   static const packs = [listening, speaking];
 
   /// Every pack the app can install, the optional ones included.
-  static const all = [listening, speaking, parakeet];
+  static const all = [listening, speaking, parakeet, german];
+
+  /// The speaking pack for a voice language ([voiceLanguage]).
+  static VoicePack speakingFor(String lang) => lang == 'de' ? german : speaking;
+
+  /// The packs Conversation needs in [lang]: the listener and its speaker.
+  static List<VoicePack> packsFor(String lang) => [
+    listening,
+    speakingFor(lang),
+  ];
+
+  /// Whether [pack] is one of the speaking packs (its worker is the mouth).
+  static bool speaks(VoicePack pack) =>
+      pack.id == speaking.id || pack.id == german.id;
 
   /// Marker written last when an archive is fully unpacked.
   static const readyMarker = '.ready';
@@ -182,7 +213,7 @@ class VoiceModels {
 
   /// Unpacks a downloaded archive pack into its folder (in a background
   /// isolate: about 12 s on a laptop) and deletes the archive. Chinese
-  /// text-processing files are skipped; the app speaks EN/FR/ES.
+  /// text-processing files are skipped; the app speaks EN/FR/ES/DE.
   static Future<void> unpack(VoicePack pack) async {
     final target = pack.unpackTo;
     if (target == null) return;
@@ -299,6 +330,17 @@ class VoiceModels {
     return null;
   }
 
+  /// The German Piper voice's files, or null when not installed.
+  static Future<VitsPaths?> germanPaths() async {
+    if (!await isReady(german)) return null;
+    final dir = p.join((await ModelStorage.modelsDir()).path, german.unpackTo!);
+    return VitsPaths(
+      model: p.join(dir, 'de_DE-thorsten-medium.onnx'),
+      tokens: p.join(dir, 'tokens.txt'),
+      dataDir: p.join(dir, 'espeak-ng-data'),
+    );
+  }
+
   static Future<SpeakingPaths?> speakingPaths() async {
     if (!await isReady(speaking)) return null;
     final root = (await ModelStorage.modelsDir()).path;
@@ -355,13 +397,25 @@ class SpeakingPaths {
   };
 }
 
+/// A Piper (VITS) voice: one model, its tokens and espeak-ng data.
+class VitsPaths {
+  final String model, tokens, dataDir;
+  const VitsPaths({
+    required this.model,
+    required this.tokens,
+    required this.dataDir,
+  });
+}
+
 /// A Kokoro speaker for a language: sid in voices.bin and the espeak-ng
-/// language Kokoro's phonemizer is given.
+/// language Kokoro's phonemizer is given. [piper] marks the German voice,
+/// which is its own Piper model ([VoiceModels.german]) rather than Kokoro.
 class KokoroVoice {
   final int sid;
   final String lang;
   final String name;
-  const KokoroVoice(this.sid, this.lang, this.name);
+  final bool piper;
+  const KokoroVoice(this.sid, this.lang, this.name, {this.piper = false});
 
   /// Voices offered per app language (sids from the sherpa-onnx v1.0 table).
   static const byLanguage = {
@@ -374,6 +428,7 @@ class KokoroVoice {
     ],
     'fr': [KokoroVoice(30, 'fr', 'Siwis')],
     'es': [KokoroVoice(28, 'es', 'Dora'), KokoroVoice(29, 'es', 'Alex')],
+    'de': [KokoroVoice(0, 'de', 'Thorsten', piper: true)],
   };
 
   static KokoroVoice forLanguage(String code, {int? sid}) {

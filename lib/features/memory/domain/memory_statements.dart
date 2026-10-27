@@ -3,17 +3,17 @@
 /// clauses are not evidence about the user's current life.
 class MemoryStatements {
   static final _greeting = RegExp(
-    r'^(?:(?:hi|hello|hey)(?: there| everyone| folks)?|good (?:morning|afternoon|evening)|bonjour|bonsoir|salut|hola|buenos días|buenas tardes|buenas noches)[\s,:!–—-]+',
+    r'^(?:(?:hi|hello|hey)(?: there| everyone| folks)?|good (?:morning|afternoon|evening)|bonjour|bonsoir|salut|hola|buenos días|buenas tardes|buenas noches|hallo|hi|servus|moin|guten (?:morgen|tag|abend))[\s,:!–—-]+',
     caseSensitive: false,
   );
   static final _intro = RegExp(
-    r'^(?:by the way|btw|for context|just so you know|just to let you know|as for me|pour information|au fait|d[’\x27]ailleurs|por cierto|and|also|et|y)[,:\s]+',
+    r'^(?:by the way|btw|for context|just so you know|just to let you know|as for me|pour information|au fait|d[’\x27]ailleurs|por cierto|and|also|et|y|übrigens|ach ja|zur info|und)[,:\s]+',
     caseSensitive: false,
   );
   // "My favourite colour is green, by the way.": the aside is not part of
   // the value (Conversation probe, 2026-10-20, saved "green, by the way").
   static final _outro = RegExp(
-    r'[,\s]+(?:by the way|btw|anyway|au fait|d[’\x27]ailleurs|por cierto)(?=[\s.!;]*$)',
+    r'[,\s]+(?:by the way|btw|anyway|au fait|d[’\x27]ailleurs|por cierto|übrigens|nebenbei)(?=[\s.!;]*$)',
     caseSensitive: false,
   );
   static final _fictionRequest = RegExp(
@@ -21,23 +21,23 @@ class MemoryStatements {
     caseSensitive: false,
   );
   static final _unsafe = RegExp(
-    r"\b(?:not|never|no longer|don['’]?t|doesn['’]?t|isn['’]?t|aren['’]?t|wasn['’]?t|weren['’]?t|can['’]?t|won['’]?t|haven['’]?t|used to|formerly|previously|if|unless|would|might|maybe|perhaps|wish|hope to|want to (?:be|become)|plan to|going to (?:be|become)|pretending|joking|kidding|actually a joke|right now|at the moment|today|tonight|tomorrow|yesterday|this (?:morning|afternoon|evening|week|weekend|month)|next (?:week|month|year)|for (?:a|one) day|in (?:a|the) (?:game|video game|dream|story|simulation)|ne .+ pas|ne .+ plus|jamais|si|peut-être|voudrais|aujourd’hui|aujourd'hui|demain|maintenant|no|nunca|antes|quizás|quisiera|hoy|mañana|ahora)\b",
+    r"\b(?:not|never|no longer|don['’]?t|doesn['’]?t|isn['’]?t|aren['’]?t|wasn['’]?t|weren['’]?t|can['’]?t|won['’]?t|haven['’]?t|used to|formerly|previously|if|unless|would|might|maybe|perhaps|wish|hope to|want to (?:be|become)|plan to|going to (?:be|become)|pretending|joking|kidding|actually a joke|right now|at the moment|today|tonight|tomorrow|yesterday|this (?:morning|afternoon|evening|week|weekend|month)|next (?:week|month|year)|for (?:a|one) day|in (?:a|the) (?:game|video game|dream|story|simulation)|ne .+ pas|ne .+ plus|jamais|si|peut-être|voudrais|aujourd’hui|aujourd'hui|demain|maintenant|no|nunca|antes|quizás|quisiera|hoy|mañana|ahora|nicht|nicht mehr|kein|keine|keinen|nie|niemals|früher|ehemals|wenn|vielleicht|würde|möchte gern|stell dir vor|heute|morgen|gestern|gerade|jetzt|im moment|diese woche|nächste woche)\b",
     caseSensitive: false,
   );
   static final _question = RegExp(
-    r'^(?:what|who|where|when|why|how|which|can|could|would|should|do|does|did|am|are|is|any (?:tips|ideas|suggestions)|ideas|tell me|explain|show me|give me|please|quel|quelle|quels|quelles|comment|pourquoi|est-ce|qué|cuál|cómo|por qué)\b',
+    r'^(?:what|who|where|when|why|how|which|can|could|would|should|do|does|did|am|are|is|any (?:tips|ideas|suggestions)|ideas|tell me|explain|show me|give me|please|quel|quelle|quels|quelles|comment|pourquoi|est-ce|qué|cuál|cómo|por qué|was|wer|wo|wann|warum|wie|welche|welcher|welches|kannst|könntest|bitte|sag mir|erkläre|zeig mir|gib mir)\b',
     caseSensitive: false,
   );
   static final _passingState = RegExp(
-    r"^(?:i (?:am|feel|need|want|am feeling)|i['’]m|je suis|soy|estoy)\s+(?:very\s+)?(?:tired|hungry|thirsty|sad|happy|angry|bored|excited|cold|hot|sleepy|upset|worried|a summary|help|to\b|fatigué|fatiguée|content|triste|cansado|cansada|feliz)\b",
+    r"^(?:i (?:am|feel|need|want|am feeling)|i['’]m|je suis|soy|estoy|ich bin|ich fühle mich|ich brauche|ich will)\s+(?:very\s+|sehr\s+)?(?:tired|hungry|thirsty|sad|happy|angry|bored|excited|cold|hot|sleepy|upset|worried|a summary|help|to\b|fatigué|fatiguée|content|triste|cansado|cansada|feliz|müde|hungrig|durstig|traurig|glücklich|froh|wütend|gelangweilt|aufgeregt|krank|gestresst|hilfe|eine zusammenfassung)\b",
     caseSensitive: false,
   );
   static final _personal = RegExp(
-    r"^(?:i\b|i['’]m\b|im\b|my\b|we\b|our\b|call me\b|you can call me\b|je\b|j['’]|mon\b|ma\b|mes\b|moi\b|appelez-moi\b|tu peux m['’]appeler\b|yo\b|soy\b|trabajo\b|vivo\b|resido\b|hablo\b|prefiero\b|tengo\b|uso\b|utilizo\b|me llamo\b|mi\b|mis\b|puedes llamarme\b)",
+    r"^(?:i\b|i['’]m\b|im\b|my\b|we\b|our\b|call me\b|you can call me\b|je\b|j['’]|mon\b|ma\b|mes\b|moi\b|appelez-moi\b|tu peux m['’]appeler\b|yo\b|soy\b|trabajo\b|vivo\b|resido\b|hablo\b|prefiero\b|tengo\b|uso\b|utilizo\b|me llamo\b|mi\b|mis\b|puedes llamarme\b|ich\b|mein\b|meine\b|meinen\b|meinem\b|meiner\b|nenn mich\b|du kannst mich\b)",
     caseSensitive: false,
   );
   static final _thirdParty = RegExp(
-    r"^(?:my|mon|ma|mi)\s+(friend|wife|husband|partner|mother|father|mom|mum|dad|brother|sister|son|daughter|boss|colleague|coworker|neighbor|ami|amie|mère|père|frère|sœur|amigo|amiga|madre|padre|hermano|hermana)\b",
+    r"^(?:my|mon|ma|mi|mein|meine)\s+(friend|wife|husband|partner|mother|father|mom|mum|dad|brother|sister|son|daughter|boss|colleague|coworker|neighbor|ami|amie|mère|père|frère|sœur|amigo|amiga|madre|padre|hermano|hermana|freund|freundin|frau|mann|partnerin|mutter|vater|mama|papa|bruder|schwester|sohn|tochter|chef|chefin|kollege|kollegin|nachbar|nachbarin)\b",
     caseSensitive: false,
   );
 
@@ -204,49 +204,116 @@ class MemoryStatements {
     'fotógrafa',
     'veterinario',
     'veterinaria',
+    'koch',
+    'köchin',
+    'bäcker',
+    'bäckerin',
+    'kellner',
+    'kellnerin',
+    'metzger',
+    'landwirt',
+    'landwirtin',
+    'gärtner',
+    'gärtnerin',
+    'krankenpfleger',
+    'krankenschwester',
+    'pflegekraft',
+    'arzt',
+    'ärztin',
+    'lehrer',
+    'lehrerin',
+    'ingenieur',
+    'ingenieurin',
+    'entwickler',
+    'entwicklerin',
+    'programmierer',
+    'programmiererin',
+    'softwareentwickler',
+    'softwareentwicklerin',
+    'mechaniker',
+    'mechanikerin',
+    'elektriker',
+    'elektrikerin',
+    'klempner',
+    'fotograf',
+    'fotografin',
+    'tierarzt',
+    'tierärztin',
+    'anwalt',
+    'anwältin',
+    'polizist',
+    'polizistin',
+    'student',
+    'studentin',
+    'schüler',
+    'schülerin',
+    'rentner',
+    'rentnerin',
+    'designerin',
+    'architekt',
+    'architektin',
+    'journalistin',
+    'verkäufer',
+    'verkäuferin',
+    'buchhalter',
+    'buchhalterin',
+    'friseur',
+    'friseurin',
+    'erzieher',
+    'erzieherin',
+    'handwerker',
+    'schreiner',
+    'tischler',
+    'apotheker',
+    'apothekerin',
+    'pilotin',
   };
 
   static RegExp _pattern(String body) =>
       RegExp(body, caseSensitive: false, unicode: true);
   static final _employment = _pattern(
-    r"^(?:i (?:work|am (?:currently )?(?:working|employed)) as|i['’]m (?:working|employed) as|my (?:job|profession|occupation|career) is|je travaille comme|mon (?:métier|emploi) est|trabajo (?:como|de)|mi (?:profesión|trabajo) es)\s+(?:(?:a|an|un|une|una)\s+)?(.+)$",
+    r"^(?:i (?:work|am (?:currently )?(?:working|employed)) as|i['’]m (?:working|employed) as|my (?:job|profession|occupation|career) is|je travaille comme|mon (?:métier|emploi) est|trabajo (?:como|de)|mi (?:profesión|trabajo) es|ich arbeite als|mein beruf ist|ich bin von beruf)\s+(?:(?:a|an|un|une|una|ein|eine)\s+)?(.+)$",
   );
   static final _employmentSuffix = _pattern(
     r"^(?:i work|i am working|i['’]m working) (in|at|for) (.+?) as (?:a |an )?(.+)$",
   );
   static final _identity = _pattern(
-    r"^(?:i am|i['’]m|im|je suis|soy|yo soy)\s+(?:(?:currently|also)\s+)*(?:(?:a|an|un|une|una)\s+)?(.+)$",
+    r"^(?:i am|i['’]m|im|je suis|soy|yo soy|ich bin)\s+(?:(?:currently|also|auch)\s+)*(?:(?:a|an|un|une|una|ein|eine)\s+)?(.+)$",
   );
   static final _name = _pattern(
-    r"^(?:my (?:full )?name is|call me|you can call me|i go by|je m['’]appelle|mon (?:prénom|nom) est|appelez-moi|tu peux m['’]appeler|me llamo|mi nombre es|puedes llamarme)\s+(.+)$",
+    r"^(?:my (?:full )?name is|call me|you can call me|i go by|je m['’]appelle|mon (?:prénom|nom) est|appelez-moi|tu peux m['’]appeler|me llamo|mi nombre es|puedes llamarme|ich hei(?:ß|ss)e|mein (?:vor)?name ist|nenn mich|du kannst mich)\s+(.+?)(?:\s+nennen)?$",
   );
   static final _home = _pattern(
-    r"^(?:i live in|my home is in|i am based in|i['’]m based in|j['’]habite (?:à|a|en)|je vis (?:à|en)|vivo en|resido en)\s+(.+)$",
+    r"^(?:i live in|my home is in|i am based in|i['’]m based in|j['’]habite (?:à|a|en)|je vis (?:à|en)|vivo en|resido en|ich wohne in|ich lebe in)\s+(.+)$",
   );
   static final _origin = _pattern(
-    r"^(?:i am from|i['’]m from|je viens de|soy de)\s+(.+)$",
+    r"^(?:i am from|i['’]m from|je viens de|soy de|ich komme aus|ich bin aus|ich stamme aus)\s+(.+)$",
   );
-  static final _language = _pattern(r'^(?:i speak|je parle|hablo)\s+(.+)$');
+  static final _language = _pattern(
+    r'^(?:i speak|je parle|hablo|ich spreche)\s+(.+)$',
+  );
   static final _preference = _pattern(
-    r'^(?:i prefer|je préfère|prefiero)\s+(.+)$',
+    r'^(?:i prefer|je préfère|prefiero|ich bevorzuge|ich mag lieber)\s+(.+)$',
   );
   static final _allergy = _pattern(
-    r"^(?:i am allergic to|i['’]m allergic to|je suis allergique (?:à|aux)|soy alérgic[oa] (?:a|al))\s+(.+)$",
+    r"^(?:i am allergic to|i['’]m allergic to|je suis allergique (?:à|aux)|soy alérgic[oa] (?:a|al)|ich bin allergisch gegen|ich habe eine allergie gegen)\s+(.+)$",
   );
   static final _diet = _pattern(
-    r"^(?:i (?:am|follow|eat)|i['’]m|je suis|soy)\s+(?:(?:a|an|un|une|una)\s+)?(vegan|vegetarian|pescatarian|végétarien|végétarienne|végétalien|végétalienne|vegetariano|vegetariana|vegano|vegana|(?:a )?(?:vegan|vegetarian|ketogenic|gluten-free|dairy-free) diet)$",
+    r"^(?:i (?:am|follow|eat)|i['’]m|je suis|soy|ich bin|ich lebe|ich esse)\s+(?:(?:a|an|un|une|una)\s+)?(vegan|vegetarian|pescatarian|végétarien|végétarienne|végétalien|végétalienne|vegetariano|vegetariana|vegano|vegana|vegetarier|vegetarierin|veganer|veganerin|vegetarisch|(?:a )?(?:vegan|vegetarian|ketogenic|gluten-free|dairy-free) diet)$",
   );
   static final _own = _pattern(
-    r"^(?:i own|je possède|soy dueño de|soy dueña de)\s+(.+)$",
+    r"^(?:i own|je possède|soy dueño de|soy dueña de|ich besitze)\s+(.+)$",
   );
-  static final _use = _pattern(r"^(?:i use|j['’]utilise|uso|utilizo)\s+(.+)$");
+  static final _use = _pattern(
+    r"^(?:i use|j['’]utilise|uso|utilizo|ich nutze|ich benutze|ich verwende)\s+(.+)$",
+  );
   static final _family = _pattern(
-    r"^(?:i have|j['’]ai|tengo)\s+((?:(?:a|an|one|two|three|four|five|un|une|deux|trois|uno|una|dos|tres|\d+)\s+)?(?:children|kids|sons|daughters|child|son|daughter|dog|dogs|cat|cats|pet|pets|enfant|enfants|chien|chiens|chat|chats|hijo|hijos|hija|hijas|perro|perros|gato|gatos)(?:\s+(?:named|called|qui s['’]appelle|llamado|llamada)\s+.+|,\s*.+)?)$",
+    r"^(?:i have|j['’]ai|tengo|ich habe)\s+((?:(?:a|an|one|two|three|four|five|un|une|deux|trois|uno|una|dos|tres|ein|eine|einen|zwei|drei|vier|fünf|\d+)\s+)?(?:children|kids|sons|daughters|child|son|daughter|dog|dogs|cat|cats|pet|pets|enfant|enfants|chien|chiens|chat|chats|hijo|hijos|hija|hijas|perro|perros|gato|gatos|kind|kinder|sohn|söhne|tochter|töchter|hund|hunde|katze|katzen|haustier|haustiere)(?:\s+(?:named|called|qui s['’]appelle|llamado|llamada|namens|die (?:hei(?:ß|ss)en)|der hei(?:ß|ss)t|die hei(?:ß|ss)t)\s+.+|,\s*.+)?)$",
   );
   // "two cats, Milo and Luna": after a comma, only names (Conversation
   // probe, 2026-10-20: the 0.8B answered "You are talking about two cats").
   static final _namesAfterComma = RegExp(
-    r"^[^,]+,\s*\p{Lu}[\p{L}'’-]*(?:(?:,\s*|,?\s+(?:and|et|y)\s+)\p{Lu}[\p{L}'’-]*)*$",
+    r"^[^,]+,\s*\p{Lu}[\p{L}'’-]*(?:(?:,\s*|,?\s+(?:and|et|y|und)\s+)\p{Lu}[\p{L}'’-]*)*$",
     unicode: true,
   );
   static final _petName = _pattern(
@@ -260,6 +327,9 @@ class MemoryStatements {
   /// saved with the English name of the favourite.
   static final _favouriteFr = _pattern(
     r"^(?:ma|mon) (couleur|nourriture|plat|langue|sport|loisir|livre|musique|animal) pr[ée]f[ée]r[ée]e? (?:est|c['’]est)\s+(?:(?:le|la|les)\s+|l['’])?(.+)$",
+  );
+  static final _favouriteDe = _pattern(
+    r"^meine? lieblings(farbe|essen|gericht|sprache|sportart|sport|hobby|buch|musik|tier) ist\s+(?:(?:der|die|das)\s+)?(.+)$",
   );
   static final _favouriteEs = _pattern(
     r"^mi (color|comida|plato|idioma|deporte|pasatiempo|libro|m[úu]sica|animal) favorit[oa] es\s+(?:(?:el|la|los|las)\s+)?(.+)$",
@@ -281,9 +351,17 @@ class MemoryStatements {
     'libro': 'book',
     'música': 'music',
     'musica': 'music',
+    'farbe': 'colour',
+    'essen': 'food',
+    'gericht': 'food',
+    'sprache': 'language',
+    'sportart': 'sport',
+    'buch': 'book',
+    'musik': 'music',
+    'tier': 'animal',
   };
   static final _relationship = _pattern(
-    r"^(?:i am|i['’]m)\s+(married|single|divorced|widowed)$",
+    r"^(?:i am|i['’]m|ich bin)\s+(married|single|divorced|widowed|verheiratet|ledig|geschieden|verwitwet)$",
   );
   static final _project = _pattern(
     r"^(?:i am|i['’]m|im)\s+(?:currently\s+)?(building|developing|working on)\s+(.+)$",
@@ -357,7 +435,7 @@ class MemoryStatements {
                 _pattern(
                   // ", and so please look up…": a request after the fact
                   // (the tester's phone chat, 2026-10-19).
-                  r',\s*(?:(?:and|but|also|so|then|et|y|mais|pero|alors|donc|entonces|as[ií] que)\s+)?(?:(?:so|then|alors|donc|entonces|as[ií] que)\s+)?(?=(?:what|who|how|why|where|which|can|could|any\b|ideas|i\b|i[’\x27]m|my\b|je\b|j[’\x27]|mon\b|ma\b|soy\b|mi\b|vivo\b|please\b|look\b|find\b|search\b|show\b|tell\b|give\b|check\b|help\b|recommend\b|suggest\b|s[’\x27]il\b|peux\b|pourrais\b|cherche\b|trouve\b|dis-moi\b|montre\b|por favor\b|busca\b|dime\b|puedes\b|podr[ií]as\b|muestra\b))|\s+(?:and|but|et|y|mais|pero)\s+(?=(?:i\b|i[’\x27]m|my\b|je\b|j[’\x27]|mon\b|ma\b|soy\b|mi\b|vivo\b))',
+                  r',\s*(?:(?:and|but|also|so|then|et|y|mais|pero|alors|donc|entonces|as[ií] que|und|aber|dann)\s+)?(?:(?:so|then|alors|donc|entonces|as[ií] que)\s+)?(?=(?:what|who|how|why|where|which|can|could|any\b|ideas|i\b|i[’\x27]m|my\b|je\b|j[’\x27]|mon\b|ma\b|soy\b|mi\b|vivo\b|please\b|look\b|find\b|search\b|show\b|tell\b|give\b|check\b|help\b|recommend\b|suggest\b|s[’\x27]il\b|peux\b|pourrais\b|cherche\b|trouve\b|dis-moi\b|montre\b|por favor\b|busca\b|dime\b|puedes\b|podr[ií]as\b|muestra\b|ich\b|mein\b|meine\b|bitte\b|kannst\b|such\b|finde\b|sag\b|zeig\b|wie\b|wo\b))|\s+(?:and|but|et|y|mais|pero|und|aber)\s+(?=(?:i\b|i[’\x27]m|my\b|je\b|j[’\x27]|mon\b|ma\b|soy\b|mi\b|vivo\b|ich\b|mein\b|meine\b|wohne\b|arbeite\b))',
                 ),
                 (_) => '\n',
               )
@@ -424,7 +502,7 @@ class MemoryStatements {
     if (RegExp(r'\bowns?\b').hasMatch(text) && !has(_own)) return false;
     if (RegExp(r'\buses?\b').hasMatch(text) && !has(_use)) return false;
     if (RegExp(r'\b(?:has|have)\b').hasMatch(text) &&
-        !has(_pattern(r"^(?:i have|j['’]ai|tengo|my\b)"))) {
+        !has(_pattern(r"^(?:i have|j['’]ai|tengo|my\b|ich habe|mein)"))) {
       return false;
     }
     if (text.contains('allergic') && !has(_allergy)) return false;
@@ -571,7 +649,10 @@ class MemoryStatements {
     if (match != null && _value(match[2]!)) {
       return "The user's ${match[1]} is ${match[2]}";
     }
-    match = _favouriteFr.firstMatch(clause) ?? _favouriteEs.firstMatch(clause);
+    match =
+        _favouriteFr.firstMatch(clause) ??
+        _favouriteEs.firstMatch(clause) ??
+        _favouriteDe.firstMatch(clause);
     if (match != null && _value(match[2]!)) {
       final name = match[1]!.toLowerCase();
       return "The user's favourite ${_favouriteNames[name] ?? name} is "
@@ -632,7 +713,7 @@ class MemoryStatements {
       return _thirdParty.firstMatch(s) == null &&
           _personal.hasMatch(s) &&
           RegExp(
-            r"\b(?:not|no longer|never|don['’]t|ne .+ pas|nunca|no)\b",
+            r"\b(?:not|no longer|never|don['’]t|ne .+ pas|nunca|no|nicht|nicht mehr|kein|keine|nie)\b",
             caseSensitive: false,
           ).hasMatch(s) &&
           words.any(

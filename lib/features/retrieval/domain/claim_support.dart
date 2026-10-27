@@ -15,29 +15,29 @@ class ClaimSupport {
 
   static final _features = [
     RegExp(
-      r'weather[ -]seal(?:ed|ing)?|tropicalis[ée]|sellad[oa] contra',
+      r'weather[ -]seal(?:ed|ing)?|tropicalis[ée]|sellad[oa] contra|wetterfest|abgedichtet|spritzwassergesch[üu]tzt',
       caseSensitive: false,
     ),
-    RegExp(r'waterproof|étanche|impermeable', caseSensitive: false),
+    RegExp(r'waterproof|étanche|impermeable|wasserdicht', caseSensitive: false),
     RegExp(
-      r'in.body (?:image )?stabili[sz]ation|\bIBIS\b',
-      caseSensitive: false,
-    ),
-    RegExp(
-      r'global shutter|obturateur global|obturador global',
+      r'in.body (?:image )?stabili[sz]ation|\bIBIS\b|sensor-?(?:basierte )?bildstabili(?:sierung|sator)',
       caseSensitive: false,
     ),
     RegExp(
-      r'\b(?:built.in |electronic |optical )?viewfinder\b|viseur|visor',
+      r'global shutter|obturateur global|obturador global|globaler verschluss',
+      caseSensitive: false,
+    ),
+    RegExp(
+      r'\b(?:built.in |electronic |optical )?viewfinder\b|viseur|visor|sucher',
       caseSensitive: false,
     ),
   ];
   static final _negative = RegExp(
-    r"\b(?:not|no|without|lacks?|absent|pas|sans|aucun|sin)\b|isn['’]t|doesn['’]t",
+    r"\b(?:not|no|without|lacks?|absent|pas|sans|aucun|sin|nicht|kein|keine|keinen|ohne)\b|isn['’]t|doesn['’]t",
     caseSensitive: false,
   );
   static final _uncertain = RegExp(
-    r'unknown|unverified|not (?:confirmed|established|specified)|cannot confirm|inconnu|non confirmé|desconocido|no confirmado',
+    r'unknown|unverified|not (?:confirmed|established|specified)|cannot confirm|inconnu|non confirmé|desconocido|no confirmado|unbekannt|nicht bestätigt|unbestätigt',
     caseSensitive: false,
   );
 

@@ -312,7 +312,10 @@ void main() {
       expect(KokoroVoice.forLanguage('es', sid: 29).name, 'Alex');
       // A speaker of another language falls back to the language default.
       expect(KokoroVoice.forLanguage('fr', sid: 3).sid, 30);
-      expect(KokoroVoice.forLanguage('de').lang, 'en-us');
+      expect(KokoroVoice.forLanguage('it').lang, 'en-us');
+      // German speaks with its own Piper voice.
+      expect(KokoroVoice.forLanguage('de').name, 'Thorsten');
+      expect(KokoroVoice.forLanguage('de').piper, isTrue);
     });
 
     test('English voices use a lexicon; others go through espeak', () {
@@ -347,7 +350,8 @@ void main() {
     test('voiceLanguage keeps supported codes only', () {
       expect(voiceLanguage('fr'), 'fr');
       expect(voiceLanguage('es'), 'es');
-      expect(voiceLanguage('de'), 'en');
+      expect(voiceLanguage('de'), 'de');
+      expect(voiceLanguage('it'), 'en');
     });
   });
 

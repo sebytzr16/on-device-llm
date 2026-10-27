@@ -159,7 +159,7 @@ class ConversationScreen extends ConsumerStatefulWidget {
     return spoken.contains(' ${words.join(' ')} ');
   }
 
-  /// How a correction starts, in English, French and Spanish.
+  /// How a correction starts, in English, French, Spanish and German.
   static const _correcting = {
     'no',
     'nope',
@@ -180,6 +180,15 @@ class ConversationScreen extends ConsumerStatefulWidget {
     'mas',
     'más',
     'tampoco',
+    'nein',
+    'nee',
+    'doch',
+    'eigentlich',
+    'warte',
+    'moment',
+    'stattdessen',
+    'lieber',
+    'sondern',
   };
 
   /// Number words (not "one", "un", "uno": also articles and pronouns).
@@ -248,6 +257,28 @@ class ConversationScreen extends ConsumerStatefulWidget {
     'medio',
     'media',
     'cuarto',
+    'zwei',
+    'drei',
+    'vier',
+    'fünf',
+    'sechs',
+    'sieben',
+    'acht',
+    'neun',
+    'zehn',
+    'elf',
+    'zwölf',
+    'fünfzehn',
+    'zwanzig',
+    'dreißig',
+    'vierzig',
+    'fünfzig',
+    'sechzig',
+    'hundert',
+    'tausend',
+    'halb',
+    'halbe',
+    'viertel',
   };
 
   static bool _isNumber(String w) =>
@@ -440,9 +471,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
         defaultTargetPlatform == TargetPlatform.android &&
         settings.naturalVoice &&
         packs.canListen &&
-        packs.canSpeak;
+        packs.canSpeakIn(voiceLanguage(settings.localeCode));
     if (!_natural) {
-      if (!packs.canListen || !packs.canSpeak) {
+      if (!packs.canListen ||
+          !packs.canSpeakIn(voiceLanguage(settings.localeCode))) {
         _set(() => _notice ??= l10n.convNeedsVoice);
       }
       _set(() => _phase = ConversationPhase.idle);
@@ -1170,7 +1202,11 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
       ConversationPhase.speaking =>
         _natural && !_talkOver ? t.convSpeakingTap : t.convSpeaking,
     };
-    final downloading = VoiceModels.packs.any(
+    final voicePacks = VoiceModels.packsFor(
+      voiceLanguage(ref.watch(settingsProvider.select((s) => s.localeCode))),
+    );
+    final canSpeak = packs.of(voicePacks.last).isReady;
+    final downloading = voicePacks.any(
       (p) =>
           packs.of(p).status != VoicePackStatus.missing &&
           packs.of(p).status != VoicePackStatus.ready,
@@ -1224,8 +1260,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(_notice!, style: context.text.bodyMuted),
-                        if (!_natural &&
-                            (!packs.canListen || !packs.canSpeak)) ...[
+                        if (!_natural && (!packs.canListen || !canSpeak)) ...[
                           const SizedBox(height: AppDesign.sm),
                           Align(
                             alignment: Alignment.centerRight,
@@ -1238,7 +1273,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
                                         voiceModelsProvider.notifier,
                                       );
                                       unawaited(() async {
-                                        for (final p in VoiceModels.packs) {
+                                        for (final p in voicePacks) {
                                           if (!packs.of(p).isReady) {
                                             await n.download(p);
                                           }

@@ -76,15 +76,17 @@ class DuckDuckGoScraper {
         .replaceAll('-', '_')
         .split('_');
     final requested = appLanguage.trim().toLowerCase();
-    final language =
-        requested == 'fr' ||
-            (requested.isEmpty && parts.first.toLowerCase() == 'fr')
-        ? 'fr'
-        : 'en';
+    final phone = parts.first.toLowerCase();
+    final language = switch (requested.isEmpty ? phone : requested) {
+      'fr' => 'fr',
+      'de' => 'de',
+      _ => 'en',
+    };
     final country = parts.length > 1 ? parts[1].toUpperCase() : '';
     final localized = _localizedRegions['$country|$language'];
     if (localized != null) return localized;
     if (language == 'fr') return 'fr-fr';
+    if (language == 'de') return 'de-de';
     return _countryRegions[country] ?? 'wt-wt';
   }
 
@@ -93,6 +95,8 @@ class DuckDuckGoScraper {
     'CA|fr': 'ca-fr',
     'BE|fr': 'be-fr',
     'CH|fr': 'ch-fr',
+    'AT|de': 'at-de',
+    'CH|de': 'ch-de',
   };
 
   static const _countryRegions = <String, String>{

@@ -47,7 +47,7 @@ class AnswerChecks {
   /// Advice, opinions, comparisons, explanations and coding questions:
   /// answered by the model, not from one article.
   static final notAFact = RegExp(
-    r'(?<![\p{L}])(?:(?:in|using|with) (?:python|javascript|typescript|java|dart|flutter|kotlin|swift|rust|go|c\+\+|c#|sql|react|linux|bash|excel)|closures?|functions?|variables?|loops?|arrays?|tuples?|methods?|errors?|exceptions?|syntax|code|commands?|best|better|good|great|some|any|recommend\w*|should|tips?|ideas?|ways?|difference|differences|vs\.?|versus|compare\w*|explain\w*|why|you|your|yours|pros|cons|benefits?|advantages?|example|examples|meilleure?s?|conseils?|pourquoi|diff[ée]rence|tu|vous|ton|ta|votre|mejor(?:es)?|consejos?|por qu[ée]|diferencia|t[úu]|usted|tus?)(?![\p{L}])',
+    r'(?<![\p{L}])(?:(?:in|using|with) (?:python|javascript|typescript|java|dart|flutter|kotlin|swift|rust|go|c\+\+|c#|sql|react|linux|bash|excel)|closures?|functions?|variables?|loops?|arrays?|tuples?|methods?|errors?|exceptions?|syntax|code|commands?|best|better|good|great|some|any|recommend\w*|should|tips?|ideas?|ways?|difference|differences|vs\.?|versus|compare\w*|explain\w*|why|you|your|yours|pros|cons|benefits?|advantages?|example|examples|meilleure?s?|conseils?|pourquoi|diff[ée]rence|tu|vous|ton|ta|votre|mejor(?:es)?|consejos?|por qu[ée]|diferencia|t[úu]|usted|tus?|beste[nrs]?|besser|tipps?|ideen|unterschied|vergleich\w*|erkl[äa]r\w*|warum|du|dein\w*|ihr|vorteile|nachteile|beispiele?|sollte)(?![\p{L}])',
     caseSensitive: false,
     unicode: true,
   );
@@ -61,9 +61,9 @@ class AnswerChecks {
       RegExp(r'[.!?](?:\s|$)').allMatches(answer.trim()).length > 2;
 
   // A follow-up that asks for a fact ("how many shots…", "when…"), not
-  // advice ("any tip for a rainy day there?"), EN/FR/ES.
+  // advice ("any tip for a rainy day there?"), EN/FR/ES/DE.
   static final asksFact = RegExp(
-    r"^(?:(?:and|but|so|et|mais|y|pero)\s+)?(?:how (?:many|much|long|big|heavy|old|far|tall|fast)|what(?:'s|’s| is| are| was| were)|when|where|which|who|combien|quand|o[ùu]|quel(?:le)?s?|qui|cu[áa]nt[oa]s?|cu[áa]ndo|d[óo]nde|cu[áa]l(?:es)?|qui[ée]n)(?![\p{L}])",
+    r"^(?:(?:and|but|so|et|mais|y|pero|und|aber|also)\s+)?(?:how (?:many|much|long|big|heavy|old|far|tall|fast)|what(?:'s|’s| is| are| was| were)|when|where|which|who|combien|quand|o[ùu]|quel(?:le)?s?|qui|cu[áa]nt[oa]s?|cu[áa]ndo|d[óo]nde|cu[áa]l(?:es)?|qui[ée]n|wie (?:viele?|lange|gro(?:ß|ss)|schwer|alt|weit|hoch|schnell)|was (?:ist|sind|war|waren)|wann|wo|welche[rsmn]?|wer)(?![\p{L}])",
     caseSensitive: false,
     unicode: true,
   );
@@ -71,26 +71,27 @@ class AnswerChecks {
   static final _claimsDone = RegExp(
     r"\bI(?:'ve|’ve| have) (?:set|started|created|scheduled|added)\b|"
     r"\bj['’]ai (?:r[ée]gl[ée]|lanc[ée]|cr[ée][ée]|programm[ée]|ajout[ée])\b|"
-    r"\bhe (?:puesto|configurado|creado|programado|a[ñn]adido)\b",
+    r"\bhe (?:puesto|configurado|creado|programado|a[ñn]adido)\b|"
+    r"\bich habe (?:\p{L}+ ){0,4}?(?:gestellt|gestartet|erstellt|eingerichtet|hinzugef[üu]gt|eingetragen|geplant)(?![\p{L}])",
     caseSensitive: false,
     unicode: true,
   );
 
   static final _cardStep = RegExp(
-    r'(?<![\p{L}])(?:tap(?:ped|ping|s)?|click(?:ed)?|press(?:ed)?|confirm(?:ed|s)?|touche[zr]?|appuie[zr]?|confirm[ée]|toca(?:r|ste)?|pulsa(?:r|ste)?|confirma(?:r|do|ste)?)(?![\p{L}])',
+    r'(?<![\p{L}])(?:tap(?:ped|ping|s)?|click(?:ed)?|press(?:ed)?|confirm(?:ed|s)?|touche[zr]?|appuie[zr]?|confirm[ée]|toca(?:r|ste)?|pulsa(?:r|ste)?|confirma(?:r|do|ste)?|tippe[n]?|getippt|klicke[n]?|dr[üu]cke[n]?|best[äa]tig(?:e|en|t)?)(?![\p{L}])',
     caseSensitive: false,
     unicode: true,
   );
 
   static final _personalWord = RegExp(
     // Letter boundaries, not \b: "Les Misérables" is not "mis".
-    r'(?<![\p{L}\p{N}])(?:my|mine|me|I|mon|ma|mes|mi|mis)(?![\p{L}\p{N}])',
+    r'(?<![\p{L}\p{N}])(?:my|mine|me|I|mon|ma|mes|mi|mis|mein|meine[nmrs]?|mir|mich)(?![\p{L}\p{N}])',
     caseSensitive: false,
     unicode: true,
   );
 
   static final refusal = RegExp(
-    r"(can(?:no|')t|cannot|unable to|do not have|don't have|no) (?:the )?(?:ability to |access to |real[- ]time |direct |live )?(?:access|browse|search|connect to|reach|retrieve)[^.]{0,40}(?:internet|web|online|websites|urls?|links?|real[- ]time|live data|current (?:events|information|data))",
+    r"(can(?:no|')t|cannot|unable to|do not have|don't have|no) (?:the )?(?:ability to |access to |real[- ]time |direct |live )?(?:access|browse|search|connect to|reach|retrieve)[^.]{0,40}(?:internet|web|online|websites|urls?|links?|real[- ]time|live data|current (?:events|information|data))|(?:kann|habe) (?:ich )?(?:leider )?(?:nicht|keinen?) (?:direkt(?:en)? )?(?:zugriff (?:auf|aufs)|im (?:internet|web) (?:suchen|surfen)|auf (?:das|aktuelle) (?:internet|daten|informationen) zugreifen|websites? (?:aufrufen|öffnen|besuchen))",
     caseSensitive: false,
   );
 

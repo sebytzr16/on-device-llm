@@ -62,6 +62,15 @@ class DateCheck {
     'octubre': 10,
     'noviembre': 11,
     'diciembre': 12,
+    'januar': 1,
+    'jänner': 1,
+    'februar': 2,
+    'märz': 3,
+    'maerz': 3,
+    'juni': 6,
+    'juli': 7,
+    'oktober': 10,
+    'dezember': 12,
   };
 
   // Longest names first, so "sept" is not read as "sep" + "t".
@@ -80,15 +89,21 @@ class DateCheck {
     unicode: true,
   );
 
-  /// "3 March 2043", "1er janvier 2031", "1 de enero de 2031".
+  /// "3 March 2043", "1er janvier 2031", "1 de enero de 2031", "3. März
+  /// 2043".
   static final _dayMonthYear = RegExp(
-    '(?<!\\d)(\\d{1,2})(?:er|st|nd|rd|th|º|°)?\\s+(?:de\\s+)?$_monthWord$_r\\s+(?:de\\s+|del\\s+)?(\\d{4})(?!\\d)',
+    '(?<!\\d)(\\d{1,2})(?:er|st|nd|rd|th|º|°|\\.)?\\s+(?:de\\s+)?$_monthWord$_r\\s+(?:de\\s+|del\\s+)?(\\d{4})(?!\\d)',
     caseSensitive: false,
     unicode: true,
   );
 
   /// "2031-01-01".
   static final _iso = RegExp(r'(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)');
+
+  /// "01.03.2031", the German way: day, month, year.
+  static final _dotted = RegExp(
+    r'(?<![\d.])(\d{1,2})\.(\d{1,2})\.(\d{4})(?![\d]|\.\d)',
+  );
 
   /// "March 2043", "mars 2043", "marzo de 2043": a month, no day.
   static final _monthYear = RegExp(
@@ -104,18 +119,18 @@ class DateCheck {
   /// will win the 2034 World Cup?" is unknowable, "What is Agenda 2030?"
   /// is not.
   static final _outcome = RegExp(
-    r"\b(?:will|going to|win|wins|winner|won|result|score|price|weather|forecast)\b|gagner|gagnera|vainqueur|résultat|prix|météo|ganar[áa]?|ganador|resultado|precio|tiempo|clima",
+    r"\b(?:will|going to|win|wins|winner|won|result|score|price|weather|forecast)\b|gagner|gagnera|vainqueur|résultat|prix|météo|ganar[áa]?|ganador|resultado|precio|tiempo|clima|gewinn(?:t|en)?|sieger|ergebnis|preis|wetter|vorhersage",
     caseSensitive: false,
   );
 
   /// A question that asks for the next or upcoming occurrence.
   static final _asksNext = RegExp(
-    '$_l(?:next|upcoming|prochaine?s?|pr[óo]xim[oa]s?|siguientes?)$_r',
+    '$_l(?:next|upcoming|prochaine?s?|pr[óo]xim[oa]s?|siguientes?|n[äa]chste[nrs]?|kommende[nrs]?)$_r',
     caseSensitive: false,
     unicode: true,
   );
   static final _asksWhen = RegExp(
-    '$_l(?:when|date|dates|what day|quand|cu[áa]ndo|fecha|fechas)$_r',
+    '$_l(?:when|date|dates|what day|quand|cu[áa]ndo|fecha|fechas|wann|datum|termin|an welchem tag)$_r',
     caseSensitive: false,
     unicode: true,
   );
@@ -148,6 +163,10 @@ class DateCheck {
     }
     for (final m in _iso.allMatches(text)) {
       final d = _date(int.parse(m[1]!), int.parse(m[2]!), int.parse(m[3]!));
+      if (d != null) found.add((m.start, d));
+    }
+    for (final m in _dotted.allMatches(text)) {
+      final d = _date(int.parse(m[3]!), int.parse(m[2]!), int.parse(m[1]!));
       if (d != null) found.add((m.start, d));
     }
     found.sort((a, b) => a.$1.compareTo(b.$1));
@@ -192,6 +211,9 @@ class DateCheck {
     }
     for (final m in _iso.allMatches(question)) {
       consider(m, _date(int.parse(m[1]!), int.parse(m[2]!), int.parse(m[3]!)));
+    }
+    for (final m in _dotted.allMatches(question)) {
+      consider(m, _date(int.parse(m[3]!), int.parse(m[2]!), int.parse(m[1]!)));
     }
     for (final m in _monthYear.allMatches(question)) {
       final month = _months[m[1]!.toLowerCase()];

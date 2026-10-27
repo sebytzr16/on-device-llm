@@ -27,6 +27,7 @@ Dart and Flutter packages keep their own licences. The app's licence page
 | Parakeet TDT 0.6B v3 (int8, sherpa-onnx export) | Optional listening | CC-BY-4.0 | `csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8` |
 | Silero VAD | Speech detection | MIT | https://github.com/snakers4/silero-vad |
 | Kokoro 82M v1.0 (multi-language) | Speaking | Apache-2.0 | `k2-fsa/sherpa-onnx` tts-models release (hexgrad/Kokoro-82M) |
+| Piper `de_DE-thorsten-medium` | Speaking German | MIT (model), CC0 (Thorsten-Voice dataset); fine-tuned from the Piper `en_US-lessac` voice | `k2-fsa/sherpa-onnx` tts-models release (rhasspy/piper-voices) |
 
 ### Attribution: Parakeet TDT 0.6B v3
 

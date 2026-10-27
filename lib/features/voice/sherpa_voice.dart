@@ -114,7 +114,8 @@ void serveSherpaWorker(
   });
 }
 
-/// Kokoro-82M: one engine per espeak language, only one kept loaded.
+/// Kokoro-82M: one engine per espeak language, only one kept loaded; the
+/// German Piper voice (`vits`) is one more such engine.
 void _mouthMain(SendPort boot) {
   sherpa.initBindings();
   String? lang;
@@ -122,21 +123,31 @@ void _mouthMain(SendPort boot) {
   serveSherpaWorker(
     boot,
     (m) {
-      final want = m['lang'] as String;
+      final vits = m['engine'] == 'vits';
+      final want = vits ? 'vits:${m['model']}' : m['lang'] as String;
       if (tts == null || lang != want) {
         tts?.free();
         tts = null;
         tts = sherpa.OfflineTts(
           sherpa.OfflineTtsConfig(
             model: sherpa.OfflineTtsModelConfig(
-              kokoro: sherpa.OfflineTtsKokoroModelConfig(
-                model: m['model'] as String,
-                voices: m['voices'] as String,
-                tokens: m['tokens'] as String,
-                dataDir: m['dataDir'] as String,
-                lexicon: m['lexicon'] as String,
-                lang: want,
-              ),
+              kokoro: vits
+                  ? const sherpa.OfflineTtsKokoroModelConfig()
+                  : sherpa.OfflineTtsKokoroModelConfig(
+                      model: m['model'] as String,
+                      voices: m['voices'] as String,
+                      tokens: m['tokens'] as String,
+                      dataDir: m['dataDir'] as String,
+                      lexicon: m['lexicon'] as String,
+                      lang: want,
+                    ),
+              vits: vits
+                  ? sherpa.OfflineTtsVitsModelConfig(
+                      model: m['model'] as String,
+                      tokens: m['tokens'] as String,
+                      dataDir: m['dataDir'] as String,
+                    )
+                  : const sherpa.OfflineTtsVitsModelConfig(),
               numThreads: m['threads'] as int,
               provider: m['provider'] as String? ?? 'cpu',
               debug: false,
@@ -243,6 +254,7 @@ class SherpaVoice {
   SherpaWorker? _mouth, _ears;
   Future<SherpaWorker>? _mouthStart, _earsStart;
   SpeakingPaths? _speaking;
+  VitsPaths? _german;
   ListeningPaths? _listening;
 
   /// Bumped when a worker is freed: one still starting is not kept.
@@ -269,7 +281,8 @@ class SherpaVoice {
     this.speakProvider = 'cpu',
   });
 
-  static Future<bool> canSpeak() => VoiceModels.isReady(VoiceModels.speaking);
+  static Future<bool> canSpeak({String lang = 'en'}) =>
+      VoiceModels.isReady(VoiceModels.speakingFor(lang));
   static Future<bool> canListen() async =>
       await VoiceModels.isReady(VoiceModels.listening) ||
       await VoiceModels.isReady(VoiceModels.parakeet);
@@ -336,6 +349,7 @@ class SherpaVoice {
       _mouth = null;
       _mouthStart = null;
       _speaking = null;
+      _german = null;
     } else {
       _earsGen++;
       _ears?.dispose();
@@ -346,6 +360,19 @@ class SherpaVoice {
   }
 
   Future<Map<String, Object?>?> _speakRequest(KokoroVoice voice) async {
+    if (voice.piper) {
+      final german = _german ??= await VoiceModels.germanPaths();
+      if (german == null) return null;
+      return {
+        'engine': 'vits',
+        'model': german.model,
+        'tokens': german.tokens,
+        'dataDir': german.dataDir,
+        'lang': voice.lang,
+        'threads': speakThreads,
+        'provider': speakProvider,
+      };
+    }
     final paths = _speaking ??= await VoiceModels.speakingPaths();
     if (paths == null) return null;
     return {

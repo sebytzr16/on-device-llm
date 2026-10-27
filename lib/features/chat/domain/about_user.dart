@@ -28,6 +28,8 @@ abstract final class AboutUser {
         ? 'fr'
         : _nameQuestionEs.hasMatch(q)
         ? 'es'
+        : _nameQuestionDe.hasMatch(q)
+        ? 'de'
         : null;
     if (lang == null) return null;
     String? name;
@@ -43,6 +45,7 @@ abstract final class AboutUser {
     return switch (lang) {
       'fr' => 'Tu t’appelles $name.',
       'es' => 'Te llamas $name.',
+      'de' => 'Du heißt $name.',
       _ => 'Your name is $name.',
     };
   }
@@ -230,13 +233,19 @@ abstract final class AboutUser {
     unicode: true,
   );
 
-  static const _lead = r"^(?:(?:and|so|ok(?:ay)?|hey|now|then|et|y)[,\s]+)*";
+  static const _lead =
+      r"^(?:(?:and|so|ok(?:ay)?|hey|now|then|et|y|und|also|sag mal)[,\s]+)*";
   static final _nameQuestionEn = RegExp(
     "$_lead(?:what(?:'s|’s| is) my name|do you (?:know|remember) my name|what am I called|who am I)\\s*[?.!]*\$",
     caseSensitive: false,
   );
   static final _nameQuestionFr = RegExp(
     "$_lead(?:comment (?:est-ce que )?je m['’]appelle|quel est mon (?:nom|prénom)|c['’]est quoi mon (?:nom|prénom)|tu (?:connais|te souviens de) mon (?:nom|prénom))\\s*[?.!]*\$",
+    caseSensitive: false,
+    unicode: true,
+  );
+  static final _nameQuestionDe = RegExp(
+    "$_lead(?:wie hei(?:ß|ss)e ich|wie ist mein (?:name|vorname)|wei(?:ß|ss)t du(?:,)? wie ich hei(?:ß|ss)e|(?:kennst|wei(?:ß|ss)t) du meinen (?:namen|vornamen)|wer bin ich)\\s*[?.!]*\$",
     caseSensitive: false,
     unicode: true,
   );
@@ -267,6 +276,9 @@ abstract final class AboutUser {
     if (how.startsWith('me') || how.startsWith('mi')) {
       return '¡Hola, $name! ¿En qué puedo ayudarte?';
     }
+    if (how.startsWith('ich') || how.startsWith('mein')) {
+      return 'Hallo $name! Wie kann ich dir helfen?';
+    }
     return 'Nice to meet you, $name. How can I help?';
   }
 
@@ -286,6 +298,9 @@ abstract final class AboutUser {
     }
     if (_spanish.hasMatch(q)) {
       return remembered ? 'Anotado, lo recordaré.' : 'Anotado.';
+    }
+    if (_german.hasMatch(q)) {
+      return remembered ? 'Notiert, das merke ich mir.' : 'Notiert.';
     }
     final said = facts.map(_yourFact).join(' and ');
     return 'Got it: $said.${remembered ? ' I’ll remember that.' : ''}';
@@ -338,12 +353,17 @@ abstract final class AboutUser {
 
   static final _noWords = RegExp(r'[\s\p{P}\p{S}]+', unicode: true);
   static final _greetingOnly = RegExp(
-    r'^(?:hi|hello|hey|ok(?:ay)?|so|well|bonjour|salut|hola)[\s\p{P}]*$',
+    r'^(?:hi|hello|hey|ok(?:ay)?|so|well|bonjour|salut|hola|hallo|servus|moin|also)[\s\p{P}]*$',
     caseSensitive: false,
     unicode: true,
   );
   static final _french = RegExp(
     r"^[\p{P}\s]*(?:(?:bonjour|salut|au fait|d['’]ailleurs|et)[\p{P}\s]+)?(?:je\b|j['’]|mon\b|ma\b|mes\b|moi\b)",
+    caseSensitive: false,
+    unicode: true,
+  );
+  static final _german = RegExp(
+    r'^[\p{P}\s]*(?:(?:hallo|übrigens|und|also)[\p{P}\s]+)?(?:ich|mein|meine|meinen|mir|mich)\b',
     caseSensitive: false,
     unicode: true,
   );
@@ -382,6 +402,13 @@ abstract final class AboutUser {
                 'las fuentes.'
           : 'Ahora no: la búsqueda web está desactivada en los ajustes.';
     }
+    if (_webDe.hasMatch(q)) {
+      return web
+          ? 'Ja. Wenn eine Frage es braucht, suche ich im Web und zeige die '
+                'Quellen.'
+          : 'Gerade nicht: Die Websuche ist aus. Du kannst sie in den '
+                'Einstellungen einschalten.';
+    }
     if (_abilitiesEn.hasMatch(q)) {
       return web
           ? 'I can answer questions, look up news, weather and prices on '
@@ -411,9 +438,35 @@ abstract final class AboutUser {
                 'poner temporizadores, alarmas, recordatorios y eventos. La '
                 'búsqueda web está desactivada en los ajustes.';
     }
+    if (_abilitiesDe.hasMatch(q)) {
+      return web
+          ? 'Ich kann Fragen beantworten, im Web nach Nachrichten, Wetter und '
+                'Preisen suchen, rechnen und Timer, Wecker, Erinnerungen und '
+                'Termine stellen. Was möchtest du?'
+          : 'Ich kann Fragen mit meinem Wissen beantworten, rechnen und '
+                'Timer, Wecker, Erinnerungen und Termine stellen. Die '
+                'Websuche ist aus; du kannst sie in den Einstellungen '
+                'einschalten.';
+    }
     return null;
   }
 
+  static final _abilitiesDe = RegExp(
+    "$_lead(?:was kannst du(?: alles)?(?: (?:tun|machen))?|wobei kannst du "
+    "(?:mir )?helfen|was sind deine f[äa]higkeiten)(?: f[üu]r mich)?"
+    "\\s*[?.!]*\$",
+    caseSensitive: false,
+    unicode: true,
+  );
+  static final _webDe = RegExp(
+    "$_lead(?:(?:kannst|k[öo]nntest) du (?:im (?:internet|web|netz) "
+    "(?:suchen|nachsehen|recherchieren)|online (?:suchen|recherchieren)|"
+    "das internet (?:durchsuchen|nutzen))"
+    "|hast du (?:zugriff auf (?:das )?)?internet(?:zugang)?"
+    "|bist du (?:mit dem internet verbunden|online))\\s*[?.!]*\$",
+    caseSensitive: false,
+    unicode: true,
+  );
   static final _abilitiesEn = RegExp(
     "$_lead(?:what (?:can|could) you (?:do|help (?:me )?with)|what are you "
     "(?:able|capable) (?:to do|of)|what do you do)(?: for me)?\\s*[?.!]*\$",
@@ -470,6 +523,7 @@ abstract final class AboutUser {
     if (_thanksEn.hasMatch(q)) return "You're welcome!";
     if (_thanksFr.hasMatch(q)) return 'De rien !';
     if (_thanksEs.hasMatch(q)) return '¡De nada!';
+    if (_thanksDe.hasMatch(q)) return 'Gern geschehen!';
     final en = _greetEn.firstMatch(q);
     if (en != null) {
       return en[1] != null
@@ -487,6 +541,12 @@ abstract final class AboutUser {
       return es[1] != null
           ? '¡Muy bien, gracias! ¿En qué puedo ayudarte?'
           : '¡Hola! ¿En qué puedo ayudarte?';
+    }
+    final de = _greetDe.firstMatch(q);
+    if (de != null) {
+      return de[1] != null
+          ? 'Mir geht’s gut, danke! Wie kann ich dir helfen?'
+          : 'Hallo! Wie kann ich dir helfen?';
     }
     return null;
   }
@@ -517,6 +577,19 @@ abstract final class AboutUser {
     caseSensitive: false,
     unicode: true,
   );
+  static final _thanksDe = RegExp(
+    r"^(?:ok(?:ay)?[,\s]+)?(?:danke|vielen dank|danke sch[öo]n|dankesch[öo]n)"
+    r"(?: (?:sehr|vielmals))?\s*[.!]*$",
+    caseSensitive: false,
+    unicode: true,
+  );
+  static final _greetDe = RegExp(
+    r"^(?:hallo|hi|hey|servus|moin(?: moin)?|guten (?:morgen|tag|abend)|"
+    r"gr[üu](?:ß|ss) gott)(?:[,!\s]+(wie geht(?:['’]s| es)(?: dir)?|"
+    r"alles (?:gut|klar)))?\s*[?.!]*$",
+    caseSensitive: false,
+    unicode: true,
+  );
   static final _greetEs = RegExp(
     r"^¡?(?:hola|buenos d[íi]as|buenas tardes|buenas noches|buenas)"
     r"(?:[,!\s]+(?:buenos d[íi]as|buenas tardes|buenas noches))?"
@@ -536,7 +609,9 @@ abstract final class AboutUser {
     r"(?<!\b(?:i|we|je|j['’]|nous|yo) )(?:fix|write|explain|corrige|"
     r"r[ée]pare|[ée]cris|explique|arregla|escribe|explica)|"
     r"show me|aide-moi|aidez-moi|pourquoi|"
-    r"comment|ay[úu]dame|por qu[ée]|c[óo]mo)(?![\p{L}])",
+    r"comment|ay[úu]dame|por qu[ée]|c[óo]mo|kannst du|könntest du|bitte|"
+    r"sag mir|hilf mir|ich möchte|ich will|ich brauche|wie|warum|wann|"
+    r"wer|welche[rsmn]?)(?![\p{L}])",
     caseSensitive: false,
     unicode: true,
   );
@@ -549,18 +624,32 @@ abstract final class AboutUser {
     r"|(?<!\b(?:ma|ta|sa|une|la|les|mes|tes|ses|cette|des|de) )\bplante\b"
     r"|\bne fonctionne pas\b"
     r"|\b(?:recibo|tengo|veo|aparece|sale) (?:un[oa]? |est[ea] |el |la )?(?:error|problema|fallo)\b"
-    r"|\b(?:falla|no funciona)\b",
+    r"|\b(?:falla|no funciona)\b"
+    r"|\bich (?:bekomme|habe|sehe) (?:einen |diesen |den )?(?:fehler|problem)"
+    r"|\b(?:funktioniert nicht|stürzt ab|geht nicht mehr|kaputt)\b",
     caseSensitive: false,
     unicode: true,
   );
 
   /// "My name is Robin", "je m'appelle Léa", "me llamo Ana".
   static final _gaveName = RegExp(
-    r"\b(?:my name is|my name['’]s|call me|je m['’]appelle|mon (?:nom|prénom) est|me llamo|mi nombre es)\s+(\p{L}[\p{L}'’-]*)",
+    r"\b(?:my name is|my name['’]s|call me|je m['’]appelle|mon (?:nom|prénom) est|me llamo|mi nombre es|ich hei(?:ß|ss)e|mein name ist|mein vorname ist)\s+(\p{L}[\p{L}'’-]*)",
     caseSensitive: false,
     unicode: true,
   );
-  static const _notAName = {'not', 'a', 'an', 'the', 'pas', 'un', 'une', 'no'};
+  static const _notAName = {
+    'not',
+    'a',
+    'an',
+    'the',
+    'pas',
+    'un',
+    'une',
+    'no',
+    'nicht',
+    'ein',
+    'eine',
+  };
 
   /// Whether [input] asks about the user's own facts.
   ///
@@ -582,12 +671,13 @@ abstract final class AboutUser {
     return false;
   }
 
-  /// A task for the assistant, EN/FR/ES.
+  /// A task for the assistant, EN/FR/ES/DE.
   static final _task = RegExp(
     r"\b(?:can|could|would|will) you (?!(?:please )?(?:remember|recall|remind|tell me (?:my|what|where|who|how|if|whether|which)|say (?:my|what|who)))"
     r"|\bhelp me\b|^(?:please )?(?:write|draft|compose|rewrite|translate|summari[sz]e|fix|create|make|generate|give me)\b"
     r"|\b(?:write|draft|compose) (?:me |a |an |my )"
-    r"|\b(?:peux-tu|pouvez-vous|pourrais-tu|pourriez-vous) (?!(?:me )?(?:rappeler|dire (?:mon|ma|mes|qui|o[ùu]|comment)))|\baide-moi\b|\b[ée]cri(?:s|vez)(?:-moi)?\b|\bayúdame\b|\b(?:puedes|podrías) (?!(?:recordarme|decirme (?:mi|mis|qui[ée]n|d[óo]nde|c[óo]mo)))|\bescr[íi]be(?:me)?\b",
+    r"|\b(?:peux-tu|pouvez-vous|pourrais-tu|pourriez-vous) (?!(?:me )?(?:rappeler|dire (?:mon|ma|mes|qui|o[ùu]|comment)))|\baide-moi\b|\b[ée]cri(?:s|vez)(?:-moi)?\b|\bayúdame\b|\b(?:puedes|podrías) (?!(?:recordarme|decirme (?:mi|mis|qui[ée]n|d[óo]nde|c[óo]mo)))|\bescr[íi]be(?:me)?\b"
+    r"|\b(?:kannst du|könntest du) (?!(?:dich |mir )?(?:erinnern|merken|sagen,? (?:wie|wo|wer|was)))|\bhilf mir\b|^(?:bitte )?(?:schreib(?:e)?|übersetze?|fasse|erstelle|mach(?:e)?|gib mir)\b",
     caseSensitive: false,
     unicode: true,
   );
@@ -596,13 +686,14 @@ abstract final class AboutUser {
   static final _always = RegExp(
     r"\b(?:who am I|where am I from|what(?:'s|’s| is) my name|what did I (?:just )?(?:say|tell you)|do you (?:know|remember) (?:where I|who I|what I))\b"
     r"|comment je m['’]appelle|qui suis-je|o[ùu] (?:est-ce que )?j['’]habite"
-    r"|c[óo]mo me llamo|qui[ée]n soy|d[óo]nde vivo",
+    r"|c[óo]mo me llamo|qui[ée]n soy|d[óo]nde vivo"
+    r"|wie hei(?:ß|ss)e ich|wer bin ich|wo wohne ich|was habe ich (?:gerade )?gesagt",
     caseSensitive: false,
     unicode: true,
   );
 
   static final _opener = RegExp(
-    r"^(?:(?:and|so|ok(?:ay)?|now|then|hey|et|y)[,\s]+)?(?:what|what's|whats|which|where|who|how many|how old|how much|do you|tell me|remind me|quel(?:le)?s?|o[ùu]|combien|comment|cu[áa]l(?:es)?|d[óo]nde|cu[áa]nt[oa]s?|c[óo]mo|¿)",
+    r"^(?:(?:and|so|ok(?:ay)?|now|then|hey|et|y)[,\s]+)?(?:what|what's|whats|which|where|who|how many|how old|how much|do you|tell me|remind me|quel(?:le)?s?|o[ùu]|combien|comment|cu[áa]l(?:es)?|d[óo]nde|cu[áa]nt[oa]s?|c[óo]mo|¿|was (?:ist|sind|war|habe|hab)|welche[rsmn]?|wo|wer|wie (?:viele?|alt|hei(?:ß|ss)t)|wei(?:ß|ss)t du|sag mir|erinnerst du dich)",
     caseSensitive: false,
     unicode: true,
   );
@@ -612,7 +703,8 @@ abstract final class AboutUser {
     r"|\b(?:do|did) I (?:live|work|have|own|like|love|study)\b"
     r"|\bam I from\b"
     r"|\b(?:mon (?:nom|âge|mari|travail)|ma (?:ville|femme|fille)|mes enfants)\b"
-    r"|\b(?:mi (?:nombre|edad|ciudad|esposa|esposo|trabajo)|mis hijos)\b",
+    r"|\b(?:mi (?:nombre|edad|ciudad|esposa|esposo|trabajo)|mis hijos)\b"
+    r"|\b(?:mein(?:e|en)? (?:name|alter|geburtstag|beruf|job|arbeit|stadt|wohnort|frau|mann|partner(?:in)?|freund(?:in)?|kinder?|sohn|tochter|bruder|schwester|mutter|vater|eltern|lieblings\w+)|wo wohne ich|wo arbeite ich)\b",
     caseSensitive: false,
     unicode: true,
   );

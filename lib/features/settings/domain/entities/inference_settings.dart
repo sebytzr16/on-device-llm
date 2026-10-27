@@ -295,6 +295,8 @@ class InferenceSettings {
     'be-fr',
     'ch-fr',
     'de-de',
+    'at-de',
+    'ch-de',
     'it-it',
     'es-es',
     'mx-es',

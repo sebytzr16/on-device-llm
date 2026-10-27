@@ -2589,11 +2589,11 @@ class ChatNotifier extends _ChatBase
     if (extraSystem != null && extraSystem.trim().isNotEmpty) {
       baseSystem.write('\n${extraSystem.trim()}');
     }
-    // A French or Spanish question gets its answer in that language, with
-    // or without sources (tester, 2026-10-19).
+    // A French, Spanish or German question gets its answer in that
+    // language, with or without sources (tester, 2026-10-19).
     final asked = WikipediaClient.languageFor(input, 'en');
     if (asked != 'en') {
-      final language = asked == 'fr' ? 'French' : 'Spanish';
+      final language = WikipediaClient.languageNames[asked];
       baseSystem.write('\nThe user writes in $language: answer in $language.');
     }
     if (settings.memoryEnabled &&

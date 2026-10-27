@@ -33,6 +33,13 @@ const modelLicences = <(String, String)>[
     'Kokoro 82M v1.0 by hexgrad, licensed under the Apache License 2.0. '
         'The app uses the multi-language ONNX export made for sherpa-onnx.',
   ),
+  (
+    'Piper voice "thorsten" (German)',
+    'de_DE-thorsten-medium from rhasspy/piper-voices (MIT License), '
+        'trained on the Thorsten-Voice dataset by Thorsten Müller (CC0), '
+        'fine-tuned from the Piper en_US "lessac" voice. The app uses the '
+        'export made for sherpa-onnx.',
+  ),
   ('Silero VAD', 'Silero VAD by Silero Team, licensed under the MIT License.'),
   (
     'sherpa-onnx',

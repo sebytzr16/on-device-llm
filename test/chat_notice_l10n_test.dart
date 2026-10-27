@@ -53,7 +53,8 @@ void main() {
   });
 
   test('English stays the default and unknown languages fall back to it', () {
-    expect(stringsFor('de').noticeSearching, 'Searching DuckDuckGo…');
+    expect(stringsFor('it').noticeSearching, 'Searching DuckDuckGo…');
+    expect(stringsFor('de').noticeSearching, 'Suche bei DuckDuckGo …');
     expect(
       BatterySaver.notice('battery 18%'),
       'Battery saver (battery 18%): no thinking, answers up to '
@@ -62,7 +63,7 @@ void main() {
   });
 
   test('every overridable setting has a label in each language', () {
-    for (final code in ['en', 'fr', 'es']) {
+    for (final code in ['en', 'fr', 'es', 'de']) {
       final t = stringsFor(code);
       for (final spec in SettingSpec.all) {
         expect(spec.labelIn(t), isNotEmpty);

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### German
+- The app in German: every screen, the built-in prompt shortcuts and the
+  Settings language picker.
+- German questions get German answers; the search gate, news briefings
+  (tagesschau, Spiegel, ORF, SRF, NZZ, Der Standard), Wikipedia, dates,
+  sums, phone actions, memory statements and spoken replies read German.
+- A German on-device voice: Piper "thorsten" (67 MB) speaks German, which
+  Kokoro does not; Whisper and Parakeet listen in German.
+- Search regions for Austria and Switzerland (German).
+
 ## 1.0.0 (2026-10-21)
 
 First public release. Android only.

@@ -111,7 +111,8 @@ build path, so an iOS release may follow in the future.
   and automatic stop on low battery or high temperature.
 
 **Everywhere**
-- English, French and Spanish.
+- English, French, Spanish and German (German speaks with its own Piper
+  voice, as Kokoro has none).
 - Dark and light themes, six accent colours, text scaling and a motion
   setting (Full, Subtle, Off).
 - Share text, links, photos and files to the app from any Android app.
@@ -267,8 +268,8 @@ connections are separate settings that you turn on yourself.
   model for facts that matter, and check the flagged statements.
 - **Web pages are read without JavaScript.** Sites that build their content
   in the browser cannot be read.
-- **French and Spanish need a native-speaker review**, and some diagnostic
-  text is still English.
+- **French, Spanish and German need a native-speaker review**, and some
+  diagnostic text is still English.
 - **Speculative decoding is experimental.** It is off by default because it
   was slower on the tested phone.
 

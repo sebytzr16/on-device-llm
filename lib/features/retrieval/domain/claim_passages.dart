@@ -620,6 +620,24 @@ abstract final class ClaimPassages {
     '€': '€',
     'gbp': '£',
     '£': '£',
+
+    'gramm': 'g',
+    'kilogramm': 'kg',
+    'zoll': 'in',
+    'fuß': 'ft',
+    'prozent': '%',
+    'grad': '°',
+    'gradcelsius': '°c',
+    'stunde': 'h',
+    'stunden': 'h',
+    'std': 'h',
+    'minuten': 'min',
+    'tag': 'day',
+    'tage': 'day',
+    'tagen': 'day',
+    'jahr': 'year',
+    'jahre': 'year',
+    'jahren': 'year',
   };
 
   static const _months = {
@@ -674,16 +692,26 @@ abstract final class ClaimPassages {
     'décembre': 12,
     'decembre': 12,
     'diciembre': 12,
+
+    'januar': 1,
+    'jänner': 1,
+    'februar': 2,
+    'märz': 3,
+    'maerz': 3,
+    'juni': 6,
+    'juli': 7,
+    'oktober': 10,
+    'dezember': 12,
   };
 
   static final _number = RegExp(
     r'(?<![\p{L}\p{N}.,])((?:US|CA|C|A|AU)?[$€£¥])?\s?([+-]?\d+(?:[.,]\d+)*)'
-    r'(?:\s?(%|per ?cent|pour ?cent|por ?ciento|°\s?[CcFf]?|º[Cc]|(?:degrees?|degrés?|grados)\s+(?:celsius|fahrenheit)|[\p{L}][\p{L}/]*))?',
+    r'(?:\s?(%|per ?cent|pour ?cent|por ?ciento|prozent|°\s?[CcFf]?|º[Cc]|(?:degrees?|degrés?|grados|grad)\s+(?:celsius|fahrenheit)|[\p{L}][\p{L}/]*))?',
     unicode: true,
     caseSensitive: false,
   );
   static final _dayMonth = RegExp(
-    r'(?<![\p{L}\p{N}])(\d{1,2})(?:st|nd|rd|th|er)?\s+(?:de\s+)?(\p{L}+)',
+    r'(?<![\p{L}\p{N}])(\d{1,2})(?:st|nd|rd|th|er|\.)?\s+(?:de\s+)?(\p{L}+)',
     unicode: true,
   );
   static final _monthDay = RegExp(

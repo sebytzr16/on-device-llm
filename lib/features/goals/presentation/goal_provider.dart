@@ -823,7 +823,7 @@ class GoalNotifier extends Notifier<GoalProgress?> {
   /// got Spanish questions on LM Studio, 2026-09-28). Counts common words;
   /// English when unsure.
   static String _language(GoalSpec spec) {
-    final words = RegExp(r"[a-zà-ÿ']+")
+    final words = RegExp(r"[a-zß-ÿ']+")
         .allMatches('${spec.objective} ${spec.criteria}'.toLowerCase())
         .map((m) => m.group(0)!)
         .toList();
@@ -871,6 +871,29 @@ class GoalNotifier extends Notifier<GoalProgress?> {
       'que',
       'al',
     });
+    final de = count(const {
+      'der',
+      'die',
+      'das',
+      'den',
+      'dem',
+      'und',
+      'für',
+      'mit',
+      'von',
+      'ist',
+      'sind',
+      'ein',
+      'eine',
+      'welche',
+      'welcher',
+      'beste',
+      'besten',
+      'wie',
+      'im',
+      'nicht',
+      'vergleiche',
+    });
     final en = count(const {
       'the',
       'and',
@@ -892,8 +915,9 @@ class GoalNotifier extends Notifier<GoalProgress?> {
       'vs',
       'compare',
     });
-    if (fr > en && fr > es) return 'French';
-    if (es > en && es > fr) return 'Spanish';
+    if (fr > en && fr > es && fr > de) return 'French';
+    if (es > en && es > fr && es > de) return 'Spanish';
+    if (de > en && de > fr && de > es) return 'German';
     return 'English';
   }
 

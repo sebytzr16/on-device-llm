@@ -51,7 +51,11 @@ class RetrievalPlan {
     r"quel(le)?s? (est|était|sont) (la |le |les |l')?\p{L}|combien (de|mesure|pèse)(?![\p{L}\p{N}])|"
     r"quién (es|era|fue|inventó|fundó|escribió|pintó|descubrió)(?![\p{L}\p{N}])|qué es(?![\p{L}\p{N}])|"
     r"cuándo (fue|es|nació|murió|se)(?![\p{L}\p{N}])|dónde (está|estaba|se encuentra|nació)(?![\p{L}\p{N}])|"
-    r"cuál (es|era|fue)(?![\p{L}\p{N}])|cuánto (mide|pesa)(?![\p{L}\p{N}]))",
+    r"cuál (es|era|fue)(?![\p{L}\p{N}])|cuánto (mide|pesa)(?![\p{L}\p{N}])|"
+    r"wer (ist|war|sind|waren|hat (erfunden|gegründet|geschrieben|gemalt|entdeckt))(?![\p{L}\p{N}])|"
+    r"was (ist|war|sind|waren) (der |die |das |ein |eine )?\p{L}|wann (ist|war|wurde|hat)(?![\p{L}\p{N}])|"
+    r"wo (ist|liegt|war|befindet sich)(?![\p{L}\p{N}])|wie (hoch|alt|groß|lang|tief|weit|viele|schwer|breit)(?![\p{L}\p{N}])|"
+    r"erzähl mir (etwas )?(über|von)(?![\p{L}\p{N}]))",
     unicode: true,
   );
 
@@ -101,7 +105,7 @@ class RetrievalPlan {
   }
 
   static final _howToAsk = RegExp(
-    r"^[¿¡\s]*(?:(?:and|so|ok(?:ay)?|but|et|alors|y|pues)[,\s]+)?(?:how (?:do|can|should|would) (?:i|we|you|one) (?!(?:feel|say|spell|pronounce|do|think|know|remember|like|mean|rate|rewrite|tell|respond|reply|answer|handle|approach|deal|phrase|word|write|explain|describe|improve|interpret|ask|apologi[sz]e|convince|talk|react)\b)\p{L}|how to \p{L}|what(?:'s| is| are) the (?:steps|best way) to |steps? (?:to|for) |comment (?:faire|on fait|on |puis-je|est-ce qu'on|est-ce que je|je peux|dois-je|faut-il)|quelles sont les [ée]tapes|[ée]tapes pour|c[óo]mo (?:se |hago|puedo|debo|preparo|hacer|hay que)|pasos para)",
+    r"^[¿¡\s]*(?:(?:and|so|ok(?:ay)?|but|et|alors|y|pues)[,\s]+)?(?:how (?:do|can|should|would) (?:i|we|you|one) (?!(?:feel|say|spell|pronounce|do|think|know|remember|like|mean|rate|rewrite|tell|respond|reply|answer|handle|approach|deal|phrase|word|write|explain|describe|improve|interpret|ask|apologi[sz]e|convince|talk|react)\b)\p{L}|how to \p{L}|what(?:'s| is| are) the (?:steps|best way) to |steps? (?:to|for) |comment (?:faire|on fait|on |puis-je|est-ce qu'on|est-ce que je|je peux|dois-je|faut-il)|quelles sont les [ée]tapes|[ée]tapes pour|c[óo]mo (?:se |hago|puedo|debo|preparo|hacer|hay que)|pasos para|wie (?:kann|soll|muss) (?:ich|man) (?!(?:das |es )?(?:sagen|schreiben|aussprechen|buchstabieren|erklären|beschreiben|antworten|fühlen|denken|formulieren|verstehen)\b)\p{L}|wie (?!(?:f[üu]hle|hei(?:ß|ss)e|nenne|verhalte)\b)\p{L}+e (?:ich|man)\b|wie \p{L}+t man\b|wie geht (?:das|man)|anleitung (?:für|zum|zur)|schritte (?:für|zum|zur|um))",
     caseSensitive: false,
     unicode: true,
   );
@@ -112,7 +116,7 @@ class RetrievalPlan {
   );
 
   static final _specWord = RegExp(
-    r"(?<![\p{L}\p{N}])(?:weigh(?:t|s)?|battery(?: life)?|dimensions?|sensor(?: size)?|megapixels?|resolution|specs?|specifications?|price|cost|release date|launch date|screen size|display size|storage|ram|processor|chipset|cpu|gpu|lens mount|top speed|horsepower|range|fuel economy|mpg|capacity|parameters?|context (?:length|window)|refresh rate|charging speed|waterproof|ip\d\d|warranty|poids|p[èe]se|batterie|autonomie|taille|capteur|m[ée]gapixels?|r[ée]solution|caract[ée]ristiques|fiche technique|prix|co[ûu]te?|date de sortie|[ée]cran|stockage|processeur|monture|puissance|consommation|capacit[ée]|param[èe]tres|garantie|peso|pesa|bater[íi]a|autonom[íi]a|dimensiones|tama[ñn]o|megap[íi]xeles|resoluci[óo]n|especificaciones|ficha t[ée]cnica|precio|cuesta|fecha de lanzamiento|pantalla|almacenamiento|procesador|montura|potencia|consumo|capacidad|par[áa]metros|garant[íi]a)(?![\p{L}\p{N}])",
+    r"(?<![\p{L}\p{N}])(?:weigh(?:t|s)?|battery(?: life)?|dimensions?|sensor(?: size)?|megapixels?|resolution|specs?|specifications?|price|cost|release date|launch date|screen size|display size|storage|ram|processor|chipset|cpu|gpu|lens mount|top speed|horsepower|range|fuel economy|mpg|capacity|parameters?|context (?:length|window)|refresh rate|charging speed|waterproof|ip\d\d|warranty|poids|p[èe]se|batterie|autonomie|taille|capteur|m[ée]gapixels?|r[ée]solution|caract[ée]ristiques|fiche technique|prix|co[ûu]te?|date de sortie|[ée]cran|stockage|processeur|monture|puissance|consommation|capacit[ée]|param[èe]tres|garantie|peso|pesa|bater[íi]a|autonom[íi]a|dimensiones|tama[ñn]o|megap[íi]xeles|resoluci[óo]n|especificaciones|ficha t[ée]cnica|precio|cuesta|fecha de lanzamiento|pantalla|almacenamiento|procesador|montura|potencia|consumo|capacidad|par[áa]metros|garant[íi]a|gewicht|wiegt|akku(?:laufzeit)?|abmessungen|ma[ßs]e|gr[öo][ßs]e|sensorgr[öo][ßs]e|aufl[öo]sung|technische daten|datenblatt|preis|kostet|erscheinungsdatum|marktstart|bildschirm|display|speicher|prozessor|bajonett|leistung|reichweite|verbrauch|kapazit[äa]t|parameter|garantie|bildwiederholrate|ladeleistung|wasserdicht)(?![\p{L}\p{N}])",
     caseSensitive: false,
     unicode: true,
   );
@@ -145,11 +149,12 @@ class RetrievalPlan {
   }
 
   static final _selfOpener = RegExp(
-    r"^[¿¡\s]*(?:(?:hey|hi|so|and|also|ok(?:ay)?|um+|uh+|well|btw|tell me|alors|et|dis(?:-moi)?|oye|y|entonces|bueno)[,\s]+)*"
-    r"(?:(?<ask>(?:can|could|will|would) you|(?:est-ce que )?tu peux|peux-tu|pourrais-tu|(?:est-ce que )?vous pouvez|pouvez-vous|puedes|podr[íi]as)|"
+    r"^[¿¡\s]*(?:(?:hey|hi|so|and|also|ok(?:ay)?|um+|uh+|well|btw|tell me|alors|et|dis(?:-moi)?|oye|y|entonces|bueno|hallo|sag mal|und|also|okay|ähm)[,\s]+)*"
+    r"(?:(?<ask>(?:can|could|will|would) you|(?:est-ce que )?tu peux|peux-tu|pourrais-tu|(?:est-ce que )?vous pouvez|pouvez-vous|puedes|podr[íi]as|kannst du|könntest du)|"
     r"are you (?:able|capable|allowed|connected|online)|do you (?:have|know how|support|use|get)|is it possible for you|have you got|"
     r"(?:est-ce que )?tu (?:sais|as)|sais-tu|as-tu|es-tu (?:capable|connect[ée]e?)|(?:est-ce que )?vous avez|avez-vous|"
-    r"sabes|tienes|eres capaz|est[áa]s conectad[oa])(?![\p{L}\p{N}])",
+    r"sabes|tienes|eres capaz|est[áa]s conectad[oa]|"
+    r"hast du|bist du (?:mit dem internet )?(?:verbunden|online|in der lage)|weißt du wie)(?![\p{L}\p{N}])",
     unicode: true,
   );
 
@@ -159,7 +164,8 @@ class RetrievalPlan {
     'browse', 'browsing', 'google', 'googling', 'websites', 'net',
     'recherche', 'recherches', 'chercher', 'rechercher', 'ligne',
     'buscar', 'búsqueda', 'búsquedas', 'busquedas', 'navegar', 'línea',
-    'linea',
+    'linea', 'suchen', 'suche', 'websuche', 'surfen', 'googeln',
+    'webseiten', 'netz',
   };
 
   // Words a capability question carries besides that: no subject.
@@ -175,6 +181,11 @@ class RetrievalPlan {
     'connecté', 'connectée', 'aussi', 'hacer', 'el', 'las', 'los', 'una',
     'ir', 'acceso', 'tener', 'conexión', 'conexion', 'también', 'tambien',
     'información', 'informacion', 'datos', 'tiempo', 'actual',
+    'im', 'ins', 'zugriff', 'auf', 'das', 'dem', 'den', 'der', 'die', 'ein',
+    'eine', 'verbunden', 'mit', 'auch', 'haben', 'machen', 'durchführen',
+    'gehen', 'nach', 'sachen', 'dinge', 'aktuelle', 'informationen', 'daten',
+    'echtzeit', 'lesen', 'seiten', 'du', 'dich', 'selbst', 'zu', 'und',
+    'oder', 'verbindung', 'nutzen', 'benutzen',
   };
 
   /// Work on text the user supplies — writing, rewriting, translating,
@@ -215,16 +226,16 @@ class RetrievalPlan {
 
   // A sum in words: "six times seven", "cinq fois sept", "seis por siete".
   static const _numberWord =
-      r'(?:\d+(?:[.,]\d+)?|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|z[ée]ro|un|une|deux|trois|quatre|cinq|sept|huit|neuf|dix|onze|douze|vingt|trente|cent|mille|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|veinte|treinta|cien|mil)';
+      r'(?:\d+(?:[.,]\d+)?|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|z[ée]ro|un|une|deux|trois|quatre|cinq|sept|huit|neuf|dix|onze|douze|vingt|trente|cent|mille|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|veinte|treinta|cien|mil|null|eins|zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn|elf|zwölf|zwanzig|dreißig|hundert|tausend)';
   static final _wordSum = RegExp(
-    '(?<![\\p{L}\\p{N}])$_numberWord\\s+(?:times|plus|minus|divided by|multiplied by|x|fois|moins|divis[ée] par|multipli[ée] par|por|m[áa]s|menos|dividido (?:por|entre)|multiplicado por)\\s+$_numberWord(?![\\p{L}\\p{N}])',
+    '(?<![\\p{L}\\p{N}])$_numberWord\\s+(?:times|plus|minus|divided by|multiplied by|x|fois|moins|divis[ée] par|multipli[ée] par|por|m[áa]s|menos|dividido (?:por|entre)|multiplicado por|mal|geteilt durch|multipliziert mit)\\s+$_numberWord(?![\\p{L}\\p{N}])',
     caseSensitive: false,
     unicode: true,
   );
 
   // Figures to work out: "15% of 240", "3 x 4", "how much is 12 … 7".
   static final _arithmetic = RegExp(
-    r'\d\s*[+*/×÷^=]\s*\d|\d\s*%|\d\s+[x-]\s+\d|\b(?:calculate|compute|convert|how (?:much|many)|percent(?:age)?|average|sum of|square root|calcule[rz]?|convertis|combien|pourcentage|moyenne|calcula|convierte|cu[áa]nt[oa]s?|porcentaje|promedio)\b[^\n]*\d|\d[^\n]*\b(?:percent|times|divided|plus|minus|squared|pour ?cent|fois|por ciento|veces)\b',
+    r'\d\s*[+*/×÷^=]\s*\d|\d\s*%|\d\s+[x-]\s+\d|\b(?:calculate|compute|convert|how (?:much|many)|percent(?:age)?|average|sum of|square root|calcule[rz]?|convertis|combien|pourcentage|moyenne|calcula|convierte|cu[áa]nt[oa]s?|porcentaje|promedio|berechne|rechne|wie ?viel|prozent|durchschnitt|umrechnen)\b[^\n]*\d|\d[^\n]*\b(?:percent|times|divided|plus|minus|squared|pour ?cent|fois|por ciento|veces|prozent|mal|geteilt|hoch)\b',
     caseSensitive: false,
     unicode: true,
   );
@@ -260,7 +271,7 @@ class RetrievalPlan {
   // "tell me" are how knowledge questions are asked too, so they are not
   // here: those still go to the judge.
   static final _localVerb = RegExp(
-    r'^(please |can you |could you |pls )?(write|rewrite|draft|compose|translate|paraphrase|proofread|fix|debug|refactor|improve|shorten|expand|simplify|correct|format|convert|brainstorm|outline|rephrase|reword|edit|review|proof-?read|[ée]cris|r[ée][ée]cris|r[ée]dige|traduis|traduire|corrige|reformule|escribe|reescribe|redacta|traduce|traducir|reformula|revisa|mejora|acorta)(?![\p{L}\p{N}])',
+    r'^(please |can you |could you |pls |bitte |kannst du |könntest du )?(write|rewrite|draft|compose|translate|paraphrase|proofread|fix|debug|refactor|improve|shorten|expand|simplify|correct|format|convert|brainstorm|outline|rephrase|reword|edit|review|proof-?read|[ée]cris|r[ée][ée]cris|r[ée]dige|traduis|traduire|corrige|reformule|escribe|reescribe|redacta|traduce|traducir|reformula|revisa|mejora|acorta|schreib(?:e)?|formuliere|[üu]bersetze?|korrigiere|verbessere|k[üu]rze|[üu]berarbeite|entwirf|verfasse)(?![\p{L}\p{N}])',
     caseSensitive: false,
     unicode: true,
   );
@@ -268,13 +279,13 @@ class RetrievalPlan {
   // One greeting or courtesy, as people type or a speech recognizer writes
   // it ("Hi?", "hey there", "how's it going").
   static const _greetingPart =
-      r"(?:hi|hello|hey|hiya|yo|howdy|greetings|good (?:morning|afternoon|evening|night|day)|thanks?(?: you)?(?: (?:so much|a lot|very much))?|thank you|ty|ok(?:ay)?|cool|nice|great|bye|goodbye|see you(?: later)?|how are you(?: doing)?(?: today)?|how(?:'s| is) it going|how are things|how have you been|how(?:'s| is| was) your (?:day|night|evening|morning|week|weekend)(?: going| been)?|what'?s up|whats up|sup|nice to meet you|salut|bonjour|bonsoir|bonne nuit|bonne journ[ée]e|merci(?: beaucoup)?|au revoir|[àa] bient[ôo]t|(?:comment )?[çc]a va(?: bien)?|comment allez-vous|coucou|hola|buen(?:os|as) (?:d[íi]as|tardes|noches)|(?:muchas )?gracias|adi[óo]s|hasta luego|qu[ée] tal(?: est[áa]s)?|c[óo]mo est[áa]s|c[óo]mo va)";
+      r"(?:hi|hello|hey|hiya|yo|howdy|greetings|good (?:morning|afternoon|evening|night|day)|thanks?(?: you)?(?: (?:so much|a lot|very much))?|thank you|ty|ok(?:ay)?|cool|nice|great|bye|goodbye|see you(?: later)?|how are you(?: doing)?(?: today)?|how(?:'s| is) it going|how are things|how have you been|how(?:'s| is| was) your (?:day|night|evening|morning|week|weekend)(?: going| been)?|what'?s up|whats up|sup|nice to meet you|salut|bonjour|bonsoir|bonne nuit|bonne journ[ée]e|merci(?: beaucoup)?|au revoir|[àa] bient[ôo]t|(?:comment )?[çc]a va(?: bien)?|comment allez-vous|coucou|hola|buen(?:os|as) (?:d[íi]as|tardes|noches)|(?:muchas )?gracias|adi[óo]s|hasta luego|qu[ée] tal(?: est[áa]s)?|c[óo]mo est[áa]s|c[óo]mo va|hallo|hi|servus|moin(?: moin)?|gr[üu](?:ß|ss) gott|guten (?:morgen|tag|abend)|gute nacht|danke(?: sch[öo]n| sehr)?|vielen dank|tsch[üu]ss|auf wiedersehen|bis (?:bald|sp[äa]ter|dann)|wie geht(?:['’]s| es)?(?: dir| ihnen)?|was geht|alles klar|na)";
 
   // Words that may follow a greeting without making it a question: "how
   // are you doing tonight?" is not news of the night (phone, 2026-10-08:
   // it searched and explained the phrase).
   static const _greetingTail =
-      r"(?:there|everyone|all|friend|buddy|mate|again|assistant|claude|mon ami|amigo|a todos|today|tonight|so far|this (?:morning|afternoon|evening|week)|aujourd['’]hui|ce soir|ce matin|hoy|esta noche|esta ma[ñn]ana)";
+      r"(?:there|everyone|all|friend|buddy|mate|again|assistant|claude|mon ami|amigo|a todos|today|tonight|so far|this (?:morning|afternoon|evening|week)|aujourd['’]hui|ce soir|ce matin|hoy|esta noche|esta ma[ñn]ana|zusammen|alle|heute|heute abend|heute morgen|mein freund)";
 
   // One or more greetings ("hi there, how are you doing?"), with any
   // punctuation a recognizer adds, including a question mark.
@@ -317,14 +328,14 @@ class RetrievalPlan {
 
   // How something works or what it means: general knowledge.
   static final _concept = RegExp(
-    r"^[¿¡\s]*(?:please |can you |could you )?(?:explain|define|describe|what(?:['’]s| is| are) the difference|difference between|how (?:does|do) .{1,60}? work|why (?:do|does)|what (?:does|do) .{1,40}? mean|what is an? |explique|d[ée]finis|d[ée]cris|quelle est la diff[ée]rence|diff[ée]rence entre|comment (?:fonctionne|marche)|pourquoi (?:les|le|la|l['’])|qu['’]est-ce (?:que|qu['’])|explica|define|describe|cu[áa]l es la diferencia|diferencia entre|c[óo]mo funciona|por qu[ée] (?:los|las|el|la)|qu[ée] es (?:un|una|el|la) )",
+    r"^[¿¡\s]*(?:please |can you |could you )?(?:explain|define|describe|what(?:['’]s| is| are) the difference|difference between|how (?:does|do) .{1,60}? work|why (?:do|does)|what (?:does|do) .{1,40}? mean|what is an? |explique|d[ée]finis|d[ée]cris|quelle est la diff[ée]rence|diff[ée]rence entre|comment (?:fonctionne|marche)|pourquoi (?:les|le|la|l['’])|qu['’]est-ce (?:que|qu['’])|explica|define|describe|cu[áa]l es la diferencia|diferencia entre|c[óo]mo funciona|por qu[ée] (?:los|las|el|la)|qu[ée] es (?:un|una|el|la) |erkl[äa]re?|definiere|beschreibe|was ist der unterschied|unterschied zwischen|wie funktionier(?:t|en)|warum (?:sind|ist|haben|hat) (?:die|der|das)|was (?:ist|sind) (?:ein|eine|der|die|das) |was bedeutet)",
     caseSensitive: false,
     unicode: true,
   );
 
   // Markers that make even a concept question about the present.
   static final _strongTime = RegExp(
-    r"(?<![\p{L}\p{N}])(?:today|tonight|right now|latest|current(?:ly)?|this (?:week|month|year)|news|202[4-9]|20[3-9]\d|aujourd['’]hui|ce soir|en ce moment|actuel(?:le)?(?:ment)?|derni[èe]re?s?|nouvelles|actualit[ée]s?|hoy|esta noche|ahora mismo|actual(?:mente)?|[úu]ltim[oa]s?|noticias)(?![\p{L}\p{N}])",
+    r"(?<![\p{L}\p{N}])(?:today|tonight|right now|latest|current(?:ly)?|this (?:week|month|year)|news|202[4-9]|20[3-9]\d|aujourd['’]hui|ce soir|en ce moment|actuel(?:le)?(?:ment)?|derni[èe]re?s?|nouvelles|actualit[ée]s?|hoy|esta noche|ahora mismo|actual(?:mente)?|[úu]ltim[oa]s?|noticias|heute|heute abend|gerade jetzt|aktuell(?:e[nrs]?)?|neueste[nrs]?|nachrichten)(?![\p{L}\p{N}])",
     caseSensitive: false,
     unicode: true,
   );
@@ -333,7 +344,7 @@ class RetrievalPlan {
   static final _personalTime = RegExp(
     // "I'm tired today" is about the user's day, not the news (audit
     // 2026-10-20); another marker ("weather") still searches.
-    r"(?:(?:for|pour|para) (?:today|tonight|tomorrow|aujourd['’]hui|ce soir|demain|hoy|esta noche|ma[ñn]ana)|(?:cook|eat|make|wear|do|watch|read|play|listen to|prepare|bake) (?:today|tonight|tomorrow)|\b(?:I(?:['’]m| am| feel| felt| was| had| have| did| went| worked)|my day)\b[^.?!\n]{0,40}?\b(?:today|tonight|yesterday|this (?:morning|evening|week))|\bje (?:suis|me sens|[ée]tais)\b[^.?!\n]{0,40}?aujourd['’]hui|\b(?:estoy|me siento)\b[^.?!\n]{0,40}?\bhoy)(?![\p{L}\p{N}])",
+    r"(?:(?:for|pour|para) (?:today|tonight|tomorrow|aujourd['’]hui|ce soir|demain|hoy|esta noche|ma[ñn]ana)|(?:cook|eat|make|wear|do|watch|read|play|listen to|prepare|bake) (?:today|tonight|tomorrow)|\b(?:I(?:['’]m| am| feel| felt| was| had| have| did| went| worked)|my day)\b[^.?!\n]{0,40}?\b(?:today|tonight|yesterday|this (?:morning|evening|week))|\bje (?:suis|me sens|[ée]tais)\b[^.?!\n]{0,40}?aujourd['’]hui|\b(?:estoy|me siento)\b[^.?!\n]{0,40}?\bhoy|f[üu]r (?:heute|heute abend|morgen)|\bich (?:bin|f[üu]hle mich|war)\b[^.?!\n]{0,40}?heute)(?![\p{L}\p{N}])",
     caseSensitive: false,
     unicode: true,
   );
@@ -351,7 +362,7 @@ class RetrievalPlan {
 
   // Openers of writing work on the user's own material.
   static final _writing = RegExp(
-    r'^(?:please |can you |could you |pls |peux-tu |pourrais-tu |puedes |podr[íi]as )?(?:write|rewrite|draft|compose|translate|paraphrase|proofread|rephrase|reword|brainstorm|outline|[ée]cris|r[ée][ée]cris|r[ée]dige|traduis|reformule|escribe|reescribe|redacta|traduce|reformula)(?![\p{L}\p{N}])',
+    r'^(?:please |can you |could you |pls |peux-tu |pourrais-tu |puedes |podr[íi]as |bitte |kannst du |könntest du )?(?:write|rewrite|draft|compose|translate|paraphrase|proofread|rephrase|reword|brainstorm|outline|[ée]cris|r[ée][ée]cris|r[ée]dige|traduis|reformule|escribe|reescribe|redacta|traduce|reformula|schreib(?:e)?|formuliere|[üu]bersetze?|entwirf|verfasse)(?![\p{L}\p{N}])',
     caseSensitive: false,
     unicode: true,
   );
@@ -359,13 +370,13 @@ class RetrievalPlan {
   // French and Spanish. `\b` is ASCII-only in Dart, so accented words are
   // bounded by Unicode letter lookarounds.
   static final _timelyIntl = RegExp(
-    r"(?<![\p{L}\p{N}])(derni[èe]res?|actuellement|aujourd'?hui|hier|ce soir|en ce moment|cette (?:ann[ée]e|semaine)|actualit[ée]s?|nouvelles|prix|m[ée]t[ée]o|r[ée]sultats? du match|qui est|prochaines? (?:[ée]lections?|match|partie|course)|co[ûu]te(?:nt)? (?:maintenant|actuellement)|maintenant\s*\?|[úu]ltim[oa]s?|actualmente|hoy|ayer|esta (?:noche|semana)|este a[ñn]o|ahora mismo|anoche|pr[óo]xim[oa]s? (?:elecciones|elecci[óo]n|partido|carrera)|cuesta(?:n)? ahora|ahora cuesta(?:n)?|noticias|precios?|clima|el tiempo en|marcador|resultado del partido|qui[ée]n es|habitants|combien de personnes vivent|poblaci[óo]n|habitantes|cu[áa]ntas personas viven)(?![\p{L}\p{N}])",
+    r"(?<![\p{L}\p{N}])(derni[èe]res?|actuellement|aujourd'?hui|hier|ce soir|en ce moment|cette (?:ann[ée]e|semaine)|actualit[ée]s?|nouvelles|prix|m[ée]t[ée]o|r[ée]sultats? du match|qui est|prochaines? (?:[ée]lections?|match|partie|course)|co[ûu]te(?:nt)? (?:maintenant|actuellement)|maintenant\s*\?|[úu]ltim[oa]s?|actualmente|hoy|ayer|esta (?:noche|semana)|este a[ñn]o|ahora mismo|anoche|pr[óo]xim[oa]s? (?:elecciones|elecci[óo]n|partido|carrera)|cuesta(?:n)? ahora|ahora cuesta(?:n)?|noticias|precios?|clima|el tiempo en|marcador|resultado del partido|qui[ée]n es|habitants|combien de personnes vivent|poblaci[óo]n|habitantes|cu[áa]ntas personas viven|heute|gestern|heute abend|gerade jetzt|derzeit|zurzeit|momentan|aktuell(?:e[nrs]?)?|neueste[nrs]?|diese (?:woche|saison)|dieses jahr|nachrichten|preise?|wetter|n[äa]chste[nrs]? (?:wahl|spiel|rennen)|wer ist|einwohner|wie viele menschen leben|bev[öo]lkerung)(?![\p{L}\p{N}])",
     caseSensitive: false,
     unicode: true,
   );
 
   static final _explicitIntl = RegExp(
-    r"(?<![\p{L}\p{N}])(cherche|chercher|recherche|rechercher|v[ée]rifie|v[ée]rifier|sur internet|en ligne|sur le web|sources?|site web|busca|buscar|b[úu]scalo|investiga|verifica|comprueba|en internet|en l[íi]nea|en la web|fuentes?|p[áa]gina web)(?![\p{L}\p{N}])",
+    r"(?<![\p{L}\p{N}])(cherche|chercher|recherche|rechercher|v[ée]rifie|v[ée]rifier|sur internet|en ligne|sur le web|sources?|site web|busca|buscar|b[úu]scalo|investiga|verifica|comprueba|en internet|en l[íi]nea|en la web|fuentes?|p[áa]gina web|suche|suchen|such (?:mal|bitte|nach|im|online)|recherchier(?:e|en)?|im (?:internet|netz|web)|online|quellen(?:angaben)?|webseite|website|pr[üu]fe nach|schau nach|nachschauen|nachsehen|googl(?:e|en))(?![\p{L}\p{N}])",
     caseSensitive: false,
     unicode: true,
   );
@@ -402,19 +413,19 @@ class RetrievalPlan {
   // Openers that only make sense after an answer. "why" counts alone or
   // as "why is that": "why did Rome fall?" is a question of its own.
   static final _followUpLead = RegExp(
-    r"^(?:and |but |so |ok(?:ay)? |then |also )?(?:what about|how about|tell me more|more (?:about|on|details|info)|any more|elaborate|expand on|go on|continue|keep going|why(?=\s*[?!.]*$)|why is that|why so|how come|explain (?:that|this|it|more|why)|what does (?:it|that|this) mean|details(?: on| about)?|and then|what else|say more|dig deeper|go deeper|in more detail|summari[sz]e (?:it|that|this|them)|what did (?:it|they|he|she) say|what happened (?:next|then|after))(?![\p{L}\p{N}])",
+    r"^(?:and |but |so |ok(?:ay)? |then |also )?(?:what about|how about|tell me more|more (?:about|on|details|info)|any more|elaborate|expand on|go on|continue|keep going|why(?=\s*[?!.]*$)|why is that|why so|how come|explain (?:that|this|it|more|why)|what does (?:it|that|this) mean|details(?: on| about)?|and then|what else|say more|dig deeper|go deeper|in more detail|summari[sz]e (?:it|that|this|them)|what did (?:it|they|he|she) say|what happened (?:next|then|after)|und was ist mit|erzähl(?: mir)? mehr|mehr (?:dazu|darüber|details)|warum(?=\s*[?!.]*$)|wieso(?=\s*[?!.]*$)|was hei(?:ß|ss)t das|und dann|was noch|fasse (?:es|das) zusammen)(?![\p{L}\p{N}])",
     caseSensitive: false,
     unicode: true,
   );
 
   static final _backReference = RegExp(
-    r"(?<![\p{L}\p{N}'])(its|their|theirs|them|his|him|hers|the latter|the former|the other one|both of them|each of them|ça|cela|celui-ci|celle-ci|ceux-ci|eso|esto|aquello)(?![\p{L}\p{N}'])",
+    r"(?<![\p{L}\p{N}'])(its|their|theirs|them|his|him|hers|the latter|the former|the other one|both of them|each of them|ça|cela|celui-ci|celle-ci|ceux-ci|eso|esto|aquello|ihm|ihr|ihnen|ihre[nmrs]?|seine[nmrs]?|dessen|deren|letztere[rs]?|erstere[rs]?)(?![\p{L}\p{N}'])",
     caseSensitive: false,
     unicode: true,
   );
 
   static final _shortReference = RegExp(
-    r"^(?:and|but|or|et|y|o)\s|(?<![\p{L}\p{N}])(which one|which ones|the one|this one|that one|the same|both|either|neither|cheaper|more expensive|better|worse|bigger|smaller|lighter|heavier|faster|slower|newer|older|instead|compared|vs\.?|versus)(?![\p{L}\p{N}])",
+    r"^(?:and|but|or|et|y|o|und|aber|oder)\s|(?<![\p{L}\p{N}])(welche[rs]?|billiger|teurer|besser|schlechter|größer|kleiner|leichter|schwerer|schneller|langsamer|neuer|älter|stattdessen|im vergleich|which one|which ones|the one|this one|that one|the same|both|either|neither|cheaper|more expensive|better|worse|bigger|smaller|lighter|heavier|faster|slower|newer|older|instead|compared|vs\.?|versus)(?![\p{L}\p{N}])",
     caseSensitive: false,
     unicode: true,
   );
@@ -500,13 +511,13 @@ class RetrievalPlan {
   }
 
   static final _myPlace = RegExp(
-    r"(?<![\p{L}])(?:where I (?:live|am|'m|am living|'m living|stay)|near me|around me|around here|in my (?:city|town|area|region)|my (?:city|town|area)|o[ùu] j'habite|o[ùu] je (?:vis|suis)|chez moi|pr[èe]s de chez moi|donde vivo|donde estoy|en mi ciudad|cerca de m[íi])(?![\p{L}])",
+    r"(?<![\p{L}])(?:where I (?:live|am|'m|am living|'m living|stay)|near me|around me|around here|in my (?:city|town|area|region)|my (?:city|town|area)|o[ùu] j'habite|o[ùu] je (?:vis|suis)|chez moi|pr[èe]s de chez moi|donde vivo|donde estoy|en mi ciudad|cerca de m[íi]|wo ich wohne|wo ich bin|in meiner (?:n[äa]he|stadt|gegend)|bei mir in der n[äa]he|in der n[äa]he)(?![\p{L}])",
     caseSensitive: false,
     unicode: true,
   );
 
   static final _livesIn = RegExp(
-    r"(?<![\p{L}])(?:I live in|I['’]m living in|I am living in|I['’]m from|I am from|I['’]m based in|I am based in|I['’]m in|I am in|[Mm]y (?:city|town|home) is|[Jj]['’]habite (?:à|a|en|au)|[Jj]e vis (?:à|a|en|au)|[Jj]e suis (?:à|de)|[Vv]ivo en|[Ss]oy de|[Ee]stoy en)\s+(\p{Lu}[\p{L}'’-]*(?:\s+(?:(?:de|del|la|le|sur|upon)\s+)?\p{Lu}[\p{L}'’-]*)*)",
+    r"(?<![\p{L}])(?:I live in|I['’]m living in|I am living in|I['’]m from|I am from|I['’]m based in|I am based in|I['’]m in|I am in|[Mm]y (?:city|town|home) is|[Jj]['’]habite (?:à|a|en|au)|[Jj]e vis (?:à|a|en|au)|[Jj]e suis (?:à|de)|[Vv]ivo en|[Ss]oy de|[Ee]stoy en|[Ii]ch wohne in|[Ii]ch lebe in|[Ii]ch komme aus|[Ii]ch bin aus)\s+(\p{Lu}[\p{L}'’-]*(?:\s+(?:(?:de|del|la|le|sur|upon|am|an der|im)\s+)?\p{Lu}[\p{L}'’-]*)*)",
     unicode: true,
   );
 
@@ -574,7 +585,7 @@ class RetrievalPlan {
   }
 
   static final _asksForOne = RegExp(
-    r"\b(?:what|which|who)(?:['’]s|\s+is|\s+was|\s+are|\s+were)\s+the\s+\p{L}|\bwho (?:wrote|founded|invented|directed|painted|discovered|won|owns|runs|leads|sang)\b|\b(?:quelle?|qui) est (?:la|le|l['’])|\b(?:cu[áa]l|qui[ée]n) es (?:la|el)\b",
+    r"\b(?:what|which|who)(?:['’]s|\s+is|\s+was|\s+are|\s+were)\s+the\s+\p{L}|\bwho (?:wrote|founded|invented|directed|painted|discovered|won|owns|runs|leads|sang)\b|\b(?:quelle?|qui) est (?:la|le|l['’])|\b(?:cu[áa]l|qui[ée]n) es (?:la|el)\b|\b(?:was|wer|welche[rs]?) (?:ist|war) (?:der|die|das)\b",
     caseSensitive: false,
     unicode: true,
   );
@@ -625,6 +636,30 @@ class RetrievalPlan {
     'es',
     'il',
     'elle',
+    'der',
+    'die',
+    'das',
+    'ist',
+    'heute',
+    'derzeit',
+    'laut',
+    'im',
+    'am',
+    'januar',
+    'februar',
+    'märz',
+    'mai',
+    'juni',
+    'juli',
+    'oktober',
+    'dezember',
+    'montag',
+    'dienstag',
+    'mittwoch',
+    'donnerstag',
+    'freitag',
+    'samstag',
+    'sonntag',
     'january',
     'february',
     'march',
@@ -654,8 +689,9 @@ class RetrievalPlan {
   }
 
   static final _newsLike = RegExp(
-    r'\b(news|today|this week)\b',
+    r'(?<![\p{L}\p{N}])(news|today|this week|nachrichten|heute|diese woche|aktuelle meldungen)(?![\p{L}\p{N}])',
     caseSensitive: false,
+    unicode: true,
   );
 
   /// The question's content words as a bare search query, for a second try
@@ -742,6 +778,45 @@ class RetrievalPlan {
     'any',
     'there',
     'currently',
+    'der',
+    'das',
+    'den',
+    'dem',
+    'des',
+    'ein',
+    'eine',
+    'einen',
+    'ist',
+    'sind',
+    'wer',
+    'wie',
+    'wo',
+    'wann',
+    'warum',
+    'welche',
+    'welcher',
+    'welches',
+    'ich',
+    'mir',
+    'mich',
+    'du',
+    'dir',
+    'bitte',
+    'sag',
+    'suche',
+    'finde',
+    'von',
+    'im',
+    'zu',
+    'zum',
+    'zur',
+    'mit',
+    'und',
+    'oder',
+    'gibt',
+    'es',
+    'kannst',
+    'derzeit',
   };
 
   // Explicit asks that should work without a timeliness keyword.
