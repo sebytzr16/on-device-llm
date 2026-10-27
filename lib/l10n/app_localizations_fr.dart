@@ -488,6 +488,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get languageSpanish => 'Español';
 
   @override
+  String get languageGerman => 'Deutsch';
+
+  @override
   String get resetToDefaults => 'Rétablir les valeurs par défaut';
 
   @override

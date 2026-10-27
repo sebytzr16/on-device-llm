@@ -33,7 +33,7 @@ class PromptShortcut {
 
   static final validName = RegExp(r'^[a-z0-9][a-z0-9-]{0,23}$');
 
-  /// This shortcut in the app's language [lang] ('en', 'fr', 'es'): a
+  /// This shortcut in the app's language [lang] ('en', 'fr', 'es', 'de'): a
   /// built-in gets its translated prompt and description; the user's own
   /// are sent as written.
   PromptShortcut localized(String lang) {

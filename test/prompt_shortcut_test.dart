@@ -104,6 +104,14 @@ void main() {
       PromptShortcut.apply('/translate Hola amigos', all, lang: 'es')!.$2,
       contains('al inglés'),
     );
+    expect(
+      PromptShortcut.apply('/translate französisch Hallo', all, lang: 'de')!.$2,
+      'Übersetze den folgenden Text auf Französisch. Antworte nur mit der Übersetzung.\n\nHallo',
+    );
+    expect(
+      PromptShortcut.apply('/translate Hallo zusammen', all, lang: 'de')!.$2,
+      contains('auf Englisch'),
+    );
     // The user's own shortcuts are sent as written.
     const own = PromptShortcut(
       name: 'tldr',

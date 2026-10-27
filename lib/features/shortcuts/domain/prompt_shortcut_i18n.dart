@@ -1,4 +1,4 @@
-/// The built-in prompt shortcuts in French and Spanish: the prompt a
+/// The built-in prompt shortcuts in French, Spanish and German: the prompt a
 /// French user's `/summarize` sends is written in French, so the model
 /// answers in French. User-made shortcuts are sent as written.
 class PromptShortcutI18n {
@@ -79,6 +79,44 @@ class PromptShortcutI18n {
     ),
   };
 
+  static const _de = {
+    'summarize': (
+      'Fasse den folgenden Text in 3 bis 5 kurzen Stichpunkten zusammen und übernimm Namen, Zahlen und Daten exakt.\n\n{input}',
+      'Text in ein paar Stichpunkten zusammenfassen',
+      '',
+    ),
+    'translate': (
+      'Übersetze den folgenden Text auf {arg}. Antworte nur mit der Übersetzung.\n\n{input}',
+      'Übersetzen — /translate en <Text>',
+      'Englisch',
+    ),
+    'fix': (
+      'Korrigiere Rechtschreibung, Grammatik und Zeichensetzung des folgenden Textes. Behalte Sinn, Ton und Sprache bei. Antworte nur mit dem korrigierten Text.\n\n{input}',
+      'Rechtschreibung und Grammatik korrigieren',
+      '',
+    ),
+    'shorter': (
+      'Schreibe den folgenden Text auf etwa die Hälfte der Länge um, ohne einen Fakt zu verlieren. Antworte nur mit der neuen Fassung.\n\n{input}',
+      'Text kürzen',
+      '',
+    ),
+    'explain': (
+      'Erkläre Folgendes in einfachen Worten für jemanden, der neu im Thema ist, mit einem konkreten Beispiel.\n\n{input}',
+      'Einfach erklären',
+      '',
+    ),
+    'email': (
+      'Schreibe aus diesen Notizen eine klare, höfliche E-Mail. Halte sie kurz und schließe mit dem nächsten Schritt.\n\n{input}',
+      'Notizen in eine E-Mail verwandeln',
+      '',
+    ),
+    'code-review': (
+      'Prüfe diesen Code. Nenne zuerst echte Fehler (mit Zeile und Korrektur), dann klare Verbesserungen. Wiederhole den Code nicht.\n\n{input}',
+      'Code prüfen: Fehler und Verbesserungen',
+      '',
+    ),
+  };
+
   /// Language names for /translate's first word, in the prompt's language.
   static const languageNames = {
     'en': {
@@ -138,6 +176,25 @@ class PromptShortcutI18n {
       'ko': 'coreano',
       'hi': 'hindi',
     },
+    'de': {
+      'en': 'Englisch',
+      'fr': 'Französisch',
+      'es': 'Spanisch',
+      'de': 'Deutsch',
+      'it': 'Italienisch',
+      'pt': 'Portugiesisch',
+      'nl': 'Niederländisch',
+      'ro': 'Rumänisch',
+      'pl': 'Polnisch',
+      'ru': 'Russisch',
+      'uk': 'Ukrainisch',
+      'tr': 'Türkisch',
+      'ar': 'Arabisch',
+      'zh': 'Chinesisch',
+      'ja': 'Japanisch',
+      'ko': 'Koreanisch',
+      'hi': 'Hindi',
+    },
   };
 
   /// (template, description, defaultArg) of built-in [name] in [lang], or
@@ -146,6 +203,7 @@ class PromptShortcutI18n {
       switch (lang) {
         'fr' => _fr[name],
         'es' => _es[name],
+        'de' => _de[name],
         _ => null,
       };
 }

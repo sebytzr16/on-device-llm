@@ -308,6 +308,7 @@ class SettingsScreen extends ConsumerWidget {
                               'en' => context.l10n.languageEnglish,
                               'fr' => context.l10n.languageFrench,
                               'es' => context.l10n.languageSpanish,
+                              'de' => context.l10n.languageGerman,
                               _ => context.l10n.languageSystem,
                             }),
                           ),
