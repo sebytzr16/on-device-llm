@@ -68,7 +68,7 @@ class NewsIntent {
 
   // Asking about the news business, or for writing, is not asking for news.
   static final _notNews = RegExp(
-    r"\b(how (?:do|does|to|can|should)|explain|definition|define|write|draft|compose|history of|fake news|news ?(?:app|site|website|source|outlet|anchor|reader|letter|paper|room|agency|feed|article|report|story) (?:for|to|that|which|recommend)|recommend (?:a|some)? ?(?:good |reliable )?news|(?:best|good|reliable) news (?:apps?|sites?|sources?)|rss|api)\b",
+    r"\b(how (?:do|does|to|can|should)|explain|definition|define|write|draft|compose|history of|fake news|news ?(?:app|site|website|source|outlet|anchor|reader|letter|paper|room|agency|feed|article|report|story) (?:for|to|that|which|recommend)|recommend (?:a|some)? ?(?:good |reliable )?news|(?:best|good|reliable) news (?:apps?|sites?|sources?)|rss|api|erkl[äa]re?|schreib(?:e)?|verfasse|entwirf|geschichte der|wie funktionier(?:t|en)|nachrichten-?(?:app|seite|quelle)s?)\b",
     caseSensitive: false,
   );
 
@@ -172,16 +172,16 @@ class NewsIntent {
     return out;
   }
 
-  // French and Spanish news requests (\b is ASCII-only in Dart, so accented
+  // French, Spanish and German news requests (\b is ASCII-only in Dart, so accented
   // words are bounded by Unicode letter lookarounds).
   static final _newsWordIntl = RegExp(
-    r"(?<![\p{L}\p{N}])(actualit[ée]s?|nouvelles|infos|les titres|quoi de neuf|que se passe-t-il|noticias|titulares|[úu]ltima hora|qu[ée] (?:est[áa] pasando|pas[óo]|hay de nuevo)|actualidad)(?![\p{L}\p{N}])",
+    r"(?<![\p{L}\p{N}])(actualit[ée]s?|nouvelles|infos|les titres|quoi de neuf|que se passe-t-il|noticias|titulares|[úu]ltima hora|qu[ée] (?:est[áa] pasando|pas[óo]|hay de nuevo)|actualidad|nachrichten|neuigkeiten|schlagzeilen|meldungen|was gibt(?:['’]s| es) neues|was ist (?:heute )?(?:los|passiert))(?![\p{L}\p{N}])",
     caseSensitive: false,
     unicode: true,
   );
 
   static final _timelyIntl = RegExp(
-    r"(?<![\p{L}\p{N}])(des nouvelles (?:de|du|des|sur)|aujourd'?hui|hier|ce (?:matin|soir)|cette semaine|derni[èe]res?|r[ée]centes?|en ce moment|hoy|ayer|esta (?:ma[ñn]ana|tarde|noche|semana)|[úu]ltim[oa]s?|recientes?|ahora|ahora mismo)(?![\p{L}\p{N}])",
+    r"(?<![\p{L}\p{N}])(des nouvelles (?:de|du|des|sur)|aujourd'?hui|hier|ce (?:matin|soir)|cette semaine|derni[èe]res?|r[ée]centes?|en ce moment|hoy|ayer|esta (?:ma[ñn]ana|tarde|noche|semana)|[úu]ltim[oa]s?|recientes?|ahora|ahora mismo|heute|gestern|heute (?:morgen|abend)|diese woche|neueste[nrs]?|aktuelle[nrs]?|gerade|jetzt|neues (?:zu|zum|zur|von|aus|über))(?![\p{L}\p{N}])",
     caseSensitive: false,
     unicode: true,
   );
@@ -197,6 +197,14 @@ class NewsIntent {
     'el', 'lo', 'del', 'sobre', 'últimas', 'ultimas', 'última', 'ultima',
     'últimos', 'ultimos', 'noticias', 'titulares', 'hora', 'hoy', 'ayer',
     'esta', 'semana', 'actualidad', 'ahora', 'hay', 'nuevo',
+    // German
+    // ('es', 'des' and 'los' are listed above.)
+    'was', 'gibt', 'neues', 'neuigkeiten', 'nachrichten', 'schlagzeilen',
+    'meldungen', 'die', 'der', 'das', 'den', 'dem', 'von', 'aus', 'zu',
+    'zum', 'zur', 'über', 'heute', 'gestern', 'morgen', 'abend', 'diese',
+    'woche', 'neueste', 'neuesten', 'aktuelle', 'aktuellen', 'gerade',
+    'jetzt', 'sind', 'ist', 'passiert', 'zeig', 'mir', 'sag', 'welche', 'im',
+    'in', 'bitte',
   };
 
   static const _filler = {
@@ -356,6 +364,20 @@ class NewsIntent {
     'showbiz': NewsCategory.entertainment,
     'arts': NewsCategory.entertainment,
     'culture': NewsCategory.entertainment,
+    'welt': NewsCategory.world,
+    'weltnachrichten': NewsCategory.world,
+    'inland': NewsCategory.national,
+    'politik': NewsCategory.politics,
+    'wirtschaft': NewsCategory.business,
+    'börse': NewsCategory.business,
+    'finanzen': NewsCategory.business,
+    'technik': NewsCategory.technology,
+    'technologie': NewsCategory.technology,
+    'wissenschaft': NewsCategory.science,
+    'gesundheit': NewsCategory.health,
+    'unterhaltung': NewsCategory.entertainment,
+    'kultur': NewsCategory.entertainment,
+    'promis': NewsCategory.entertainment,
   };
 
   /// Country and region words → DuckDuckGo region.
@@ -382,6 +404,13 @@ class NewsIntent {
     'french': 'fr-fr',
     'germany': 'de-de',
     'german': 'de-de',
+    'deutschland': 'de-de',
+    'deutsche': 'de-de',
+    'deutschen': 'de-de',
+    'austria': 'at-de',
+    'österreich': 'at-de',
+    'switzerland': 'ch-de',
+    'schweiz': 'ch-de',
     'italy': 'it-it',
     'italian': 'it-it',
     'italia': 'it-it',
@@ -413,6 +442,8 @@ class NewsIntent {
     'za-en' => 'South Africa',
     'fr-fr' => 'France',
     'de-de' => 'Germany',
+    'at-de' => 'Austria',
+    'ch-de' => 'Switzerland',
     'it-it' => 'Italy',
     'es-es' => 'Spain',
     'mx-es' => 'Mexico',

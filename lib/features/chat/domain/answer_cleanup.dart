@@ -49,9 +49,9 @@ class AnswerCleanup {
   }
 
   static final _liveNote = RegExp(
-    r"^[*_(\s]*(?:please )?(?:note|keep in mind|disclaimer|remarque|nota)\b"
-    r"(?=[^\n]*\b(?:live|real[- ]time|up[- ]to[- ]date|en temps r[ée]el|en tiempo real)\b)"
-    r"(?=[^\n]*\b(?:unavailable|not available|(?:do not|don't|cannot|can't|can ?not) (?:have|access|verify|check|provide)|indisponible|pas disponible|no disponible|no tengo)\b)",
+    r"^[*_(\s]*(?:please )?(?:note|keep in mind|disclaimer|remarque|nota|hinweis|bitte beachte)\b"
+    r"(?=[^\n]*\b(?:live|real[- ]time|up[- ]to[- ]date|en temps r[ée]el|en tiempo real|in echtzeit)\b)"
+    r"(?=[^\n]*\b(?:unavailable|not available|(?:do not|don't|cannot|can't|can ?not) (?:have|access|verify|check|provide)|indisponible|pas disponible|no disponible|no tengo|nicht verf[üu]gbar|keinen zugriff)\b)",
     caseSensitive: false,
   );
 
@@ -174,7 +174,7 @@ class AnswerCleanup {
       !_hasFigure(answer);
 
   static final _asksFigure = RegExp(
-    r"\bhow (?:many|much|old|tall|big|long|far|high|deep|heavy|large)\b|\b(?:population|number of|roughly|approximately)\b|\bcombien\b|\bcu[áa]nt[oa]s?\b|\bpoblaci[óo]n\b",
+    r"\bhow (?:many|much|old|tall|big|long|far|high|deep|heavy|large)\b|\b(?:population|number of|roughly|approximately)\b|\bcombien\b|\bcu[áa]nt[oa]s?\b|\bpoblaci[óo]n\b|\bwie (?:viele?|alt|gro(?:ß|ss)|lang|weit|hoch|tief|schwer)\b|\b(?:einwohner|bev[öo]lkerung|anzahl|ungef[äa]hr)\b",
     caseSensitive: false,
     unicode: true,
   );
@@ -185,13 +185,13 @@ class AnswerCleanup {
   );
 
   static final _liveFigure = RegExp(
-    r"°|\b(?:celsius|fahrenheit|sunny|cloudy|rainy|snowy|weather|forecast|chance of (?:rain|snow|showers)|humidity|costs?|priced?|dollars?|euros?|pounds sterling|score[ds]?|degr[ée]s|pr[ée]vision|prix|co[uû]te|grados|pron[óo]stico|precio|cuesta)\b|[$€£]\s?\d",
+    r"°|\b(?:celsius|fahrenheit|sunny|cloudy|rainy|snowy|weather|forecast|chance of (?:rain|snow|showers)|humidity|costs?|priced?|dollars?|euros?|pounds sterling|score[ds]?|degr[ée]s|pr[ée]vision|prix|co[uû]te|grados|pron[óo]stico|precio|cuesta|sonnig|bew[öo]lkt|regnerisch|wetter|vorhersage|preis|kostet|euro)\b|[$€£]\s?\d",
     caseSensitive: false,
     unicode: true,
   );
 
   static final _defers = RegExp(
-    r"\byou (?:can|could|may|might want to) (?:check|visit|find|look|see|consult)\b|\b(?:is|are) (?:all )?available (?:on|at|from|there|right now|online)\b|\b(?:various|several|multiple) (?:reports|sources|sites|websites|forecasts)\b|\bvous pouvez (?:consulter|v[ée]rifier)\b|\bpuedes (?:consultar|revisar|ver)\b",
+    r"\byou (?:can|could|may|might want to) (?:check|visit|find|look|see|consult)\b|\b(?:is|are) (?:all )?available (?:on|at|from|there|right now|online)\b|\b(?:various|several|multiple) (?:reports|sources|sites|websites|forecasts)\b|\bvous pouvez (?:consulter|v[ée]rifier)\b|\bpuedes (?:consultar|revisar|ver)\b|\b(?:du kannst|sie k[öo]nnen) (?:\S+ )?(?:nachsehen|pr[üu]fen|nachschauen|besuchen)\b",
     caseSensitive: false,
   );
 
@@ -201,12 +201,12 @@ class AnswerCleanup {
       _numberWord.hasMatch(text);
 
   static final _numberWord = RegExp(
-    r'\b(?:two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|(?:thir|four|fif|six|seven|eigh|nine)teen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion|deux|trois|quatre|cinq|vingt|trente|quarante|cinquante|cent|mille|dos|tres|cuatro|cinco|veinte|treinta|cuarenta|cincuenta|cien|mil)\b',
+    r'\b(?:two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|(?:thir|four|fif|six|seven|eigh|nine)teen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion|deux|trois|quatre|cinq|vingt|trente|quarante|cinquante|cent|mille|dos|tres|cuatro|cinco|veinte|treinta|cuarenta|cincuenta|cien|mil|zwei|drei|vier|f[üu]nf|sechs|sieben|acht|neun|zehn|zwanzig|drei(?:ß|ss)ig|vierzig|f[üu]nfzig|hundert|tausend|million(?:en)?|milliarde(?:n)?)\b',
     caseSensitive: false,
   );
 
   static final _offer = RegExp(
-    r"^(?:would you like|do you want|shall I|should I|want me to|can I|may I|voulez-vous|veux-tu|souhaitez-vous|¿?(?:quieres|desea|te gustar[íi]a))\b.*\b(?:check|look|read|get|find|details?|more|search|open|specific|sources?|sites?|reports?|forecast|information|conditions|v[ée]rifie|d[ée]tails|cherche|lise|busque|detalles|revise)\b.*\?\s*$",
+    r"^(?:would you like|do you want|shall I|should I|want me to|can I|may I|voulez-vous|veux-tu|souhaitez-vous|¿?(?:quieres|desea|te gustar[íi]a)|m[öo]chtest du|soll ich|willst du|m[öo]chten sie)\b.*\b(?:check|look|read|get|find|details?|more|search|open|specific|sources?|sites?|reports?|forecast|information|conditions|v[ée]rifie|d[ée]tails|cherche|lise|busque|detalles|revise|nachsehen|pr[üu]fen|suchen|details|mehr|quellen|informationen)\b.*\?\s*$",
     caseSensitive: false,
     unicode: true,
   );
@@ -318,7 +318,7 @@ class AnswerCleanup {
   }
 
   static final _ageQuestion = RegExp(
-    r"\bhow old\b|\bwhat age\b|\bage of\b|\bquel [âa]ge\b|\bcu[áa]ntos a[ñn]os\b|\bqu[ée] edad\b",
+    r"\bhow old\b|\bwhat age\b|\bage of\b|\bquel [âa]ge\b|\bcu[áa]ntos a[ñn]os\b|\bqu[ée] edad\b|\bwie alt\b",
     caseSensitive: false,
     unicode: true,
   );

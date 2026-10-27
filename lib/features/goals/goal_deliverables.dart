@@ -45,24 +45,26 @@ abstract final class GoalDeliverables {
   static final _fileRequest = RegExp(
     r'(?<![\p{L}\p{N}])(?:prepare|create|make|write|produce|generate|save|export|put|give me|send me|deliver|compile|draft|'
     r'prépare[rz]?|crée[rz]?|créer|fai[st]|faire|écri[st]|écrire|rédige[rz]?|enregistre[rz]?|exporte[rz]?|génère[rz]?|générer|mets|mettre|donne[- ]moi|'
-    r'prepara[r]?|crea[r]?|haz|hacer|escribe|escribir|redacta[r]?|guarda[r]?|exporta[r]?|genera[r]?|pon|poner|dame)'
+    r'prepara[r]?|crea[r]?|haz|hacer|escribe|escribir|redacta[r]?|guarda[r]?|exporta[r]?|genera[r]?|pon|poner|dame|'
+    r'erstelle[n]?|bereite[n]? .{0,20}?vor|mach(?:e)?|schreib(?:e)?|speicher[en]?|speichere|exportier(?:e|en)?|generier(?:e|en)?|gib mir|schick mir)'
     r'(?![\p{L}\p{N}])[^.?!\n]{0,60}?(?<![\p{L}\p{N}])'
     r'(?:(?:text|txt|markdown|md|csv|html|json)\s+(?:file|document)|file|document|spreadsheet|\.(?:txt|md|csv|html|json)|'
     r'fichier|document|tableur|feuille de calcul|'
-    r'archivo|fichero|documento|hoja de c[áa]lculo)(?![\p{L}\p{N}])',
+    r'archivo|fichero|documento|hoja de c[áa]lculo|'
+    r'(?:text|csv|markdown|html|json)?-?datei|dokument|tabelle|tabellenkalkulation)(?![\p{L}\p{N}])',
     caseSensitive: false,
     unicode: true,
   );
 
   // "as a CSV", "in Markdown", "to JSON" after an export verb.
   static final _formatRequest = RegExp(
-    r'(?<![\p{L}\p{N}])(?:save|export|write|put|enregistre[rz]?|exporte[rz]?|guarda[r]?|exporta[r]?)(?![\p{L}\p{N}])[^.?!\n]{0,40}?(?:as|to|in|into|en|como|au format|en formato)\s+(?:a |an |un |une |una )?(?:csv|json|markdown|html|txt)(?![\p{L}\p{N}])',
+    r'(?<![\p{L}\p{N}])(?:save|export|write|put|enregistre[rz]?|exporte[rz]?|guarda[r]?|exporta[r]?|speichere?|exportiere?|schreib(?:e)?)(?![\p{L}\p{N}])[^.?!\n]{0,40}?(?:as|to|in|into|en|como|au format|en formato|als|im format)\s+(?:a |an |un |une |una |eine? )?(?:csv|json|markdown|html|txt)(?![\p{L}\p{N}])',
     caseSensitive: false,
     unicode: true,
   );
 
   static final _csv = RegExp(
-    r'(?<![\p{L}\p{N}])(?:csv|spreadsheet|tableur|feuille de calcul|hoja de c[áa]lculo|excel)(?![\p{L}\p{N}])',
+    r'(?<![\p{L}\p{N}])(?:csv|spreadsheet|tableur|feuille de calcul|hoja de c[áa]lculo|excel|tabellenkalkulation)(?![\p{L}\p{N}])',
     caseSensitive: false,
     unicode: true,
   );
@@ -70,33 +72,33 @@ abstract final class GoalDeliverables {
   static final _html = RegExp(r'\bhtml\b|web page', caseSensitive: false);
   static final _markdown = RegExp(r'\b(?:markdown|md)\b', caseSensitive: false);
   static final _text = RegExp(
-    r'(?<![\p{L}\p{N}])(?:text|txt|plain|texte|texto)(?![\p{L}\p{N}])',
+    r'(?<![\p{L}\p{N}])(?:text|txt|plain|texte|texto|textdatei)(?![\p{L}\p{N}])',
     caseSensitive: false,
     unicode: true,
   );
 
   static final _event = RegExp(
-    r'(?<![\p{L}\p{N}])(?:calendar|agenda|event|appointment|meeting|calendrier|événement|evenement|rendez-vous|réunion|calendario|evento|cita|reunión)s?(?![\p{L}\p{N}])',
+    r'(?<![\p{L}\p{N}])(?:calendar|agenda|event|appointment|meeting|calendrier|événement|evenement|rendez-vous|réunion|calendario|evento|cita|reunión|kalender|termin|termine|veranstaltung|besprechung|meeting)s?(?![\p{L}\p{N}])',
     caseSensitive: false,
     unicode: true,
   );
   static final _reminder = RegExp(
-    r'(?<![\p{L}\p{N}])(?:remind|reminder|rappel|rappelle|recordatorio|recuérdame|recuerdame)s?(?![\p{L}\p{N}])',
+    r'(?<![\p{L}\p{N}])(?:remind|reminder|rappel|rappelle|recordatorio|recuérdame|recuerdame|erinnerung|erinnere mich|erinnere)s?(?![\p{L}\p{N}])',
     caseSensitive: false,
     unicode: true,
   );
   static final _alarm = RegExp(
-    r'(?<![\p{L}\p{N}])(?:alarm|wake me|alarme|réveil|réveille|alarma|despiértame|despiertame)s?(?![\p{L}\p{N}])',
+    r'(?<![\p{L}\p{N}])(?:alarm|wake me|alarme|réveil|réveille|alarma|despiértame|despiertame|wecker|weck mich|wecke mich)s?(?![\p{L}\p{N}])',
     caseSensitive: false,
     unicode: true,
   );
   static final _timer = RegExp(
-    r'(?<![\p{L}\p{N}])(?:timer|countdown|minuteur|chrono|temporizador)s?(?![\p{L}\p{N}])',
+    r'(?<![\p{L}\p{N}])(?:timer|countdown|minuteur|chrono|temporizador|kurzzeitwecker|eieruhr)s?(?![\p{L}\p{N}])',
     caseSensitive: false,
     unicode: true,
   );
   static final _message = RegExp(
-    r'(?<![\p{L}\p{N}])(?:e-?mail|mail|message|text him|text her|text them|sms|texto|courriel|mensaje|correo)s?(?![\p{L}\p{N}])',
+    r'(?<![\p{L}\p{N}])(?:e-?mail|mail|message|text him|text her|text them|sms|texto|courriel|mensaje|correo|nachricht|e-mail an|schreib (?:ihm|ihr|ihnen))s?(?![\p{L}\p{N}])',
     caseSensitive: false,
     unicode: true,
   );
@@ -111,7 +113,7 @@ abstract final class GoalDeliverables {
       // The format may follow the noun: "un archivo JSON", "a file in CSV".
       final after = objective
           .substring(file.end, (file.end + 24).clamp(0, objective.length))
-          .split(RegExp(r'[.,;!?\n]|\s(?:and|then|et|puis|y|luego)\s'))
+          .split(RegExp(r'[.,;!?\n]|\s(?:and|then|et|puis|y|luego|und|dann)\s'))
           .first;
       final around = '${file[0]}$after';
       out.add(
@@ -171,7 +173,7 @@ abstract final class GoalDeliverables {
     // before it to the end of its sentence.
     final before = objective.substring(0, file.start);
     final clause = RegExp(
-      r'(?:[,;]\s*(?:and\s+|et\s+|y\s+|then\s+|puis\s+|luego\s+)?|\s+(?:and|then|et|puis|y|luego)\s+|^)\s*(?:please\s+|also\s+)?$',
+      r'(?:[,;]\s*(?:and\s+|et\s+|y\s+|then\s+|puis\s+|luego\s+|und\s+|dann\s+)?|\s+(?:and|then|et|puis|y|luego|und|dann)\s+|^)\s*(?:please\s+|also\s+|bitte\s+|auch\s+)?$',
       caseSensitive: false,
     ).firstMatch(before);
     final start = clause?.start ?? file.start;
@@ -221,17 +223,18 @@ abstract final class GoalDeliverables {
 
   // The request at the start of an objective ("Find the", "Busca el").
   static final _request = RegExp(
-    r'^(?:(?:please|can you|could you|peux-tu|pouvez-vous|puedes)\s+)?'
+    r'^(?:(?:please|can you|could you|peux-tu|pouvez-vous|puedes|bitte|kannst du)\s+)?'
     r'(?:find(?: out)?|look up|search(?: for)?|research|get|check|tell me|give me|show me|compare|list|'
     r'what (?:is|are)|how (?:much|many)|trouve|cherche|recherche|donne-moi|compare|quel(?:le)?s? (?:est|sont)|'
-    r'busca|encuentra|investiga|dime|compara|cu[aá]l(?:es)? (?:es|son))\s+'
-    r'(?:(?:the|a|an|le|la|les|l|un|une|des|du|el|los|las|una|unos)\s+)?',
+    r'busca|encuentra|investiga|dime|compara|cu[aá]l(?:es)? (?:es|son)|'
+    r'finde|suche|recherchiere|vergleiche|nenne|liste|zeig mir|sag mir|gib mir|was (?:ist|sind)|welche[rs]? (?:ist|sind)|wie viele?)\s+'
+    r'(?:(?:the|a|an|le|la|les|l|un|une|des|du|el|los|las|una|unos|der|die|das|den|dem|ein|eine|einen)\s+)?',
     caseSensitive: false,
   );
 
   // Where the subject ends and its qualifiers begin.
   static final _qualifier = RegExp(
-    r'\s(?:including|with|without|from|for|in|on|and|cite|citing|avec|sans|pour|dans|et|con|sin|para|en|y)\s',
+    r'\s(?:including|with|without|from|for|in|on|and|cite|citing|avec|sans|pour|dans|et|con|sin|para|en|y|mit|ohne|von|für|im|und|inklusive)\s',
     caseSensitive: false,
   );
 

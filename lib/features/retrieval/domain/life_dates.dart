@@ -63,17 +63,29 @@ class LifeDates {
     'noviembre': 11,
     'diciembre': 12,
   };
+  static const _monthsDe = {
+    'januar': 1,
+    'jänner': 1,
+    'februar': 2,
+    'märz': 3,
+    'maerz': 3,
+    'juni': 6,
+    'juli': 7,
+    'oktober': 10,
+    'dezember': 12,
+  };
   static final Map<String, int> _months = {
     ..._monthsEn,
     ..._monthsFr,
     ..._monthsEs,
+    ..._monthsDe,
   };
 
   static final _monthWord = '(${_months.keys.join('|')})\\.?';
 
   /// "born March 1, 1994", "born 1 March 1994", "(born 1994-03-01)",
   /// "Born: March 1, 1994", "né le 1er mars 1994", "nació el 1 de marzo de
-  /// 1994".
+  /// 1994", "geboren am 1. März 1994", "(* 1. März 1994)", "* 01.03.1994".
   static final _patterns = [
     RegExp(
       // A letter lookahead, not \b: \b is ASCII-only, so "nació " and
@@ -83,7 +95,7 @@ class LifeDates {
       unicode: true,
     ),
     RegExp(
-      '(?<![\\p{L}])(?:born|n[ée]e?|naci[óo])(?![\\p{L}])[^.;\\n\\d]{0,30}?(\\d{1,2})(?:er|st|nd|rd|th)?\\s+(?:de\\s+)?$_monthWord\\s+(?:de\\s+)?(\\d{4})',
+      '(?:(?<![\\p{L}])(?:born|n[ée]e?|naci[óo]|geboren)(?![\\p{L}])|\\(\\*|^\\*|\\s\\*)[^.;\\n\\d]{0,30}?(\\d{1,2})(?:er|st|nd|rd|th|\\.)?\\s+(?:de\\s+)?$_monthWord\\s+(?:de\\s+)?(\\d{4})',
       caseSensitive: false,
       unicode: true,
     ),
@@ -91,11 +103,16 @@ class LifeDates {
       r'\b(?:born|date of birth|birth date)\b[^.;\n\d]{0,20}?(\d{4})-(\d{2})-(\d{2})',
       caseSensitive: false,
     ),
+    // German numeric: "geboren am 01.03.1994", "(* 01.03.1994".
+    RegExp(
+      r'(?:\bgeboren\b[^.;\n\d]{0,20}?|(?:^|[\s(])\*\s?)(\d{1,2})\.(\d{1,2})\.(\d{4})',
+      caseSensitive: false,
+    ),
   ];
 
   /// A question about someone's age or birthday.
   static final _asks = RegExp(
-    r"how old|['’]s age\b|\bage of\b|birthday|born|date of birth|quel [âa]ge|anniversaire|n[ée]e? |date de naissance|cu[áa]ntos a[ñn]os|qu[ée] edad|cumplea[ñn]os|naci[óo]|fecha de nacimiento",
+    r"how old|['’]s age\b|\bage of\b|birthday|born|date of birth|quel [âa]ge|anniversaire|n[ée]e? |date de naissance|cu[áa]ntos a[ñn]os|qu[ée] edad|cumplea[ñn]os|naci[óo]|fecha de nacimiento|wie alt|\balter (?:von|des|der)\b|geburtstag|geboren|geburtsdatum",
     caseSensitive: false,
   );
 
@@ -116,6 +133,10 @@ class LifeDates {
     }
     for (final m in _patterns[2].allMatches(text)) {
       final d = _date(int.parse(m[1]!), int.parse(m[2]!), int.parse(m[3]!));
+      if (d != null) out.add(d);
+    }
+    for (final m in _patterns[3].allMatches(text)) {
+      final d = _date(int.parse(m[3]!), int.parse(m[2]!), int.parse(m[1]!));
       if (d != null) out.add(d);
     }
     return out;

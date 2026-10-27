@@ -34,7 +34,15 @@ class WikipediaClient {
       _timeout = timeout;
 
   /// Languages the app speaks; any other locale reads English Wikipedia.
-  static const languages = {'en', 'fr', 'es'};
+  static const languages = {'en', 'fr', 'es', 'de'};
+
+  /// The English name of a non-English app language, for model
+  /// instructions ("answer in German").
+  static const languageNames = {
+    'fr': 'French',
+    'es': 'Spanish',
+    'de': 'German',
+  };
 
   /// Longest article text kept. Passages are ranked against the question
   /// afterwards, so this only bounds memory; the lead and the sections
@@ -218,7 +226,9 @@ class WikipediaClient {
     r'^==+\s*(See also|References|Notes|External links|Further reading|'
     r'Bibliography|Sources|Citations|Notes et références|Références|'
     r'Voir aussi|Liens externes|Bibliographie|Articles connexes|'
-    r'Referencias|Notas|Véase también|Enlaces externos|Bibliografía)\s*==+\s*$',
+    r'Referencias|Notas|Véase también|Enlaces externos|Bibliografía|'
+    r'Siehe auch|Literatur|Weblinks|Einzelnachweise|Anmerkungen|'
+    r'Quellen)\s*==+\s*$',
     multiLine: true,
     caseSensitive: false,
   );
@@ -262,7 +272,7 @@ class WikipediaClient {
   }
 
   /// The Wikipedia to ask: the question's own language when its wording
-  /// shows one (French or Spanish function words), else the app's.
+  /// shows one (French, Spanish or German function words), else the app's.
   ///
   /// Another language than the app's needs two of its words, or one with
   /// its own spelling (an accent, "¿", "qu'"): "Explain le Chatelier
@@ -275,15 +285,16 @@ class WikipediaClient {
     final words = prose.toLowerCase().split(
       RegExp(r"[^\p{L}]+", unicode: true),
     );
-    var fr = 0, es = 0, en = 0;
+    var fr = 0, es = 0, de = 0, en = 0;
     for (final w in words) {
       if (_fr.contains(w)) fr++;
       if (_es.contains(w)) es++;
+      if (_de.contains(w)) de++;
       if (_en.contains(w)) en++;
     }
     final app = appLanguage.toLowerCase().split(RegExp('[-_]')).first;
     final fallback = languages.contains(app) ? app : 'en';
-    final best = [('fr', fr), ('es', es), ('en', en)]
+    final best = [('fr', fr), ('es', es), ('de', de), ('en', en)]
       ..sort((a, b) => b.$2.compareTo(a.$2));
     final (lang, count) = best.first;
     if (count == 0 || count <= best[1].$2) return fallback;
@@ -294,6 +305,7 @@ class WikipediaClient {
         unicode: true,
       ),
       'es' => RegExp(r'[¿¡ñáéíóú]', unicode: true),
+      'de' => RegExp(r'[äöüß]', unicode: true),
       _ => RegExp(r'^\p{L}'),
     }.hasMatch(prose.toLowerCase());
     return spelled ? lang : fallback;
@@ -348,6 +360,43 @@ class WikipediaClient {
     'y',
     'son',
     'está',
+  };
+
+  /// German function words; "was", "in" and "an" are English too, "die"
+  /// is counted (an English verb, but rare in questions).
+  static const _de = {
+    'der',
+    'die',
+    'das',
+    'des',
+    'dem',
+    'den',
+    'ist',
+    'sind',
+    'wie',
+    'wer',
+    'wo',
+    'wann',
+    'warum',
+    'welche',
+    'welcher',
+    'welches',
+    'und',
+    'mit',
+    'für',
+    'von',
+    'im',
+    'ein',
+    'eine',
+    'einen',
+    'nicht',
+    'auf',
+    'gibt',
+    'kann',
+    'ich',
+    'mir',
+    'zum',
+    'zur',
   };
   static const _en = {
     'the',

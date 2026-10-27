@@ -53,12 +53,12 @@ class SourceDates {
   }
 
   /// Whether [answer] already says when its figures are from: a year or a
-  /// month name (EN/FR/ES).
+  /// month name (EN/FR/ES/DE).
   static bool dated(String answer) => _date.hasMatch(answer);
 
   static final _citation = RegExp(r'\[(\d+(?:\s*,\s*\d+)*)\]');
   static final _date = RegExp(
-    r'(?<![\p{L}\p{N}])(?:(?:19|20)\d\d|january|february|march|april|june|july|august|september|october|november|december|janvier|f[ée]vrier|avril|mai|juin|juillet|ao[ûu]t|septembre|octobre|novembre|d[ée]cembre|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)(?![\p{L}\p{N}])',
+    r'(?<![\p{L}\p{N}])(?:(?:19|20)\d\d|january|february|march|april|june|july|august|september|october|november|december|janvier|f[ée]vrier|avril|mai|juin|juillet|ao[ûu]t|septembre|octobre|novembre|d[ée]cembre|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|januar|j[äa]nner|februar|m[äa]rz|juni|juli|oktober|dezember)(?![\p{L}\p{N}])',
     caseSensitive: false,
     unicode: true,
   );

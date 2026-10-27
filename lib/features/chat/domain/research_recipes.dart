@@ -131,6 +131,14 @@ class ResearchRecipe {
         'biografía',
         'qui',
         'quién',
+        'wer',
+        'ist',
+        'war',
+        'geboren',
+        'gestorben',
+        'biografie',
+        'schauspieler',
+        'schauspielerin',
       });
       final uri = Uri.tryParse(urlOf(r));
       final namedBiography =
@@ -368,31 +376,31 @@ class ResearchRecipe {
   }
 
   static final _local = RegExp(
-    r'^(write|rewrite|draft|translate|proofread|summarize this|summarise this)\b',
+    r'^(write|rewrite|draft|translate|proofread|summarize this|summarise this|schreib\w*|übersetze?|fasse (?:das|dies|diesen text) zusammen)\b',
   );
   static final _health = RegExp(
-    r'\b(medical|medicine|drug|disease|symptoms?|treatment|vaccines?|diagnos\w*|health|santé|maladie|vaccin|salud|enfermedad|vacuna)\b',
+    r'\b(medical|medicine|drug|disease|symptoms?|treatment|vaccines?|diagnos\w*|health|santé|maladie|vaccin|salud|enfermedad|vacuna|medizin\w*|medikament\w*|krankheit\w*|symptome?|behandlung|impfung\w*|impfstoff\w*|gesundheit)\b',
   );
   static final _law = RegExp(
-    r'\b(law|legal|statute|regulation|court|lawsuit|tax law|visa rules?|age of majority|accountability act|constitution|loi|juridique|tribunal|ley|leyes|reglamento)\b',
+    r'\b(law|legal|statute|regulation|court|lawsuit|tax law|visa rules?|age of majority|accountability act|constitution|loi|juridique|tribunal|ley|leyes|reglamento|gesetz\w*|rechtlich\w*|verordnung\w*|gericht\w*|klage|volljährigkeit|grundgesetz)\b',
   );
   static final _money = RegExp(
-    r'\b(stock|share price|exchange rate|interest rate|invest|earnings|market cap|inflation|financial|10-k|taux de change|taux d’intérêt|financier|tipo de cambio|financiero)\b',
+    r'\b(stock|share price|exchange rate|interest rate|invest|earnings|market cap|inflation|financial|10-k|taux de change|taux d’intérêt|financier|tipo de cambio|financiero|aktienkurs\w*|aktie\w*|wechselkurs\w*|zinss[aä]tze?|zinsen|inflation\w*|börse\w*|finanz\w*)\b',
   );
   static final _news = RegExp(
-    r'\b(news|headline|breaking|latest event|current event|actualités|nouvelles|noticias|titulares)\b',
+    r'\b(news|headline|breaking|latest event|current event|actualités|nouvelles|noticias|titulares|nachrichten|schlagzeilen|neuigkeiten)\b',
   );
   static final _weather = RegExp(
-    r'\b(weather|forecast|temperature|rainfall|snowfall|météo|prévisions|pronóstico|clima)\b',
+    r'\b(weather|forecast|temperature|rainfall|snowfall|météo|prévisions|pronóstico|clima|wetter\w*|vorhersage|temperatur|niederschlag)\b',
   );
   static final _person = RegExp(
-    r'\b(actor|actress|filmography|biography|who is|who was|born|died|biographie|qui est|qui était|biografía|quién es|quién fue)\b',
+    r'\b(actor|actress|filmography|biography|who is|who was|born|died|biographie|qui est|qui était|biografía|quién es|quién fue|schauspieler\w*|biografie|wer ist|wer war|geboren|gestorben)\b',
   );
   static final _science = RegExp(
-    r'\b(science|scientific|research paper|quantum|physics|chemistry|biology|study|studies|scientifique|quantique|ciencia|científico|cuántica)\b',
+    r'\b(science|scientific|research paper|quantum|physics|chemistry|biology|study|studies|scientifique|quantique|ciencia|científico|cuántica|wissenschaft\w*|studie\w*|physik|chemie|biologie|forschung\w*|quanten\w*)\b',
   );
   static final _product = RegExp(
-    r'\b(buy|purchase|product|laptop|phone|camera|headphone|review|specifications|specs|megapixels|nikon|sony|samsung|iphone|ipad|macbook|fujifilm|panasonic|lumix|om system|leica|dji|gopro|garmin|bose|acheter|appareil photo|comprar|cámara)\b',
+    r'\b(buy|purchase|product|laptop|phone|camera|headphone|review|specifications|specs|megapixels|nikon|sony|samsung|iphone|ipad|macbook|fujifilm|panasonic|lumix|om system|leica|dji|gopro|garmin|bose|acheter|appareil photo|comprar|cámara|kaufen|kamera|kopfhörer|smartphone|testbericht\w*|technische daten)\b',
   );
 
   /// Makers whose own pages hold a product's specifications, by the names
@@ -416,12 +424,12 @@ class ResearchRecipe {
     'bose': ['bose.com'],
   };
   static final _software = RegExp(
-    r'\b(software|library|framework|api|flutter|python|postgresql|postgres|llama\.cpp|gguf|android|adb|git|release notes|version|logiciel|bibliothèque)\b',
+    r'\b(software|library|framework|api|flutter|python|postgresql|postgres|llama\.cpp|gguf|android|adb|git|release notes|version|logiciel|bibliothèque|bibliothek|programmier\w*)\b',
   );
   static final _travel = RegExp(
-    r'\b(travel|trip|flight|train|hotel|visa|border|opening hours|passport|voyage|passeport|viaje|pasaporte)\b',
+    r'\b(travel|trip|flight|train|hotel|visa|border|opening hours|passport|voyage|passeport|viaje|pasaporte|reise\w*|flug|flüge|zug|reisepass|visum|grenze)\b',
   );
   static final _sports = RegExp(
-    r'\b(score|standings|league|match|game|playoffs|tournament|fifa|world cup|nba|nhl|nfl|mlb|football|soccer|ifab|sport|ligue|deporte|liga)\b',
+    r'\b(score|standings|league|match|game|playoffs|tournament|fifa|world cup|nba|nhl|nfl|mlb|football|soccer|ifab|sport|ligue|deporte|liga|spiel|tabelle|bundesliga|fußball|fussball|turnier|weltmeisterschaft|meisterschaft)\b',
   );
 }

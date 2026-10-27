@@ -47,7 +47,7 @@ void main() {
 
   test('web gate: searches when it should, stays quiet otherwise', () {
     final all = cases['web'] as List;
-    for (final lang in ['en', 'fr', 'es']) {
+    for (final lang in ['en', 'fr', 'es', 'de']) {
       final s = score(
         all.where((c) => c['lang'] == lang).toList(),
         'web',
@@ -142,22 +142,27 @@ void main() {
 }
 
 const _floors = {
+  // 2026-10-27: German cases added to every set (22 web, 8 + 9 held-out,
+  // 11 negatives, 2 phone misses, 6 news), written before the German lists.
+  // All held-out German cases passed on the first run; one negative ("Wer
+  // war König von Preußen …") searched and narrowed the role list, so the
+  // German negatives are tuned.
   // 2026-09-24: the Search-the-web log from the tester's phone (how old /
   // birthday of a public figure) plus paraphrases in EN/FR/ES.
-  'phoneMissesCorrect': 12,
+  'phoneMissesCorrect': 14,
   // 2026-09-24, after the category lists (web_terms.dart) and the concept /
   // personal-time guards. Tuned set: 96/96.
-  'webCorrect': 96,
+  'webCorrect': 118,
   'webFalsePositives': 0,
   // First held-out set: 26/36 before the lists; its misses were visible
   // while they were written, so 36/36 is no longer an unbiased estimate.
-  'holdoutCorrect': 36,
+  'holdoutCorrect': 44,
   'holdoutFalsePositives': 0,
   // Second held-out set, written before the lists and never tuned: 42/42.
-  'holdout2Correct': 42,
+  'holdout2Correct': 51,
   'holdout2FalsePositives': 0,
   // Trap-word general questions that must not search: 0/50 searched.
   'negativesFalsePositives': 0,
-  'newsCorrect': 30,
+  'newsCorrect': 36,
   'toolsCorrect': 33,
 };

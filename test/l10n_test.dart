@@ -45,13 +45,21 @@ void main() {
       expect(container.read(settingsProvider).localeCode, 'es');
       await container
           .read(settingsProvider.notifier)
+          .update(container.read(settingsProvider).copyWith(localeCode: 'de'));
+      container.dispose();
+      container = ProviderContainer();
+      await container.read(settingsProvider.notifier).ready;
+      expect(container.read(settingsProvider).localeCode, 'de');
+      expect(lookupAppLocalizations(const Locale('de')).newChat, 'Neuer Chat');
+      await container
+          .read(settingsProvider.notifier)
           .update(container.read(settingsProvider).copyWith(localeCode: ''));
       container.dispose();
       container = ProviderContainer();
       await container.read(settingsProvider.notifier).ready;
       expect(container.read(settingsProvider).localeCode, '');
       container.dispose();
-      for (final code in ['de', 'fr-CA', 'broken', 12, null]) {
+      for (final code in ['it', 'fr-CA', 'broken', 12, null]) {
         expect(InferenceSettings.fromJson({'localeCode': code}).localeCode, '');
       }
     },

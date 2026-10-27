@@ -12,7 +12,7 @@ class ScanOptions {
   final String language;
   final int maxScannedPages;
   const ScanOptions({this.language = 'auto', this.maxScannedPages = 20});
-  static const languages = ['auto', 'en', 'fr', 'es'];
+  static const languages = ['auto', 'en', 'fr', 'es', 'de'];
   static const pageLimits = [20, 50, 100, 300];
   static Future<ScanOptions> read() async {
     await _pending;

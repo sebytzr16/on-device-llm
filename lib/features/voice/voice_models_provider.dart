@@ -29,6 +29,11 @@ class VoiceModelsState {
       of(VoiceModels.listening).status == VoicePackStatus.ready ||
       of(VoiceModels.parakeet).status == VoicePackStatus.ready;
   bool get canSpeak => of(VoiceModels.speaking).status == VoicePackStatus.ready;
+
+  /// Whether the speaker for voice language [lang] is installed: Kokoro,
+  /// or the Piper voice for German.
+  bool canSpeakIn(String lang) =>
+      of(VoiceModels.speakingFor(lang)).status == VoicePackStatus.ready;
 }
 
 /// Downloads, unpacks and removes the on-device voice (Whisper + VAD,

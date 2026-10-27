@@ -382,7 +382,8 @@ abstract final class PhoneActions {
   static Map<String, num>? plainTimer(String input) {
     final t = input.toLowerCase();
     // "An hour and a half" is not one plain duration.
-    if (!_timerWord.hasMatch(t) || RegExp(r'half|demi|media').hasMatch(t)) {
+    if (!_timerWord.hasMatch(t) ||
+        RegExp(r'half|demi|media|halb').hasMatch(t)) {
       return null;
     }
     final found = _duration.allMatches(t).toList();
@@ -392,17 +393,20 @@ abstract final class PhoneActions {
         num.tryParse(m[1]!.replaceAll(',', '.')) ?? _numberWords[m[1]!] ?? 0;
     if (n <= 0) return null;
     final unit = m[2]!;
+    // "Stunde" is German for hour.
+    if (unit.startsWith('st')) return {'minutes': n * 60};
     if (unit.startsWith('s')) return {'seconds': n};
     if (unit.startsWith('h')) return {'minutes': n * 60};
     return {'minutes': n};
   }
 
   static final _timerWord = RegExp(
-    r'\b(?:timer|countdown|minuteur|chrono|compte à rebours|temporizador|cronómetro)\b',
+    r'\b(?:timer|countdown|minuteur|chrono|compte à rebours|temporizador|cronómetro|kurzzeitwecker|eieruhr)\b',
     unicode: true,
   );
   static final _duration = RegExp(
-    r'\b(\d+(?:[.,]\d+)?|an?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|forty-five|forty five|sixty|ninety)[\s-]*(seconds?|secs?|minutes?|mins?|hours?|hrs?|secondes?|heures?|segundos?|minutos?|horas?)\b',
+    r'(?<![\p{L}\p{N}])(\d+(?:[.,]\d+)?|an?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|forty-five|forty five|sixty|ninety|eine?n?|zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn|elf|zwölf|fünfzehn|zwanzig|dreißig|vierzig|fünfundvierzig|sechzig|neunzig)[\s-]*(seconds?|secs?|minutes?|mins?|hours?|hrs?|secondes?|heures?|segundos?|minutos?|horas?|sekunden?|minuten?|stunden?|std)(?![\p{L}\p{N}])',
+    unicode: true,
   );
   static const _numberWords = <String, num>{
     'a': 1,
@@ -427,10 +431,31 @@ abstract final class PhoneActions {
     'forty five': 45,
     'sixty': 60,
     'ninety': 90,
+    'ein': 1,
+    'eine': 1,
+    'einen': 1,
+    'zwei': 2,
+    'drei': 3,
+    'vier': 4,
+    'fünf': 5,
+    'sechs': 6,
+    'sieben': 7,
+    'acht': 8,
+    'neun': 9,
+    'zehn': 10,
+    'elf': 11,
+    'zwölf': 12,
+    'fünfzehn': 15,
+    'zwanzig': 20,
+    'dreißig': 30,
+    'vierzig': 40,
+    'fünfundvierzig': 45,
+    'sechzig': 60,
+    'neunzig': 90,
   };
 
   static final _howTo = RegExp(
-    r"^[¿¡\s]*(?:how|what|why|when|where|which|who|is|are|does|do|did|can i|could i|should|comment|pourquoi|quand|où|quel(?:le)?s?|est-ce|c[óo]mo|qu[ée]|por qu[ée]|cu[áa]ndo|d[óo]nde|cu[áa]l)(?![\p{L}\p{N}'’])",
+    r"^[¿¡\s]*(?:how|what|why|when|where|which|who|is|are|does|do|did|can i|could i|should|comment|pourquoi|quand|où|quel(?:le)?s?|est-ce|c[óo]mo|qu[ée]|por qu[ée]|cu[áa]ndo|d[óo]nde|cu[áa]l|wie|was|warum|wann|wo|welche[rsmn]?|wer|ist|sind|kann ich|soll ich)(?![\p{L}\p{N}'’])",
     caseSensitive: false,
     unicode: true,
   );
@@ -444,7 +469,9 @@ abstract final class PhoneActions {
     // French
     r'|rappelle[- ]moi(?![\s:,]+(?:qui|quoi|quel|quelle|quels|quelles|comment|pourquoi|où|ce qu|mon|ma|mes|notre|nos)(?![\p{L}\p{N}]))|réveille[- ]moi|(?:mets|met|mettre|règle|régler|programme|programmer|ajoute|ajouter|crée|créer|lance|lancer|planifie|planifier) (?:\S+ ){0,3}?(?:alarme|réveil|minuteur|rappel|chrono|rendez-vous|événement|réunion)s?\b|(?:à|dans) mon (?:agenda|calendrier)|envoie (?:un |une )?(?:sms|texto|message|e-?mail|courriel)\b|écris (?:un |une )?(?:message|sms|e-?mail|courriel) à|(?:rédige|prépare) (?:un |une )?(?:brouillon|message|e-?mail|courriel|sms)\b|enregistre (?:le |la |ça |cela )?(?:dans|comme|en) (?:un |une )?(?:fichier|note|document)\b|crée (?:un |une )?(?:fichier|note|document)\b'
     // Spanish
-    r'|recuérdame(?![\s:,]+(?:qué|quién|quiénes|cuál|cuáles|cómo|dónde|por qué|mi|mis|nuestro|nuestra)(?![\p{L}\p{N}]))|despiértame|(?:pon|ponme|poner|programa|programar|añade|añadir|crea|crear|inicia|iniciar|agenda|agendar) (?:\S+ ){0,3}?(?:alarma|temporizador|recordatorio|cita|evento|reunión)s?\b|(?:a|en) mi (?:calendario|agenda)|envía (?:un |una )?(?:sms|mensaje|correo|e-?mail)\b|escribe (?:un |una )?(?:mensaje|correo|e-?mail) a\b|(?:redacta|prepara) (?:un |una )?(?:borrador|mensaje|correo|e-?mail)\b|guarda (?:lo |la |esto )?(?:en|como) (?:un |una )?(?:archivo|nota|documento)\b|crea (?:un |una )?(?:archivo|nota|documento)\b)',
+    r'|recuérdame(?![\s:,]+(?:qué|quién|quiénes|cuál|cuáles|cómo|dónde|por qué|mi|mis|nuestro|nuestra)(?![\p{L}\p{N}]))|despiértame|(?:pon|ponme|poner|programa|programar|añade|añadir|crea|crear|inicia|iniciar|agenda|agendar) (?:\S+ ){0,3}?(?:alarma|temporizador|recordatorio|cita|evento|reunión)s?\b|(?:a|en) mi (?:calendario|agenda)|envía (?:un |una )?(?:sms|mensaje|correo|e-?mail)\b|escribe (?:un |una )?(?:mensaje|correo|e-?mail) a\b|(?:redacta|prepara) (?:un |una )?(?:borrador|mensaje|correo|e-?mail)\b|guarda (?:lo |la |esto )?(?:en|como) (?:un |una )?(?:archivo|nota|documento)\b|crea (?:un |una )?(?:archivo|nota|documento)\b'
+    // German
+    r'|erinnere? mich(?![\s:,]+(?:daran,? )?(?:was|wer|wen|wem|wessen|wie|wo|wann|welche[rsmn]?|warum|mein|meine|unser|unsere|nochmal)(?![\p{L}\p{N}]))|weck(?:e)? mich|(?:stell|stelle|setz|setze|starte?|erstelle|leg|lege|trag|trage|plane?|mach|mache) (?:\S+ ){0,3}?(?:wecker|timer|erinnerung(?:en)?|termin(?:e)?|kurzzeitwecker|countdown|meeting|treffen|besprechung)(?![\p{L}])|(?:wecker|timer|erinnerung|termin|kurzzeitwecker|countdown)(?:\s+\S+){0,5}?\s+(?:stellen|setzen|starten|eintragen|anlegen|erstellen)(?![\p{L}])|(?:in|zu) meinen? (?:kalender|terminkalender)|(?:schick|schicke|sende) (?:\S+ ){0,2}?(?:sms|nachricht|e-?mail|mail)(?![\p{L}])|schreib(?:e)? (?:\S+ ){0,2}?(?:nachricht|sms|e-?mail|mail) an\b|(?:entwirf|verfasse) (?:eine |einen )?(?:nachricht|e-?mail|mail|antwort)(?![\p{L}])|speicher(?:e)? (?:\S+ ){0,3}?(?:als|in) (?:eine |einer )?(?:datei|notiz|dokument)(?![\p{L}])|erstelle (?:eine |ein )?(?:datei|notiz|dokument)(?![\p{L}]))',
     caseSensitive: false,
     unicode: true,
   );

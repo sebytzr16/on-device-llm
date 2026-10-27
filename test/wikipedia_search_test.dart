@@ -201,7 +201,13 @@ void main() {
         'en',
       );
       expect(WikipediaClient.languageFor('Nikon Z30', 'fr'), 'fr');
-      expect(WikipediaClient.languageFor('Nikon Z30', 'de'), 'en');
+      expect(WikipediaClient.languageFor('Nikon Z30', 'de'), 'de');
+      expect(WikipediaClient.languageFor('Nikon Z30', 'it'), 'en');
+      expect(
+        WikipediaClient.languageFor('Wie groß ist der Sensor?', 'en'),
+        'de',
+      );
+      expect(WikipediaClient.languageFor('How did the king die?', 'en'), 'en');
     });
 
     test('lookup searches, then reads the chosen article once', () async {

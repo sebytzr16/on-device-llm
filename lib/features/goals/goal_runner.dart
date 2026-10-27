@@ -166,7 +166,8 @@ class GoalSpec {
   static final _broad = RegExp(
     r'(?<![\p{L}\p{N}])(?:compar\w*|versus|vs\.?|best|top \d+|recommend\w*|options?|alternatives?|pros|cons|plan|planning|itinerary|strateg\w*|analy[sz]\w*|overview|history|timeline|guide|review|reviews|which (?:one|should)|should i|'
     r'meilleure?s?|recommand\w*|stratégie|historique|chronologie|avis|lequel|laquelle|'
-    r'mejore?s?|recomiend\w*|recomendaci\w*|estrategia|análisis|historia|cronolog\w*|reseñas?|cuál conviene)(?![\p{L}\p{N}])',
+    r'mejore?s?|recomiend\w*|recomendaci\w*|estrategia|análisis|historia|cronolog\w*|reseñas?|cuál conviene|'
+    r'vergleich\w*|beste[nrs]?|empfehl\w*|alternativen?|vorteile|nachteile|planung|reiseplan|strategie|analyse|überblick|geschichte|zeitleiste|ratgeber|testberichte?|welche[rs]? (?:soll|sollte))(?![\p{L}\p{N}])',
     caseSensitive: false,
     unicode: true,
   );

@@ -13,13 +13,19 @@ import 'voice_models.dart';
 
 final _log = Logger('voice');
 
+/// Lookbehinds for a stop that ends no sentence: a day number or an
+/// initial ("3.", "z."), or a German abbreviation ("ca.", "bzw.").
+const _notAbbrev =
+    r'(?<!(?:^|\s)(?:\d{1,2}|\p{L})\.)'
+    r'(?<!(?:^|\s)(?:ca|bzw|Nr|Dr|vgl|ggf|inkl|evtl|Mio|Mrd|Str|St)\.)';
+
 /// The language the voice uses: the app language when set, else the
-/// phone's, limited to the three the app speaks.
+/// phone's, limited to the four the app speaks.
 String voiceLanguage(String localeCode) {
   final code = localeCode.isNotEmpty
       ? localeCode
       : PlatformDispatcher.instance.locale.languageCode;
-  return const {'en', 'fr', 'es'}.contains(code) ? code : 'en';
+  return const {'en', 'fr', 'es', 'de'}.contains(code) ? code : 'en';
 }
 
 /// Microphone → Silero VAD → Whisper. Emits the level for the orb, the
@@ -276,6 +282,11 @@ class WhisperListener {
       'subtítulos realizados por',
       'gracias por ver',
       'amara.org',
+      'untertitel im auftrag',
+      'untertitel der amara',
+      'untertitelung',
+      'vielen dank fürs zuschauen',
+      'danke fürs zuschauen',
     ];
     if (invented.any(lower.contains)) return '';
     if (RegExp(r'^[\s.…,!?-]*$').hasMatch(t)) t = '';
@@ -561,14 +572,17 @@ class KokoroSpeaker {
   static final _dangling = RegExp(
     r'(?:^|\s)(?:a|an|the|of|to|in|on|at|for|by|with|from|and|or|but|is|are|'
     r'was|were|be|that|this|its|my|your|their|our|his|her|un|une|le|la|les|'
-    r'de|des|du|et|ou|en|el|los|las|y|o|del|que)$',
+    r'de|des|du|et|ou|en|el|los|las|y|o|del|que|der|die|das|den|dem|ein|'
+    r'eine|einen|und|oder|aber|mit|von|zu|für|im|am|ist|sind)$',
     caseSensitive: false,
   );
 
   // A sentence ends at a stop, unless a lowercase word follows ("the U.S.
-  // is", "e.g. this"): those read on without a pause.
+  // is", "e.g. this"): those read on without a pause. German writes dates
+  // and abbreviations with a stop before a capital ("am 3. Oktober", "z. B.
+  // Berlin", "ca. Mitte"): no pause there either.
   static final _pieceEnd = RegExp(
-    r'(?<=[!?…;:])\s+|(?<=\.)\s+(?!\p{Ll})|\n+',
+    '(?<=[!?…;:])\\s+|(?<=\\.)$_notAbbrev\\s+(?!\\p{Ll})|\\n+',
     unicode: true,
   );
 
@@ -666,7 +680,7 @@ class SentenceStream {
   // A finished sentence: its stop and the start of the next word, which
   // must not be lowercase ("the U.S. is" goes on).
   static final _end = RegExp(
-    r'[!?…](?=\s)|\.(?=\s+[^\s\p{Ll}])|\n',
+    '[!?…](?=\\s)|\\.$_notAbbrev(?=\\s+[^\\s\\p{Ll}])|\\n',
     unicode: true,
   );
 

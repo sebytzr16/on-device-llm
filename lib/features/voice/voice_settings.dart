@@ -40,7 +40,8 @@ class NaturalVoiceSettings extends ConsumerWidget {
           if (packs.of(VoiceModels.listening).status == VoicePackStatus.ready ||
               packs.of(VoiceModels.parakeet).status != VoicePackStatus.missing)
             const _ListeningModelTile(),
-          if (packs.canSpeak) const _VoicePicker(),
+          if (packs.canSpeakIn(voiceLanguage(s.localeCode)))
+            const _VoicePicker(),
           SettingsSwitchRow(
             key: const Key('talk-over'),
             secondary: const Icon(Icons.record_voice_over_outlined),
@@ -113,13 +114,17 @@ class _VoiceDownloadRow extends ConsumerWidget {
     final c = context.colors;
     final packs = ref.watch(voiceModelsProvider);
     final notifier = ref.read(voiceModelsProvider.notifier);
-    final states = [for (final p in VoiceModels.packs) packs.of(p)];
+    // German speaks with its own Piper voice instead of Kokoro.
+    final needed = VoiceModels.packsFor(
+      voiceLanguage(ref.watch(settingsProvider.select((s) => s.localeCode))),
+    );
+    final states = [for (final p in needed) packs.of(p)];
     final missing = [
-      for (final p in VoiceModels.packs)
+      for (final p in needed)
         if (packs.of(p).status != VoicePackStatus.ready) p,
     ];
-    final total = VoiceModels.packs.fold(0, (a, p) => a + p.sizeBytes);
-    final received = VoiceModels.packs.fold(
+    final total = needed.fold(0, (a, p) => a + p.sizeBytes);
+    final received = needed.fold(
       0,
       (a, p) =>
           a +
@@ -138,7 +143,7 @@ class _VoiceDownloadRow extends ConsumerWidget {
       action = OutlinedButton.icon(
         key: const Key('voice-pause'),
         onPressed: () async {
-          for (final p in VoiceModels.packs) {
+          for (final p in needed) {
             await notifier.pause(p);
           }
         },
@@ -149,7 +154,7 @@ class _VoiceDownloadRow extends ConsumerWidget {
       action = OutlinedButton.icon(
         key: const Key('voice-remove'),
         onPressed: () async {
-          for (final p in VoiceModels.packs) {
+          for (final p in needed) {
             await notifier.delete(p);
           }
         },
@@ -299,7 +304,8 @@ class _ListeningModelTile extends ConsumerWidget {
   }
 }
 
-/// The Kokoro speaker for the app language, with a sample.
+/// The Kokoro (or, in German, Piper) speaker for the app language, with a
+/// sample.
 class _VoicePicker extends ConsumerWidget {
   const _VoicePicker();
 

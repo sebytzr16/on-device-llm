@@ -30,8 +30,9 @@ class InstantAnswers {
   static const forecastEndpoint = 'https://duckduckgo.com/js/spice/forecast';
 
   static final _weather = RegExp(
-    r'\b(weather|forecast|temperature|temp|how (?:hot|cold|warm|chilly)|rain(?:ing|y)?|snow(?:ing)?|sunny|humid(?:ity)?|windy|météo|temps qu.il fait|quel temps)\b',
+    r'(?<![\p{L}\p{N}])(weather|forecast|temperature|temp|how (?:hot|cold|warm|chilly)|rain(?:ing|y)?|snow(?:ing)?|sunny|humid(?:ity)?|windy|météo|temps qu.il fait|quel temps|wetter|wettervorhersage|temperatur|wie (?:warm|kalt|hei(?:ß|ss))|regnet|schneit)(?![\p{L}\p{N}])',
     caseSensitive: false,
+    unicode: true,
   );
   static const _placeStop = {
     'today',
@@ -68,6 +69,23 @@ class InstantAnswers {
     'demain',
     'ce',
     'cette',
+    'heute',
+    'morgen',
+    'übermorgen',
+    'jetzt',
+    'gerade',
+    'aktuell',
+    'am',
+    'wochenende',
+    'abend',
+    'diese',
+    'dieses',
+    'wird',
+    'ist',
+    'das',
+    'es',
+    'bitte',
+    'sein',
   };
 
   /// Whether [question] is about the weather at all.
@@ -79,7 +97,7 @@ class InstantAnswers {
     if (!_weather.hasMatch(question)) return false;
     final q = question.toLowerCase();
     if (RegExp(
-      r'\b(unit|units|metric|celsius|fahrenheit|define|definition|meaning|history|historical|average|climate|next month|next year|last year|last month|yesterday|unité|unidades)\b',
+      r'\b(unit|units|metric|celsius|fahrenheit|define|definition|meaning|history|historical|average|climate|next month|next year|last year|last month|yesterday|unité|unidades|einheiten?|definition|bedeutung|geschichte|durchschnitt|klima|gestern|letzten? (?:monat|jahr)|nächsten? (?:monat|jahr))\b',
     ).hasMatch(q)) {
       return false;
     }
@@ -119,7 +137,7 @@ class InstantAnswers {
 
     // "in Toronto", "for Toronto, Ontario", "à Paris"
     final after = RegExp(
-      r'\b(?:in|for|at|à|a|en)\s+(.+)$',
+      r'\b(?:in|for|at|à|a|en|für)\s+(.+)$',
       caseSensitive: false,
     ).firstMatch(q);
     if (after != null) {
@@ -141,7 +159,7 @@ class InstantAnswers {
       }
     }
     final afterWord = RegExp(
-      r'\b(?:météo|weather|forecast)\s+(?:de |d.|pour |à )?(.+)$',
+      r'\b(?:météo|weather|forecast|wetter)\s+(?:de |d.|pour |à |für )?(.+)$',
       caseSensitive: false,
     ).firstMatch(q);
     if (afterWord != null) {

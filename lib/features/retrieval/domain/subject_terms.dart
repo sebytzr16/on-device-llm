@@ -1,3 +1,5 @@
+import '../../../data/network/web_search/wikipedia_client.dart';
+
 /// The names a request is about — products, models, versions, people,
 /// places, organisations — read from its wording, and the checks that keep
 /// a small model on them. A near-miss name is drift: a different thing
@@ -60,7 +62,7 @@ class SubjectTerms {
   };
 
   /// Words that start or join sentences rather than name things, in the
-  /// app's languages (English, French, Spanish).
+  /// app's languages (English, French, Spanish, German).
   static const _stop = {
     // English
     'a', 'an', 'the', 'and', 'or', 'but', 'of', 'for', 'in', 'on', 'at',
@@ -95,6 +97,19 @@ class SubjectTerms {
     'resume', 'resumir', 'explica', 'explicar', 'encuentra', 'buscar',
     'investiga', 'analiza', 'mejor', 'último', 'última', 'nuevo', 'nueva',
     'precio', 'precios',
+    // German
+    'der', 'die', 'das', 'den', 'dem', 'ein', 'eine', 'einen', 'einem', 'einer',
+    'und', 'oder', 'aber', 'für', 'von', 'mit', 'im', 'ins', 'am', 'zum', 'zur',
+    'aus', 'bei', 'nach', 'über', 'unter', 'zwischen', 'ist', 'sind', 'war',
+    'waren', 'wird', 'werden', 'kann', 'können', 'soll', 'sollte', 'welche',
+    'welcher', 'welches', 'wer', 'wie', 'wo', 'wann', 'warum', 'ich', 'mein',
+    'meine', 'mir', 'wir', 'unser', 'dein', 'ihr', 'bitte', 'vergleiche',
+    'vergleich', 'vergleichen', 'fasse', 'zusammenfassung', 'erkläre',
+    'erklären', 'finde', 'finden', 'suche', 'recherchiere', 'analysiere',
+    'liste', 'nenne', 'gib', 'zeig', 'schreibe', 'mache', 'plane', 'prüfe',
+    'beste', 'besten', 'bester', 'neueste', 'neuesten', 'aktuelle', 'aktuellen',
+    'heute', 'preis', 'preise', 'kosten', 'nachrichten', 'schritt', 'schritte',
+    'auch', 'nicht', 'kein', 'keine', 'ja', 'nein',
   };
 
   /// Small words that belong inside a capitalised name ("Bank of Canada",
@@ -154,6 +169,10 @@ class SubjectTerms {
   /// "Summarise") and years are left out; at most [max], in order.
   static SubjectTerms of(String text, {int max = maxTerms}) {
     final out = <String>[];
+    // German capitalises every noun ("Elektroautos", "Familie"): there a
+    // lone capitalised word is not a name, a run of them ("Deutsche Bahn",
+    // "Helene Fischer") or a model code still is.
+    final german = WikipediaClient.languageFor(text, 'en') == 'de';
     void add(String term) {
       final t = term.trim().replaceAll(RegExp(r'\s+'), ' ');
       if (t.length < 2 || t.length > 80) return;
@@ -207,7 +226,7 @@ class SubjectTerms {
             run.length > 1 ||
             (_digit.hasMatch(w) && _anyLetter.hasMatch(w)) ||
             (w.length >= 2 && w == w.toUpperCase() && _letters.hasMatch(w)) ||
-            (!runStartsSentence && _upper.hasMatch(w));
+            (!runStartsSentence && !german && _upper.hasMatch(w));
         if (keep) add(run.join(' '));
       }
       run.clear();

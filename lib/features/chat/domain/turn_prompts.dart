@@ -171,7 +171,7 @@ class TurnPrompts {
     final asked = WikipediaClient.languageFor(question, 'en');
     if (asked != 'en') {
       b.write(
-        '\n\nWrite the answer in ${asked == 'fr' ? 'French' : 'Spanish'}, '
+        '\n\nWrite the answer in ${WikipediaClient.languageNames[asked]}, '
         'the language of the question.',
       );
     }

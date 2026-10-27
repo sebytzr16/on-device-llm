@@ -109,6 +109,10 @@ class _ScanSettingsPageState extends State<ScanSettingsPage> {
                             value: 'es',
                             child: Text('Español'),
                           ),
+                          const DropdownMenuItem(
+                            value: 'de',
+                            child: Text('Deutsch'),
+                          ),
                         ],
                         onChanged: (value) {
                           if (value != null) {

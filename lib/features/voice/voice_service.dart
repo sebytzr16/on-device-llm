@@ -280,7 +280,9 @@ class VoiceNotifier extends Notifier<VoiceState> {
       !kIsWeb &&
       defaultTargetPlatform == TargetPlatform.android &&
       ref.read(settingsProvider).naturalVoice &&
-      ref.read(voiceModelsProvider).canSpeak;
+      ref
+          .read(voiceModelsProvider)
+          .canSpeakIn(voiceLanguage(ref.read(settingsProvider).localeCode));
 
   /// The voice for the app language and the chosen speaker.
   KokoroVoice kokoroVoice() {
@@ -555,7 +557,7 @@ final sherpaVoiceProvider = Provider<SherpaVoice>((ref) {
       // Gone, or Parakeet just arrived: the listener picks again.
       if ((was && !isReady) ||
           (!was && isReady && pack.id == VoiceModels.parakeet.id)) {
-        voice.releasePack(speaking: pack.id == VoiceModels.speaking.id);
+        voice.releasePack(speaking: VoiceModels.speaks(pack));
       }
     }
   });

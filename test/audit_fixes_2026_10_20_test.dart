@@ -19,6 +19,9 @@ void main() {
     expect(lang('Quelle est la capitale du Canada ?'), 'fr');
     expect(lang("Qu'est-ce que la photosynthèse"), 'fr');
     expect(lang('¿Cuál es la capital de España?'), 'es');
+    expect(lang('Was ist die Hauptstadt von Australien?'), 'de');
+    expect(lang('Wie hoch ist der Eiffelturm?'), 'de');
+    expect(lang('Who directed Die Hard?'), 'en');
     // The app's own language needs one word.
     expect(WikipediaClient.languageFor('Les chats', 'fr'), 'fr');
   });

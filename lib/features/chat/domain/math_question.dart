@@ -34,6 +34,8 @@ abstract final class MathQuestion {
       final result = Calculator.format(Calculator.evaluate(e));
       final lang = _french.hasMatch(input.toLowerCase())
           ? 'fr'
+          : _german.hasMatch(input.toLowerCase())
+          ? 'de'
           : _spanish.hasMatch(input.toLowerCase())
           ? 'es'
           : 'en';
@@ -56,10 +58,11 @@ abstract final class MathQuestion {
           .replaceAll(RegExp(r'[()]'), '')
           .replaceAll(RegExp(r'\s+'), ' ')
           .trim();
-      if (lang == 'fr') said = said.replaceAll(RegExp(r'(?<=\d)\.(?=\d)'), ',');
+      final comma = lang == 'fr' || lang == 'de';
+      if (comma) said = said.replaceAll(RegExp(r'(?<=\d)\.(?=\d)'), ',');
       final shown = result.startsWith('-')
           ? '${w['-']} ${result.substring(1)}'
-          : lang == 'fr'
+          : comma
           ? result.replaceAll('.', ',')
           : result;
       return '$said ${w['is']} $shown.';
@@ -70,6 +73,10 @@ abstract final class MathQuestion {
 
   static final _french = RegExp(
     r'\b(?:combien|fait|font|fois|moins|divisé|calcule|ça|cela|égal|racine)\b',
+    unicode: true,
+  );
+  static final _german = RegExp(
+    r'(?<![\p{L}])(?:wie ?viel|was ist|mal|geteilt|dividiert|berechne|rechne|ergibt|hoch|wurzel|quadrat|prozent|verdopple|halbiere|das ergebnis)(?![\p{L}])',
     unicode: true,
   );
   static final _spanish = RegExp(
@@ -108,6 +115,16 @@ abstract final class MathQuestion {
       'sqrt': 'la raíz cuadrada de',
       'is': 'es',
     },
+    'de': {
+      '+': 'plus',
+      '-': 'minus',
+      '*': 'mal',
+      '/': 'geteilt durch',
+      '^2': 'zum Quadrat',
+      '^': 'hoch',
+      'sqrt': 'die Wurzel aus',
+      'is': 'ist',
+    },
   };
 
   /// The expression [input] asks for, or null.
@@ -137,11 +154,13 @@ abstract final class MathQuestion {
       t = t.replaceAll(pattern, ' $op ');
     }
     t = t.replaceAllMapped(
-      RegExp(r'\bsquare root of\s*(\(?[\d.]+\)?)'),
+      RegExp(
+        r'\b(?:square root of|(?:die )?(?:quadrat)?wurzel (?:aus|von))\s*(\(?[\d.]+\)?)',
+      ),
       (m) => ' sqrt(${m[1]}) ',
     );
     t = t.replaceAllMapped(
-      RegExp(r'([\d.)]+)\s*percent of\s*([\d.(]+)'),
+      RegExp(r'([\d.)]+)\s*(?:percent of|prozent von)\s*([\d.(]+)'),
       (m) => ' ${m[1]} / 100 * ${m[2]} ',
     );
     final sum = _sum.firstMatch(t);
@@ -172,8 +191,15 @@ abstract final class MathQuestion {
   /// Lower case, number words as digits, hyphens and commas in numbers
   /// gone; a hyphen that is not spaced stays (a range or a date).
   static String _words(String input) {
-    final t = input
-        .toLowerCase()
+    var lower = input.toLowerCase();
+    // German writes 1.000,5: the point groups thousands, the comma is the
+    // decimal mark.
+    if (_german.hasMatch(lower)) {
+      lower = lower
+          .replaceAll(RegExp(r'(?<=\d)\.(?=\d{3}(?!\d))'), '')
+          .replaceAll(RegExp(r'(?<=\d),(?=\d)'), '.');
+    }
+    final t = lower
         .replaceAll(RegExp(r'(?<=\d),(?=\d{3}\b)'), '')
         .replaceAll(RegExp(r'(?<=[a-z])-(?=[a-z])'), ' ')
         .replaceAll(RegExp(r'[?!,;:¿¡]|\.(?!\d)'), ' ');
@@ -187,6 +213,12 @@ abstract final class MathQuestion {
     }
 
     for (final w in t.split(RegExp(r'\s+'))) {
+      final german = _germanNumber(w);
+      if (german != null) {
+        flush();
+        out.add('$german');
+        continue;
+      }
       final small = _units[w] ?? _tens[w];
       if (small != null) {
         value ??= 0;
@@ -212,6 +244,90 @@ abstract final class MathQuestion {
     flush();
     return out.join(' ');
   }
+
+  /// A German number word, written as one word ("siebenundzwanzig",
+  /// "einhundertfünf", "zweitausend"), up to 999,999; null otherwise.
+  static int? _germanNumber(String w) {
+    if (w.isEmpty || !RegExp(r'^[a-zäöüß]+$').hasMatch(w)) return null;
+    int? below100(String s) {
+      if (s.isEmpty) return 0;
+      final unit = _germanUnits[s];
+      if (unit != null) return unit;
+      final tens = _germanTens[s];
+      if (tens != null) return tens;
+      final und = s.indexOf('und');
+      if (und > 0) {
+        final u =
+            _germanUnits[s.substring(0, und) == 'ein'
+                ? 'eins'
+                : s.substring(0, und)];
+        final t = _germanTens[s.substring(und + 3)];
+        if (u != null && u < 10 && t != null) return t + u;
+      }
+      return null;
+    }
+
+    int? below1000(String s) {
+      final h = s.indexOf('hundert');
+      if (h < 0) return below100(s);
+      final head = s.substring(0, h);
+      final count = head.isEmpty ? 1 : (head == 'ein' ? 1 : _germanUnits[head]);
+      final rest = below100(s.substring(h + 7));
+      if (count == null || count > 9 || rest == null) return null;
+      return count * 100 + rest;
+    }
+
+    final k = w.indexOf('tausend');
+    final int? value;
+    if (k < 0) {
+      value = below1000(w);
+    } else {
+      final head = w.substring(0, k);
+      final thousands = head.isEmpty || head == 'ein' ? 1 : below1000(head);
+      final rest = below1000(w.substring(k + 7));
+      value = thousands == null || rest == null
+          ? null
+          : thousands * 1000 + rest;
+    }
+    // "ein" alone is the article, "null" stays a word only when nothing
+    // else could be meant.
+    if (w == 'ein' || w == 'eine') return null;
+    return value;
+  }
+
+  static const _germanUnits = {
+    'null': 0,
+    'eins': 1,
+    'zwei': 2,
+    'drei': 3,
+    'vier': 4,
+    'fünf': 5,
+    'sechs': 6,
+    'sieben': 7,
+    'acht': 8,
+    'neun': 9,
+    'zehn': 10,
+    'elf': 11,
+    'zwölf': 12,
+    'dreizehn': 13,
+    'vierzehn': 14,
+    'fünfzehn': 15,
+    'sechzehn': 16,
+    'siebzehn': 17,
+    'achtzehn': 18,
+    'neunzehn': 19,
+  };
+  static const _germanTens = {
+    'zwanzig': 20,
+    'dreißig': 30,
+    'dreissig': 30,
+    'vierzig': 40,
+    'fünfzig': 50,
+    'sechzig': 60,
+    'siebzig': 70,
+    'achtzig': 80,
+    'neunzig': 90,
+  };
 
   static const _units = {
     'zero': 0,
@@ -247,10 +363,35 @@ abstract final class MathQuestion {
   };
 
   static final _back = RegExp(
-    r'\b(?:that|it|this|the result|the answer|ça|cela|le résultat|eso|esto|el resultado)\b',
+    r'\b(?:that|it|this|the result|the answer|ça|cela|le résultat|eso|esto|el resultado|das|es|das ergebnis)\b',
   );
 
   static final _onPrevious = <(RegExp, String Function(String, RegExpMatch))>[
+    (RegExp(r'\bverdopple\s+(?:das|es)\b'), (p, _) => '$p * 2'),
+    (RegExp(r'\bverdreifache\s+(?:das|es)\b'), (p, _) => '$p * 3'),
+    (RegExp(r'\bhalbiere\s+(?:das|es)\b'), (p, _) => '$p / 2'),
+    (
+      RegExp(r'\b(?:das|das ergebnis)\s+(?:mal)\s+([\d.]+)'),
+      (p, m) => '$p * ${m[1]}',
+    ),
+    (
+      RegExp(
+        r'\b(?:das|das ergebnis)\s+(?:geteilt|dividiert) durch\s+([\d.]+)',
+      ),
+      (p, m) => '$p / ${m[1]}',
+    ),
+    (
+      RegExp(r'\b(?:das|das ergebnis)\s+plus\s+([\d.]+)'),
+      (p, m) => '$p + ${m[1]}',
+    ),
+    (
+      RegExp(r'\b(?:das|das ergebnis)\s+minus\s+([\d.]+)'),
+      (p, m) => '$p - ${m[1]}',
+    ),
+    (
+      RegExp(r'\b(?:das|das ergebnis)\s+(?:hoch zwei|hoch 2|zum quadrat)'),
+      (p, _) => '$p ^ 2',
+    ),
     (
       RegExp(r'\b(?:double|twice)\s+(?:that|it|this|the result|the answer)\b'),
       (p, _) => '$p * 2',
@@ -316,16 +457,16 @@ abstract final class MathQuestion {
   ];
 
   static final _operators = <(RegExp, String)>[
-    (RegExp(r'\b(?:to the power of|raised to)\b'), '^'),
+    (RegExp(r'\b(?:to the power of|raised to|hoch)\b'), '^'),
     (
       RegExp(
-        r'\bmultiplied by\b|\btimes\b|(?<=\d)\s+x\s+(?=\d)|\bfois\b|(?<=\d)\s+por\s+(?=\d)',
+        r'\bmultiplied by\b|\btimes\b|(?<=\d)\s+x\s+(?=\d)|\bfois\b|(?<=\d)\s+por\s+(?=\d)|\bmultipliziert mit\b|(?<=\d)\s+mal\s+(?=[\d(])',
       ),
       '*',
     ),
     (
       RegExp(
-        r'\bdivided by\b|\bdivisé par\b|\bdividido (?:entre|por)\b|(?<=\d)\s+over\s+(?=\d)',
+        r'\bdivided by\b|\bdivisé par\b|\bdividido (?:entre|por)\b|(?<=\d)\s+over\s+(?=\d)|\b(?:geteilt|dividiert) durch\b',
       ),
       '/',
     ),
@@ -333,6 +474,7 @@ abstract final class MathQuestion {
     (RegExp(r'\bminus\b|\bmoins\b|\bmenos\b|(?<=\d)\s+-\s+(?=[\d(])'), '-'),
     (RegExp(r'(?<=[\d)])\s+squared\b'), '^ 2'),
     (RegExp(r'(?<=[\d)])\s+cubed\b'), '^ 3'),
+    (RegExp(r'(?<=[\d)])\s+zum quadrat\b'), '^ 2'),
   ];
 
   /// Numbers joined by operators, with brackets and functions.
@@ -403,5 +545,32 @@ abstract final class MathQuestion {
     'perfect',
     'merci',
     'gracias',
+    'was',
+    'ist',
+    'sind',
+    'wie',
+    'viel',
+    'wieviel',
+    'berechne',
+    'rechne',
+    'aus',
+    'bitte',
+    'kannst',
+    'du',
+    'mir',
+    'sag',
+    'ergibt',
+    'gleich',
+    'das',
+    'ergebnis',
+    'und',
+    'dann',
+    'also',
+    'jetzt',
+    'danke',
+    'super',
+    'prima',
+    'schnelle',
+    'frage',
   };
 }

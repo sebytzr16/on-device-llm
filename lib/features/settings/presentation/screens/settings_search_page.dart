@@ -107,16 +107,17 @@ class _SettingsSearchPageState extends ConsumerState<SettingsSearchPage> {
             ),
           ),
           if (_query.isEmpty ||
-              'memory mémoire memoria'.contains(_query.toLowerCase()))
+              'memory mémoire memoria erinnerung gedächtnis'.contains(
+                _query.toLowerCase(),
+              ))
             SettingsRow(
               title: Text(t.memory),
               leading: const Icon(Icons.psychology_outlined),
               onTap: () => _open(const MemoryPage()),
             ),
           if (_query.isEmpty ||
-              'knowledge documents documents documentos'.contains(
-                _query.toLowerCase(),
-              ))
+              'knowledge documents documents documentos wissen dokumente'
+                  .contains(_query.toLowerCase()))
             SettingsRow(
               title: Text(t.knowledgeLibrary),
               leading: const Icon(Icons.menu_book),

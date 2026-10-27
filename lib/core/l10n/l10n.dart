@@ -17,7 +17,7 @@ extension L10nContext on BuildContext {
 }
 
 /// Locales offered in Settings (FX-15); '' follows the phone.
-const supportedLanguageCodes = ['', 'en', 'fr', 'es'];
+const supportedLanguageCodes = ['', 'en', 'fr', 'es', 'de'];
 
 /// Strings for code that runs without a [BuildContext] (chat notices,
 /// errors): [code] is the Settings language, '' follows the phone, and an

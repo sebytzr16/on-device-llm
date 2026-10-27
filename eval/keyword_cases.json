@@ -481,6 +481,116 @@
    "lang": "en",
    "text": "Who are you?",
    "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Wie wird das Wetter morgen in Berlin?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Suche die besten Restaurants in Hamburg",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Wer hat gestern das Spiel von Bayern München gewonnen?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Was kostet Benzin aktuell in Deutschland?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Was ist die neueste Version von Android?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Schau im Internet nach, ob das Museum geöffnet hat",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Wann ist die nächste Bundestagswahl?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Finde Quellen zu den Wirkungen von Intervallfasten",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Wie viel kostet ein iPhone 17 jetzt?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Hallo",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Vielen Dank!",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Schreib ein Gedicht über das Meer",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Erklär mir die Photosynthese",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Was ist 12 mal 8?",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Übersetze „gute Nacht“ ins Englische",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Wer hat Faust geschrieben?",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Korrigiere die Fehler in diesem Absatz",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Gib mir ein Rezept für Pfannkuchen",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Schreib eine JavaScript-Funktion, die ein Array sortiert",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Wer ist der CEO von Tesla?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Wer ist eigentlich der Bürgermeister von München?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Wie steht es im Spiel Dortmund gegen Schalke?",
+   "web": true
   }
  ],
  "news": [
@@ -632,6 +742,36 @@
   {
    "lang": "es",
    "text": "Explica la historia del periodismo",
+   "news": false
+  },
+  {
+   "lang": "de",
+   "text": "Was gibt es Neues?",
+   "news": true
+  },
+  {
+   "lang": "de",
+   "text": "Nachrichten aus Deutschland heute",
+   "news": true
+  },
+  {
+   "lang": "de",
+   "text": "Die Schlagzeilen von heute Morgen",
+   "news": true
+  },
+  {
+   "lang": "de",
+   "text": "Gibt es Neuigkeiten zum FC Bayern?",
+   "news": true
+  },
+  {
+   "lang": "de",
+   "text": "Schreib einen Nachrichtenartikel über eine Katze",
+   "news": false
+  },
+  {
+   "lang": "de",
+   "text": "Erkläre die Geschichte der Zeitung",
    "news": false
   }
  ],
@@ -949,6 +1089,46 @@
    "lang": "es",
    "text": "Dame un sinónimo de feliz",
    "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Fährt die S-Bahn heute Morgen normal?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Wer ist der aktuelle Ministerpräsident von Bayern?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Welche Filme laufen diese Woche im Kino an?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Hat der Aldi am Ostermontag geöffnet?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Schreib eine Geschichte für Kinder",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Warum ist der Himmel blau?",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Fasse diesen Text in drei Sätzen zusammen",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Gib mir ein Synonym für glücklich",
+   "web": false
   }
  ],
  "web_holdout2": [
@@ -1160,6 +1340,51 @@
   {
    "lang": "es",
    "text": "¿Quién fue el primer rey de España?",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Wer ist die Oberbürgermeisterin von Frankfurt?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Hat der Rewe am Sonntag offen?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Wie viel kostet eine PS5?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Ist WhatsApp gerade gestört?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Wo kann ich den neuen Batman-Film streamen?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Wie ist der Wechselkurs von Euro zu Yen?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Wie viele Stunden hat ein Tag?",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Mach mir einen Lernplan für die Prüfung",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Wer war der erste deutsche Kaiser?",
    "web": false
   }
  ],
@@ -1443,6 +1668,61 @@
    "lang": "es",
    "text": "¿Qué edad tiene mi perro en años humanos si tiene 5?",
    "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Erkläre die Preiselastizität der Nachfrage",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Wie mache ich eine Hühnerbrühe?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Schreib eine Geschichte über ein neues Auto",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Was macht eigentlich ein CEO?",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Erkläre, wie Hurrikane entstehen",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Wer war König von Preußen im Jahr 1750?",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Was ist der Unterschied zwischen Wetter und Klima?",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Gib mir einen Trainingsplan für heute",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Fasse Die Verwandlung von Kafka zusammen",
+   "web": false
+  },
+  {
+   "lang": "de",
+   "text": "Wie öffne ich eine PDF-Datei?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Ab welchem Alter darf man in Europa im Allgemeinen Auto fahren?",
+   "web": false
   }
  ],
  "web_phone_misses": [
@@ -1504,6 +1784,16 @@
   {
    "lang": "es",
    "text": "¿Cuándo nació Bad Bunny?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Wie alt ist Helene Fischer?",
+   "web": true
+  },
+  {
+   "lang": "de",
+   "text": "Wann ist Thomas Müller geboren?",
    "web": true
   }
  ]
