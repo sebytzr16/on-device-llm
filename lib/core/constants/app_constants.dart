@@ -1,9 +1,18 @@
+import '../platform/desktop_host.dart';
+
 class AppConstants {
   static const appName = 'OnDevice LLM';
 
+  /// Desktop starts with minimal app instructions; the user's prompt and
+  /// enabled features are still added by the turn builder.
+  static String get defaultSystemPrompt =>
+      DesktopHost.active && DesktopHost.leanPrompt
+      ? spokenSystemPrompt
+      : fullSystemPrompt;
+
   /// Length follows the request: "concise" alone made small models answer
   /// research and news questions in two lines (report 2026-09-23).
-  static const defaultSystemPrompt =
+  static const fullSystemPrompt =
       'You are a helpful, knowledgeable and accurate assistant. Match the '
       'length to the request: brief for greetings, chat and simple questions; '
       'complete and well organised for explanations, research, news, '

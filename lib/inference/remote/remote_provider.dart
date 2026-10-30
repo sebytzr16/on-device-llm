@@ -496,6 +496,22 @@ class RemoteProfile {
   /// A connection another phone shared from "Use this device as a server"
   /// (copied text or its QR code): the profile and its access key, or null
   /// when [text] is not such a connection or its URL is not http(s).
+  /// The saved custom connection at [baseUrl], trailing slashes aside, so
+  /// pairing with a known server updates it instead of adding a twin.
+  static RemoteProfile? savedServer(
+    List<RemoteProfile> profiles,
+    String baseUrl,
+  ) {
+    String bare(String url) => url.trim().replaceFirst(RegExp(r'/+$'), '');
+    final want = bare(baseUrl);
+    for (final p in profiles) {
+      if (p.providerId == RemoteProvider.custom.id && bare(p.baseUrl) == want) {
+        return p;
+      }
+    }
+    return null;
+  }
+
   static (RemoteProfile, String)? fromPairing(
     String text, {
     required String id,

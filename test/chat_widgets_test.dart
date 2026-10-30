@@ -368,4 +368,52 @@ void main() {
     );
     expect(next.onPressed, isNull);
   });
+
+  testWidgets('an answer a tool gave is not labelled as from memory', (
+    tester,
+  ) async {
+    ChatMessage answer(String id, List<Map<String, dynamic>> trace) =>
+        ChatMessage(
+          id: id,
+          role: ChatRole.assistant,
+          content: '17 + 25 = 42',
+          timestamp: DateTime(2026),
+          runJson: TurnRun(
+            settings: const {},
+            engine: const {},
+            metrics: const {},
+            modelId: 'qwen',
+            modelName: 'Qwen',
+            presetId: 'general',
+            presetName: 'General',
+            sources: 0,
+            at: DateTime(2026),
+            toolTrace: trace,
+          ).encode(),
+        );
+    Map<String, dynamic> call(bool ok) => {
+      'call': {
+        'name': 'fixture__add',
+        'arguments': {'a': 17, 'b': 25},
+      },
+      'ok': ok,
+      'elapsedMs': 3,
+    };
+    for (final (trace, shown) in [
+      (<Map<String, dynamic>>[], true),
+      ([call(false)], true),
+      ([call(true)], false),
+    ]) {
+      await tester.pumpWidget(
+        _host(
+          ChatBubble(message: answer('a$shown', trace), onSearchWeb: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('search-web-answer')),
+        shown ? findsOneWidget : findsNothing,
+      );
+    }
+  });
 }

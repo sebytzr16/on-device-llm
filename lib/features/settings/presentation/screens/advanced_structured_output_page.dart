@@ -12,19 +12,14 @@ class StructuredOutputPage extends ConsumerWidget {
     final s = ref.watch(settingsProvider);
     final n = ref.read(settingsProvider.notifier);
     final c = context.colors;
-    String? schemaProblem;
-    if (s.responseFormat == ResponseFormat.jsonSchema) {
-      if (s.jsonSchema.trim().isEmpty) {
-        schemaProblem = 'No schema: any JSON object will be accepted.';
-      } else {
-        try {
-          final v = jsonDecode(s.jsonSchema);
-          if (v is! Map) schemaProblem = 'The schema must be a JSON object.';
-        } catch (e) {
-          schemaProblem = 'The schema is not valid JSON.';
-        }
-      }
-    }
+    final schemaProblem = s.responseFormat == ResponseFormat.jsonSchema
+        ? switch (validateJsonSchema(s.jsonSchema)) {
+            SchemaProblem.empty => context.l10n.structuredSchemaEmpty,
+            SchemaProblem.objectRequired => context.l10n.structuredSchemaObject,
+            SchemaProblem.invalidJson => context.l10n.structuredSchemaInvalid,
+            null => null,
+          }
+        : null;
     return _Scaffold(
       title: context.l10n.uiAdvancedStructuredOutputPageStructuredOutput,
       children: [
@@ -81,7 +76,7 @@ class StructuredOutputPage extends ConsumerWidget {
                 ),
                 subtitle: Text(
                   s.grammar.trim().isEmpty
-                      ? 'No grammar set — the answer will fail until one is given.'
+                      ? context.l10n.structuredGrammarEmpty
                       : (s.grammar.length > 120
                             ? '${s.grammar.substring(0, 117)}…'
                             : s.grammar),

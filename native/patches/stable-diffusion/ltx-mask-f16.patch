@@ -1,0 +1,15 @@
+diff --git a/src/conditioning/conditioner.hpp b/src/conditioning/conditioner.hpp
+index e3832a1..425e15d 100644
+--- a/src/conditioning/conditioner.hpp
++++ b/src/conditioning/conditioner.hpp
+@@ -3808,7 +3808,9 @@ struct LTXAVEmbedder : public Conditioner {
+         sd::Tensor<int32_t> input_ids({static_cast<int64_t>(tokens.size())}, std::vector<int32_t>(tokens.begin(), tokens.end()));
+         sd::Tensor<float> attention_mask;
+         if (!mask.empty()) {
+-            const float mask_min = std::numeric_limits<float>::lowest() / 4.0f;
++            // Left-padded queries can have every key masked. Keep both mask terms
++            // finite in F16: -inf rows make CUDA flash attention return NaNs.
++            const float mask_min = -10000.0f;
+             attention_mask       = sd::Tensor<float>({static_cast<int64_t>(mask.size()), static_cast<int64_t>(mask.size())});
+             for (size_t i1 = 0; i1 < mask.size(); ++i1) {
+                 for (size_t i0 = 0; i0 < mask.size(); ++i0) {

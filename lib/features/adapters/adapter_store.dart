@@ -122,7 +122,7 @@ class AdaptersNotifier extends Notifier<AdaptersState> {
   }
 
   Future<File> _manifest() async =>
-      File(p.join((await ModelStorage.modelsDir()).path, manifestName));
+      File(await ModelStorage.resourcePath(manifestName));
 
   Future<void> _load() async {
     try {

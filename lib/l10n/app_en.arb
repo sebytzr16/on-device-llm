@@ -1222,7 +1222,7 @@
   "uiRemoteServerPageImageUnderstanding": "Image understanding",
   "uiRemoteServerPageSendAttachedImagesToTheModel": "Send attached images to the model. Enable only for a vision-capable model.",
   "uiRemoteServerPageDocumentUnderstanding": "Document understanding",
-  "uiRemoteServerPageExtractDocumentsSafelyOnThePhone": "Extract documents safely on the phone, then send their text in the prompt. Original files are not uploaded.",
+  "uiRemoteServerPageExtractDocumentsSafelyOnThePhone": "Extract documents safely on this device, then send their text in the prompt. Original files are not uploaded.",
   "uiRemoteServerPageStreamingIdleTimeout": "Streaming idle timeout",
   "uiRemoteServerPageHowLongToWaitBetweenResponse": "How long to wait between response chunks from a slow or heavily loaded server.",
   "uiRemoteServerPageChooseAProvider": "Choose a provider",
@@ -1445,7 +1445,7 @@
   "remoteInvalidUrl": "Enter an http(s) URL.",
   "remoteApiKey": "API key",
   "remoteApiKeyOptional": "API key (optional)",
-  "remoteKeyHostedHelp": "Stored in the Android keystore; sent only to {provider}.",
+  "remoteKeyHostedHelp": "Stored in this device's secure storage; sent only to {provider}.",
   "@remoteKeyHostedHelp": {
     "placeholders": {
       "provider": {
@@ -1453,7 +1453,7 @@
       }
     }
   },
-  "remoteKeySelfHelp": "Only if the server was started with a key. Stored in the Android keystore.",
+  "remoteKeySelfHelp": "Only if the server was started with a key. Stored in this device's secure storage.",
   "remoteHideKey": "Hide key",
   "remoteShowKey": "Show key",
   "remoteServerDefaultModel": "Leave empty for the server default",
@@ -1658,7 +1658,16 @@
   "sourceHeadlineOnly": "Headline and listing only · article body unavailable",
   "sourceExtractedSection": "Extracted passages · check the quoted text for support",
   "sourceArchiveSnapshot": "Offline archive · {date} · {language}",
-  "@sourceArchiveSnapshot": {"placeholders": {"date": {"type": "String"}, "language": {"type": "String"}}},
+  "@sourceArchiveSnapshot": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      },
+      "language": {
+        "type": "String"
+      }
+    }
+  },
   "sourceOfflineLimitation": "This archive cannot verify current or changing facts.",
   "sourceArchiveUnavailable": "The original archive is unavailable. Showing the saved excerpt.",
   "sourceNoText": "No text.",
@@ -2647,7 +2656,9 @@
   "convRemoteFailed": "The remote connection did not answer ({error}). Answering on the phone.",
   "@convRemoteFailed": {
     "placeholders": {
-      "error": {"type": "String"}
+      "error": {
+        "type": "String"
+      }
     }
   },
   "convModelFastest": "fastest",
@@ -2676,7 +2687,13 @@
   "actionConfirmHint": "Prepared for you: you confirm in the app that opens.",
   "actionConfirmDone": "I completed this action",
   "actionConfirmedAt": "Confirmed at {time}",
-  "@actionConfirmedAt": {"placeholders": {"time": {"type": "String"}}},
+  "@actionConfirmedAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "goalAwaitingActions": "Waiting for your action confirmation",
   "actionReadyAnswer": "Ready. Check the card below and tap its button to finish.",
   "@actionReadyAnswer": {
@@ -2802,5 +2819,860 @@
   "remoteServerSettings": "Use the server's own settings",
   "remoteServerSettingsHint": "Temperature, sampling, answer length and context come from the model on this connection (Gemini's defaults, the settings LM Studio loaded it with…), not from the phone's presets.",
   "sheetAttachments": "Attachments and tools",
-  "sheetNotice": "Notice"
+  "sheetNotice": "Notice",
+  "desktopMinimize": "Minimize",
+  "desktopMaximize": "Maximize",
+  "desktopRestore": "Restore down",
+  "desktopClose": "Close",
+  "desktopToggleSidebar": "Show or hide the sidebar (Ctrl+B)",
+  "desktopNewChatTip": "New chat (Ctrl+N)",
+  "desktopNoChats": "No conversations yet",
+  "desktopNoMatches": "No conversations match",
+  "desktopEmptyTitle": "What can I help with?",
+  "desktopEmptyHint": "Answers are worked out on this PC. Nothing leaves it unless you turn on web research or a remote server.",
+  "desktopComposerHint": "Enter to send · Shift+Enter for a new line",
+  "desktopPickModel": "Choose a model",
+  "desktopServerPair": "Connect a phone",
+  "desktopServerPairHint": "On the phone, open Settings > Remote server. Tap Scan QR code, or tap Find nearby hosts, pick this PC and enter the pairing code. Both devices must be on the same Wi-Fi.",
+  "desktopServerPairOff": "Turn on \"Share on the local network\" and start the server to show a pairing code.",
+  "desktopServerNeedsModel": "Load a model first: phones and apps get answers from the model loaded here.",
+  "hostPairCode": "Pairing code",
+  "remotePairCodeMessage": "Enter the 6-digit pairing code shown next to the server on {name}. Leave it empty to type an access token instead.",
+  "@remotePairCodeMessage": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "remotePairConnect": "Connect",
+  "remotePairWrong": "Wrong pairing code. Check the code on the other device and try again.",
+  "remotePairLocked": "Too many wrong codes. Restart the server on the other device to get a new code.",
+  "remotePairUnreachable": "Couldn't reach {name}. Check that both devices are on the same Wi-Fi and the server is running.",
+  "@remotePairUnreachable": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopServerAddress": "Address for phones",
+  "desktopLanTitle": "Network check",
+  "desktopLanChecking": "Checking Windows network settings…",
+  "desktopLanPublic": "Windows treats \"{name}\" as a public network. If the phone can't find or reach this PC, set its network profile to Private.",
+  "@desktopLanPublic": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopLanOpenSettings": "Open network settings",
+  "desktopLanBlocked": "Windows Firewall blocks this app on the current network.",
+  "desktopLanNoRule": "Windows Firewall has no rule for this app on the current network yet.",
+  "desktopLanAllow": "Allow in firewall",
+  "desktopLanFirewallOk": "Windows Firewall allows this app on the current network.",
+  "desktopLanVpn": "A VPN is connected ({names}). If the phone can't connect, allow local network access in the VPN app or pause it.",
+  "@desktopLanVpn": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopLanRecheck": "Check again",
+  "desktopLanClear": "Nothing on this PC should stop a phone from connecting.",
+  "loadPhaseWeights": "Loading weights into memory",
+  "loadPhaseContext": "Allocating context",
+  "loadPhaseFinishing": "Finishing up",
+  "timeLeft": "{time} left",
+  "@timeLeft": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopNoModels": "No models on this PC yet. Import a GGUF or download one under Models.",
+  "desktopLocalModels": "On this PC",
+  "desktopCatalog": "Available to download",
+  "desktopLoad": "Load",
+  "desktopEject": "Eject",
+  "desktopLoaded": "Loaded",
+  "desktopGeneral": "General",
+  "desktopLanguageSystem": "Follow Windows",
+  "desktopAttachTooltip": "Attach files",
+  "desktopInspectorToggle": "Model and chat settings (Ctrl+I)",
+  "desktopInspectorTitle": "Settings",
+  "desktopInspectorHint": "Changes here apply to this chat only, on top of the model's settings.",
+  "desktopInspectorReset": "Reset",
+  "desktopInspectorClose": "Close",
+  "desktopInspectorSystemPrompt": "Instructions",
+  "desktopInspectorPromptHint": "How the model should answer in this chat",
+  "desktopInspectorTemperature": "Temperature",
+  "desktopInspectorMaxTokens": "Max answer tokens",
+  "desktopInspectorContext": "Context length",
+  "desktopInspectorContextHint": "A new context length reloads the model on the next message.",
+  "desktopInspectorScopeModel": "Model",
+  "desktopInspectorScopeChat": "This chat",
+  "desktopInspectorModelHint": "Saved with {model} and used in every chat with it. Switch to This chat for a one-off change.",
+  "@desktopInspectorModelHint": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopInspectorModelPromptHint": "How this model should answer in every chat",
+  "desktopInspectorResetModel": "Reset model",
+  "desktopInspectorRepeatPenalty": "Repeat penalty",
+  "desktopInspectorPresencePenalty": "Presence penalty",
+  "desktopInspectorChatSection": "This chat",
+  "desktopSourceMaker": "maker's",
+  "desktopSourceYours": "yours",
+  "desktopSourceModel": "model",
+  "desktopSourcePreset": "preset",
+  "desktopSourceProject": "project",
+  "desktopSourceChat": "this chat",
+  "desktopModelSettingsSampling": "Answers",
+  "desktopModelSettingsSamplingHint": "Used in every chat with this model. They take effect on the next message, without reloading.",
+  "desktopModelServing": "SERVING",
+  "desktopModelServingHint": "The local server answers other devices with this model. It stays loaded when a chat uses another model.",
+  "desktopContextUsed": "{used} of {total} context tokens used",
+  "@desktopContextUsed": {
+    "placeholders": {
+      "used": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "desktopLoadSettingsTitle": "Model settings",
+  "desktopLoadSettingsHint": "Saved with this model: how it loads and how it answers. A preset or a chat's own settings still win over them.",
+  "desktopLoadSettingsGpu": "GPU offload",
+  "desktopLoadSettingsGpuAuto": "Fit to free VRAM",
+  "desktopLoadSettingsGpuLayers": "{count} of {total} layers on the GPU",
+  "@desktopLoadSettingsGpuLayers": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "desktopLoadSettingsGpuNone": "No GPU in use: the model runs on the CPU",
+  "desktopLoadSettingsContext": "Context length",
+  "desktopLoadSettingsTrained": "Trained for {tokens} tokens",
+  "@desktopLoadSettingsTrained": {
+    "placeholders": {
+      "tokens": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopLoadSettingsFlash": "Flash attention",
+  "desktopLoadSettingsKv": "KV cache type",
+  "desktopLoadSettingsKvHint": "Q8_0 halves the cache memory with little quality loss; Q4_0 quarters it.",
+  "desktopLoadSettingsThreads": "CPU threads",
+  "desktopLoadSettingsBatch": "Batch size",
+  "desktopLoadSettingsAuto": "Auto",
+  "desktopLoadSettingsEstimate": "Estimated memory",
+  "desktopLoadSettingsVram": "VRAM",
+  "desktopLoadSettingsRam": "RAM",
+  "desktopLoadSettingsUsage": "{need} of {free} GB free",
+  "@desktopLoadSettingsUsage": {
+    "placeholders": {
+      "need": {
+        "type": "String"
+      },
+      "free": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopLoadSettingsFitsGpu": "Fits fully on the GPU",
+  "desktopLoadSettingsPartial": "Partly on the GPU: the other layers run on the CPU, which is slower",
+  "desktopLoadSettingsSpill": "Over the card's free memory by {gb} GB: Windows moves the rest into shared memory and answers get several times slower. Lower the GPU layers or the context.",
+  "@desktopLoadSettingsSpill": {
+    "placeholders": {
+      "gb": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopLoadSettingsExperts": "Expert weights stay in RAM so the rest fits on the GPU",
+  "desktopLoadSettingsCapped": "The context will be cut to {tokens} tokens to fit in memory",
+  "@desktopLoadSettingsCapped": {
+    "placeholders": {
+      "tokens": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopLoadSettingsMeasuring": "Measuring…",
+  "desktopLoadSettingsNoEstimate": "No estimate: {reason}",
+  "@desktopLoadSettingsNoEstimate": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopLoadSettingsReset": "Reset to defaults",
+  "desktopLoadSettingsSaveLoad": "Save and load",
+  "desktopMoreSettings": "All settings",
+  "desktopShortcuts": "Keyboard shortcuts",
+  "desktopShortcutList": "Ctrl+N new chat · Ctrl+K search chats · Ctrl+L message box · Ctrl+B sidebar · Ctrl+M models · Ctrl+, settings · Esc stop · F2 rename · Delete delete chat · Ctrl+I chat settings",
+  "desktopDeleteChatTitle": "Delete this conversation?",
+  "desktopDeleteChatBody": "“{title}” and its attached files are removed from this PC.",
+  "@desktopDeleteChatBody": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopUntitled": "New conversation",
+  "desktopTokensPerSecond": "{rate} tok/s",
+  "@desktopTokensPerSecond": {
+    "placeholders": {
+      "rate": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopServerTitle": "Local server",
+  "desktopServerRunning": "Running",
+  "desktopServerStopped": "Stopped",
+  "desktopServerStarting": "Starting…",
+  "desktopServerPort": "Port",
+  "desktopServerInvalidPort": "Enter a port from 1 to 65535.",
+  "desktopServerStart": "Start server",
+  "desktopServerStop": "Stop server",
+  "desktopServerBind": "Bind address",
+  "desktopServerUrl": "Base URL",
+  "desktopServerToken": "Bearer token",
+  "desktopServerReveal": "Reveal token",
+  "desktopServerHide": "Hide token",
+  "desktopServerCopy": "Copy",
+  "desktopServerRegenerate": "Regenerate token",
+  "desktopServerRegenerateHint": "Regenerating stops the server. Start it again to use the new token.",
+  "desktopServerModel": "Loaded model",
+  "desktopServerNoModel": "No model loaded",
+  "desktopServerEndpoints": "OpenAI-compatible endpoints",
+  "desktopServerCurl": "curl example",
+  "desktopServerRequests": "Request log",
+  "desktopServerRequestColumns": "Method / path · status · duration · prompt / completion tokens",
+  "desktopServerNoRequests": "No requests yet.",
+  "desktopServerHint": "Listens only on this computer unless you share it on the local network. Every endpoint requires a bearer token.",
+  "desktopLogsTitle": "Logs",
+  "desktopLogsFilter": "Filter by tag or message",
+  "desktopLogsAll": "All levels",
+  "desktopLogsDebug": "Debug",
+  "desktopLogsInfo": "Info",
+  "desktopLogsWarning": "Warning",
+  "desktopLogsError": "Error",
+  "desktopLogsPause": "Pause",
+  "desktopLogsResume": "Resume",
+  "desktopLogsClear": "Clear",
+  "desktopLogsCopyAll": "Copy all",
+  "desktopLogsEmpty": "No matching log entries.",
+  "desktopLogsHint": "In memory only · last 2000 lines · copy uses the current filters",
+  "desktopHfLocal": "Local models",
+  "desktopHfDiscover": "Discover",
+  "desktopHfSearch": "Search Hugging Face",
+  "desktopHfHint": "Model name (e.g. Qwen GGUF)",
+  "desktopHfIntro": "Search public GGUF repositories. Enter at least two characters.",
+  "desktopHfEmpty": "No GGUF repositories match.",
+  "desktopHfSelect": "Select a repository to explore quantizations.",
+  "desktopHfSort": "Sort results",
+  "desktopHfDownloads": "Downloads",
+  "desktopHfLikes": "Likes",
+  "desktopHfUpdated": "Updated",
+  "desktopHfUnknownDate": "Unknown date",
+  "desktopHfFiles": "GGUF files by quantization",
+  "desktopHfNoFiles": "No single-file GGUF weights in this repository.",
+  "desktopHfProjector": "Vision projector (mmproj) present. Projectors cannot be added here.",
+  "desktopHfSplit": "Split GGUF files are not supported here.",
+  "desktopHfDownload": "Download",
+  "desktopHfDownloaded": "Downloaded",
+  "desktopHfCancel": "Cancel",
+  "desktopHfQueued": "Queued",
+  "desktopHfVerifying": "Verifying checksum…",
+  "desktopHfSearchError": "Could not search Hugging Face. Try again.",
+  "desktopHfFilesError": "Could not read this repository. It may be gated or unavailable. Try another repository or import a GGUF.",
+  "desktopHfDownloadError": "Download failed. Try again.",
+  "desktopChatMenu": "Chat actions",
+  "desktopChatExport": "Export chat",
+  "desktopChatMarkdown": "Markdown (.md)",
+  "desktopChatJson": "JSON (.json)",
+  "desktopChatDuplicate": "Duplicate chat",
+  "desktopChatBranch": "Branch from here",
+  "desktopChatCopy": "Copy message",
+  "desktopChatEdit": "Edit message",
+  "desktopChatRegenerate": "Regenerate answer",
+  "desktopChatDelete": "Delete message",
+  "desktopChatDrop": "Drop files to attach",
+  "desktopChatClipboardImage": "Clipboard image.png",
+  "desktopChatActionFailed": "Could not complete this chat action.",
+  "desktopChatExported": "Chat exported",
+  "desktopChatCopyTitle": "{title} (copy)",
+  "@desktopChatCopyTitle": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopChatBranchTitle": "{title} (branch)",
+  "@desktopChatBranchTitle": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopChatModel": "Model",
+  "desktopChatDate": "Date",
+  "desktopChatThinking": "Thinking",
+  "desktopChatUser": "User",
+  "desktopChatAssistant": "Assistant",
+  "desktopChatSystem": "System",
+  "desktopLoadSettingsLoadedNote": "Measured with the current model still in memory. Loading frees it first, so more may fit.",
+  "desktopServerLan": "Share on the local network",
+  "desktopServerLanHint": "Other devices on your network can connect with the token. Windows may ask to allow it through the firewall.",
+  "desktopThemeDark": "Dark",
+  "desktopThemeLight": "Light",
+  "desktopThemeSystem": "System",
+  "desktopServerStatus": "Status",
+  "desktopHfSortLabel": "Sort: {sort}",
+  "desktopHfCopyRepo": "Copy repository ID",
+  "desktopHfIncludesProjector": "Includes vision projector ({precision}, {size})",
+  "desktopHfUpdatedDate": "Updated {date}",
+  "desktopHfUpdatedDays": "{days, plural, =0{Updated today} =1{Updated 1 day ago} other{Updated {days} days ago}}",
+  "desktopHfFitsGpu": "Fits GPU",
+  "desktopHfPartialGpu": "Partial GPU",
+  "desktopHfTooLarge": "Too large",
+  "@desktopHfSortLabel": {
+    "placeholders": {
+      "sort": {
+        "type": "String"
+      }
+    }
+  },
+  "@desktopHfIncludesProjector": {
+    "placeholders": {
+      "precision": {
+        "type": "String"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "@desktopHfUpdatedDate": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "@desktopHfUpdatedDays": {
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "desktopProjectsSubtitle": "Organise conversations into projects, archives and trash.",
+  "desktopProjectsAll": "All conversations",
+  "desktopProjectsNew": "New project",
+  "desktopProjectsMove": "Move to project",
+  "desktopProjectsSelected": "{count, plural, one{1 selected} other{{count} selected}}",
+  "desktopProjectsClear": "Clear",
+  "desktopProjectsTitle": "Title",
+  "desktopProjectsUpdated": "Updated",
+  "desktopProjectsOpen": "Open",
+  "desktopProjectsDeleteForever": "Delete forever",
+  "desktopProjectsTrashConfirm": "Move the selected conversations to Trash?",
+  "@desktopProjectsSelected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "desktopKeyboardShortcuts": "Keyboard shortcuts",
+  "desktopShortcutSearch": "Search conversations",
+  "desktopShortcutComposer": "Focus message box",
+  "desktopShortcutStop": "Stop response",
+  "desktopModelsFolder": "Models folder",
+  "desktopModelsFolderChange": "Change…",
+  "desktopModelsFolderOpen": "Open in Explorer",
+  "desktopModelsFolderReset": "Reset to default",
+  "desktopModelsFolderChoice": "Move existing models to this folder, or keep using them where they are? New downloads and imports will use the selected folder.",
+  "desktopModelsFolderMove": "Move existing models",
+  "desktopModelsFolderLeave": "Leave them where they are",
+  "desktopModelsFolderMoving": "Moving models…",
+  "desktopModelsFolderWritable": "Cannot write to this folder. Choose a writable local folder and try again.",
+  "desktopModelsFolderSpace": "Not enough free space in the destination. Free up space and try again.",
+  "desktopModelsFolderConflict": "The destination contains conflicting files or is inside an existing models folder. Choose a separate folder.",
+  "desktopModelsFolderBusy": "Eject the loaded model and finish imports and downloads before changing folders.",
+  "desktopModelsFolderOpenError": "Could not open Explorer.",
+  "desktopGgufAssociation": "Open .gguf files with OnDevice LLM",
+  "desktopFileAssociations": "File associations:",
+  "desktopGgufModel": "GGUF model",
+  "mcpTitle": "MCP servers",
+  "mcpHint": "Connect local tools. Calls require approval unless you allow a tool permanently.",
+  "mcpAdd": "Add server",
+  "mcpEdit": "Edit mcp.json",
+  "mcpName": "Server name",
+  "mcpCommand": "Command",
+  "mcpArgs": "Arguments (JSON array)",
+  "mcpEnv": "Environment (JSON object)",
+  "mcpRestart": "Restart",
+  "mcpRemove": "Remove",
+  "mcpRevoke": "Revoke automatic approval",
+  "mcpDisabled": "Disabled",
+  "mcpConnecting": "Connecting…",
+  "mcpReady": "Connected",
+  "mcpErrorStatus": "Error",
+  "mcpTools": "Tools: {count}",
+  "@mcpTools": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mcpEmpty": "No MCP servers. Add a command or edit mcp.json to add a loopback HTTP URL.",
+  "mcpConfirm": "Allow MCP tool call?",
+  "mcpOnce": "Allow once",
+  "mcpAlways": "Always allow this tool",
+  "mcpDeny": "Deny",
+  "mcpConfigError": "Invalid MCP configuration. Use mcpServers with a unique name and either a command, args array and env object, or a URL.",
+  "mcpLoopbackError": "MCP HTTP only accepts http://127.0.0.1 or http://localhost. Other hosts are blocked by the offline rule.",
+  "mcpProtocolError": "The MCP server returned an invalid response or a protocol error.",
+  "mcpClosedError": "The MCP server stopped. Restart it to restore its tools.",
+  "mcpTimeoutError": "The MCP server did not respond in time.",
+  "mcpUnavailableError": "This MCP tool is no longer available.",
+  "mcpDeniedError": "The user denied this MCP tool call. Do not retry without permission.",
+  "mcpOtherError": "MCP operation failed: {detail}",
+  "@mcpOtherError": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpUnsupportedContent": "The MCP server returned non-text content (image, audio or resource); this chat tool result includes text only.",
+  "structuredFormatText": "Text",
+  "structuredFormatGrammar": "Grammar",
+  "structuredSchemaEmpty": "No schema: any JSON object will be accepted.",
+  "structuredSchemaObject": "The schema must be a JSON object.",
+  "structuredSchemaInvalid": "The schema is not valid JSON.",
+  "structuredSmallModelHint": "Small models may struggle with structured output.",
+  "desktopPromptTemplate": "Prompt template",
+  "desktopPromptTemplateHint": "Uses the Jinja template embedded in the GGUF by default. Custom templates apply on the next load.",
+  "desktopPromptTemplateOverride": "Override embedded template",
+  "desktopPromptTemplateReset": "Reset to embedded template",
+  "desktopPromptTemplateMissing": "No embedded template available.",
+  "desktopPromptTemplateError": "Could not read the embedded template.",
+  "structuredFormatJson": "JSON",
+  "structuredGrammarEmpty": "No grammar set. Enter a GBNF grammar before generating.",
+  "modelRemovedLabel": "Removed model",
+  "desktopLoadPhasePreparing": "Preparing…",
+  "desktopLoadPhaseWeights": "Loading weights {percent}",
+  "desktopLoadPhaseContext": "Creating context",
+  "desktopLoadPhaseProjector": "Loading vision projector",
+  "desktopLoadPhaseFinishing": "Finishing…",
+  "desktopLoadPhaseDone": "Loaded",
+  "desktopMcpUndoRemoved": "Server removed",
+  "desktopMcpUndoAction": "Undo",
+  "@desktopLoadPhaseWeights": {
+    "placeholders": {
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopUsageTitle": "Usage",
+  "desktopUsageRate": "Requests per minute · last 30 minutes",
+  "desktopUsageTotals": "{requests} requests · {errors} errors\n{prompt} prompt tokens · {completion} completion tokens\nAverage completion: {speed} tok/s · average answer: {seconds} s",
+  "@desktopUsageTotals": {
+    "placeholders": {
+      "requests": {
+        "type": "int"
+      },
+      "errors": {
+        "type": "int"
+      },
+      "prompt": {
+        "type": "int"
+      },
+      "completion": {
+        "type": "int"
+      },
+      "speed": {
+        "type": "String"
+      },
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopUsageClients": "Clients",
+  "desktopUsageModels": "Models",
+  "desktopUsageGroup": "{name} · {requests} requests · {tokens} tokens · last seen {time}",
+  "@desktopUsageGroup": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "requests": {
+        "type": "int"
+      },
+      "tokens": {
+        "type": "int"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopBenchTitle": "Speed test",
+  "desktopBenchHint": "Loads this model with the settings above. Measures prompt processing and generation at three context fills, up to the loaded context limit.",
+  "desktopBenchStart": "Speed test",
+  "desktopBenchCancel": "Cancel",
+  "desktopBenchError": "Speed test failed. Check that the model can load and try again.",
+  "desktopBenchLast": "Last test: {time}",
+  "@desktopBenchLast": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopBenchFill": "Prompt tokens",
+  "desktopBenchPp": "Processing (pp)",
+  "desktopBenchTg": "Generation (tg)",
+  "desktopBenchRate": "{speed} tok/s",
+  "@desktopBenchRate": {
+    "placeholders": {
+      "speed": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopModelPresetLabel": "Variant",
+  "desktopModelPresetDefault": "Default",
+  "desktopModelPresetSaveAs": "Save as…",
+  "desktopModelPresetManage": "Manage…",
+  "desktopModelPresetName": "Variant name",
+  "desktopModelPresetNameError": "Enter a unique, non-empty name.",
+  "desktopModelPresetSuggestions": "Suggestions",
+  "desktopModelPresetPrecise": "Precise",
+  "desktopModelPresetCreative": "Creative",
+  "desktopModelPresetUpdate": "Update variant",
+  "desktopModelPresetRename": "Rename variant",
+  "desktopModelPresetDelete": "Delete variant",
+  "desktopModelPresetEmpty": "No variants saved.",
+  "desktopModelPresetModified": "Modified",
+  "mermaidDiagram": "Diagram",
+  "mermaidCode": "Code",
+  "mermaidCopySource": "Copy source",
+  "mermaidUnsupported": "Diagram type not supported",
+  "desktopTrayWhenServing": "Keep running in the tray when the window closes",
+  "desktopTrayAlways": "Always keep running in the tray",
+  "desktopTrayOpen": "Open OnDevice LLM",
+  "desktopTrayRunning": "Server: running on {model}",
+  "@desktopTrayRunning": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopTrayStopped": "Server: stopped",
+  "desktopTrayStart": "Start server",
+  "desktopTrayStop": "Stop server",
+  "desktopTrayServeModel": "Serve model",
+  "desktopTrayQuit": "Quit",
+  "desktopTrayTooltipServing": "OnDevice LLM — serving {model}",
+  "@desktopTrayTooltipServing": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopTrayTooltip": "OnDevice LLM",
+  "desktopTrayStillRunning": "Still running in the tray",
+  "desktopTrayActionFailed": "The tray action could not finish. Check the server and model status.",
+  "desktopPoolModels": "Models",
+  "desktopPoolJit": "Load other models on request",
+  "desktopPoolJitHint": "A request's model field selects any installed model.",
+  "desktopPoolMaxLoaded": "Keep at most {count} extra models loaded",
+  "@desktopPoolMaxLoaded": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "desktopPoolDecrease": "Keep fewer models",
+  "desktopPoolIncrease": "Keep more models",
+  "desktopPoolIdleUnload": "Unload after idle",
+  "desktopPoolMinutes": "{count} minutes",
+  "@desktopPoolMinutes": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "desktopPoolNever": "Never",
+  "desktopPoolLoaded": "Loaded extra models",
+  "desktopPoolLoading": "Loading",
+  "desktopPoolAnswering": "Answering",
+  "desktopPoolIdle": "Idle",
+  "desktopPoolLastUsed": "Last used {time}",
+  "@desktopPoolLastUsed": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopPoolEject": "Eject extra model",
+  "desktopPoolClientIds": "Model IDs for clients",
+  "desktopCompareTitle": "Compare",
+  "desktopComparePrompt": "Prompt",
+  "desktopCompareSystem": "System prompt",
+  "desktopCompareSequential": "One after the other",
+  "desktopCompareParallel": "Side by side",
+  "desktopCompareRun": "Run",
+  "desktopCompareStop": "Stop",
+  "desktopComparePickModel": "Choose a model",
+  "desktopCompareUnload": "Unload",
+  "desktopCompareCopy": "Copy answer",
+  "desktopCompareLoading": "Loading model",
+  "desktopCompareBusy": "Chat engine is busy. Try again when the chat answer finishes.",
+  "desktopCompareFirstToken": "First token",
+  "desktopCompareSpeed": "Speed",
+  "desktopCompareTokens": "Tokens",
+  "desktopCompareTotal": "Total time",
+  "displayHzPhoneLimited": "The phone is holding the app at {hz} Hz (battery or power mode).",
+  "@displayHzPhoneLimited": {
+    "placeholders": {
+      "hz": {
+        "type": "int"
+      }
+    }
+  },
+  "desktopMtpLabel": "Multi-token prediction (MTP)",
+  "desktopMtpHint": "Use the model’s own prediction heads when available. A selected draft model takes priority. Applies on the next load.",
+  "desktopVoiceMicPrivacy": "Windows blocked the microphone. Open Windows Settings > Privacy > Microphone and allow desktop apps to use the microphone.",
+  "desktopMtpHeadLabel": "MTP head file",
+  "desktopMtpHeadOff": "Off",
+  "desktopMtpHeadAuto": "Auto: {name}",
+  "@desktopMtpHeadAuto": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopMtpHeadAutoNone": "Auto (none found)",
+  "desktopMtpHeadAdd": "Add a file…",
+  "desktopMtpHeadHint": "A small mtp-*.gguf head (like LM Studio's MTP sidecar) that drafts tokens from the model's own state. Same answers, faster. Auto uses the matching head beside the model or in LM Studio's folder. Applies on the next load.",
+  "desktopMtpHeadTokens": "Tokens drafted per step",
+  "desktopDeepLoad": "Advanced load",
+  "desktopDeepSampling": "Advanced sampling",
+  "desktopDeepSpeculative": "Advanced speculative decoding",
+  "desktopDeepMemory": "Advanced memory",
+  "desktopDeepReset": "Reset model override",
+  "desktopDeepLoadHint": "Applies on the next model load.",
+  "desktopDeepSamplingHint": "Applies to the next answer.",
+  "desktopDeepSpeculativeHint": "Adjusts speculative decoding on the next load.",
+  "desktopDeepMemoryHint": "Controls reuse within the current model session.",
+  "desktopDeepMicroBatchSize": "Microbatch size",
+  "desktopDeepBatchThreads": "Prefill threads",
+  "desktopDeepVCacheType": "V cache type",
+  "desktopDeepRopeScaling": "RoPE scaling",
+  "desktopDeepRopeFreqBase": "RoPE base frequency",
+  "desktopDeepRopeFreqScale": "RoPE frequency scale",
+  "desktopDeepYarnExtFactor": "YaRN extension factor",
+  "desktopDeepYarnAttnFactor": "YaRN attention factor",
+  "desktopDeepYarnBetaFast": "YaRN fast beta",
+  "desktopDeepYarnBetaSlow": "YaRN slow beta",
+  "desktopDeepYarnOrigCtx": "YaRN original context",
+  "desktopDeepSeed": "Random seed (0 = random)",
+  "desktopDeepTypicalP": "Typical P",
+  "desktopDeepTopNSigma": "Top N sigma",
+  "desktopDeepXtcProbability": "XTC probability",
+  "desktopDeepXtcThreshold": "XTC threshold",
+  "desktopDeepRepeatLastN": "Repetition window",
+  "desktopDeepFrequencyPenalty": "Frequency penalty",
+  "desktopDeepDryMultiplier": "DRY multiplier",
+  "desktopDeepDryBase": "DRY base",
+  "desktopDeepDryAllowedLength": "DRY allowed length",
+  "desktopDeepDryPenaltyLastN": "DRY penalty window",
+  "desktopDeepStopSequences": "Stop strings (one per line)",
+  "desktopDeepResponseFormat": "Response format",
+  "desktopDeepJsonSchema": "JSON schema",
+  "desktopDeepGrammar": "GBNF grammar",
+  "desktopDeepDraftMaxTokens": "Draft tokens per step",
+  "desktopDeepPromptCache": "Reuse conversation context",
+  "desktopDeepImageMaxTokens": "Photo token budget",
+  "desktopDeepSamplerOrder": "Sampler order (one name per line)",
+  "desktopDeepSameAsK": "Same as K",
+  "desktopDeepVramReserveMb": "VRAM reserve (MB)",
+  "desktopDeepVramReserveHint": "Memory to leave free for other apps when a model loads.",
+  "avx512CpuVariant": "CPU variant",
+  "avx512Auto": "Automatic",
+  "avx512Variant": "AVX512",
+  "avx512Avx2": "AVX2",
+  "avx512Compat": "SSE4.2 (compatibility)",
+  "avx512Available": "usable",
+  "avx512Unavailable": "unavailable",
+  "avx512Detected": "Detected by Windows: AVX512 {avx512}, AVX2 {avx2}. Applies on the next model load.",
+  "avx512Fallback": "CPU variant fallback details",
+  "avx512OsFallback": "The requested CPU instructions are unavailable in Windows. Using {variant}.",
+  "avx512LoadFallback": "The requested CPU DLL or one of its dependencies could not be loaded. Using {variant}.",
+  "nativeSetUseMmap": "Memory map model",
+  "nativeSetUseMlock": "Lock model in memory",
+  "nativeSetMainGpu": "Main GPU index",
+  "nativeSetSplitMode": "GPU split mode",
+  "nativeSetOffloadKv": "Offload KV operations",
+  "nativeSetSwaFull": "Full sliding-window cache",
+  "nativeSetNCpuMoe": "CPU expert layers (-1 = auto)",
+  "nativeSetExpertsUsed": "Experts per token (-1 = model default)",
+  "nativeSetDraftGpuLayers": "Draft model GPU layers (0 = CPU)",
+  "nativeSetDraftMinP": "Draft confidence floor",
+  "nativeSetPromptStoreMb": "Saved prompts RAM (MB, -1 = auto)",
+  "nativeSetKeepTokens": "Keep first tokens",
+  "nativeSetContextOverflow": "Context overflow",
+  "nativeSetLogitBias": "Token logit biases (JSON)",
+  "nativeSetSplitNone": "None",
+  "nativeSetSplitLayer": "By layer",
+  "nativeSetSplitRow": "By row",
+  "nativeSetOverflowTrim": "Trim old exchanges",
+  "nativeSetOverflowShift": "Shift old tokens",
+  "nativeSetOverflowStop": "Stop at context limit",
+  "tuneCancel": "Cancel tuning",
+  "tuneError": "Measurement or local save failed. Check the model and try again.",
+  "tuneReceipt": "Benchmark receipt · {date}",
+  "tuneExport": "Export receipt to JSON",
+  "tuneExported": "Receipt saved.",
+  "tuneUnknown": "Unknown backend",
+  "tunePromptClass": "Prompt class",
+  "tuneMedianRate": "Median tok/s",
+  "tuneSpreadRate": "Spread tok/s",
+  "tuneTtft": "TTFT (ms)",
+  "tunePromptRate": "Prompt tok/s",
+  "tuneAcceptance": "Draft acceptance (0–1)",
+  "tuneShortPrompt": "Short",
+  "tuneLongPrompt": "Long prefill",
+  "tuneCodePrompt": "Code",
+  "tuneUnavailable": "Unavailable",
+  "tuneReceiptDetails": "Receipt details",
+  "tuneBenchHint": "Three measured rounds per prompt class, after warm-up; prompt caching is disabled.",
+  "projectorDevice": "Vision projector",
+  "projectorAuto": "Auto",
+  "projectorGpu": "Video memory",
+  "projectorCpu": "System memory",
+  "projectorDeviceHelp": "Where the photo encoder's weights are kept. Auto keeps them in system memory when that lets the whole model fit on the GPU; photos are still processed on the GPU.",
+  "runSendToFirstText": "Send to first text",
+  "runAppPreparation": "App preparation",
+  "runPromptSetup": "Prompt setup",
+  "runPromptReading": "Prompt reading",
+  "runCheckpoints": "Checkpoints",
+  "runProviderAnswered": "Provider answered",
+  "runProviderBusy": "Provider busy",
+  "runProviderWait": "{status}, waited {seconds} s",
+  "@runProviderWait": {"placeholders": {"status": {"type": "int"}, "seconds": {"type": "int"}}},
+  "runWarmup": "Warm-up",
+  "poolPinPin": "Pin model",
+  "poolPinUnpin": "Unpin model",
+  "toolCutMiddleMarker": "\n[… middle cut to fit the context …]\n",
+  "noticePreparingToolCall": "Preparing a tool call…",
+  "noticeProviderWaiting": "Waiting for the provider to answer… {seconds} s",
+  "@noticeProviderWaiting": {"placeholders": {"seconds": {"type": "int"}}},
+  "noticeProviderBusy": "The provider is busy ({status}). Trying again in {seconds} s…",
+  "@noticeProviderBusy": {"placeholders": {"status": {"type": "int"}, "seconds": {"type": "int"}}},
+  "noticePreparingTool": "Preparing {tool}…",
+  "@noticePreparingTool": {
+    "placeholders": {
+      "tool": {
+        "type": "String"
+      }
+    }
+  },
+  "engineFilesVerify": "Verify engine files",
+  "engineFilesOk": "OK",
+  "engineFilesMissing": "Missing",
+  "engineFilesWrongSize": "Wrong size",
+  "engineFilesChanged": "Changed",
+  "engineFilesUnreadable": "Unreadable",
+  "engineFilesUnverified": "Unverified: this build has no engine manifest.",
+  "engineFilesMalformed": "The engine manifest cannot be read. Reinstalling the app restores it.",
+  "engineFilesProgress": "Verified {done} of {total} files.",
+  "engineFilesRepair": "Engine files need repair: {files}. Reinstalling the app restores them.",
+  "@engineFilesProgress": {
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "@engineFilesRepair": {
+    "placeholders": {
+      "files": {
+        "type": "String"
+      }
+    }
+  },
+  "modelAnalyzing": "Analyzing…",
+  "modelAnalyzingDetail": "Checking the file and reading its settings…",
+  "@modelAnalyzing": {"description": "A downloaded model whose file is still being checked and read; no progress to show."},
+  "desktopBasic": "Basic",
+  "desktopAdvanced": "Advanced",
+  "desktopChatTitle": "Chat",
+  "desktopCreateTitle": "Create",
+  "desktopChatExplanation": "Talk with a model and keep your conversations here.",
+  "desktopModelsExplanation": "Import, download and load the models used on this computer.",
+  "desktopCreateExplanation": "Create pictures and videos, or upscale an existing picture.",
+  "desktopSettingsExplanation": "Choose how the app looks and how your models answer.",
+  "desktopLeanPrompt": "Lean system prompt",
+  "desktopLeanPromptHint": "Use minimal app instructions for chat. Turn off to restore the detailed writing guidance. Your own instructions still apply.",
+  "desktopRemoteOff": "Off · the model runs on this computer",
+  "desktopRemoteExplanation": "Connect to a server you run, such as LM Studio, Ollama or llama-server, or a hosted API with your own key. Messages and web evidence go to that connection instead of a model on this computer.",
+  "desktopOptimize": "Optimize for this PC",
+  "desktopOptimizeHint": "Finds the settings that get the most out of your hardware for this model: it tries several setups (GPU layers, memory, flash attention, MTP), measures the speed of each, checks that the answers stay just as accurate, and keeps the fastest. This takes a couple of minutes for a small model and several minutes for a large one; the model can't be used for chat meanwhile.",
+  "desktopOptimizeSaved": "Optimized settings saved for this model.",
+  "desktopOptimizeBaseline": "Measuring the current settings…",
+  "desktopOptimizeProgress": "{percent}% done",
+  "@desktopOptimizeProgress": {"placeholders": {"percent": {"type": "int"}}},
+  "desktopOptimizeStep": "Trying setup {n} of {total}…",
+  "@desktopOptimizeStep": {"placeholders": {"n": {"type": "int"}, "total": {"type": "int"}}},
+  "desktopOptimizeKept": "The optimized settings were not faster, so the current ones were kept.",
+  "desktopOptimizeRates": "Before: {before} tok/s · After: {after} tok/s",
+  "@desktopOptimizeRates": {
+    "placeholders": {
+      "before": {
+        "type": "String"
+      },
+      "after": {
+        "type": "String"
+      }
+    }
+  }
 }

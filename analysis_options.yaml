@@ -9,6 +9,7 @@ analyzer:
     - artifacts/**
     - android/**
     - ios/**
+    - windows/**
 
 linter:
   rules:

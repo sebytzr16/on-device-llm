@@ -127,6 +127,12 @@ void main() {
                 'ALTER TABLE memories DROP COLUMN $column',
               );
             }
+            await db.customStatement(
+              'ALTER TABLE models DROP COLUMN projector_json',
+            );
+            await db.customStatement(
+              'ALTER TABLE models DROP COLUMN parts_json',
+            );
             await db.customStatement('PRAGMA user_version = 10');
             await db.customStatement(
               'ALTER TABLE knowledge_chunks DROP COLUMN page_number',

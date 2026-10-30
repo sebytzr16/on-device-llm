@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/services.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
@@ -546,8 +547,15 @@ class VoiceAudioChannel {
 
   /// False when the microphone permission was refused.
   static Future<bool> startMic() async =>
-      await _channel.invokeMethod<bool>('startMic') ?? false;
+      await _channel.invokeMethod<bool>('startMic', {
+        if (kDebugMode && const String.fromEnvironment('VOICE_WAV').isNotEmpty)
+          'wav': const String.fromEnvironment('VOICE_WAV'),
+      }) ??
+      false;
   static Future<void> stopMic() => _channel.invokeMethod<void>('stopMic');
+
+  static Future<bool> micPrivacyDenied() async =>
+      await _channel.invokeMethod<bool>('micPrivacyDenied') ?? false;
 
   /// Completes when heard (true) or cut short by [stopPlayback] (false).
   static Future<bool> play(SpeechAudio audio) async =>

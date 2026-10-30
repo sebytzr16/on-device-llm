@@ -1,23 +1,31 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:drift/drift.dart' as drift;
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/l10n/l10n.dart';
+import '../../../../core/platform/desktop_host.dart';
 import '../../../../core/providers/shared_providers.dart';
 import '../../../../data/local/database/app_database.dart';
 import '../../../../data/storage/download_manager.dart';
 import '../../../../data/storage/download_jobs.dart';
 import '../../../../data/storage/model_storage.dart';
+import '../../../../data/storage/model_folders.dart';
 import '../../../../data/storage/gguf_metadata.dart';
+import '../../../../data/storage/gguf_split.dart';
+import '../../../../inference/engine/llama_engine.dart';
+import '../../../../inference/engine/diffusiongemma_engine.dart';
 import 'model_recommendations_provider.dart';
 import '../../../adapters/adapter_store.dart';
 import '../../../benchmark/benchmark.dart';
 import '../../../chat/presentation/providers/chat_model_pins.dart';
+import '../../../chat/presentation/providers/chat_provider.dart';
 import '../../../settings/domain/entities/inference_settings.dart';
 import '../../../presets/presentation/providers/presets_provider.dart';
 import '../../../settings/presentation/providers/effective_settings_provider.dart';
@@ -26,6 +34,7 @@ import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../settings/presentation/widgets/settings_labels.dart';
 import '../../domain/entities/model_catalog.dart';
 import '../../domain/entities/model_info.dart';
+import 'retired_model_names.dart';
 
 /// The note for a load whose context the bridge shortened, to the model's
 /// trained length or to what fits in the memory free right now
@@ -59,6 +68,8 @@ class ModelManagerState {
   final List<ModelInfo> catalog;
   final Map<String, DownloadProgress> downloads;
   final String? loadedModelId, error;
+  final String? loadingModelId;
+  final double? loadProgress;
   final bool isLoadingModel, isImporting;
 
   /// Catalog ids whose vision projector file is present on disk.
@@ -72,10 +83,16 @@ class ModelManagerState {
 
   /// The optional source-check model is on disk.
   final bool supportCheckReady;
+
+  /// Catalog ids whose file is being hashed, read for its settings or
+  /// joined by its projector: no progress to show, not usable yet.
+  final Set<String> preparing;
   const ModelManagerState({
     this.catalog = const [],
     this.downloads = const {},
     this.loadedModelId,
+    this.loadingModelId,
+    this.loadProgress,
     this.error,
     this.isLoadingModel = false,
     this.isImporting = false,
@@ -83,6 +100,7 @@ class ModelManagerState {
     this.embeddingReady = false,
     this.embeddingMediaReady = false,
     this.supportCheckReady = false,
+    this.preparing = const {},
   });
 
   /// Progress key of a projector download.
@@ -102,6 +120,10 @@ class ModelManagerState {
     List<ModelInfo>? catalog,
     Map<String, DownloadProgress>? downloads,
     String? loadedModelId,
+    String? loadingModelId,
+    bool clearLoadingModel = false,
+    double? loadProgress,
+    bool clearLoadProgress = false,
     bool clearLoaded = false,
     bool? isLoadingModel,
     bool? isImporting,
@@ -111,10 +133,15 @@ class ModelManagerState {
     bool? embeddingReady,
     bool? embeddingMediaReady,
     bool? supportCheckReady,
+    Set<String>? preparing,
   }) => ModelManagerState(
     catalog: catalog ?? this.catalog,
     downloads: downloads ?? this.downloads,
     loadedModelId: clearLoaded ? null : loadedModelId ?? this.loadedModelId,
+    loadingModelId: clearLoadingModel
+        ? null
+        : loadingModelId ?? this.loadingModelId,
+    loadProgress: clearLoadProgress ? null : loadProgress ?? this.loadProgress,
     isLoadingModel: isLoadingModel ?? this.isLoadingModel,
     isImporting: isImporting ?? this.isImporting,
     error: clearError ? null : error ?? this.error,
@@ -122,13 +149,27 @@ class ModelManagerState {
     embeddingReady: embeddingReady ?? this.embeddingReady,
     embeddingMediaReady: embeddingMediaReady ?? this.embeddingMediaReady,
     supportCheckReady: supportCheckReady ?? this.supportCheckReady,
+    preparing: preparing ?? this.preparing,
   );
 }
 
+/// The files and settings a chat model was loaded with.
+typedef ChatLoad = ({
+  String modelId,
+  String modelPath,
+  InferenceSettings settings,
+  String? mmprojPath,
+  String? draftModelPath,
+});
+
 class ModelManagerNotifier extends Notifier<ModelManagerState> {
   final _downloader = DownloadManager();
+  final _projectorDownloads = <String, Future<void>>{};
   final _subscriptions = <String, StreamSubscription<DownloadProgress>>{};
+  StreamSubscription<double?>? _loadSubscription;
+  Timer? _loadProgressTimer;
   bool _alive = true;
+  Completer<void>? _fileOperation;
   late Future<void> ready;
   @override
   ModelManagerState build() {
@@ -138,7 +179,15 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         .listen(
           (rows) {
             if (_alive) {
-              state = state.copyWith(catalog: rows.map(_fromRow).toList());
+              // An MTP head is a sidecar the loader attaches by itself, not
+              // a model to pick (a hub download of one showed up as "mtp
+              // gemma 4 26B A4B it", 2026-10-28).
+              state = state.copyWith(
+                catalog: rows
+                    .map(_fromRow)
+                    .where((m) => !isMtpHeadFile(m.fileName))
+                    .toList(),
+              );
             }
           },
           onError: (Object e) {
@@ -150,6 +199,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     ready = Future.microtask(_seed);
     ref.onDispose(() {
       _alive = false;
+      _stopLoadProgress();
       unawaited(sub.cancel());
       _downloader.dispose();
       for (final s in _subscriptions.values) {
@@ -160,14 +210,38 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
   }
 
   ModelInfo _fromRow(Model r) => ModelInfo(
+    parts: r.partsJson == null
+        ? const []
+        : [
+            for (final part in jsonDecode(r.partsJson!) as List)
+              ModelDownloadPart.fromJson(part as Map<String, dynamic>),
+          ],
+    projector: r.projectorJson == null
+        ? null
+        : VisionProjector.fromJson(
+            jsonDecode(r.projectorJson!) as Map<String, dynamic>,
+          ),
     id: r.id,
-    displayName: r.displayName,
+    // Hub rows saved before tidyName kept the raw file stem
+    // ("Gemma-4-E4B-Q8_K_P"); a name the user changed is left alone.
+    displayName:
+        r.id.startsWith('hf-') && r.fileName.endsWith('-${r.displayName}.gguf')
+        ? ModelQuantization.tidyName(r.displayName)
+        : r.displayName,
     fileName: r.fileName,
     downloadUrl: r.downloadUrl,
     sha256: r.sha256,
     sizeBytes: r.sizeBytes,
-    family: ModelFamily.values.byName(r.family),
-    quantization: ModelQuantization.values.byName(r.quantization),
+    // A family saved by a newer or older build reads as other, not a throw.
+    family: ModelFamily.values.asNameMap()[r.family] ?? ModelFamily.other,
+    // Hub rows saved before ModelQuantization.of stored Q4_K_M for any
+    // quant name outside the enum (Q8_K_P, Q5_K_S); the file name decides.
+    quantization:
+        r.id.startsWith('hf-') &&
+            ModelQuantization.of(r.fileName) != ModelQuantization.unknown
+        ? ModelQuantization.of(r.fileName)
+        : ModelQuantization.values.asNameMap()[r.quantization] ??
+              ModelQuantization.of(r.fileName),
     isDownloaded: r.isDownloaded,
     localPath: r.localPath,
     downloadedAt: r.downloadedAt,
@@ -180,6 +254,14 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         .read(appDatabaseProvider)
         .upsertModel(
           ModelsCompanion.insert(
+            partsJson: drift.Value(
+              m.parts.isEmpty
+                  ? null
+                  : jsonEncode(m.parts.map((f) => f.toJson()).toList()),
+            ),
+            projectorJson: drift.Value(
+              m.projector == null ? null : jsonEncode(m.projector!.toJson()),
+            ),
             id: m.id,
             displayName: m.displayName,
             fileName: m.fileName,
@@ -198,17 +280,26 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         );
   }
 
+  Future<bool> _modelFilesExist(String path) async {
+    try {
+      await ModelStorage.ggufFilesBeside(path);
+      return true;
+    } on FormatException {
+      return false;
+    }
+  }
+
   Future<void> _seed() async {
     try {
       final db = ref.read(appDatabaseProvider);
-      for (final m in bundledCatalog) {
+      for (final m in catalogModels) {
         if (await db.getModel(m.id) == null) await save(m);
       }
       await refreshVision();
       final models = await db.allModels();
       for (final m in models) {
         if (m.isDownloaded &&
-            (m.localPath == null || !await File(m.localPath!).exists())) {
+            (m.localPath == null || !await _modelFilesExist(m.localPath!))) {
           await (db.update(db.models)..where((t) => t.id.equals(m.id))).write(
             const ModelsCompanion(
               isDownloaded: drift.Value(false),
@@ -218,13 +309,20 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         }
         // Entries the catalog no longer offers disappear unless the file
         // is still here (then Remove takes the row with the file).
-        if (retiredCatalogIds.contains(m.id) &&
+        // The desktop offers its own list: phone entries seeded by earlier
+        // builds (Qwen 2B, 1.7B…) go the same way.
+        final phoneOnly =
+            DesktopHost.active &&
+            bundledCatalog.any((b) => b.id == m.id) &&
+            !catalogModels.any((c) => c.id == m.id);
+        if ((retiredCatalogIds.contains(m.id) || phoneOnly) &&
             !(m.isDownloaded && m.localPath != null)) {
           await ModelStorage.deletePartial(m.fileName);
           await db.deleteModel(m.id);
         }
       }
       await _adoptCatalogCopies(db);
+      await _adoptOrphanFiles(db);
       // Files already on the phone get their makers' sampling read once
       // (request 2026-10-04); local, header only.
       final recommendations = ref.read(modelRecommendationsProvider.notifier);
@@ -251,7 +349,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
   /// joined the catalog.
   Future<void> _adoptCatalogCopies(AppDatabase db) async {
     final rows = await db.allModels();
-    for (final entry in bundledCatalog) {
+    for (final entry in catalogModels) {
       final own = rows.where((r) => r.id == entry.id).firstOrNull;
       final hash = entry.sha256?.toLowerCase();
       if (own == null || own.isDownloaded || hash == null) continue;
@@ -281,11 +379,103 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
           isDownloaded: const drift.Value(true),
           localPath: drift.Value(path),
           downloadedAt: drift.Value(copy.downloadedAt ?? DateTime.now()),
+          projectorJson: drift.Value(copy.projectorJson),
         ),
       );
       await db.deleteModel(copy.id);
       await _moveModelId(copy.id, entry.id);
     }
+  }
+
+  /// A finished GGUF in the models folder with no row (a Hub download whose
+  /// row was lost, a file copied in by hand) is listed again rather than
+  /// taking disk space unseen. Hub files keep their `hf-<hash>` id; a
+  /// projector of the same stem is paired with it. Header only: no hashing.
+  Future<void> _adoptOrphanFiles(AppDatabase db) async {
+    if (!DesktopHost.active) return;
+    final rows = await db.allModels();
+    final known = <String>{
+      for (final r in rows) r.fileName.toLowerCase(),
+      for (final r in rows)
+        if (r.localPath != null) p.basename(r.localPath!).toLowerCase(),
+      for (final r in rows)
+        if (_fromRow(r).projector != null)
+          _fromRow(r).projector!.fileName.toLowerCase(),
+      for (final v in visionProjectors.values) v.fileName.toLowerCase(),
+      embeddingModel.fileName.toLowerCase(),
+      if (embeddingModel.projector != null)
+        embeddingModel.projector!.fileName.toLowerCase(),
+      supportCheckModel.fileName.toLowerCase(),
+      for (final m in catalogModels) m.fileName.toLowerCase(),
+    };
+    final List<File> files;
+    try {
+      files = (await ModelStorage.modelsDir())
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.toLowerCase().endsWith('.gguf'))
+          .where((f) => !known.contains(p.basename(f.path).toLowerCase()))
+          .where((f) => !isMtpHeadFile(f.path))
+          .where((f) => (GgufSplit.parse(p.basename(f.path))?.index ?? 1) == 1)
+          .toList();
+    } catch (_) {
+      return;
+    }
+    final hubPrefix = _hubPrefix;
+    final stem = _fileStem;
+    final projectors = [
+      for (final f in files)
+        if (p.basename(f.path).toLowerCase().contains('mmproj')) f,
+    ];
+    for (final file in files) {
+      final name = p.basename(file.path);
+      if (name.toLowerCase().contains('mmproj')) continue;
+      try {
+        final parts = await ModelStorage.ggufFilesBeside(file.path);
+        var size = 0;
+        for (final part in parts) {
+          size += await part.length();
+        }
+        final metadata = await GgufMetadata.inspect(file.path);
+        final hub = hubPrefix.firstMatch(name);
+        final projector = projectors
+            .where((f) => stem(p.basename(f.path)) == stem(name))
+            .firstOrNull;
+        final info = ModelInfo(
+          id: hub != null ? 'hf-${hub.group(1)}' : 'local-${stem(name)}',
+          displayName: ModelQuantization.tidyName(
+            GgufSplit.parse(hub?.group(2) ?? name)?.displayName ??
+                hub?.group(2) ??
+                name,
+          ),
+          fileName: name,
+          sizeBytes: size,
+          family:
+              _familyFromArchitecture(metadata.architecture) ??
+              ModelFamily.other,
+          quantization: ModelQuantization.of(name),
+          parameterCountB:
+              metadata.parameterCount == null ||
+                  metadata.parameterCount! < 500000000
+              ? null
+              : (metadata.parameterCount! / 1000000000).round(),
+          license: 'Found in the models folder · check publisher license',
+          projector: projector == null
+              ? null
+              : VisionProjector(
+                  fileName: p.basename(projector.path),
+                  downloadUrl: '',
+                  sha256: '',
+                  sizeBytes: await projector.length(),
+                ),
+        );
+        if (await db.getModel(info.id) != null) continue;
+        await save(info, localPath: file.path);
+      } catch (_) {
+        // Not a readable GGUF (still being copied, or another tool's file).
+      }
+    }
+    await refreshVision();
   }
 
   /// Keys that name a model (profile, pins, benchmark, draft model) move
@@ -331,8 +521,8 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     for (final id in pending) {
       if (!_alive) return;
       if (!(await DownloadJobs.active()).contains(id)) continue;
-      // The voice packs resume through their own provider.
-      if (id.startsWith('voice:')) continue;
+      // The voice packs and image models resume through their own providers.
+      if (id.startsWith('voice:') || id.startsWith('image-gen:')) continue;
       if (id == ModelManagerState.embeddingMediaKey) {
         if (state.embeddingMediaReady) {
           await _downloader.pause(id);
@@ -358,7 +548,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         final modelId = id.substring(0, id.length - ':vision'.length);
         final model = models.where((m) => m.id == modelId).firstOrNull;
         if (model == null ||
-            !visionProjectors.containsKey(modelId) ||
+            (model.projector ?? visionProjectors[modelId]) == null ||
             state.vision.contains(modelId)) {
           await _downloader.pause(id);
           await DownloadJobs.remove(id);
@@ -371,6 +561,11 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
             model.isDownloaded ||
             model.downloadUrl == null ||
             model.sha256 == null) {
+          // A job left behind by a finished download can leave its
+          // abandoned .part (gigabytes) beside the verified file.
+          if (model?.localPath case final path? when model!.isDownloaded) {
+            await DownloadManager.dropStalePart(File(path));
+          }
           await _downloader.pause(id);
           await DownloadJobs.remove(id);
         } else {
@@ -395,9 +590,13 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     if (!info.isDownloaded || info.localPath == null) {
       throw StateError('Download or import this model first.');
     }
-    state = state.copyWith(isLoadingModel: true, clearError: true);
+    state = state.copyWith(
+      isLoadingModel: true,
+      loadingModelId: info.id,
+      clearLoadProgress: true,
+      clearError: true,
+    );
     try {
-      final projector = visionProjectors[info.id];
       final resolved =
           settings ??
           resolveSettings(
@@ -417,33 +616,192 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
             },
             projectLabel: ref.read(currentProjectProvider)?.name ?? 'Project',
           ).effective;
+      // A local server sharing this runtime keeps its model on its own.
+      await ref.read(engineHandoffProvider)?.call(info.id);
       final engine = ref.read(llamaEngineProvider);
+      if (info.id == diffusionGemmaModelId) {
+        if (!DesktopHost.active || !Platform.isWindows) {
+          throw UnsupportedError('DiffusionGemma requires Windows desktop.');
+        }
+        await engine.unload();
+        await ref.read(diffusionGemmaEngineProvider).loadModel(info.localPath!);
+        if (_alive) {
+          state = state.copyWith(
+            loadedModelId: info.id,
+            isLoadingModel: false,
+            clearLoadingModel: true,
+            clearLoadProgress: true,
+          );
+        }
+        return;
+      }
+      ref.read(diffusionGemmaEngineProvider).dispose();
       final loads = engine.loadCount;
-      await engine.loadModel(
-        modelPath: info.localPath!,
-        settings: await _resolveBackend(resolved),
-        mmprojPath: projector != null && state.vision.contains(info.id)
-            ? (await ModelStorage.modelFile(projector.fileName)).path
-            : null,
-        adapters: await ref.read(adaptersProvider.notifier).resolved(info.id),
-        draftModelPath: draftPathFor(info, resolved.draftModelId),
-      );
+      double? pendingProgress;
+      _loadSubscription = engine.loadProgressChanges.listen((value) {
+        pendingProgress = value;
+        _loadProgressTimer ??= Timer(const Duration(milliseconds: 100), () {
+          _loadProgressTimer = null;
+          if (_alive &&
+              state.isLoadingModel &&
+              state.loadProgress != pendingProgress) {
+            state = state.copyWith(
+              loadProgress: pendingProgress,
+              clearLoadProgress: pendingProgress == null,
+            );
+          }
+        });
+      });
+      _chatLoad = await _loadOn(engine, info, resolved);
       if (_alive) {
-        state = state.copyWith(loadedModelId: info.id, isLoadingModel: false);
-        if (engine.loadCount != loads) _noteContextCap(engine.metrics);
+        state = state.copyWith(
+          loadedModelId: info.id,
+          isLoadingModel: false,
+          clearLoadingModel: true,
+          clearLoadProgress: true,
+        );
+        if (engine.loadCount != loads) {
+          _noteContextCap(engine.metrics);
+          if (DesktopHost.active) {
+            unawaited(
+              Future(() async {
+                if (_alive && ref.mounted) {
+                  await ref.read(chatProvider.notifier).primeLoadedModel(info);
+                }
+              }),
+            );
+          }
+        }
       }
     } catch (e, st) {
       final memory = _memoryError(e);
       if (_alive) {
         state = state.copyWith(
           isLoadingModel: false,
+          clearLoadingModel: true,
+          clearLoadProgress: true,
           clearLoaded: true,
           error: '${memory ?? e}',
         );
       }
       if (memory != null) Error.throwWithStackTrace(memory, st);
       rethrow;
+    } finally {
+      _stopLoadProgress();
     }
+  }
+
+  ChatLoad? _chatLoad;
+
+  /// What the chat's loaded model was loaded with, so a memory estimate can
+  /// count what unloading it frees. Null while none is loaded.
+  ChatLoad? get loadedConfig {
+    final load = _chatLoad;
+    return load != null &&
+            !state.isLoadingModel &&
+            state.loadedModelId == load.modelId
+        ? load
+        : null;
+  }
+
+  Future<ChatLoad> _loadOn(
+    LlamaEngine engine,
+    ModelInfo info,
+    InferenceSettings resolved,
+  ) async {
+    final projector = info.projector ?? visionProjectors[info.id];
+    final draft = draftPathFor(info, resolved.draftModelId);
+    final selected = resolved.draftModelId;
+    final missingDraft =
+        selected.isNotEmpty &&
+        selected != '$mtpHeadPrefix$mtpOff' &&
+        selected != info.id &&
+        draft == null;
+    if (draft != null) {
+      final metadata = await GgufMetadata.inspect(draft);
+      if (metadata.isMtpOnly) {
+        final target = await GgufMetadata.inspect(info.localPath!);
+        final issue = metadata.mtpHeadIssueFor(target);
+        if (issue != null) throw StateError(issue);
+      }
+    }
+    // A head found on its own drafts 2 tokens a step: the best measured
+    // with real sampling (2026-10-28, E4B Q8 on a 3070: 80-88 tok/s vs
+    // 61 without the head; 3 or more drafts were slower).
+    if (draft != null &&
+        resolved.draftModelId.isEmpty &&
+        resolved.draftMaxTokens == const InferenceSettings().draftMaxTokens) {
+      resolved = resolved.copyWith(draftMaxTokens: 2);
+    }
+    final settings = await _resolveBackend(resolved);
+    final mmproj = projector != null && state.vision.contains(info.id)
+        ? (await ModelStorage.modelFile(projector.fileName)).path
+        : null;
+    await engine.loadModel(
+      modelPath: info.localPath!,
+      settings: settings,
+      mmprojPath: mmproj,
+      adapters: await ref.read(adaptersProvider.notifier).resolved(info.id),
+      draftModelPath: draft,
+    );
+    if (missingDraft) {
+      ref
+          .read(islandProvider.notifier)
+          .toast(
+            'Selected draft "$selected" is missing or unavailable. The model loaded without that draft.',
+            tone: IslandTone.warning,
+            icon: Icons.warning_amber_rounded,
+            duration: const Duration(seconds: 8),
+          );
+    }
+    return (
+      modelId: info.id,
+      modelPath: info.localPath!,
+      settings: settings,
+      mmprojPath: mmproj,
+      draftModelPath: draft,
+    );
+  }
+
+  /// What the local server answers [info]'s requests with: its model
+  /// profile over the app's settings (no chat or project layers: the server
+  /// has no chat).
+  InferenceSettings servedSettings(ModelInfo info) => resolveSettings(
+    global: ref.read(settingsProvider),
+    defaults: ref.read(settingsProvider.notifier).defaults,
+    profiles: ref.read(modelProfilesProvider),
+    preset: ref.read(presetsProvider).active,
+    chat: const {},
+    recommendations: ref.read(modelRecommendationsProvider),
+    model: info,
+  ).effective;
+
+  /// Loads [info] on the local server's own [engine] with its model
+  /// profile (no chat or project layers: the server has no chat). The
+  /// manager's own state stays about the chat's model.
+  Future<void> loadServed(ModelInfo info, LlamaEngine engine) async {
+    if (info.id == diffusionGemmaModelId) {
+      throw UnsupportedError(
+        'DiffusionGemma runs in desktop chat only; local server hosting is unavailable.',
+      );
+    }
+    if (!info.isDownloaded || info.localPath == null) {
+      throw StateError('Download or import this model first.');
+    }
+    try {
+      await _loadOn(engine, info, servedSettings(info));
+    } catch (e, st) {
+      final memory = _memoryError(e);
+      if (memory != null) Error.throwWithStackTrace(memory, st);
+      rethrow;
+    }
+  }
+
+  void _stopLoadProgress() {
+    unawaited(_loadSubscription?.cancel());
+    _loadSubscription = null;
+    _loadProgressTimer?.cancel();
+    _loadProgressTimer = null;
   }
 
   /// One line when the bridge shortened the context (report
@@ -468,23 +826,35 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       memoryRefusal(stringsFor(ref.read(settingsProvider).localeCode), e);
 
   /// The draft model's file for speculative decoding: another downloaded
-  /// catalog entry (never the model itself). Null turns speculation off.
+  /// catalog entry (never the model itself), or an MTP head file
+  /// (`mtp:<path>`). Null turns speculation off.
+  /// On the desktop an empty id is Auto: the matching MTP head, when one
+  /// is on disk ([autoMtpHead]); `mtp:off` turns it off.
   String? draftPathFor(ModelInfo info, String draftModelId) {
-    if (draftModelId.isEmpty || draftModelId == info.id) return null;
+    if (draftModelId.isEmpty) {
+      final path = info.localPath;
+      return DesktopHost.active && path != null ? autoMtpHead(path) : null;
+    }
+    if (draftModelId == info.id) return null;
+    if (draftModelId.startsWith(mtpHeadPrefix)) {
+      final path = draftModelId.substring(mtpHeadPrefix.length);
+      return path != mtpOff && File(path).existsSync() ? path : null;
+    }
     final draft = state.catalog.where((m) => m.id == draftModelId).firstOrNull;
     if (draft == null || !draft.isDownloaded || draft.localPath == null) {
       return null;
     }
-    return draft.localPath;
+    return File(draft.localPath!).existsSync() ? draft.localPath : null;
   }
 
   /// Auto is the compatibility/per-answer-speed policy: CPU. Accelerators
   /// remain explicit because changing backend reloads the model and OpenCL's
-  /// faster prompt reading trades against slower answer decoding.
+  /// faster prompt reading trades against slower answer decoding. On
+  /// Windows a discrete GPU wins at both, so the bridge chooses there.
   bool _autoCpu = false;
 
   Future<InferenceSettings> _resolveBackend(InferenceSettings s) async {
-    _autoCpu = s.backend == GpuBackend.auto;
+    _autoCpu = s.backend == GpuBackend.auto && !DesktopHost.active;
     return _autoCpu ? s.copyWith(backend: GpuBackend.cpu) : s;
   }
 
@@ -495,11 +865,17 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
 
   /// Releases the model's memory without leaving the chat. The next message
   /// loads it again.
-  Future<void> unloadModel() async {
-    if (state.isLoadingModel || ref.read(sessionBusyProvider)) {
+  /// [ownsBusy]: the caller set the session busy itself (a tuning run) and
+  /// unloads between its own loads.
+  Future<void> unloadModel({bool ownsBusy = false}) async {
+    if (state.isLoadingModel || (!ownsBusy && ref.read(sessionBusyProvider))) {
       throw StateError('Stop the current response before unloading.');
     }
+    // The local server may share this runtime: its model moves to its own
+    // first, so ejecting the chat's model does not stop the server's.
+    await ref.read(engineHandoffProvider)?.call('');
     await ref.read(llamaEngineProvider).unload();
+    ref.read(diffusionGemmaEngineProvider).dispose();
     if (_alive) state = state.copyWith(clearLoaded: true);
   }
 
@@ -513,8 +889,15 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
   }
 
   Future<void> downloadModel(ModelInfo info) async {
-    if (_subscriptions.containsKey(info.id) || info.isDownloaded) return;
-    state = state.copyWith(clearError: true);
+    if (_subscriptions.containsKey(info.id)) return;
+    if (info.isDownloaded) {
+      if (info.projector != null) await downloadVision(info);
+      return;
+    }
+    state = state.copyWith(
+      clearError: true,
+      preparing: {...state.preparing, info.id},
+    );
     _subscriptions[info.id] = _downloader.progressStream(info.id).listen((p) {
       if (_alive) {
         state = state.copyWith(downloads: {...state.downloads, info.id: p});
@@ -522,46 +905,90 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     });
     try {
       final existing = await ModelStorage.modelFile(info.fileName);
-      if (await existing.exists() &&
-          await existing.length() == info.sizeBytes &&
+      final finished =
+          info.parts.isEmpty &&
+          await existing.exists() &&
+          await existing.length() == info.sizeBytes;
+      if (finished && _alive) {
+        // Hashing a finished multi-GB file takes minutes: say so.
+        state = state.copyWith(
+          downloads: {
+            ...state.downloads,
+            info.id: DownloadProgress(
+              modelId: info.id,
+              status: DownloadStatus.verifying,
+              received: info.sizeBytes,
+              total: info.sizeBytes,
+            ),
+          },
+        );
+      }
+      if (finished &&
           await ModelStorage.validateAndHash(existing.path) == info.sha256) {
+        await DownloadManager.dropStalePart(existing);
         await _downloader.pause(info.id);
         await save(info, localPath: existing.path);
         await DownloadJobs.remove(info.id);
+        if (_alive) {
+          state = state.copyWith(
+            downloads: {...state.downloads}..remove(info.id),
+          );
+        }
         await _learnSampling(info.copyWith(localPath: existing.path));
+        if (info.projector != null) await downloadVision(info);
         return;
       }
       await DownloadJobs.add(info.id);
-      await _downloader.download(
-        modelId: info.id,
-        url: info.downloadUrl!,
-        fileName: info.fileName,
-        expectedSha256: info.sha256!,
-        expectedSize: info.sizeBytes,
-      );
+      if (info.parts.isNotEmpty) {
+        await _downloader.downloadFiles(modelId: info.id, files: info.parts);
+      } else {
+        await _downloader.download(
+          modelId: info.id,
+          url: info.downloadUrl!,
+          fileName: info.fileName,
+          expectedSha256: info.sha256!,
+          expectedSize: info.sizeBytes,
+        );
+      }
       final file = await ModelStorage.modelFile(info.fileName);
       await save(info, localPath: file.path);
       await DownloadJobs.remove(info.id);
       await _learnSampling(info.copyWith(localPath: file.path), hub: true);
+      if (info.projector != null) await downloadVision(info);
     } catch (e) {
       if (_alive && !(e is DioException && CancelToken.isCancel(e))) {
         state = state.copyWith(error: '$e');
       }
     } finally {
       await _subscriptions.remove(info.id)?.cancel();
+      if (_alive) {
+        state = state.copyWith(
+          preparing: {...state.preparing}..remove(info.id),
+        );
+      }
     }
   }
 
   Future<void> pauseDownload(String id) async {
     await DownloadJobs.remove(id);
     await _downloader.pause(id);
+    if (!id.endsWith(':vision')) {
+      await DownloadJobs.remove(ModelManagerState.visionKey(id));
+      await _downloader.pause(ModelManagerState.visionKey(id));
+    }
   }
 
   /// Which catalog models can see photos right now (projector on disk),
   /// and whether the knowledge library's embedding model is present.
   Future<void> refreshVision() async {
     final ready = <String>{};
-    for (final e in visionProjectors.entries) {
+    final rows = await ref.read(appDatabaseProvider).allModels();
+    final projectors = {
+      ...visionProjectors,
+      for (final row in rows)
+        if (_fromRow(row).projector != null) row.id: _fromRow(row).projector!,
+    };
+    for (final e in projectors.entries) {
       final f = await ModelStorage.modelFile(e.value.fileName);
       if (await f.exists() && await f.length() == e.value.sizeBytes) {
         ready.add(e.key);
@@ -705,10 +1132,35 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
 
   /// Fetches the model's vision projector so photos can be attached.
   Future<void> downloadVision(ModelInfo info) async {
-    final projector = visionProjectors[info.id];
+    final projector = info.projector ?? visionProjectors[info.id];
+    if (projector == null) return;
+    final pending = _projectorDownloads[projector.fileName];
+    if (pending != null) {
+      await pending;
+      await refreshVision();
+      return;
+    }
+    final work = _downloadVision(info);
+    _projectorDownloads[projector.fileName] = work;
+    try {
+      await work;
+    } finally {
+      unawaited(_projectorDownloads.remove(projector.fileName));
+    }
+  }
+
+  Future<void> _downloadVision(ModelInfo info) async {
+    final projector = (info.projector ?? visionProjectors[info.id]);
     if (projector == null) return;
     final key = ModelManagerState.visionKey(info.id);
     if (_subscriptions.containsKey(key) || state.vision.contains(info.id)) {
+      return;
+    }
+    final existing = await ModelStorage.modelFile(projector.fileName);
+    if (await existing.exists() &&
+        await existing.length() == projector.sizeBytes &&
+        await ModelStorage.validateAndHash(existing.path) == projector.sha256) {
+      await refreshVision();
       return;
     }
     state = state.copyWith(clearError: true);
@@ -738,47 +1190,163 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
   }
 
   Future<void> deleteVision(ModelInfo info) async {
-    final projector = visionProjectors[info.id];
+    final projector = (info.projector ?? visionProjectors[info.id]);
     if (projector == null) return;
     if (state.loadedModelId == info.id) {
       // The projector is memory-mapped by the engine; drop it first.
       ref.read(llamaEngineProvider).dispose();
+      ref.read(diffusionGemmaEngineProvider).dispose();
       state = state.copyWith(clearLoaded: true);
     }
     await DownloadJobs.remove(ModelManagerState.visionKey(info.id));
-    await ModelStorage.delete(projector.fileName);
+    final others = await ref.read(appDatabaseProvider).allModels();
+    if (!others.any(
+      (row) =>
+          row.id != info.id &&
+          (_fromRow(row).projector ?? visionProjectors[row.id])?.fileName ==
+              projector.fileName &&
+          (row.isDownloaded || row.projectorJson != null),
+    )) {
+      await ModelStorage.delete(projector.fileName);
+      await ModelStorage.deletePartial(projector.fileName);
+    }
     await refreshVision();
   }
 
+  static final _hubPrefix = RegExp(r'^([0-9a-f]{16})-(.+)\.gguf$');
+
+  /// A model or projector file name without its hub prefix, `mmproj` marker
+  /// and quantization tag, so a model and its projector compare equal.
+  static String _fileStem(String name) {
+    name = GgufSplit.parse(name)?.displayName ?? name;
+    final base = (_hubPrefix.firstMatch(name)?.group(2) ?? name)
+        .replaceAll(RegExp(r'\.gguf$', caseSensitive: false), '')
+        .replaceFirst(RegExp(r'^mmproj-', caseSensitive: false), '')
+        .replaceFirst(RegExp(r'-mmproj', caseSensitive: false), '');
+    final tag = ModelQuantization.tagOf(base);
+    final upper = base.toUpperCase();
+    return (tag == null ? upper : upper.substring(0, upper.lastIndexOf(tag)))
+        .replaceAll(RegExp(r'[^A-Z0-9]+$'), '');
+  }
+
+  /// The vision projector beside an imported model: the one whose name
+  /// matches the model's, else the only one in the folder (LM Studio and
+  /// Hugging Face keep one model per folder).
+  @visibleForTesting
+  static File? projectorBeside(String path) {
+    final List<File> projectors;
+    try {
+      projectors = File(path).parent.listSync().whereType<File>().where((f) {
+        final name = p.basename(f.path).toLowerCase();
+        return name.endsWith('.gguf') && name.contains('mmproj');
+      }).toList();
+    } catch (_) {
+      return null;
+    }
+    final stem = _fileStem(p.basename(path));
+    return projectors
+            .where((f) => _fileStem(p.basename(f.path)) == stem)
+            .firstOrNull ??
+        (projectors.length == 1 ? projectors.single : null);
+  }
+
   Future<void> importFile(String path, ModelFamily family) async {
-    if (state.isImporting) return;
+    while (_fileOperation != null) {
+      await _fileOperation!.future;
+    }
+    if (!_alive) return;
+    _fileOperation = Completer<void>();
     state = state.copyWith(isImporting: true, clearError: true);
     File? partial;
     try {
+      final sources = await ModelStorage.ggufFilesBeside(path);
+      path = sources.first.path;
       final metadata = await GgufMetadata.inspect(path);
-      final hash = await ModelStorage.validateAndHash(path);
+      final hashes = <String>[];
+      var totalSize = 0;
+      for (final source in sources) {
+        hashes.add(await ModelStorage.validateAndHash(source.path));
+        totalSize += await source.length();
+      }
+      final hash = hashes.first;
       final id = 'local-${hash.substring(0, 20)}';
-      final name = '$id.gguf';
+      final split = GgufSplit.parse(p.basename(path));
+      final names = split == null
+          ? ['$id.gguf']
+          : [
+              for (var i = 1; i <= sources.length; i++)
+                split.name(i, prefix: id),
+            ];
+      final name = names.first;
       final destination = await ModelStorage.modelFile(name);
-      if (!await destination.exists()) {
-        partial = File('${destination.path}.part');
-        await File(path).copy(partial.path);
-        if (await ModelStorage.validateAndHash(partial.path) != hash) {
+      final destinations = [
+        for (final name in names) File(p.join(destination.parent.path, name)),
+      ];
+      var requiredBytes = 0;
+      for (var i = 0; i < sources.length; i++) {
+        if (!await destinations[i].exists()) {
+          requiredBytes += await sources[i].length();
+        }
+      }
+      final capacity = await ModelStorage.availableStorage();
+      if (capacity != null &&
+          requiredBytes > 0 &&
+          capacity.availableBytes < requiredBytes + 128 * 1024 * 1024) {
+        throw const DownloadException(
+          'Not enough free storage to import all model parts.',
+        );
+      }
+      for (var i = 0; i < sources.length; i++) {
+        final target = destinations[i];
+        if (await target.exists()) {
+          if (await ModelStorage.validateAndHash(target.path) != hashes[i]) {
+            throw StateError(
+              'A different model already exists at ${names[i]}.',
+            );
+          }
+          continue;
+        }
+        partial = File('${target.path}.part');
+        await sources[i].copy(partial.path);
+        if (await ModelStorage.validateAndHash(partial.path) != hashes[i]) {
           throw StateError('Import changed while copying. Try again.');
         }
         await ModelStorage.excludeFromICloud(partial);
-        await partial.rename(destination.path);
+        await partial.rename(target.path);
         partial = null;
+      }
+      // A vision model's projector is copied along, so photos work.
+      VisionProjector? projector;
+      final source = projectorBeside(path);
+      if (source != null) {
+        final file = await ModelStorage.modelFile('$id-mmproj.gguf');
+        if (!await file.exists()) {
+          partial = File('${file.path}.part');
+          await source.copy(partial.path);
+          await partial.rename(file.path);
+          partial = null;
+        }
+        projector = VisionProjector(
+          fileName: p.basename(file.path),
+          downloadUrl: '',
+          sha256: '',
+          sizeBytes: await file.length(),
+        );
       }
       final info = ModelInfo(
         id: id,
         displayName: metadata.name?.trim().isNotEmpty == true
             ? metadata.name!.trim()
-            : p.basenameWithoutExtension(path),
+            : p.basenameWithoutExtension(split?.displayName ?? path),
         fileName: name,
-        sizeBytes: await destination.length(),
+        sizeBytes: totalSize,
         family: _familyFromArchitecture(metadata.architecture) ?? family,
-        quantization: _quantizationFromFileType(metadata.fileType),
+        // The header's file type, else the source name (Q8_K_P, MXFP4).
+        quantization:
+            _quantizationFromFileType(metadata.fileType) !=
+                ModelQuantization.unknown
+            ? _quantizationFromFileType(metadata.fileType)
+            : ModelQuantization.of(p.basename(path)),
         parameterCountB:
             metadata.parameterCount == null ||
                 metadata.parameterCount! < 500000000
@@ -786,44 +1354,95 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
             : (metadata.parameterCount! / 1000000000).round(),
         sha256: hash,
         license: 'Imported file · check publisher license',
+        projector: projector,
       );
       await save(info, localPath: destination.path);
       await _learnSampling(info.copyWith(localPath: destination.path));
     } catch (e) {
       if (_alive) state = state.copyWith(error: '$e');
     } finally {
-      if (partial != null && await partial.exists()) await partial.delete();
-      if (_alive) state = state.copyWith(isImporting: false);
+      try {
+        if (partial != null && await partial.exists()) await partial.delete();
+      } finally {
+        if (_alive) state = state.copyWith(isImporting: false);
+        _fileOperation?.complete();
+        _fileOperation = null;
+      }
     }
   }
 
-  static ModelFamily? _familyFromArchitecture(String? architecture) =>
-      switch (architecture?.toLowerCase()) {
-        'gemma' || 'gemma2' || 'gemma3' || 'gemma4' => ModelFamily.gemma,
-        'qwen' ||
-        'qwen2' ||
-        'qwen2moe' ||
-        'qwen3' ||
-        'qwen35' => ModelFamily.qwen,
-        'deepseek' || 'deepseek2' => ModelFamily.deepseek,
-        'phi2' || 'phi3' || 'phimoe' => ModelFamily.phi,
-        'llama' => ModelFamily.llama,
-        'mistral' || 'mixtral' => ModelFamily.mistral,
-        null || '' => null,
-        _ => ModelFamily.other,
-      };
+  Future<void> changeModelsFolder(
+    Directory target, {
+    required bool move,
+    void Function(double)? onProgress,
+  }) async {
+    await ready;
+    final activeJobs = await DownloadJobs.active();
+    if (state.loadedModelId != null ||
+        state.isImporting ||
+        state.isLoadingModel ||
+        activeJobs.isNotEmpty ||
+        _projectorDownloads.isNotEmpty) {
+      throw const ModelFolderException(ModelFolderFailure.busy);
+    }
+    // Serialize imports and disable the import button while files move.
+    state = state.copyWith(isImporting: true);
+    _fileOperation = Completer<void>();
+    try {
+      final db = ref.read(appDatabaseProvider);
+      await (await ModelStorage.desktopFolders()).change(
+        target,
+        move: move,
+        onProgress: onProgress,
+        updatePaths: (paths) => db.transaction(() async {
+          for (final entry in paths.entries) {
+            await (db.update(db.models)
+                  ..where((m) => m.localPath.equals(entry.key)))
+                .write(ModelsCompanion(localPath: drift.Value(entry.value)));
+          }
+        }),
+      );
+      await refreshVision();
+    } finally {
+      if (_alive) state = state.copyWith(isImporting: false);
+      _fileOperation?.complete();
+      _fileOperation = null;
+    }
+  }
+
+  /// The family llama.cpp's architecture name implies (gemma3n, qwen3moe,
+  /// qwen35moe, deepseek32 and the like included), else null: an unlisted
+  /// architecture keeps the family the user picked rather than becoming
+  /// "other". The embedded chat template decides prompts either way.
+  static ModelFamily? _familyFromArchitecture(String? architecture) {
+    final arch = architecture?.toLowerCase() ?? '';
+    if (arch.contains('embed')) return null;
+    for (final (prefix, family) in const [
+      ('gemma', ModelFamily.gemma),
+      ('qwen', ModelFamily.qwen),
+      ('deepseek', ModelFamily.deepseek),
+      ('phi', ModelFamily.phi),
+      ('llama', ModelFamily.llama),
+      ('mistral', ModelFamily.mistral),
+      ('mixtral', ModelFamily.mistral),
+    ]) {
+      if (arch.startsWith(prefix)) return family;
+    }
+    return null;
+  }
 
   static ModelQuantization _quantizationFromFileType(int? fileType) =>
       switch (fileType) {
-        1 => ModelQuantization.fp16,
+        // llama_ftype values; the K and I variants map to the nearest bits.
+        0 || 1 || 32 => ModelQuantization.fp16,
         2 => ModelQuantization.q4_0,
         7 => ModelQuantization.q8_0,
-        10 => ModelQuantization.q2_k,
-        12 => ModelQuantization.q3_k_m,
-        15 => ModelQuantization.q4_k_m,
-        17 => ModelQuantization.q5_k_m,
+        10 || 19 || 20 || 21 || 24 || 28 || 29 || 31 => ModelQuantization.q2_k,
+        11 || 12 || 13 || 22 || 23 || 26 || 27 => ModelQuantization.q3_k_m,
+        3 || 14 || 15 || 38 => ModelQuantization.q4_k_m,
+        8 || 9 || 16 || 17 => ModelQuantization.q5_k_m,
         18 => ModelQuantization.q6_k,
-        25 => ModelQuantization.iq4_nl,
+        25 || 30 => ModelQuantization.iq4_nl,
         _ => ModelQuantization.unknown,
       };
 
@@ -835,16 +1454,20 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     }
     if (state.loadedModelId == info.id) {
       ref.read(llamaEngineProvider).dispose();
+      ref.read(diffusionGemmaEngineProvider).dispose();
       state = state.copyWith(clearLoaded: true);
     }
-    await _downloader.pause(info.id);
-    await DownloadJobs.remove(info.id);
-    await ModelStorage.delete(info.fileName);
+    await ref
+        .read(retiredModelNamesProvider.notifier)
+        .remember(info.id, info.displayName);
+    await pauseDownload(info.id);
+    await deleteVision(info);
     await ModelStorage.deletePartial(info.fileName);
+    await ModelStorage.delete(info.fileName);
     final db = ref.read(appDatabaseProvider);
     // Only the bundled catalog keeps an "available to download" row; a model
     // the user added by link, Hub search or import is gone for good.
-    if (bundledCatalog.any((m) => m.id == info.id)) {
+    if (catalogModels.any((m) => m.id == info.id)) {
       await (db.update(db.models)..where((t) => t.id.equals(info.id))).write(
         const ModelsCompanion(
           isDownloaded: drift.Value(false),
@@ -862,3 +1485,93 @@ final modelManagerProvider =
     NotifierProvider<ModelManagerNotifier, ModelManagerState>(
       ModelManagerNotifier.new,
     );
+
+/// The `draftModelId` prefix for an MTP head: a small separate GGUF that
+/// drafts from the target's hidden states (Unsloth's
+/// `mtp-gemma-4-E4B-it-Q8_0.gguf`). It is a companion file, not a model
+/// of its own, so it never joins the catalog.
+const mtpHeadPrefix = 'mtp:';
+
+/// The head path that turns Auto off: `mtp:off` names no file, so no head
+/// is attached.
+const mtpOff = 'off';
+
+/// Whether [path] names an MTP head file: `mtp-*.gguf`, with or without the
+/// Hub download's hash prefix.
+bool isMtpHeadFile(String path) {
+  final name = p.basename(path).toLowerCase();
+  return name.endsWith('.gguf') &&
+      RegExp(r'^(?:[0-9a-f]{16}-)?mtp-').hasMatch(name);
+}
+
+/// The Gemma 4 size an MTP head or model file is for (`e4b`, `12b`,
+/// `26b-a4b`, ...), or null for other families. Heads exist only per base
+/// size, and a head for another size is refused at load.
+String? gemma4Size(String fileName) => RegExp(
+  r'gemma-?4-((?:e\d+b)|(?:\d+b(?:-a\d+b)?))',
+  caseSensitive: false,
+).firstMatch(fileName)?.group(1)?.toLowerCase();
+
+/// Folders searched for an MTP head besides the app's models folder:
+/// LM Studio's model folder, where its MTP sidecars usually already are.
+List<String> _mtpSearchRoots() {
+  final home =
+      Platform.environment['USERPROFILE'] ?? Platform.environment['HOME'];
+  return [if (home != null) p.join(home, '.lmstudio', 'models')];
+}
+
+final Map<String, String?> _autoMtpCache = {};
+
+/// The MTP head for the model at [modelPath] found on disk: an
+/// `mtp-gemma-4-<size>*.gguf` beside the model, else in LM Studio's model
+/// folder (three levels deep). Null when the model has no known head or
+/// none is on disk.
+String? autoMtpHead(String modelPath) {
+  final size = gemma4Size(p.basename(modelPath));
+  if (size == null || isMtpHeadFile(modelPath)) return null;
+  final cached = _autoMtpCache[size];
+  if (cached != null && File(cached).existsSync()) return cached;
+  final found = <String>[];
+  void scan(Directory dir, int depth) {
+    try {
+      for (final e in dir.listSync(followLinks: false)) {
+        if (e is File) {
+          if (isMtpHeadFile(e.path) && gemma4Size(p.basename(e.path)) == size) {
+            found.add(e.path);
+          }
+        } else if (e is Directory && depth > 0) {
+          scan(e, depth - 1);
+        }
+      }
+    } on FileSystemException {
+      // Unreadable folder: skip it.
+    }
+  }
+
+  scan(File(modelPath).parent, 0);
+  if (found.isEmpty) {
+    for (final root in _mtpSearchRoots()) {
+      scan(Directory(root), 3);
+    }
+  }
+  // Prefer the Q8 head (what Unsloth and LM Studio ship), then the smallest.
+  found.sort((a, b) {
+    final q =
+        (b.toLowerCase().contains('q8') ? 1 : 0) -
+        (a.toLowerCase().contains('q8') ? 1 : 0);
+    return q != 0 ? q : File(a).lengthSync().compareTo(File(b).lengthSync());
+  });
+  return _autoMtpCache[size] = found.firstOrNull;
+}
+
+/// The MTP head files in the models folder, by path.
+Future<List<String>> mtpHeadFiles() async {
+  try {
+    return [
+      for (final f in (await ModelStorage.modelsDir()).listSync())
+        if (f is File && isMtpHeadFile(f.path)) f.path,
+    ]..sort();
+  } catch (_) {
+    return const [];
+  }
+}

@@ -2,11 +2,13 @@ import 'dart:async';
 import '../../core/utils/inference_admission.dart';
 import 'dart:convert';
 import 'dart:ffi';
+import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import '../../core/errors/exceptions.dart';
+import '../../core/platform/desktop_host.dart';
 import '../../features/settings/domain/entities/inference_settings.dart';
 import '../../features/tools/domain/tool_spec.dart';
 import '../ffi/llama_bindings.dart';
@@ -44,6 +46,95 @@ class LlamaEngine implements TextEngine {
   int _loads = 0;
   Completer<void>? _idle;
   Future<void> _metadataTail = Future.value();
+  Completer<void>? _priming;
+  bool _primeIssuing = false, _primeCancelled = false;
+
+  /// Background prefill gives up ownership before any foreground operation.
+  void cancelPriming() {
+    if (_priming == null) return;
+    _primeCancelled = true;
+    cancel();
+  }
+
+  Future<void> _stopPriming() async {
+    if (_primeIssuing) return;
+    final prime = _priming;
+    if (prime == null) return;
+    cancelPriming();
+    await prime.future;
+  }
+
+  /// One discarded token is the cheapest generation supported by the bridge.
+  /// Preview verifies that even templates which omit empty turns retain the
+  /// entire prefix before a real user's text. Unsupported templates are skipped.
+  Future<void> primePrompt({
+    required String system,
+    required String fallbackTemplate,
+    required InferenceSettings settings,
+    List<ToolSpec> tools = const [],
+    String toolChoice = 'auto',
+  }) async {
+    if (!isLoaded || isBusy || _priming != null) return;
+    final done = _priming = Completer<void>();
+    _primeCancelled = false;
+    final previousMetrics = metrics;
+    final limited = settings.copyWith(maxTokens: 1);
+    List<Map<String, Object>> messages(String user) => [
+      {'role': 'system', 'content': system},
+      {'role': 'user', 'content': user},
+    ];
+    Future<Map<String, dynamic>> preview(String user) {
+      _primeIssuing = true;
+      try {
+        return previewPrompt(
+          messages: messages(user),
+          fallbackTemplate: fallbackTemplate,
+          settings: limited,
+          tools: tools,
+        );
+      } finally {
+        _primeIssuing = false;
+      }
+    }
+
+    try {
+      const marker = 'prime_user_content_7f93';
+      final rendered = (await preview(marker))['formattedPrompt'];
+      if (_primeCancelled || rendered is! String) return;
+      final start = rendered.indexOf(marker);
+      if (start < 0) return;
+      final prefix = rendered.substring(0, start);
+      String? user;
+      for (final candidate in ['', ' ']) {
+        final prompt = (await preview(candidate))['formattedPrompt'];
+        if (_primeCancelled) return;
+        if (prompt is String && prompt.startsWith(prefix)) {
+          user = candidate;
+          break;
+        }
+      }
+      if (user == null || _primeCancelled) return;
+      _primeIssuing = true;
+      late Stream<String> output;
+      try {
+        output = generate(
+          messages: messages(user),
+          fallbackTemplate: fallbackTemplate,
+          settings: limited,
+          tools: tools,
+          toolChoice: toolChoice,
+        );
+      } finally {
+        _primeIssuing = false;
+      }
+      await output.drain<void>();
+    } finally {
+      metrics = previousMetrics;
+      _priming = null;
+      done.complete();
+    }
+  }
+
   void _send(Map<String, Object?> command) {
     _cancelRequested = false;
     _commands!.send({...command, 'requestId': ++_requestId});
@@ -59,14 +150,16 @@ class LlamaEngine implements TextEngine {
   }
 
   Future<void> _waitIdle() async {
-    while (isBusy) {
+    while (_occupied) {
       _idle ??= Completer<void>();
       await _idle!.future;
     }
   }
 
   Future<T> _metadata<T>(Future<T> Function() action) {
+    cancelPriming();
     final next = _metadataTail.then((_) async {
+      await _stopPriming();
       await _waitIdle();
       return action();
     });
@@ -89,18 +182,74 @@ class LlamaEngine implements TextEngine {
     _prefillChanges.add(value);
   }
 
+  /// Share loaded by the bridge (0..1); null when idle or unsupported.
+  double? get loadProgress => _loadProgress;
+  Stream<double?> get loadProgressChanges => _loadProgressChanges.stream;
+  double? _loadProgress;
+  Timer? _loadProgressTimer;
+  bool _loading = false;
+  final _loadProgressChanges = StreamController<double?>.broadcast();
+
+  void _setLoadProgress(double? value) {
+    if (value == _loadProgress) return;
+    _loadProgress = value;
+    _loadProgressChanges.add(value);
+  }
+
+  void _pollLoadProgress() {
+    final id = _sessionId;
+    if (id == null) return;
+    try {
+      final value = _control?.loadProgress?.call(id);
+      _setLoadProgress(
+        value != null && value.isFinite && value >= 0
+            ? value.clamp(0.0, 1.0)
+            : null,
+      );
+    } catch (_) {
+      _setLoadProgress(null);
+    }
+  }
+
+  void _stopLoadProgress() {
+    _loading = false;
+    _loadProgressTimer?.cancel();
+    _loadProgressTimer = null;
+    _setLoadProgress(null);
+  }
+
+  Future<void> _load(String path, String config) async {
+    final op = Completer<void>();
+    _operation = op;
+    _loading = true;
+    _send({'type': 'load', 'path': path, 'settings': config});
+    try {
+      await op.future;
+    } catch (e) {
+      throw ModelLoadException(modelLoadErrorMessage(e));
+    } finally {
+      _stopLoadProgress();
+    }
+  }
+
   bool get isLoaded => _loadedPath != null;
 
   /// Loads completed so far. [loadModel] returns early when the same model
   /// and settings are already loaded; a change here means a fresh load.
   int get loadCount => _loads;
-  bool get isBusy =>
+
+  /// Background priming is available to foreground callers, which preempt it.
+  bool get isPriming => _priming != null;
+  bool get isBusy => !isPriming && _occupied;
+  bool get _occupied =>
       _busy ||
       _operation != null ||
       _preview != null ||
       _embed != null ||
       _probe != null ||
       _adapter != null;
+  bool get _working =>
+      _busy || _operation != null || _preview != null || _embed != null;
   String? get loadedPath => _loadedPath;
   Future<void> _start() => _starting ??= _spawn();
   Future<void> _spawn() async {
@@ -143,9 +292,24 @@ class LlamaEngine implements TextEngine {
         final library = e['library'] as String?;
         if (library != null && library != _library) {
           _library = library;
+          // Sessions live in one bridge DLL; cancel through the same one.
+          _control = null;
           onLibrary?.call(library);
         }
         if (_cancelRequested) _cancelNative();
+        if (_loading && _loadProgressTimer == null) {
+          try {
+            // The worker already opened this exact library. Avoid discovery
+            // (including Android CPU probing), and bind before polling starts.
+            _control ??= LlamaBindings(libraryPath: _library);
+            _loadProgressTimer = Timer.periodic(
+              const Duration(milliseconds: 200),
+              (_) => _pollLoadProgress(),
+            );
+          } catch (_) {
+            /* Progress is optional on older bridges. */
+          }
+        }
         return;
       }
       if (e['requestId'] != _requestId) return;
@@ -168,7 +332,7 @@ class LlamaEngine implements TextEngine {
         case 'embedded':
           _embed?.complete(Map<String, dynamic>.from(e['result'] as Map));
           _embed = null;
-        case 'adapter':
+        case 'adapter' || 'estimated':
           _adapter?.complete(Map<String, dynamic>.from(e['result'] as Map));
           _adapter = null;
         case 'begun':
@@ -200,7 +364,9 @@ class LlamaEngine implements TextEngine {
           _output = null;
           _busy = false;
         case 'error':
-          final error = InferenceException(e['message'] as String);
+          final error = e['load'] == true
+              ? ModelLoadException(modelLoadErrorMessage(e['message']))
+              : InferenceException(e['message'] as String);
           _preview?.completeError(error);
           _preview = null;
           _probe?.completeError(error);
@@ -217,7 +383,7 @@ class LlamaEngine implements TextEngine {
           _busy = false;
           _setPrefill(null);
       }
-      if (!isBusy) _notifyIdle();
+      if (!_occupied) _notifyIdle();
     });
     String? cacheDir;
     try {
@@ -249,20 +415,61 @@ class LlamaEngine implements TextEngine {
     List<({String path, double scale})> adapters = const [],
     String? draftModelPath,
   }) async {
-    if (isBusy) {
+    // A header read (probe, adapter info) finishes on its own: wait for it
+    // rather than refusing the load.
+    if (_priming != null) await _stopPriming();
+    if (_working) {
       throw const ModelLoadException(
         'Wait for the current operation to finish.',
       );
     }
-    final config = jsonEncode({
+    final config = loadConfig(
+      settings: settings,
+      mmprojPath: mmprojPath,
+      adapters: adapters,
+      draftModelPath: draftModelPath,
+    );
+    if (_loadedPath == modelPath && _loadSettings == config) return;
+    await _start();
+    while (_occupied) {
+      await _waitIdle();
+    }
+    _loadedPath = null;
+    await _load(modelPath, config);
+    _loadedPath = modelPath;
+    _loadSettings = config;
+  }
+
+  /// The settings JSON od_load and od_estimate read.
+  static String loadConfig({
+    required InferenceSettings settings,
+    String? mmprojPath,
+    List<({String path, double scale})> adapters = const [],
+    String? draftModelPath,
+  }) {
+    return jsonEncode({
       'contextSize': settings.contextSize,
       'imageMaxTokens': settings.imageMaxTokens,
       'backend': settings.backend.name,
+      'cpuVariant': settings.cpuVariant,
+      'projectorDevice': settings.projectorDevice,
       'nGpuLayers': settings.nGpuLayers,
+      'vramReserveMb': settings.vramReserveMb,
+      'useMmap': settings.useMmap,
+      'useMlock': settings.useMlock,
+      'mainGpu': settings.mainGpu,
+      'splitMode': settings.splitMode,
+      'offloadKv': settings.offloadKv,
+      'swaFull': settings.swaFull,
+      'nCpuMoe': settings.nCpuMoe,
+      'expertsUsed': settings.expertsUsed,
+      'draftGpuLayers': settings.draftGpuLayers,
+
       'flashAttention': settings.flashAttention,
       'kvCacheType': settings.kvCacheType.name,
       'vCacheType': settings.vCacheType?.name ?? '',
       'effectiveThreads': settings.effectiveThreads,
+      'threadsAuto': DesktopHost.active && settings.cpuThreads == 0,
       'effectiveBatchThreads': settings.effectiveBatchThreads,
       'effectiveBatchSize': settings.effectiveBatchSize,
       'effectiveMicroBatchSize': settings.effectiveMicroBatchSize,
@@ -281,19 +488,10 @@ class LlamaEngine implements TextEngine {
       ],
       'draftModel': draftModelPath ?? '',
       'draftMaxTokens': settings.draftMaxTokens,
+      'draftMinP': settings.draftMinP,
+      'mtp': settings.mtp,
+      'chatTemplate': settings.chatTemplate,
     });
-    if (_loadedPath == modelPath && _loadSettings == config) return;
-    await _start();
-    while (isBusy) {
-      await _waitIdle();
-    }
-    _loadedPath = null;
-    final op = Completer<void>();
-    _operation = op;
-    _send({'type': 'load', 'path': modelPath, 'settings': config});
-    await op.future;
-    _loadedPath = modelPath;
-    _loadSettings = config;
   }
 
   /// Loads an embedding GGUF (EmbeddingGemma, nomic, bge…) on the CPU with
@@ -306,7 +504,8 @@ class LlamaEngine implements TextEngine {
     int threads = 4,
     int contextSize = 2048,
   }) async {
-    if (isBusy) {
+    if (_priming != null) await _stopPriming();
+    if (_occupied) {
       throw const ModelLoadException(
         'Wait for the current operation to finish.',
       );
@@ -325,14 +524,11 @@ class LlamaEngine implements TextEngine {
     });
     if (_loadedPath == modelPath && _loadSettings == config) return;
     await _start();
-    while (isBusy) {
+    while (_occupied) {
       await _waitIdle();
     }
     _loadedPath = null;
-    final op = Completer<void>();
-    _operation = op;
-    _send({'type': 'load', 'path': modelPath, 'settings': config});
-    await op.future;
+    await _load(modelPath, config);
     _loadedPath = modelPath;
     _loadSettings = config;
   }
@@ -346,7 +542,8 @@ class LlamaEngine implements TextEngine {
   /// An item is a text, or an [EmbedItem] with photos/recordings (needs a
   /// projector). [dims] > 0 keeps that many leading dimensions (Matryoshka).
   Future<List<Float32List>> embed(List<Object> texts, {int dims = 0}) async {
-    if (!isLoaded || isBusy) {
+    if (_priming != null) await _stopPriming();
+    if (!isLoaded || _occupied) {
       throw const InferenceException(
         'Load an embedding model and wait for the current operation.',
       );
@@ -370,6 +567,30 @@ class LlamaEngine implements TextEngine {
     ];
   }
 
+  /// Exact token counts per text (special tokens included) and the most one
+  /// input may hold before [embed] truncates it, without embedding anything.
+  /// Null when the engine library predates counting.
+  Future<({List<int> counts, int limit})?> embedTokenCounts(
+    List<String> texts,
+  ) async {
+    if (_priming != null) await _stopPriming();
+    if (!isLoaded || _occupied) {
+      throw const InferenceException(
+        'Load an embedding model and wait for the current operation.',
+      );
+    }
+    final op = Completer<Map<String, dynamic>>();
+    _embed = op;
+    _send({
+      'type': 'embed',
+      'request': jsonEncode({'texts': texts, 'countOnly': true}),
+    });
+    final result = await op.future;
+    final counts = result['counts'], limit = result['limit'];
+    if (counts is! List || limit is! int) return null;
+    return (counts: [for (final c in counts) c as int], limit: limit);
+  }
+
   /// A reranker's raw classifier outputs per (query, document) pair, keyed
   /// by its labels (Qwen3-Reranker: `yes` and `no` logits). Requires
   /// [loadEmbedder] with a reranker GGUF (pooling RANK). [instruction]
@@ -378,7 +599,8 @@ class LlamaEngine implements TextEngine {
     List<({String query, String document})> pairs, {
     String? instruction,
   }) async {
-    if (!isLoaded || isBusy) {
+    if (_priming != null) await _stopPriming();
+    if (!isLoaded || _occupied) {
       throw const InferenceException(
         'Load a reranker and wait for the current operation.',
       );
@@ -411,12 +633,40 @@ class LlamaEngine implements TextEngine {
   /// name, alpha, tensors, keys}`. Works without a loaded model.
   Future<Map<String, dynamic>> adapterInfo(String path) => _metadata(() async {
     await _start();
-    while (isBusy) {
+    while (_occupied) {
       await _waitIdle();
     }
     final op = Completer<Map<String, dynamic>>();
     _adapter = op;
     _send({'type': 'adapter', 'path': path});
+    return op.future;
+  });
+
+  /// What loading [modelPath] with [settings] would use, measured by the
+  /// bridge without loading: `{contextSize, layers, gpuLayers, ramNeedMb,
+  /// vramNeedMb, vramFreeMb, vramTotalMb, gpuFit, backend, devices,
+  /// ramAvailableMb, ramTotalMb}`. An empty [modelPath] lists the devices.
+  Future<Map<String, dynamic>> estimate({
+    required String modelPath,
+    required InferenceSettings settings,
+    String? mmprojPath,
+    String? draftModelPath,
+  }) => _metadata(() async {
+    await _start();
+    while (_occupied) {
+      await _waitIdle();
+    }
+    final op = Completer<Map<String, dynamic>>();
+    _adapter = op;
+    _send({
+      'type': 'estimate',
+      'path': modelPath,
+      'settings': loadConfig(
+        settings: settings,
+        mmprojPath: mmprojPath,
+        draftModelPath: draftModelPath,
+      ),
+    });
     return op.future;
   });
 
@@ -430,7 +680,8 @@ class LlamaEngine implements TextEngine {
     String assistantPrefix = '',
     List<ToolSpec> tools = const [],
   }) async {
-    if (!isLoaded || isBusy) {
+    if (_priming != null && !_primeIssuing) await _stopPriming();
+    if (!isLoaded || _occupied) {
       throw const InferenceException(
         'Load a model and wait for the current operation.',
       );
@@ -474,7 +725,21 @@ class LlamaEngine implements TextEngine {
     List<ToolSpec> tools = const [],
     String toolChoice = 'auto',
   }) {
-    if (!isLoaded || isBusy) {
+    if (_priming != null && !_primeIssuing) {
+      final stopped = _stopPriming();
+      return (() async* {
+        await stopped;
+        yield* generate(
+          messages: messages,
+          fallbackTemplate: fallbackTemplate,
+          settings: settings,
+          assistantPrefix: assistantPrefix,
+          tools: tools,
+          toolChoice: toolChoice,
+        );
+      })();
+    }
+    if (!isLoaded || _occupied) {
       throw const InferenceException(
         'Load a model and wait for the current operation.',
       );
@@ -505,7 +770,7 @@ class LlamaEngine implements TextEngine {
   /// runtime *could* use, so a backend policy can decide before the load.
   Future<Map<String, dynamic>> probe() => _metadata(() async {
     await _start();
-    while (isBusy) {
+    while (_occupied) {
       await _waitIdle();
     }
     final op = Completer<Map<String, dynamic>>();
@@ -517,8 +782,9 @@ class LlamaEngine implements TextEngine {
   /// Frees the model and context but keeps the worker alive, so the next
   /// load is a plain reload (model residency, roadmap §5.2).
   Future<void> unload() async {
+    if (_priming != null) await _stopPriming();
     if (!isLoaded || _commands == null) return;
-    if (isBusy) {
+    if (_occupied) {
       throw const InferenceException('Wait for the current operation.');
     }
     final op = Completer<void>();
@@ -531,6 +797,7 @@ class LlamaEngine implements TextEngine {
 
   @override
   void cancel() {
+    if (_priming != null) _primeCancelled = true;
     _cancelRequested = true;
     _cancelNative();
     _commands?.send({'type': 'cancel'});
@@ -540,13 +807,16 @@ class LlamaEngine implements TextEngine {
     final id = _sessionId;
     if (id == null) return;
     try {
-      (_control ??= LlamaBindings()).cancelSession?.call(id);
+      (_control ??= LlamaBindings(
+        libraryPath: _library,
+      )).cancelSession?.call(id);
     } catch (_) {
       /* Older bridges still stop between steps. */
     }
   }
 
   void dispose() {
+    _stopLoadProgress();
     cancel();
     _commands?.send({'type': 'dispose'});
     _preview?.completeError(StateError('Engine disposed.'));
@@ -573,6 +843,15 @@ class LlamaEngine implements TextEngine {
   }
 }
 
+/// Explicit Windows backend choice; each bridge carries one GPU backend.
+String? _windowsGpuChoice(String settings) {
+  if (!Platform.isWindows) return null;
+  final backend = (jsonDecode(settings) as Map)['backend'];
+  return const ['cpu', 'cuda', 'vulkan'].contains(backend)
+      ? backend as String
+      : null;
+}
+
 void _worker(List<Object?> args) {
   final events = args[0] as SendPort;
   final options = jsonEncode({
@@ -582,14 +861,22 @@ void _worker(List<Object?> args) {
   final commands = ReceivePort();
   events.send(commands.sendPort);
   LlamaBindings? api;
+  String? bridgeChoice;
   Pointer<Void> handle = nullptr;
   bool running = false, cancelled = false, disposing = false;
   // Engine info plus which bridge library variant this process loaded (GPU-01).
-  Map<String, dynamic> info() => {
-    ...jsonDecode(api!.info(handle).toDartString()) as Map<String, dynamic>,
-    'nativeLibrary': api!.library,
-    'nativeLibrarySkipped': api!.skipped,
-  };
+  Map<String, dynamic> info() {
+    final value =
+        jsonDecode(api!.info(handle).toDartString()) as Map<String, dynamic>;
+    final cpu = LlamaBindings.windowsCpuOf(api!.library);
+    return {
+      ...value,
+      if (cpu != null) 'backend': '${value['backend']} / ${cpu.toUpperCase()}',
+      'nativeLibrary': api!.library,
+      'nativeLibrarySkipped': api!.skipped,
+    };
+  }
+
   void clean() {
     if (handle != nullptr) api!.destroy(handle);
     handle = nullptr;
@@ -634,6 +921,44 @@ void _worker(List<Object?> args) {
       }
       return;
     }
+    if (m['type'] == 'estimate') {
+      try {
+        api ??= LlamaBindings();
+        final estimate = api!.estimate;
+        if (estimate == null) {
+          throw UnsupportedError('This native bridge cannot estimate memory.');
+        }
+        if (handle == nullptr) {
+          final opts = options.toNativeUtf8();
+          try {
+            handle = api!.create(opts);
+          } finally {
+            calloc.free(opts);
+          }
+        }
+        final path = (m['path'] as String).toNativeUtf8();
+        final settings = (m['settings'] as String).toNativeUtf8();
+        try {
+          final result = estimate(handle, path, settings);
+          if (result == nullptr) {
+            throw StateError(api!.error(handle).toDartString());
+          }
+          send({
+            'type': 'estimated',
+            'result': jsonDecode(result.toDartString()),
+          });
+        } finally {
+          calloc.free(path);
+          calloc.free(settings);
+        }
+      } on StateError catch (e) {
+        // The bridge's own words, without Dart's "Bad state:" prefix.
+        send({'type': 'error', 'message': e.message});
+      } catch (e) {
+        send({'type': 'error', 'message': '$e'});
+      }
+      return;
+    }
     if (m['type'] == 'adapter') {
       try {
         api ??= LlamaBindings();
@@ -672,7 +997,23 @@ void _worker(List<Object?> args) {
       return;
     }
     try {
-      api ??= LlamaBindings();
+      final want = m['type'] == 'load'
+          ? _windowsGpuChoice(m['settings'] as String)
+          : null;
+      final cpuVariant = m['type'] == 'load'
+          ? ((jsonDecode(m['settings'] as String) as Map)['cpuVariant']
+                    as String? ??
+                'auto')
+          : 'auto';
+      final choice = '$want/$cpuVariant';
+      if (m['type'] == 'load' && api != null && bridgeChoice != choice) {
+        // Recreate the runtime when the backend or CPU variant changes.
+        if (handle != nullptr) api!.destroy(handle);
+        handle = nullptr;
+        api = null;
+      }
+      api ??= LlamaBindings(windowsBackend: want, cpuVariant: cpuVariant);
+      if (m['type'] == 'load') bridgeChoice = choice;
       if (handle == nullptr) {
         final opts = options.toNativeUtf8();
         try {
@@ -695,7 +1036,7 @@ void _worker(List<Object?> args) {
         final config = (m['settings'] as String).toNativeUtf8();
         try {
           if (api!.load(handle, path, config) < 0) {
-            throw StateError(api!.error(handle).toDartString());
+            throw ModelLoadException(api!.error(handle).toDartString());
           }
           send({'type': 'loaded', 'metrics': info()});
         } finally {
@@ -787,7 +1128,11 @@ void _worker(List<Object?> args) {
           'metrics': {...info(), 'finishReason': 'cancelled'},
         });
       } else {
-        send({'type': 'error', 'message': '$e'});
+        send({
+          'type': 'error',
+          'load': m['type'] == 'load',
+          'message': m['type'] == 'load' ? modelLoadErrorMessage(e) : '$e',
+        });
       }
     }
   });

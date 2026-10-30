@@ -488,6 +488,8 @@ void main() {
           old.execute(
             'CREATE TABLE web_pages (url TEXT PRIMARY KEY, body TEXT)',
           );
+          old.execute('ALTER TABLE models DROP COLUMN projector_json');
+          old.execute('ALTER TABLE models DROP COLUMN parts_json');
           old.execute('PRAGMA user_version = 13');
         } finally {
           old.close();

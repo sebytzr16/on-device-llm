@@ -4,7 +4,10 @@ import '../domain/setting_specs.dart';
 /// Registry labels in the app's language; [SettingSpec.label] stays the
 /// English name used by configuration files and tests.
 extension SettingSpecLabels on SettingSpec {
-  String labelIn(AppLocalizations t) => t.localeName == 'en'
+  String labelIn(AppLocalizations t) =>
+      t.localeName == 'en' &&
+          key != 'mtp' &&
+          !SettingSpec.nativeKeys.contains(key)
       ? label
       : switch (key) {
           'imageMaxTokens' => t.imageTokenBudget,
@@ -55,20 +58,37 @@ extension SettingSpecLabels on SettingSpec {
           'responseFormat' => t.settingLabelResponseFormat,
           'jsonSchema' => t.settingLabelJsonSchema,
           'grammar' => t.settingLabelGrammar,
+          'chatTemplate' => t.desktopPromptTemplate,
           'contextSize' => t.settingLabelContextSize,
           'promptCache' => t.settingLabelPromptCache,
           'backend' => t.settingLabelBackend,
           'nGpuLayers' => t.settingLabelNGpuLayers,
           'cpuThreads' => t.settingLabelCpuThreads,
           'batchThreads' => t.settingLabelBatchThreads,
+          'useMmap' => t.nativeSetUseMmap,
+          'useMlock' => t.nativeSetUseMlock,
+          'draftMinP' => t.nativeSetDraftMinP,
+          'draftGpuLayers' => t.nativeSetDraftGpuLayers,
+          'promptStoreMb' => t.nativeSetPromptStoreMb,
+          'mainGpu' => t.nativeSetMainGpu,
+          'splitMode' => t.nativeSetSplitMode,
+          'offloadKv' => t.nativeSetOffloadKv,
+          'swaFull' => t.nativeSetSwaFull,
+          'nCpuMoe' => t.nativeSetNCpuMoe,
+          'projectorDevice' => t.projectorDevice,
+          'expertsUsed' => t.nativeSetExpertsUsed,
+          'keepTokens' => t.nativeSetKeepTokens,
+          'contextOverflow' => t.nativeSetContextOverflow,
+          'logitBias' => t.nativeSetLogitBias,
+          'vramReserveMb' => t.desktopDeepVramReserveMb,
           'flashAttention' => t.settingLabelFlashAttention,
           'kvCacheType' => t.settingLabelKvCacheType,
           'vCacheType' => t.settingLabelVCacheType,
           'ropeScaling' => t.settingLabelRopeScaling,
           'draftModelId' => t.settingLabelDraftModelId,
+          'mtp' => t.desktopMtpLabel,
           'searchAgain' => t.searchAgainSetting,
           'wikipediaLookup' => t.wikipediaLookupSetting,
-          'thinkOnSearch' => t.thinkOnSearchSetting,
           _ => label,
         };
 }
@@ -85,3 +105,17 @@ String settingGroupLabel(String group, AppLocalizations t) => switch (group) {
   SettingSpec.groupPrompt => t.settingGroupPrompt,
   _ => group,
 };
+
+String? nativeSettingOption(AppLocalizations t, String key, String value) =>
+    switch ((key, value)) {
+      ('projectorDevice', 'auto') => t.projectorAuto,
+      ('projectorDevice', 'gpu') => t.projectorGpu,
+      ('projectorDevice', 'cpu') => t.projectorCpu,
+      ('splitMode', 'none') => t.nativeSetSplitNone,
+      ('splitMode', 'layer') => t.nativeSetSplitLayer,
+      ('splitMode', 'row') => t.nativeSetSplitRow,
+      ('contextOverflow', 'trim') => t.nativeSetOverflowTrim,
+      ('contextOverflow', 'shift') => t.nativeSetOverflowShift,
+      ('contextOverflow', 'stop') => t.nativeSetOverflowStop,
+      _ => null,
+    };

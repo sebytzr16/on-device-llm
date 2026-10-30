@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/platform/device_info.dart';
+import '../../../../core/platform/desktop_host.dart';
+import '../../../../core/platform/desktop_preferences.dart';
 import '../../../../data/network/web_search/duckduckgo_scraper.dart';
 import '../../data/remote_key_store.dart';
 import '../../domain/entities/inference_settings.dart';
@@ -43,6 +45,9 @@ class SettingsNotifier extends Notifier<InferenceSettings> {
         (await DeviceMemory.read())?.totalGb,
       );
       _prefs = await SharedPreferences.getInstance();
+      if (DesktopHost.active) {
+        await ref.read(desktopPreferencesProvider.notifier).ready;
+      }
       final raw = _prefs!.getString(_kSettingsKey);
       if (!_alive) return;
       // Review 2026-09-28: every model starts without thinking and

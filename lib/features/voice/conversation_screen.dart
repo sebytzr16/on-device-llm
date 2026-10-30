@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
 
@@ -21,6 +21,7 @@ import '../settings/presentation/providers/settings_provider.dart';
 import '../tools/phone_actions.dart';
 import '../tools/presentation/phone_action_cards.dart';
 import 'conversation_model.dart';
+import 'desktop_voice_policy.dart';
 import 'sherpa_voice.dart';
 import 'voice_models.dart';
 import 'voice_models_provider.dart';
@@ -106,7 +107,6 @@ class ConversationScreen extends ConsumerStatefulWidget {
   /// of silence on the phone (conversation probe, 2026-10-07).
   static const turnSettings = {
     'thinkingModeEnabled': false,
-    'thinkOnSearch': false,
     'maxTokens': maxAnswerTokens,
   };
 
@@ -435,12 +435,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
     if (_closed) return;
     final settings = ref.read(settingsProvider);
     final packs = ref.read(voiceModelsProvider);
-    _natural =
-        !kIsWeb &&
-        defaultTargetPlatform == TargetPlatform.android &&
-        settings.naturalVoice &&
-        packs.canListen &&
-        packs.canSpeak;
+    _natural = offlineVoiceReady(
+      enabled: settings.naturalVoice,
+      installed: packs.canListen && packs.canSpeak,
+    );
     if (!_natural) {
       if (!packs.canListen || !packs.canSpeak) {
         _set(() => _notice ??= l10n.convNeedsVoice);
@@ -489,9 +487,18 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
       onFinal: _onHeard,
       onDropped: _onNothingHeard,
     );
-    if (!await _ears!.start()) {
+    bool micStarted;
+    try {
+      micStarted = await _ears!.start();
+    } on PlatformException catch (e) {
+      micStarted = false;
+      if (e.code == 'microphone_denied') {
+        _set(() => _notice = l10n.desktopVoiceMicPrivacy);
+      }
+    }
+    if (!micStarted) {
       _set(() {
-        _notice = l10n.convMicDenied;
+        _notice ??= l10n.convMicDenied;
         _phase = ConversationPhase.idle;
         _muted = true;
       });

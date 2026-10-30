@@ -120,7 +120,7 @@ class _OverridesPageState extends State<OverridesPage> {
               SettingsSection(
                 label: settingGroupLabel(group, context.l10n),
                 children: [
-                  for (final spec in SettingSpec.all.where(
+                  for (final spec in SettingSpec.visible.where(
                     (s) => s.group == group,
                   ))
                     _row(context, spec, inheritedJson[spec.key], c),
@@ -228,7 +228,8 @@ Future<SettingEdit?> editSettingValue(
               SimpleDialogOption(
                 onPressed: () => Navigator.pop(context, SettingEdit(o)),
                 child: Text(
-                  spec.display(o),
+                  nativeSettingOption(context.l10n, spec.key, o) ??
+                      spec.display(o),
                   style: o == current
                       ? const TextStyle(fontWeight: FontWeight.w600)
                       : null,
@@ -245,6 +246,7 @@ Future<SettingEdit?> editSettingValue(
         text: switch (current) {
           null => '',
           List() => current.join('\n'),
+          Map() => jsonEncode(current),
           _ => current.toString(),
         },
       );

@@ -6,6 +6,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import '../../../../core/design/app_design.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/motion/motion.dart';
+import '../../../../core/design/mermaid/mermaid_widget.dart';
 
 /// Replaces flutter_markdown's fenced-code rendering with a raised mono
 /// panel carrying the language tag and a copy button.
@@ -13,6 +14,9 @@ import '../../../../core/motion/motion.dart';
 /// The element is typed `dynamic` on purpose: `package:markdown` is only a
 /// transitive dependency and importing it directly trips the analyzer.
 class CodeBlockBuilder extends MarkdownElementBuilder {
+  final bool streaming;
+  CodeBlockBuilder({this.streaming = false});
+
   @override
   bool isBlockElement() => true;
 
@@ -34,10 +38,15 @@ class CodeBlockBuilder extends MarkdownElementBuilder {
       } catch (_) {}
       if (lang != null) break;
     }
-    return CodeBlock(
+    final block = CodeBlock(
       code: (element.textContent as String).replaceFirst(RegExp(r'\n$'), ''),
       language: lang?.isEmpty == true ? null : lang,
     );
+    if (lang == 'mermaid' &&
+        (!streaming || element.attributes['mermaid-closed'] == 'true')) {
+      return MermaidBlock(source: block.code, codeBlock: block);
+    }
+    return block;
   }
 }
 

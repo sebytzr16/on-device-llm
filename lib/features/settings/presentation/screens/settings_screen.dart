@@ -717,7 +717,7 @@ class _ActiveModelRow extends ConsumerWidget {
     final tags = m == null
         ? null
         : [
-            m.quantization.name.toUpperCase(),
+            m.quantLabel,
             if (m.parameterCountB != null) '${m.parameterCountB}B',
             m.sizeLabel,
             m.family.name,

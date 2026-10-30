@@ -210,6 +210,13 @@ void main() {
     );
     await tester.pump();
     expect(find.textContaining('Model profile · 0'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('override-temperature')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.ensureVisible(find.byKey(const Key('override-temperature')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('override-temperature')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '0.2');
@@ -221,6 +228,15 @@ void main() {
     await tester.scrollUntilVisible(
       find.byKey(const Key('override-thinkingModeEnabled')),
       600,
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('override-thinkingModeEnabled')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.ensureVisible(
+      find.byKey(const Key('override-thinkingModeEnabled')),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('override-thinkingModeEnabled')));

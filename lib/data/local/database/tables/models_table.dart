@@ -1,6 +1,8 @@
 import 'package:drift/drift.dart';
 
 class Models extends Table {
+  TextColumn get partsJson => text().nullable()();
+  TextColumn get projectorJson => text().nullable()();
   TextColumn get id => text()();
   TextColumn get displayName => text()();
   TextColumn get fileName => text()();

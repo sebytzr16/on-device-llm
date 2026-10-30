@@ -31,6 +31,7 @@ import '../../../models/domain/model_config_card.dart';
 import '../../../models/presentation/widgets/config_card_flow.dart';
 import '../../../models/presentation/providers/model_manager_provider.dart';
 import '../../../models/presentation/providers/model_recommendations_provider.dart';
+import '../../../models/presentation/providers/retired_model_names.dart';
 import '../../../presets/presentation/providers/presets_provider.dart';
 import '../../../settings/presentation/providers/effective_settings_provider.dart';
 import '../../../shortcuts/domain/prompt_shortcut.dart';
@@ -53,6 +54,7 @@ import '../../domain/export/document_draft_service.dart';
 import '../../domain/export/document_draft_store.dart';
 import '../../../../inference/engine/text_engine.dart';
 import '../../../../core/providers/shared_providers.dart';
+import '../../../../inference/engine/diffusiongemma_engine.dart';
 import '../providers/chat_model_pins.dart';
 import '../../domain/retrieval_plan.dart';
 import '../providers/chat_provider.dart';
@@ -723,11 +725,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       ),
     );
     final remoteActive = remote != null;
-    final webAllowed = ref.watch(
-      settingsProvider.select(
-        (s) => s.webSearchEnabled && (!s.usesRemote || s.remoteWebResearch),
-      ),
-    );
+    final diffusion =
+        !remoteActive &&
+        (ref.read(chatProvider.notifier).pinnedModel(state.chatId) ??
+                    models.loadedModel)
+                ?.id ==
+            diffusionGemmaModelId;
+    final webAllowed =
+        !diffusion &&
+        ref.watch(
+          settingsProvider.select(
+            (s) => s.webSearchEnabled && (!s.usesRemote || s.remoteWebResearch),
+          ),
+        );
     // An answer from memory to a real question (not a greeting or writing
     // work) offers a one-tap web search.
     final memoryAnswerQuestion =
@@ -739,15 +749,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         : null;
     ref.watch(chatModelPinsProvider);
     final pinned = ref.read(chatProvider.notifier).pinnedModel(state.chatId);
-    String modelName(String? id) {
-      if (id != null && id.startsWith('remote:')) {
-        final m = id.substring(7);
-        return '${m.isEmpty ? 'server model' : m} · remote';
-      }
-      return models.catalog.where((m) => m.id == id).firstOrNull?.displayName ??
-          id ??
-          'model';
-    }
+    final retired = ref.watch(retiredModelNamesProvider);
+    String modelName(String? id) => modelLabel(
+      id,
+      catalog: models.catalog,
+      retired: retired,
+      removed: t.modelRemovedLabel,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -886,7 +894,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                     vertical: AppDesign.lg,
                                   ),
                                   itemCount:
-                                      state.messages.length + (busy ? 1 : 0),
+                                      state.messages.length +
+                                      (state.showsLiveAnswer ? 1 : 0),
                                   itemBuilder: (_, i) {
                                     if (i < state.messages.length) {
                                       final m = state.messages[i];
@@ -1056,7 +1065,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             onSend: _send,
             onStop: notifier.cancel,
             attachments: _pending,
-            onAttach: (from) => _attach(from: from),
+            textOnly: diffusion,
+            onAttach: diffusion ? null : (from) => _attach(from: from),
             onRemoveAttachment: _removeAttachment,
             onQuickPrompt: (text) {
               _input.text = text;

@@ -138,6 +138,8 @@ class VoiceModels {
   /// on the phone the int8 model was the slower one (8.5 s for 6.2 s of
   /// speech, against 5.3 s; threads, XNNPACK and NNAPI changed nothing,
   /// 2026-10-07), and slower than speech means gaps between sentences.
+  /// The release asset was repacked on 2026-10-26 (same files and sizes,
+  /// new archive hash); the old pin made resumes fail with HTTP 416.
   static const speaking = VoicePack(
     id: 'kokoro-v1.0',
     unpackTo: 'kokoro-multi-lang-v1_0',
@@ -147,8 +149,8 @@ class VoiceModels {
         url:
             'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2',
         sha256:
-            'c5f7e2d2caf082bc1d20fb70334a61d99d20b484500aad32e7cf84c128ea3298',
-        sizeBytes: 349906910,
+            '60703707bc05ccd48d60e1eb723f38b07d6e474795a0b6a588d7220400e0f7a4',
+        sizeBytes: 349886476,
       ),
     ],
   );
@@ -168,11 +170,11 @@ class VoiceModels {
 
   static Future<bool> isReady(VoicePack pack) async {
     if (pack.unpackTo != null) {
-      final dir = await ModelStorage.modelsDir();
-      bool ready(String folder) =>
-          File(p.join(dir.path, folder, readyMarker)).existsSync();
-      return ready(pack.unpackTo!) ||
-          (pack.id == speaking.id && ready(legacySpeakingDir));
+      Future<bool> ready(String folder) async => File(
+        p.join(await ModelStorage.resourcePath(folder), readyMarker),
+      ).exists();
+      return await ready(pack.unpackTo!) ||
+          (pack.id == speaking.id && await ready(legacySpeakingDir));
     }
     for (final f in pack.files) {
       if (!await ModelStorage.exists(f.fileName)) return false;
@@ -259,12 +261,11 @@ class VoiceModels {
       await ModelStorage.deletePartial(f.fileName);
     }
     if (pack.unpackTo != null) {
-      final root = (await ModelStorage.modelsDir()).path;
       for (final folder in [
         pack.unpackTo!,
         if (pack.id == speaking.id) legacySpeakingDir,
       ]) {
-        final dir = Directory(p.join(root, folder));
+        final dir = Directory(await ModelStorage.resourcePath(folder));
         if (dir.existsSync()) await dir.delete(recursive: true);
       }
     }
@@ -301,11 +302,10 @@ class VoiceModels {
 
   static Future<SpeakingPaths?> speakingPaths() async {
     if (!await isReady(speaking)) return null;
-    final root = (await ModelStorage.modelsDir()).path;
-    var dir = p.join(root, speaking.unpackTo!);
+    var dir = await ModelStorage.resourcePath(speaking.unpackTo!);
     var model = 'model.onnx';
     if (!File(p.join(dir, readyMarker)).existsSync()) {
-      dir = p.join(root, legacySpeakingDir);
+      dir = await ModelStorage.resourcePath(legacySpeakingDir);
       model = 'model.int8.onnx';
     }
     return SpeakingPaths(

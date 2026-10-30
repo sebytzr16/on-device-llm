@@ -29,13 +29,31 @@ String paramLabel(ModelInfo model) {
   return b == b.roundToDouble() ? '${b.round()}B' : '${b}B';
 }
 
-String quantLabel(ModelInfo model) => model.quantization.name.toUpperCase();
+String quantLabel(ModelInfo model) => model.quantLabel;
 
 String speedLabel(double bytesPerSecond) =>
     '${(bytesPerSecond / 1048576).toStringAsFixed(1)} MB/s';
 
 String percentLabel(double fraction) =>
     '${(fraction * 100).toStringAsFixed(1)}%';
+
+/// Load progress reads in whole steps; tenths flicker at 10 updates a second.
+String wholePercentLabel(double fraction) => '${(fraction * 100).floor()}%';
+
+String bytesLabel(int bytes) => bytes >= 1073741824
+    ? '${(bytes / 1073741824).toStringAsFixed(2)} GB'
+    : '${(bytes / 1048576).toStringAsFixed(0)} MB';
+
+/// Time left at the current speed ("4m 12s"), or null when it can't be
+/// told yet.
+String? etaLabel(int received, int total, double? bytesPerSecond) {
+  if (total <= 0 || bytesPerSecond == null || bytesPerSecond < 1) return null;
+  final seconds = ((total - received) / bytesPerSecond).ceil();
+  if (seconds < 0) return null;
+  if (seconds < 60) return '${seconds}s';
+  if (seconds < 3600) return '${seconds ~/ 60}m ${seconds % 60}s';
+  return '${seconds ~/ 3600}h ${(seconds % 3600) ~/ 60}m';
+}
 
 /// Small mono pill used for model facts.
 class ModelTag extends StatelessWidget {

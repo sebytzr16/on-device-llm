@@ -9,6 +9,7 @@ import '../../../../core/design/app_sheet.dart';
 import '../../../../data/network/hugging_face.dart';
 import '../../domain/entities/model_info.dart';
 import '../providers/model_manager_provider.dart';
+import '../providers/hf_repository_provider.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/motion/motion.dart';
 
@@ -49,7 +50,7 @@ class _HfSearchPageState extends ConsumerState<HfSearchPage> {
       _error = null;
     });
     try {
-      final r = await HuggingFace.search(q);
+      final r = await ref.read(hfRepositoryProvider).search(q);
       if (mounted && _query.text == q) setState(() => _results = r);
     } catch (e) {
       if (mounted) {
@@ -64,7 +65,7 @@ class _HfSearchPageState extends ConsumerState<HfSearchPage> {
     setState(() => _error = null);
     final HfRepoFiles files;
     try {
-      files = await HuggingFace.files(repo.id);
+      files = await ref.read(hfRepositoryProvider).files(repo.id);
     } catch (e) {
       if (mounted) {
         setState(() => _error = '$e'.replaceFirst('FormatException: ', ''));
@@ -209,10 +210,8 @@ class _FilesSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final usable = files.files
-        .where((f) => !f.isProjector && !f.isSplit)
-        .toList();
-    final other = files.files.where((f) => f.isProjector || f.isSplit).toList();
+    final usable = files.models;
+    final other = files.files.where((f) => f.isProjector).toList();
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.7,
@@ -253,11 +252,11 @@ class _FilesSheet extends StatelessWidget {
                           key: Key('hf-file-${f.name}'),
                           dense: true,
                           title: Text(
-                            f.name,
+                            f.displayName,
                             style: context.text.mono.copyWith(color: c.text),
                           ),
                           subtitle: Text(
-                            '${f.quantization.name.toUpperCase()} · ${(f.size / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB',
+                            '${ModelQuantization.tagOf(f.name) ?? f.quantization.name.toUpperCase()} · ${(files.totalSize(f) / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB',
                             style: context.text.mono.copyWith(
                               color: c.textFaint,
                             ),

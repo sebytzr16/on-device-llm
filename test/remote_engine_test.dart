@@ -747,8 +747,9 @@ void main() {
     expect((await config('gemini-2.5-pro'))['thinkingConfig'], {
       'thinkingBudget': 128,
     });
+    // Gemma refuses a budget; "minimal" skips its thinking.
     expect((await config('gemma-4-31b-it'))['thinkingConfig'], {
-      'thinkingBudget': 0,
+      'thinkingLevel': 'minimal',
     });
   });
 

@@ -41,6 +41,79 @@ void _kvUint64(BytesBuilder out, String key, int value) {
 
 void main() {
   test(
+    'MTP-only policy distinguishes separate, integrated, and ordinary files',
+    () {
+      const head = GgufMetadata(
+        version: 3,
+        tensorCount: 23,
+        architecture: 'qwen35moe',
+        blockCount: 41,
+        nextnPredictLayers: 1,
+      );
+      const full = GgufMetadata(
+        version: 3,
+        tensorCount: 500,
+        architecture: 'qwen35moe',
+        blockCount: 41,
+        nextnPredictLayers: 1,
+        hasBlockZero: true,
+      );
+      const ordinary = GgufMetadata(
+        version: 3,
+        tensorCount: 500,
+        architecture: 'qwen35moe',
+      );
+      const gemma = GgufMetadata(
+        version: 3,
+        tensorCount: 23,
+        architecture: 'gemma4-assistant',
+      );
+      expect(head.isMtpOnly, isTrue);
+      expect(full.isMtpOnly, isFalse);
+      expect(ordinary.isMtpOnly, isFalse);
+      expect(gemma.isMtpOnly, isTrue);
+      expect(head.mtpHeadIssueFor(full), isNull);
+      expect(
+        head.mtpHeadIssueFor(
+          const GgufMetadata(
+            version: 3,
+            tensorCount: 500,
+            architecture: 'gemma4',
+          ),
+        ),
+        isNotNull,
+      );
+    },
+  );
+
+  test('tensor directory detects Qwen head without reading payloads', () async {
+    for (final trunk in [false, true]) {
+      final out = BytesBuilder()..add(ascii.encode('GGUF'));
+      _u32(out, 3);
+      _u64(out, 1);
+      _u64(out, 3);
+      _kvString(out, 'general.architecture', 'qwen35moe');
+      _kvUint32(out, 'qwen35moe.nextn_predict_layers', 1);
+      _kvUint32(out, 'qwen35moe.block_count', 41);
+      _string(
+        out,
+        trunk ? 'blk.0.attn_norm.weight' : 'blk.40.nextn.eh_proj.weight',
+      );
+      _u32(out, 1);
+      _u64(out, 8);
+      _u32(out, 0);
+      _u64(out, 0);
+      final dir = await Directory.systemTemp.createTemp('gguf-head-');
+      addTearDown(() => dir.delete(recursive: true));
+      final file = File('${dir.path}/arbitrary-name.gguf');
+      await file.writeAsBytes(out.takeBytes());
+      final metadata = await GgufMetadata.inspect(file.path);
+      expect(metadata.isMtpOnly, !trunk);
+      expect(metadata.hasBlockZero, trunk);
+    }
+  });
+
+  test(
     'bounded GGUF inspection reads identity and architecture metadata',
     () async {
       final out = BytesBuilder()..add(ascii.encode('GGUF'));

@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.1.0 (2026-10-29)
+
+Adds the Windows desktop app.
+
+### Windows desktop (new)
+- The same app on Windows 10 and 11 (64-bit), with a desktop layout,
+  keyboard shortcuts, a tray icon and live logs. Installer and ZIP, no
+  administrator rights needed.
+- Engines for NVIDIA CUDA 13 and CUDA 12, Vulkan, AVX-512, AVX2 and older
+  CPUs; the app picks the best one that works on your PC.
+- Optimize for this PC: tries several setups and keeps the fastest one that
+  gives the same answers. A memory estimate before loading shows what fits
+  in VRAM and RAM.
+- Large mixture-of-experts models (for example Qwen3.6 35B A3B) with experts
+  in system RAM, multi-token prediction (MTP) and draft models.
+- Hugging Face Discover, model Compare, and Create for images, short video
+  and upscaling.
+- Local server with OpenAI- and Anthropic-compatible endpoints, token
+  protected, and phone pairing over your network.
+
+### Engine
+- llama.cpp updated to b11972.
+- The whole model, output layer included, now fits on the GPU when it can,
+  and sampling runs on the GPU, also with MTP.
+- Faster first token on the desktop.
+
+### Android
+- Picking a remote connection turns Remote on with it.
+- Many fixes from the desktop work that also apply to the phone (prompt
+  reuse, tool progress, document fitting).
+
 ## 1.0.0 (2026-10-21)
 
 First public release. Android only.

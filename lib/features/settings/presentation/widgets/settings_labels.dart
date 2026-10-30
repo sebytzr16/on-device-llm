@@ -11,6 +11,7 @@ String backendLabel(GpuBackend b) => switch (b) {
   GpuBackend.opencl => 'OpenCL (GPU)',
   GpuBackend.metal => 'Metal (GPU)',
   GpuBackend.qnn => 'QNN (NPU)',
+  GpuBackend.cuda => 'CUDA (NVIDIA GPU)',
 };
 
 /// Short form for one-line summaries.
@@ -21,6 +22,7 @@ String backendShort(GpuBackend b) => switch (b) {
   GpuBackend.opencl => 'opencl',
   GpuBackend.metal => 'metal',
   GpuBackend.qnn => 'qnn',
+  GpuBackend.cuda => 'cuda',
 };
 
 String webModeLabel(WebMode m, [AppLocalizations? l10n]) => switch (m) {
@@ -64,8 +66,9 @@ List<GpuBackend> availableBackends() => [
   GpuBackend.auto,
   GpuBackend.cpu,
   if (Platform.isAndroid) GpuBackend.opencl,
-  if (Platform.isAndroid) GpuBackend.vulkan,
+  if (Platform.isAndroid || Platform.isWindows) GpuBackend.vulkan,
   if (Platform.isIOS || Platform.isMacOS) GpuBackend.metal,
+  if (Platform.isWindows) GpuBackend.cuda,
 ];
 
 String gpuLayersLabel(int n) => n == 999 ? 'All' : '$n';

@@ -1393,6 +1393,28 @@ class $ModelsTable extends Models with TableInfo<$ModelsTable, Model> {
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
   $ModelsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _partsJsonMeta = const VerificationMeta(
+    'partsJson',
+  );
+  @override
+  late final GeneratedColumn<String> partsJson = GeneratedColumn<String>(
+    'parts_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _projectorJsonMeta = const VerificationMeta(
+    'projectorJson',
+  );
+  @override
+  late final GeneratedColumn<String> projectorJson = GeneratedColumn<String>(
+    'projector_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _idMeta = const VerificationMeta('id');
   @override
   late final GeneratedColumn<String> id = GeneratedColumn<String>(
@@ -1537,6 +1559,8 @@ class $ModelsTable extends Models with TableInfo<$ModelsTable, Model> {
   );
   @override
   List<GeneratedColumn> get $columns => [
+    partsJson,
+    projectorJson,
     id,
     displayName,
     fileName,
@@ -1563,6 +1587,21 @@ class $ModelsTable extends Models with TableInfo<$ModelsTable, Model> {
   }) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
+    if (data.containsKey('parts_json')) {
+      context.handle(
+        _partsJsonMeta,
+        partsJson.isAcceptableOrUnknown(data['parts_json']!, _partsJsonMeta),
+      );
+    }
+    if (data.containsKey('projector_json')) {
+      context.handle(
+        _projectorJsonMeta,
+        projectorJson.isAcceptableOrUnknown(
+          data['projector_json']!,
+          _projectorJsonMeta,
+        ),
+      );
+    }
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     } else if (isInserting) {
@@ -1677,6 +1716,14 @@ class $ModelsTable extends Models with TableInfo<$ModelsTable, Model> {
   Model map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return Model(
+      partsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}parts_json'],
+      ),
+      projectorJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}projector_json'],
+      ),
       id: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}id'],
@@ -1739,6 +1786,8 @@ class $ModelsTable extends Models with TableInfo<$ModelsTable, Model> {
 }
 
 class Model extends DataClass implements Insertable<Model> {
+  final String? partsJson;
+  final String? projectorJson;
   final String id;
   final String displayName;
   final String fileName;
@@ -1753,6 +1802,8 @@ class Model extends DataClass implements Insertable<Model> {
   final String? localPath;
   final DateTime? downloadedAt;
   const Model({
+    this.partsJson,
+    this.projectorJson,
     required this.id,
     required this.displayName,
     required this.fileName,
@@ -1770,6 +1821,12 @@ class Model extends DataClass implements Insertable<Model> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
+    if (!nullToAbsent || partsJson != null) {
+      map['parts_json'] = Variable<String>(partsJson);
+    }
+    if (!nullToAbsent || projectorJson != null) {
+      map['projector_json'] = Variable<String>(projectorJson);
+    }
     map['id'] = Variable<String>(id);
     map['display_name'] = Variable<String>(displayName);
     map['file_name'] = Variable<String>(fileName);
@@ -1798,6 +1855,12 @@ class Model extends DataClass implements Insertable<Model> {
 
   ModelsCompanion toCompanion(bool nullToAbsent) {
     return ModelsCompanion(
+      partsJson: partsJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(partsJson),
+      projectorJson: projectorJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(projectorJson),
       id: Value(id),
       displayName: Value(displayName),
       fileName: Value(fileName),
@@ -1830,6 +1893,8 @@ class Model extends DataClass implements Insertable<Model> {
   }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return Model(
+      partsJson: serializer.fromJson<String?>(json['partsJson']),
+      projectorJson: serializer.fromJson<String?>(json['projectorJson']),
       id: serializer.fromJson<String>(json['id']),
       displayName: serializer.fromJson<String>(json['displayName']),
       fileName: serializer.fromJson<String>(json['fileName']),
@@ -1849,6 +1914,8 @@ class Model extends DataClass implements Insertable<Model> {
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
+      'partsJson': serializer.toJson<String?>(partsJson),
+      'projectorJson': serializer.toJson<String?>(projectorJson),
       'id': serializer.toJson<String>(id),
       'displayName': serializer.toJson<String>(displayName),
       'fileName': serializer.toJson<String>(fileName),
@@ -1866,6 +1933,8 @@ class Model extends DataClass implements Insertable<Model> {
   }
 
   Model copyWith({
+    Value<String?> partsJson = const Value.absent(),
+    Value<String?> projectorJson = const Value.absent(),
     String? id,
     String? displayName,
     String? fileName,
@@ -1880,6 +1949,10 @@ class Model extends DataClass implements Insertable<Model> {
     Value<String?> localPath = const Value.absent(),
     Value<DateTime?> downloadedAt = const Value.absent(),
   }) => Model(
+    partsJson: partsJson.present ? partsJson.value : this.partsJson,
+    projectorJson: projectorJson.present
+        ? projectorJson.value
+        : this.projectorJson,
     id: id ?? this.id,
     displayName: displayName ?? this.displayName,
     fileName: fileName ?? this.fileName,
@@ -1898,6 +1971,10 @@ class Model extends DataClass implements Insertable<Model> {
   );
   Model copyWithCompanion(ModelsCompanion data) {
     return Model(
+      partsJson: data.partsJson.present ? data.partsJson.value : this.partsJson,
+      projectorJson: data.projectorJson.present
+          ? data.projectorJson.value
+          : this.projectorJson,
       id: data.id.present ? data.id.value : this.id,
       displayName: data.displayName.present
           ? data.displayName.value
@@ -1929,6 +2006,8 @@ class Model extends DataClass implements Insertable<Model> {
   @override
   String toString() {
     return (StringBuffer('Model(')
+          ..write('partsJson: $partsJson, ')
+          ..write('projectorJson: $projectorJson, ')
           ..write('id: $id, ')
           ..write('displayName: $displayName, ')
           ..write('fileName: $fileName, ')
@@ -1948,6 +2027,8 @@ class Model extends DataClass implements Insertable<Model> {
 
   @override
   int get hashCode => Object.hash(
+    partsJson,
+    projectorJson,
     id,
     displayName,
     fileName,
@@ -1966,6 +2047,8 @@ class Model extends DataClass implements Insertable<Model> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is Model &&
+          other.partsJson == this.partsJson &&
+          other.projectorJson == this.projectorJson &&
           other.id == this.id &&
           other.displayName == this.displayName &&
           other.fileName == this.fileName &&
@@ -1982,6 +2065,8 @@ class Model extends DataClass implements Insertable<Model> {
 }
 
 class ModelsCompanion extends UpdateCompanion<Model> {
+  final Value<String?> partsJson;
+  final Value<String?> projectorJson;
   final Value<String> id;
   final Value<String> displayName;
   final Value<String> fileName;
@@ -1997,6 +2082,8 @@ class ModelsCompanion extends UpdateCompanion<Model> {
   final Value<DateTime?> downloadedAt;
   final Value<int> rowid;
   const ModelsCompanion({
+    this.partsJson = const Value.absent(),
+    this.projectorJson = const Value.absent(),
     this.id = const Value.absent(),
     this.displayName = const Value.absent(),
     this.fileName = const Value.absent(),
@@ -2013,6 +2100,8 @@ class ModelsCompanion extends UpdateCompanion<Model> {
     this.rowid = const Value.absent(),
   });
   ModelsCompanion.insert({
+    this.partsJson = const Value.absent(),
+    this.projectorJson = const Value.absent(),
     required String id,
     required String displayName,
     required String fileName,
@@ -2034,6 +2123,8 @@ class ModelsCompanion extends UpdateCompanion<Model> {
        family = Value(family),
        quantization = Value(quantization);
   static Insertable<Model> custom({
+    Expression<String>? partsJson,
+    Expression<String>? projectorJson,
     Expression<String>? id,
     Expression<String>? displayName,
     Expression<String>? fileName,
@@ -2050,6 +2141,8 @@ class ModelsCompanion extends UpdateCompanion<Model> {
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
+      if (partsJson != null) 'parts_json': partsJson,
+      if (projectorJson != null) 'projector_json': projectorJson,
       if (id != null) 'id': id,
       if (displayName != null) 'display_name': displayName,
       if (fileName != null) 'file_name': fileName,
@@ -2068,6 +2161,8 @@ class ModelsCompanion extends UpdateCompanion<Model> {
   }
 
   ModelsCompanion copyWith({
+    Value<String?>? partsJson,
+    Value<String?>? projectorJson,
     Value<String>? id,
     Value<String>? displayName,
     Value<String>? fileName,
@@ -2084,6 +2179,8 @@ class ModelsCompanion extends UpdateCompanion<Model> {
     Value<int>? rowid,
   }) {
     return ModelsCompanion(
+      partsJson: partsJson ?? this.partsJson,
+      projectorJson: projectorJson ?? this.projectorJson,
       id: id ?? this.id,
       displayName: displayName ?? this.displayName,
       fileName: fileName ?? this.fileName,
@@ -2104,6 +2201,12 @@ class ModelsCompanion extends UpdateCompanion<Model> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
+    if (partsJson.present) {
+      map['parts_json'] = Variable<String>(partsJson.value);
+    }
+    if (projectorJson.present) {
+      map['projector_json'] = Variable<String>(projectorJson.value);
+    }
     if (id.present) {
       map['id'] = Variable<String>(id.value);
     }
@@ -2152,6 +2255,8 @@ class ModelsCompanion extends UpdateCompanion<Model> {
   @override
   String toString() {
     return (StringBuffer('ModelsCompanion(')
+          ..write('partsJson: $partsJson, ')
+          ..write('projectorJson: $projectorJson, ')
           ..write('id: $id, ')
           ..write('displayName: $displayName, ')
           ..write('fileName: $fileName, ')
@@ -4915,6 +5020,8 @@ typedef $$MessagesTableProcessedTableManager =
     >;
 typedef $$ModelsTableCreateCompanionBuilder =
     ModelsCompanion Function({
+      Value<String?> partsJson,
+      Value<String?> projectorJson,
       required String id,
       required String displayName,
       required String fileName,
@@ -4932,6 +5039,8 @@ typedef $$ModelsTableCreateCompanionBuilder =
     });
 typedef $$ModelsTableUpdateCompanionBuilder =
     ModelsCompanion Function({
+      Value<String?> partsJson,
+      Value<String?> projectorJson,
       Value<String> id,
       Value<String> displayName,
       Value<String> fileName,
@@ -4957,6 +5066,16 @@ class $$ModelsTableFilterComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnFilters<String> get partsJson => $composableBuilder(
+    column: $table.partsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get projectorJson => $composableBuilder(
+    column: $table.projectorJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get id => $composableBuilder(
     column: $table.id,
     builder: (column) => ColumnFilters(column),
@@ -5032,6 +5151,16 @@ class $$ModelsTableOrderingComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnOrderings<String> get partsJson => $composableBuilder(
+    column: $table.partsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get projectorJson => $composableBuilder(
+    column: $table.projectorJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get id => $composableBuilder(
     column: $table.id,
     builder: (column) => ColumnOrderings(column),
@@ -5107,6 +5236,14 @@ class $$ModelsTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  GeneratedColumn<String> get partsJson =>
+      $composableBuilder(column: $table.partsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get projectorJson => $composableBuilder(
+    column: $table.projectorJson,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
@@ -5187,6 +5324,8 @@ class $$ModelsTableTableManager
               $$ModelsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback:
               ({
+                Value<String?> partsJson = const Value.absent(),
+                Value<String?> projectorJson = const Value.absent(),
                 Value<String> id = const Value.absent(),
                 Value<String> displayName = const Value.absent(),
                 Value<String> fileName = const Value.absent(),
@@ -5202,6 +5341,8 @@ class $$ModelsTableTableManager
                 Value<DateTime?> downloadedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ModelsCompanion(
+                partsJson: partsJson,
+                projectorJson: projectorJson,
                 id: id,
                 displayName: displayName,
                 fileName: fileName,
@@ -5219,6 +5360,8 @@ class $$ModelsTableTableManager
               ),
           createCompanionCallback:
               ({
+                Value<String?> partsJson = const Value.absent(),
+                Value<String?> projectorJson = const Value.absent(),
                 required String id,
                 required String displayName,
                 required String fileName,
@@ -5234,6 +5377,8 @@ class $$ModelsTableTableManager
                 Value<DateTime?> downloadedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ModelsCompanion.insert(
+                partsJson: partsJson,
+                projectorJson: projectorJson,
                 id: id,
                 displayName: displayName,
                 fileName: fileName,

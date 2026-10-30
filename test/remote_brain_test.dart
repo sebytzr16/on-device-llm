@@ -104,6 +104,26 @@ Future<(ProviderContainer, _Engine)> _start(_Remote settings) async {
 }
 
 void main() {
+  test('stablePrefix: remote turns receive question notes', () async {
+    final (container, engine) = await _start(_Remote(web: WebMode.off));
+    final chat = container.read(chatProvider.notifier);
+    expect(await chat.send('Are you able to do online searches?'), isTrue);
+    final first = engine.calls.last.messages;
+    expect(
+      first.first['content'],
+      isNot(contains('The user asks what you can do')),
+    );
+    expect(first.last['content'], contains('The user asks what you can do'));
+    expect(await chat.send('Pourquoi le ciel est-il bleu ?'), isTrue);
+    final second = engine.calls.last.messages;
+    expect(second.first['content'], first.first['content']);
+    expect(
+      second.last['content'],
+      contains('The user writes in French: answer in French.'),
+    );
+    expect(second[1]['content'], 'Are you able to do online searches?');
+  });
+
   test(
     'a timely question goes to the remote model with the web tools',
     () async {

@@ -219,13 +219,16 @@ class ModelsScreen extends ConsumerWidget {
         memory: memory,
         active: state.loadedModelId == model.id,
         busy: busy,
+        preparing: state.preparing.contains(model.id),
         onDownload: () => _download(context, ref, model),
         onPause: () => manager.pauseDownload(model.id),
         onLoad: () => _attempt(context, () => manager.loadModel(model)),
         onUnload: () => _attempt(context, manager.unloadModel),
         onDelete: () => _delete(context, ref, model),
         visionReady:
-            visionProjectors.containsKey(model.id) && model.isDownloaded
+            (model.projector != null ||
+                    visionProjectors.containsKey(model.id)) &&
+                model.isDownloaded
             ? state.vision.contains(model.id)
             : null,
         visionProgress: state.downloads[ModelManagerState.visionKey(model.id)],
@@ -236,7 +239,7 @@ class ModelsScreen extends ConsumerWidget {
             _attempt(context, () => manager.deleteVision(model)),
         onBenchmark: () => showBenchmarkDialog(context, ref, model),
         onRemoveEntry:
-            !model.isDownloaded && !bundledCatalog.any((m) => m.id == model.id)
+            !model.isDownloaded && !catalogModels.any((m) => m.id == model.id)
             ? () => _attempt(context, () => manager.deleteModel(model))
             : null,
         onProfile: model.isDownloaded

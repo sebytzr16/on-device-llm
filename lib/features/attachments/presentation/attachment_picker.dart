@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/design/app_design.dart';
 import '../../../core/design/app_sheet.dart';
+import '../../../core/platform/desktop_host.dart';
 import '../data/attachment_store.dart';
 import '../domain/attachment.dart';
 import '../domain/scan_options.dart';
@@ -99,13 +100,15 @@ Future<List<Attachment>> pickAttachments(
               spacing: AppDesign.sm,
               children: [
                 for (final tile in [
-                  AttachTile(
-                    key: const Key('attach-camera'),
-                    icon: Icons.photo_camera_outlined,
-                    label: context.l10n.attachCamera,
-                    tooltip: context.l10n.takePhoto,
-                    onTap: (sheet) => Navigator.pop(sheet, 'camera'),
-                  ),
+                  // Windows has no image_picker camera.
+                  if (!DesktopHost.active)
+                    AttachTile(
+                      key: const Key('attach-camera'),
+                      icon: Icons.photo_camera_outlined,
+                      label: context.l10n.attachCamera,
+                      tooltip: context.l10n.takePhoto,
+                      onTap: (sheet) => Navigator.pop(sheet, 'camera'),
+                    ),
                   AttachTile(
                     key: const Key('attach-gallery'),
                     icon: Icons.photo_library_outlined,

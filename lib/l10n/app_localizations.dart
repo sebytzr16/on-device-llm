@@ -4957,7 +4957,7 @@ abstract class AppLocalizations {
   /// No description provided for @uiRemoteServerPageExtractDocumentsSafelyOnThePhone.
   ///
   /// In en, this message translates to:
-  /// **'Extract documents safely on the phone, then send their text in the prompt. Original files are not uploaded.'**
+  /// **'Extract documents safely on this device, then send their text in the prompt. Original files are not uploaded.'**
   String get uiRemoteServerPageExtractDocumentsSafelyOnThePhone;
 
   /// No description provided for @uiRemoteServerPageStreamingIdleTimeout.
@@ -5545,13 +5545,13 @@ abstract class AppLocalizations {
   /// No description provided for @remoteKeyHostedHelp.
   ///
   /// In en, this message translates to:
-  /// **'Stored in the Android keystore; sent only to {provider}.'**
+  /// **'Stored in this device\'s secure storage; sent only to {provider}.'**
   String remoteKeyHostedHelp(Object provider);
 
   /// No description provided for @remoteKeySelfHelp.
   ///
   /// In en, this message translates to:
-  /// **'Only if the server was started with a key. Stored in the Android keystore.'**
+  /// **'Only if the server was started with a key. Stored in this device\'s secure storage.'**
   String get remoteKeySelfHelp;
 
   /// No description provided for @remoteHideKey.
@@ -8683,6 +8683,3175 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Notice'**
   String get sheetNotice;
+
+  /// No description provided for @desktopMinimize.
+  ///
+  /// In en, this message translates to:
+  /// **'Minimize'**
+  String get desktopMinimize;
+
+  /// No description provided for @desktopMaximize.
+  ///
+  /// In en, this message translates to:
+  /// **'Maximize'**
+  String get desktopMaximize;
+
+  /// No description provided for @desktopRestore.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore down'**
+  String get desktopRestore;
+
+  /// No description provided for @desktopClose.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get desktopClose;
+
+  /// No description provided for @desktopToggleSidebar.
+  ///
+  /// In en, this message translates to:
+  /// **'Show or hide the sidebar (Ctrl+B)'**
+  String get desktopToggleSidebar;
+
+  /// No description provided for @desktopNewChatTip.
+  ///
+  /// In en, this message translates to:
+  /// **'New chat (Ctrl+N)'**
+  String get desktopNewChatTip;
+
+  /// No description provided for @desktopNoChats.
+  ///
+  /// In en, this message translates to:
+  /// **'No conversations yet'**
+  String get desktopNoChats;
+
+  /// No description provided for @desktopNoMatches.
+  ///
+  /// In en, this message translates to:
+  /// **'No conversations match'**
+  String get desktopNoMatches;
+
+  /// No description provided for @desktopEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What can I help with?'**
+  String get desktopEmptyTitle;
+
+  /// No description provided for @desktopEmptyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Answers are worked out on this PC. Nothing leaves it unless you turn on web research or a remote server.'**
+  String get desktopEmptyHint;
+
+  /// No description provided for @desktopComposerHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter to send · Shift+Enter for a new line'**
+  String get desktopComposerHint;
+
+  /// No description provided for @desktopPickModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a model'**
+  String get desktopPickModel;
+
+  /// No description provided for @desktopServerPair.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect a phone'**
+  String get desktopServerPair;
+
+  /// No description provided for @desktopServerPairHint.
+  ///
+  /// In en, this message translates to:
+  /// **'On the phone, open Settings > Remote server. Tap Scan QR code, or tap Find nearby hosts, pick this PC and enter the pairing code. Both devices must be on the same Wi-Fi.'**
+  String get desktopServerPairHint;
+
+  /// No description provided for @desktopServerPairOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on \"Share on the local network\" and start the server to show a pairing code.'**
+  String get desktopServerPairOff;
+
+  /// No description provided for @desktopServerNeedsModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Load a model first: phones and apps get answers from the model loaded here.'**
+  String get desktopServerNeedsModel;
+
+  /// No description provided for @hostPairCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Pairing code'**
+  String get hostPairCode;
+
+  /// No description provided for @remotePairCodeMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the 6-digit pairing code shown next to the server on {name}. Leave it empty to type an access token instead.'**
+  String remotePairCodeMessage(String name);
+
+  /// No description provided for @remotePairConnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect'**
+  String get remotePairConnect;
+
+  /// No description provided for @remotePairWrong.
+  ///
+  /// In en, this message translates to:
+  /// **'Wrong pairing code. Check the code on the other device and try again.'**
+  String get remotePairWrong;
+
+  /// No description provided for @remotePairLocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many wrong codes. Restart the server on the other device to get a new code.'**
+  String get remotePairLocked;
+
+  /// No description provided for @remotePairUnreachable.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t reach {name}. Check that both devices are on the same Wi-Fi and the server is running.'**
+  String remotePairUnreachable(String name);
+
+  /// No description provided for @desktopServerAddress.
+  ///
+  /// In en, this message translates to:
+  /// **'Address for phones'**
+  String get desktopServerAddress;
+
+  /// No description provided for @desktopLanTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Network check'**
+  String get desktopLanTitle;
+
+  /// No description provided for @desktopLanChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking Windows network settings…'**
+  String get desktopLanChecking;
+
+  /// No description provided for @desktopLanPublic.
+  ///
+  /// In en, this message translates to:
+  /// **'Windows treats \"{name}\" as a public network. If the phone can\'t find or reach this PC, set its network profile to Private.'**
+  String desktopLanPublic(String name);
+
+  /// No description provided for @desktopLanOpenSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Open network settings'**
+  String get desktopLanOpenSettings;
+
+  /// No description provided for @desktopLanBlocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Windows Firewall blocks this app on the current network.'**
+  String get desktopLanBlocked;
+
+  /// No description provided for @desktopLanNoRule.
+  ///
+  /// In en, this message translates to:
+  /// **'Windows Firewall has no rule for this app on the current network yet.'**
+  String get desktopLanNoRule;
+
+  /// No description provided for @desktopLanAllow.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow in firewall'**
+  String get desktopLanAllow;
+
+  /// No description provided for @desktopLanFirewallOk.
+  ///
+  /// In en, this message translates to:
+  /// **'Windows Firewall allows this app on the current network.'**
+  String get desktopLanFirewallOk;
+
+  /// No description provided for @desktopLanVpn.
+  ///
+  /// In en, this message translates to:
+  /// **'A VPN is connected ({names}). If the phone can\'t connect, allow local network access in the VPN app or pause it.'**
+  String desktopLanVpn(String names);
+
+  /// No description provided for @desktopLanRecheck.
+  ///
+  /// In en, this message translates to:
+  /// **'Check again'**
+  String get desktopLanRecheck;
+
+  /// No description provided for @desktopLanClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing on this PC should stop a phone from connecting.'**
+  String get desktopLanClear;
+
+  /// No description provided for @loadPhaseWeights.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading weights into memory'**
+  String get loadPhaseWeights;
+
+  /// No description provided for @loadPhaseContext.
+  ///
+  /// In en, this message translates to:
+  /// **'Allocating context'**
+  String get loadPhaseContext;
+
+  /// No description provided for @loadPhaseFinishing.
+  ///
+  /// In en, this message translates to:
+  /// **'Finishing up'**
+  String get loadPhaseFinishing;
+
+  /// No description provided for @timeLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'{time} left'**
+  String timeLeft(String time);
+
+  /// No description provided for @desktopNoModels.
+  ///
+  /// In en, this message translates to:
+  /// **'No models on this PC yet. Import a GGUF or download one under Models.'**
+  String get desktopNoModels;
+
+  /// No description provided for @desktopLocalModels.
+  ///
+  /// In en, this message translates to:
+  /// **'On this PC'**
+  String get desktopLocalModels;
+
+  /// No description provided for @desktopCatalog.
+  ///
+  /// In en, this message translates to:
+  /// **'Available to download'**
+  String get desktopCatalog;
+
+  /// No description provided for @desktopLoad.
+  ///
+  /// In en, this message translates to:
+  /// **'Load'**
+  String get desktopLoad;
+
+  /// No description provided for @desktopEject.
+  ///
+  /// In en, this message translates to:
+  /// **'Eject'**
+  String get desktopEject;
+
+  /// No description provided for @desktopLoaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Loaded'**
+  String get desktopLoaded;
+
+  /// No description provided for @desktopGeneral.
+  ///
+  /// In en, this message translates to:
+  /// **'General'**
+  String get desktopGeneral;
+
+  /// No description provided for @desktopLanguageSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'Follow Windows'**
+  String get desktopLanguageSystem;
+
+  /// No description provided for @desktopAttachTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Attach files'**
+  String get desktopAttachTooltip;
+
+  /// No description provided for @desktopInspectorToggle.
+  ///
+  /// In en, this message translates to:
+  /// **'Model and chat settings (Ctrl+I)'**
+  String get desktopInspectorToggle;
+
+  /// No description provided for @desktopInspectorTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings'**
+  String get desktopInspectorTitle;
+
+  /// No description provided for @desktopInspectorHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Changes here apply to this chat only, on top of the model\'s settings.'**
+  String get desktopInspectorHint;
+
+  /// No description provided for @desktopInspectorReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset'**
+  String get desktopInspectorReset;
+
+  /// No description provided for @desktopInspectorClose.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get desktopInspectorClose;
+
+  /// No description provided for @desktopInspectorSystemPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Instructions'**
+  String get desktopInspectorSystemPrompt;
+
+  /// No description provided for @desktopInspectorPromptHint.
+  ///
+  /// In en, this message translates to:
+  /// **'How the model should answer in this chat'**
+  String get desktopInspectorPromptHint;
+
+  /// No description provided for @desktopInspectorTemperature.
+  ///
+  /// In en, this message translates to:
+  /// **'Temperature'**
+  String get desktopInspectorTemperature;
+
+  /// No description provided for @desktopInspectorMaxTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'Max answer tokens'**
+  String get desktopInspectorMaxTokens;
+
+  /// No description provided for @desktopInspectorContext.
+  ///
+  /// In en, this message translates to:
+  /// **'Context length'**
+  String get desktopInspectorContext;
+
+  /// No description provided for @desktopInspectorContextHint.
+  ///
+  /// In en, this message translates to:
+  /// **'A new context length reloads the model on the next message.'**
+  String get desktopInspectorContextHint;
+
+  /// No description provided for @desktopInspectorScopeModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Model'**
+  String get desktopInspectorScopeModel;
+
+  /// No description provided for @desktopInspectorScopeChat.
+  ///
+  /// In en, this message translates to:
+  /// **'This chat'**
+  String get desktopInspectorScopeChat;
+
+  /// No description provided for @desktopInspectorModelHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved with {model} and used in every chat with it. Switch to This chat for a one-off change.'**
+  String desktopInspectorModelHint(String model);
+
+  /// No description provided for @desktopInspectorModelPromptHint.
+  ///
+  /// In en, this message translates to:
+  /// **'How this model should answer in every chat'**
+  String get desktopInspectorModelPromptHint;
+
+  /// No description provided for @desktopInspectorResetModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset model'**
+  String get desktopInspectorResetModel;
+
+  /// No description provided for @desktopInspectorRepeatPenalty.
+  ///
+  /// In en, this message translates to:
+  /// **'Repeat penalty'**
+  String get desktopInspectorRepeatPenalty;
+
+  /// No description provided for @desktopInspectorPresencePenalty.
+  ///
+  /// In en, this message translates to:
+  /// **'Presence penalty'**
+  String get desktopInspectorPresencePenalty;
+
+  /// No description provided for @desktopInspectorChatSection.
+  ///
+  /// In en, this message translates to:
+  /// **'This chat'**
+  String get desktopInspectorChatSection;
+
+  /// No description provided for @desktopSourceMaker.
+  ///
+  /// In en, this message translates to:
+  /// **'maker\'s'**
+  String get desktopSourceMaker;
+
+  /// No description provided for @desktopSourceYours.
+  ///
+  /// In en, this message translates to:
+  /// **'yours'**
+  String get desktopSourceYours;
+
+  /// No description provided for @desktopSourceModel.
+  ///
+  /// In en, this message translates to:
+  /// **'model'**
+  String get desktopSourceModel;
+
+  /// No description provided for @desktopSourcePreset.
+  ///
+  /// In en, this message translates to:
+  /// **'preset'**
+  String get desktopSourcePreset;
+
+  /// No description provided for @desktopSourceProject.
+  ///
+  /// In en, this message translates to:
+  /// **'project'**
+  String get desktopSourceProject;
+
+  /// No description provided for @desktopSourceChat.
+  ///
+  /// In en, this message translates to:
+  /// **'this chat'**
+  String get desktopSourceChat;
+
+  /// No description provided for @desktopModelSettingsSampling.
+  ///
+  /// In en, this message translates to:
+  /// **'Answers'**
+  String get desktopModelSettingsSampling;
+
+  /// No description provided for @desktopModelSettingsSamplingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Used in every chat with this model. They take effect on the next message, without reloading.'**
+  String get desktopModelSettingsSamplingHint;
+
+  /// No description provided for @desktopModelServing.
+  ///
+  /// In en, this message translates to:
+  /// **'SERVING'**
+  String get desktopModelServing;
+
+  /// No description provided for @desktopModelServingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'The local server answers other devices with this model. It stays loaded when a chat uses another model.'**
+  String get desktopModelServingHint;
+
+  /// No description provided for @desktopContextUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'{used} of {total} context tokens used'**
+  String desktopContextUsed(int used, int total);
+
+  /// No description provided for @desktopLoadSettingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Model settings'**
+  String get desktopLoadSettingsTitle;
+
+  /// No description provided for @desktopLoadSettingsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved with this model: how it loads and how it answers. A preset or a chat\'s own settings still win over them.'**
+  String get desktopLoadSettingsHint;
+
+  /// No description provided for @desktopLoadSettingsGpu.
+  ///
+  /// In en, this message translates to:
+  /// **'GPU offload'**
+  String get desktopLoadSettingsGpu;
+
+  /// No description provided for @desktopLoadSettingsGpuAuto.
+  ///
+  /// In en, this message translates to:
+  /// **'Fit to free VRAM'**
+  String get desktopLoadSettingsGpuAuto;
+
+  /// No description provided for @desktopLoadSettingsGpuLayers.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} of {total} layers on the GPU'**
+  String desktopLoadSettingsGpuLayers(int count, int total);
+
+  /// No description provided for @desktopLoadSettingsGpuNone.
+  ///
+  /// In en, this message translates to:
+  /// **'No GPU in use: the model runs on the CPU'**
+  String get desktopLoadSettingsGpuNone;
+
+  /// No description provided for @desktopLoadSettingsContext.
+  ///
+  /// In en, this message translates to:
+  /// **'Context length'**
+  String get desktopLoadSettingsContext;
+
+  /// No description provided for @desktopLoadSettingsTrained.
+  ///
+  /// In en, this message translates to:
+  /// **'Trained for {tokens} tokens'**
+  String desktopLoadSettingsTrained(String tokens);
+
+  /// No description provided for @desktopLoadSettingsFlash.
+  ///
+  /// In en, this message translates to:
+  /// **'Flash attention'**
+  String get desktopLoadSettingsFlash;
+
+  /// No description provided for @desktopLoadSettingsKv.
+  ///
+  /// In en, this message translates to:
+  /// **'KV cache type'**
+  String get desktopLoadSettingsKv;
+
+  /// No description provided for @desktopLoadSettingsKvHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Q8_0 halves the cache memory with little quality loss; Q4_0 quarters it.'**
+  String get desktopLoadSettingsKvHint;
+
+  /// No description provided for @desktopLoadSettingsThreads.
+  ///
+  /// In en, this message translates to:
+  /// **'CPU threads'**
+  String get desktopLoadSettingsThreads;
+
+  /// No description provided for @desktopLoadSettingsBatch.
+  ///
+  /// In en, this message translates to:
+  /// **'Batch size'**
+  String get desktopLoadSettingsBatch;
+
+  /// No description provided for @desktopLoadSettingsAuto.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto'**
+  String get desktopLoadSettingsAuto;
+
+  /// No description provided for @desktopLoadSettingsEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated memory'**
+  String get desktopLoadSettingsEstimate;
+
+  /// No description provided for @desktopLoadSettingsVram.
+  ///
+  /// In en, this message translates to:
+  /// **'VRAM'**
+  String get desktopLoadSettingsVram;
+
+  /// No description provided for @desktopLoadSettingsRam.
+  ///
+  /// In en, this message translates to:
+  /// **'RAM'**
+  String get desktopLoadSettingsRam;
+
+  /// No description provided for @desktopLoadSettingsUsage.
+  ///
+  /// In en, this message translates to:
+  /// **'{need} of {free} GB free'**
+  String desktopLoadSettingsUsage(String need, String free);
+
+  /// No description provided for @desktopLoadSettingsFitsGpu.
+  ///
+  /// In en, this message translates to:
+  /// **'Fits fully on the GPU'**
+  String get desktopLoadSettingsFitsGpu;
+
+  /// No description provided for @desktopLoadSettingsPartial.
+  ///
+  /// In en, this message translates to:
+  /// **'Partly on the GPU: the other layers run on the CPU, which is slower'**
+  String get desktopLoadSettingsPartial;
+
+  /// No description provided for @desktopLoadSettingsSpill.
+  ///
+  /// In en, this message translates to:
+  /// **'Over the card\'s free memory by {gb} GB: Windows moves the rest into shared memory and answers get several times slower. Lower the GPU layers or the context.'**
+  String desktopLoadSettingsSpill(String gb);
+
+  /// No description provided for @desktopLoadSettingsExperts.
+  ///
+  /// In en, this message translates to:
+  /// **'Expert weights stay in RAM so the rest fits on the GPU'**
+  String get desktopLoadSettingsExperts;
+
+  /// No description provided for @desktopLoadSettingsCapped.
+  ///
+  /// In en, this message translates to:
+  /// **'The context will be cut to {tokens} tokens to fit in memory'**
+  String desktopLoadSettingsCapped(String tokens);
+
+  /// No description provided for @desktopLoadSettingsMeasuring.
+  ///
+  /// In en, this message translates to:
+  /// **'Measuring…'**
+  String get desktopLoadSettingsMeasuring;
+
+  /// No description provided for @desktopLoadSettingsNoEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'No estimate: {reason}'**
+  String desktopLoadSettingsNoEstimate(String reason);
+
+  /// No description provided for @desktopLoadSettingsReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset to defaults'**
+  String get desktopLoadSettingsReset;
+
+  /// No description provided for @desktopLoadSettingsSaveLoad.
+  ///
+  /// In en, this message translates to:
+  /// **'Save and load'**
+  String get desktopLoadSettingsSaveLoad;
+
+  /// No description provided for @desktopMoreSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'All settings'**
+  String get desktopMoreSettings;
+
+  /// No description provided for @desktopShortcuts.
+  ///
+  /// In en, this message translates to:
+  /// **'Keyboard shortcuts'**
+  String get desktopShortcuts;
+
+  /// No description provided for @desktopShortcutList.
+  ///
+  /// In en, this message translates to:
+  /// **'Ctrl+N new chat · Ctrl+K search chats · Ctrl+L message box · Ctrl+B sidebar · Ctrl+M models · Ctrl+, settings · Esc stop · F2 rename · Delete delete chat · Ctrl+I chat settings'**
+  String get desktopShortcutList;
+
+  /// No description provided for @desktopDeleteChatTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this conversation?'**
+  String get desktopDeleteChatTitle;
+
+  /// No description provided for @desktopDeleteChatBody.
+  ///
+  /// In en, this message translates to:
+  /// **'“{title}” and its attached files are removed from this PC.'**
+  String desktopDeleteChatBody(String title);
+
+  /// No description provided for @desktopUntitled.
+  ///
+  /// In en, this message translates to:
+  /// **'New conversation'**
+  String get desktopUntitled;
+
+  /// No description provided for @desktopTokensPerSecond.
+  ///
+  /// In en, this message translates to:
+  /// **'{rate} tok/s'**
+  String desktopTokensPerSecond(String rate);
+
+  /// No description provided for @desktopServerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Local server'**
+  String get desktopServerTitle;
+
+  /// No description provided for @desktopServerRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Running'**
+  String get desktopServerRunning;
+
+  /// No description provided for @desktopServerStopped.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopped'**
+  String get desktopServerStopped;
+
+  /// No description provided for @desktopServerStarting.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting…'**
+  String get desktopServerStarting;
+
+  /// No description provided for @desktopServerPort.
+  ///
+  /// In en, this message translates to:
+  /// **'Port'**
+  String get desktopServerPort;
+
+  /// No description provided for @desktopServerInvalidPort.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a port from 1 to 65535.'**
+  String get desktopServerInvalidPort;
+
+  /// No description provided for @desktopServerStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Start server'**
+  String get desktopServerStart;
+
+  /// No description provided for @desktopServerStop.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop server'**
+  String get desktopServerStop;
+
+  /// No description provided for @desktopServerBind.
+  ///
+  /// In en, this message translates to:
+  /// **'Bind address'**
+  String get desktopServerBind;
+
+  /// No description provided for @desktopServerUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Base URL'**
+  String get desktopServerUrl;
+
+  /// No description provided for @desktopServerToken.
+  ///
+  /// In en, this message translates to:
+  /// **'Bearer token'**
+  String get desktopServerToken;
+
+  /// No description provided for @desktopServerReveal.
+  ///
+  /// In en, this message translates to:
+  /// **'Reveal token'**
+  String get desktopServerReveal;
+
+  /// No description provided for @desktopServerHide.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide token'**
+  String get desktopServerHide;
+
+  /// No description provided for @desktopServerCopy.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy'**
+  String get desktopServerCopy;
+
+  /// No description provided for @desktopServerRegenerate.
+  ///
+  /// In en, this message translates to:
+  /// **'Regenerate token'**
+  String get desktopServerRegenerate;
+
+  /// No description provided for @desktopServerRegenerateHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Regenerating stops the server. Start it again to use the new token.'**
+  String get desktopServerRegenerateHint;
+
+  /// No description provided for @desktopServerModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Loaded model'**
+  String get desktopServerModel;
+
+  /// No description provided for @desktopServerNoModel.
+  ///
+  /// In en, this message translates to:
+  /// **'No model loaded'**
+  String get desktopServerNoModel;
+
+  /// No description provided for @desktopServerEndpoints.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenAI-compatible endpoints'**
+  String get desktopServerEndpoints;
+
+  /// No description provided for @desktopServerCurl.
+  ///
+  /// In en, this message translates to:
+  /// **'curl example'**
+  String get desktopServerCurl;
+
+  /// No description provided for @desktopServerRequests.
+  ///
+  /// In en, this message translates to:
+  /// **'Request log'**
+  String get desktopServerRequests;
+
+  /// No description provided for @desktopServerRequestColumns.
+  ///
+  /// In en, this message translates to:
+  /// **'Method / path · status · duration · prompt / completion tokens'**
+  String get desktopServerRequestColumns;
+
+  /// No description provided for @desktopServerNoRequests.
+  ///
+  /// In en, this message translates to:
+  /// **'No requests yet.'**
+  String get desktopServerNoRequests;
+
+  /// No description provided for @desktopServerHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Listens only on this computer unless you share it on the local network. Every endpoint requires a bearer token.'**
+  String get desktopServerHint;
+
+  /// No description provided for @desktopLogsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Logs'**
+  String get desktopLogsTitle;
+
+  /// No description provided for @desktopLogsFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'Filter by tag or message'**
+  String get desktopLogsFilter;
+
+  /// No description provided for @desktopLogsAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All levels'**
+  String get desktopLogsAll;
+
+  /// No description provided for @desktopLogsDebug.
+  ///
+  /// In en, this message translates to:
+  /// **'Debug'**
+  String get desktopLogsDebug;
+
+  /// No description provided for @desktopLogsInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'Info'**
+  String get desktopLogsInfo;
+
+  /// No description provided for @desktopLogsWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Warning'**
+  String get desktopLogsWarning;
+
+  /// No description provided for @desktopLogsError.
+  ///
+  /// In en, this message translates to:
+  /// **'Error'**
+  String get desktopLogsError;
+
+  /// No description provided for @desktopLogsPause.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause'**
+  String get desktopLogsPause;
+
+  /// No description provided for @desktopLogsResume.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume'**
+  String get desktopLogsResume;
+
+  /// No description provided for @desktopLogsClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get desktopLogsClear;
+
+  /// No description provided for @desktopLogsCopyAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy all'**
+  String get desktopLogsCopyAll;
+
+  /// No description provided for @desktopLogsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No matching log entries.'**
+  String get desktopLogsEmpty;
+
+  /// No description provided for @desktopLogsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'In memory only · last 2000 lines · copy uses the current filters'**
+  String get desktopLogsHint;
+
+  /// No description provided for @desktopHfLocal.
+  ///
+  /// In en, this message translates to:
+  /// **'Local models'**
+  String get desktopHfLocal;
+
+  /// No description provided for @desktopHfDiscover.
+  ///
+  /// In en, this message translates to:
+  /// **'Discover'**
+  String get desktopHfDiscover;
+
+  /// No description provided for @desktopHfSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Search Hugging Face'**
+  String get desktopHfSearch;
+
+  /// No description provided for @desktopHfHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Model name (e.g. Qwen GGUF)'**
+  String get desktopHfHint;
+
+  /// No description provided for @desktopHfIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Search public GGUF repositories. Enter at least two characters.'**
+  String get desktopHfIntro;
+
+  /// No description provided for @desktopHfEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No GGUF repositories match.'**
+  String get desktopHfEmpty;
+
+  /// No description provided for @desktopHfSelect.
+  ///
+  /// In en, this message translates to:
+  /// **'Select a repository to explore quantizations.'**
+  String get desktopHfSelect;
+
+  /// No description provided for @desktopHfSort.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort results'**
+  String get desktopHfSort;
+
+  /// No description provided for @desktopHfDownloads.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloads'**
+  String get desktopHfDownloads;
+
+  /// No description provided for @desktopHfLikes.
+  ///
+  /// In en, this message translates to:
+  /// **'Likes'**
+  String get desktopHfLikes;
+
+  /// No description provided for @desktopHfUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Updated'**
+  String get desktopHfUpdated;
+
+  /// No description provided for @desktopHfUnknownDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown date'**
+  String get desktopHfUnknownDate;
+
+  /// No description provided for @desktopHfFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'GGUF files by quantization'**
+  String get desktopHfFiles;
+
+  /// No description provided for @desktopHfNoFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'No single-file GGUF weights in this repository.'**
+  String get desktopHfNoFiles;
+
+  /// No description provided for @desktopHfProjector.
+  ///
+  /// In en, this message translates to:
+  /// **'Vision projector (mmproj) present. Projectors cannot be added here.'**
+  String get desktopHfProjector;
+
+  /// No description provided for @desktopHfSplit.
+  ///
+  /// In en, this message translates to:
+  /// **'Split GGUF files are not supported here.'**
+  String get desktopHfSplit;
+
+  /// No description provided for @desktopHfDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get desktopHfDownload;
+
+  /// No description provided for @desktopHfDownloaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded'**
+  String get desktopHfDownloaded;
+
+  /// No description provided for @desktopHfCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get desktopHfCancel;
+
+  /// No description provided for @desktopHfQueued.
+  ///
+  /// In en, this message translates to:
+  /// **'Queued'**
+  String get desktopHfQueued;
+
+  /// No description provided for @desktopHfVerifying.
+  ///
+  /// In en, this message translates to:
+  /// **'Verifying checksum…'**
+  String get desktopHfVerifying;
+
+  /// No description provided for @desktopHfSearchError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not search Hugging Face. Try again.'**
+  String get desktopHfSearchError;
+
+  /// No description provided for @desktopHfFilesError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not read this repository. It may be gated or unavailable. Try another repository or import a GGUF.'**
+  String get desktopHfFilesError;
+
+  /// No description provided for @desktopHfDownloadError.
+  ///
+  /// In en, this message translates to:
+  /// **'Download failed. Try again.'**
+  String get desktopHfDownloadError;
+
+  /// No description provided for @desktopChatMenu.
+  ///
+  /// In en, this message translates to:
+  /// **'Chat actions'**
+  String get desktopChatMenu;
+
+  /// No description provided for @desktopChatExport.
+  ///
+  /// In en, this message translates to:
+  /// **'Export chat'**
+  String get desktopChatExport;
+
+  /// No description provided for @desktopChatMarkdown.
+  ///
+  /// In en, this message translates to:
+  /// **'Markdown (.md)'**
+  String get desktopChatMarkdown;
+
+  /// No description provided for @desktopChatJson.
+  ///
+  /// In en, this message translates to:
+  /// **'JSON (.json)'**
+  String get desktopChatJson;
+
+  /// No description provided for @desktopChatDuplicate.
+  ///
+  /// In en, this message translates to:
+  /// **'Duplicate chat'**
+  String get desktopChatDuplicate;
+
+  /// No description provided for @desktopChatBranch.
+  ///
+  /// In en, this message translates to:
+  /// **'Branch from here'**
+  String get desktopChatBranch;
+
+  /// No description provided for @desktopChatCopy.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy message'**
+  String get desktopChatCopy;
+
+  /// No description provided for @desktopChatEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit message'**
+  String get desktopChatEdit;
+
+  /// No description provided for @desktopChatRegenerate.
+  ///
+  /// In en, this message translates to:
+  /// **'Regenerate answer'**
+  String get desktopChatRegenerate;
+
+  /// No description provided for @desktopChatDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete message'**
+  String get desktopChatDelete;
+
+  /// No description provided for @desktopChatDrop.
+  ///
+  /// In en, this message translates to:
+  /// **'Drop files to attach'**
+  String get desktopChatDrop;
+
+  /// No description provided for @desktopChatClipboardImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Clipboard image.png'**
+  String get desktopChatClipboardImage;
+
+  /// No description provided for @desktopChatActionFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not complete this chat action.'**
+  String get desktopChatActionFailed;
+
+  /// No description provided for @desktopChatExported.
+  ///
+  /// In en, this message translates to:
+  /// **'Chat exported'**
+  String get desktopChatExported;
+
+  /// No description provided for @desktopChatCopyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{title} (copy)'**
+  String desktopChatCopyTitle(String title);
+
+  /// No description provided for @desktopChatBranchTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{title} (branch)'**
+  String desktopChatBranchTitle(String title);
+
+  /// No description provided for @desktopChatModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Model'**
+  String get desktopChatModel;
+
+  /// No description provided for @desktopChatDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Date'**
+  String get desktopChatDate;
+
+  /// No description provided for @desktopChatThinking.
+  ///
+  /// In en, this message translates to:
+  /// **'Thinking'**
+  String get desktopChatThinking;
+
+  /// No description provided for @desktopChatUser.
+  ///
+  /// In en, this message translates to:
+  /// **'User'**
+  String get desktopChatUser;
+
+  /// No description provided for @desktopChatAssistant.
+  ///
+  /// In en, this message translates to:
+  /// **'Assistant'**
+  String get desktopChatAssistant;
+
+  /// No description provided for @desktopChatSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'System'**
+  String get desktopChatSystem;
+
+  /// No description provided for @desktopLoadSettingsLoadedNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Measured with the current model still in memory. Loading frees it first, so more may fit.'**
+  String get desktopLoadSettingsLoadedNote;
+
+  /// No description provided for @desktopServerLan.
+  ///
+  /// In en, this message translates to:
+  /// **'Share on the local network'**
+  String get desktopServerLan;
+
+  /// No description provided for @desktopServerLanHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Other devices on your network can connect with the token. Windows may ask to allow it through the firewall.'**
+  String get desktopServerLanHint;
+
+  /// No description provided for @desktopThemeDark.
+  ///
+  /// In en, this message translates to:
+  /// **'Dark'**
+  String get desktopThemeDark;
+
+  /// No description provided for @desktopThemeLight.
+  ///
+  /// In en, this message translates to:
+  /// **'Light'**
+  String get desktopThemeLight;
+
+  /// No description provided for @desktopThemeSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'System'**
+  String get desktopThemeSystem;
+
+  /// No description provided for @desktopServerStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get desktopServerStatus;
+
+  /// No description provided for @desktopHfSortLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort: {sort}'**
+  String desktopHfSortLabel(String sort);
+
+  /// No description provided for @desktopHfCopyRepo.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy repository ID'**
+  String get desktopHfCopyRepo;
+
+  /// No description provided for @desktopHfIncludesProjector.
+  ///
+  /// In en, this message translates to:
+  /// **'Includes vision projector ({precision}, {size})'**
+  String desktopHfIncludesProjector(String precision, String size);
+
+  /// No description provided for @desktopHfUpdatedDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Updated {date}'**
+  String desktopHfUpdatedDate(String date);
+
+  /// No description provided for @desktopHfUpdatedDays.
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =0{Updated today} =1{Updated 1 day ago} other{Updated {days} days ago}}'**
+  String desktopHfUpdatedDays(int days);
+
+  /// No description provided for @desktopHfFitsGpu.
+  ///
+  /// In en, this message translates to:
+  /// **'Fits GPU'**
+  String get desktopHfFitsGpu;
+
+  /// No description provided for @desktopHfPartialGpu.
+  ///
+  /// In en, this message translates to:
+  /// **'Partial GPU'**
+  String get desktopHfPartialGpu;
+
+  /// No description provided for @desktopHfTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'Too large'**
+  String get desktopHfTooLarge;
+
+  /// No description provided for @desktopProjectsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Organise conversations into projects, archives and trash.'**
+  String get desktopProjectsSubtitle;
+
+  /// No description provided for @desktopProjectsAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All conversations'**
+  String get desktopProjectsAll;
+
+  /// No description provided for @desktopProjectsNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New project'**
+  String get desktopProjectsNew;
+
+  /// No description provided for @desktopProjectsMove.
+  ///
+  /// In en, this message translates to:
+  /// **'Move to project'**
+  String get desktopProjectsMove;
+
+  /// No description provided for @desktopProjectsSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{1 selected} other{{count} selected}}'**
+  String desktopProjectsSelected(int count);
+
+  /// No description provided for @desktopProjectsClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get desktopProjectsClear;
+
+  /// No description provided for @desktopProjectsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get desktopProjectsTitle;
+
+  /// No description provided for @desktopProjectsUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Updated'**
+  String get desktopProjectsUpdated;
+
+  /// No description provided for @desktopProjectsOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get desktopProjectsOpen;
+
+  /// No description provided for @desktopProjectsDeleteForever.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete forever'**
+  String get desktopProjectsDeleteForever;
+
+  /// No description provided for @desktopProjectsTrashConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Move the selected conversations to Trash?'**
+  String get desktopProjectsTrashConfirm;
+
+  /// No description provided for @desktopKeyboardShortcuts.
+  ///
+  /// In en, this message translates to:
+  /// **'Keyboard shortcuts'**
+  String get desktopKeyboardShortcuts;
+
+  /// No description provided for @desktopShortcutSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Search conversations'**
+  String get desktopShortcutSearch;
+
+  /// No description provided for @desktopShortcutComposer.
+  ///
+  /// In en, this message translates to:
+  /// **'Focus message box'**
+  String get desktopShortcutComposer;
+
+  /// No description provided for @desktopShortcutStop.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop response'**
+  String get desktopShortcutStop;
+
+  /// No description provided for @desktopModelsFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Models folder'**
+  String get desktopModelsFolder;
+
+  /// No description provided for @desktopModelsFolderChange.
+  ///
+  /// In en, this message translates to:
+  /// **'Change…'**
+  String get desktopModelsFolderChange;
+
+  /// No description provided for @desktopModelsFolderOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Open in Explorer'**
+  String get desktopModelsFolderOpen;
+
+  /// No description provided for @desktopModelsFolderReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset to default'**
+  String get desktopModelsFolderReset;
+
+  /// No description provided for @desktopModelsFolderChoice.
+  ///
+  /// In en, this message translates to:
+  /// **'Move existing models to this folder, or keep using them where they are? New downloads and imports will use the selected folder.'**
+  String get desktopModelsFolderChoice;
+
+  /// No description provided for @desktopModelsFolderMove.
+  ///
+  /// In en, this message translates to:
+  /// **'Move existing models'**
+  String get desktopModelsFolderMove;
+
+  /// No description provided for @desktopModelsFolderLeave.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave them where they are'**
+  String get desktopModelsFolderLeave;
+
+  /// No description provided for @desktopModelsFolderMoving.
+  ///
+  /// In en, this message translates to:
+  /// **'Moving models…'**
+  String get desktopModelsFolderMoving;
+
+  /// No description provided for @desktopModelsFolderWritable.
+  ///
+  /// In en, this message translates to:
+  /// **'Cannot write to this folder. Choose a writable local folder and try again.'**
+  String get desktopModelsFolderWritable;
+
+  /// No description provided for @desktopModelsFolderSpace.
+  ///
+  /// In en, this message translates to:
+  /// **'Not enough free space in the destination. Free up space and try again.'**
+  String get desktopModelsFolderSpace;
+
+  /// No description provided for @desktopModelsFolderConflict.
+  ///
+  /// In en, this message translates to:
+  /// **'The destination contains conflicting files or is inside an existing models folder. Choose a separate folder.'**
+  String get desktopModelsFolderConflict;
+
+  /// No description provided for @desktopModelsFolderBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'Eject the loaded model and finish imports and downloads before changing folders.'**
+  String get desktopModelsFolderBusy;
+
+  /// No description provided for @desktopModelsFolderOpenError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open Explorer.'**
+  String get desktopModelsFolderOpenError;
+
+  /// No description provided for @desktopGgufAssociation.
+  ///
+  /// In en, this message translates to:
+  /// **'Open .gguf files with OnDevice LLM'**
+  String get desktopGgufAssociation;
+
+  /// No description provided for @desktopFileAssociations.
+  ///
+  /// In en, this message translates to:
+  /// **'File associations:'**
+  String get desktopFileAssociations;
+
+  /// No description provided for @desktopGgufModel.
+  ///
+  /// In en, this message translates to:
+  /// **'GGUF model'**
+  String get desktopGgufModel;
+
+  /// No description provided for @mcpTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP servers'**
+  String get mcpTitle;
+
+  /// No description provided for @mcpHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect local tools. Calls require approval unless you allow a tool permanently.'**
+  String get mcpHint;
+
+  /// No description provided for @mcpAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add server'**
+  String get mcpAdd;
+
+  /// No description provided for @mcpEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit mcp.json'**
+  String get mcpEdit;
+
+  /// No description provided for @mcpName.
+  ///
+  /// In en, this message translates to:
+  /// **'Server name'**
+  String get mcpName;
+
+  /// No description provided for @mcpCommand.
+  ///
+  /// In en, this message translates to:
+  /// **'Command'**
+  String get mcpCommand;
+
+  /// No description provided for @mcpArgs.
+  ///
+  /// In en, this message translates to:
+  /// **'Arguments (JSON array)'**
+  String get mcpArgs;
+
+  /// No description provided for @mcpEnv.
+  ///
+  /// In en, this message translates to:
+  /// **'Environment (JSON object)'**
+  String get mcpEnv;
+
+  /// No description provided for @mcpRestart.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart'**
+  String get mcpRestart;
+
+  /// No description provided for @mcpRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get mcpRemove;
+
+  /// No description provided for @mcpRevoke.
+  ///
+  /// In en, this message translates to:
+  /// **'Revoke automatic approval'**
+  String get mcpRevoke;
+
+  /// No description provided for @mcpDisabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Disabled'**
+  String get mcpDisabled;
+
+  /// No description provided for @mcpConnecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting…'**
+  String get mcpConnecting;
+
+  /// No description provided for @mcpReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected'**
+  String get mcpReady;
+
+  /// No description provided for @mcpErrorStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Error'**
+  String get mcpErrorStatus;
+
+  /// No description provided for @mcpTools.
+  ///
+  /// In en, this message translates to:
+  /// **'Tools: {count}'**
+  String mcpTools(int count);
+
+  /// No description provided for @mcpEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No MCP servers. Add a command or edit mcp.json to add a loopback HTTP URL.'**
+  String get mcpEmpty;
+
+  /// No description provided for @mcpConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow MCP tool call?'**
+  String get mcpConfirm;
+
+  /// No description provided for @mcpOnce.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow once'**
+  String get mcpOnce;
+
+  /// No description provided for @mcpAlways.
+  ///
+  /// In en, this message translates to:
+  /// **'Always allow this tool'**
+  String get mcpAlways;
+
+  /// No description provided for @mcpDeny.
+  ///
+  /// In en, this message translates to:
+  /// **'Deny'**
+  String get mcpDeny;
+
+  /// No description provided for @mcpConfigError.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid MCP configuration. Use mcpServers with a unique name and either a command, args array and env object, or a URL.'**
+  String get mcpConfigError;
+
+  /// No description provided for @mcpLoopbackError.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP HTTP only accepts http://127.0.0.1 or http://localhost. Other hosts are blocked by the offline rule.'**
+  String get mcpLoopbackError;
+
+  /// No description provided for @mcpProtocolError.
+  ///
+  /// In en, this message translates to:
+  /// **'The MCP server returned an invalid response or a protocol error.'**
+  String get mcpProtocolError;
+
+  /// No description provided for @mcpClosedError.
+  ///
+  /// In en, this message translates to:
+  /// **'The MCP server stopped. Restart it to restore its tools.'**
+  String get mcpClosedError;
+
+  /// No description provided for @mcpTimeoutError.
+  ///
+  /// In en, this message translates to:
+  /// **'The MCP server did not respond in time.'**
+  String get mcpTimeoutError;
+
+  /// No description provided for @mcpUnavailableError.
+  ///
+  /// In en, this message translates to:
+  /// **'This MCP tool is no longer available.'**
+  String get mcpUnavailableError;
+
+  /// No description provided for @mcpDeniedError.
+  ///
+  /// In en, this message translates to:
+  /// **'The user denied this MCP tool call. Do not retry without permission.'**
+  String get mcpDeniedError;
+
+  /// No description provided for @mcpOtherError.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP operation failed: {detail}'**
+  String mcpOtherError(String detail);
+
+  /// No description provided for @mcpUnsupportedContent.
+  ///
+  /// In en, this message translates to:
+  /// **'The MCP server returned non-text content (image, audio or resource); this chat tool result includes text only.'**
+  String get mcpUnsupportedContent;
+
+  /// No description provided for @structuredFormatText.
+  ///
+  /// In en, this message translates to:
+  /// **'Text'**
+  String get structuredFormatText;
+
+  /// No description provided for @structuredFormatGrammar.
+  ///
+  /// In en, this message translates to:
+  /// **'Grammar'**
+  String get structuredFormatGrammar;
+
+  /// No description provided for @structuredSchemaEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No schema: any JSON object will be accepted.'**
+  String get structuredSchemaEmpty;
+
+  /// No description provided for @structuredSchemaObject.
+  ///
+  /// In en, this message translates to:
+  /// **'The schema must be a JSON object.'**
+  String get structuredSchemaObject;
+
+  /// No description provided for @structuredSchemaInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'The schema is not valid JSON.'**
+  String get structuredSchemaInvalid;
+
+  /// No description provided for @structuredSmallModelHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Small models may struggle with structured output.'**
+  String get structuredSmallModelHint;
+
+  /// No description provided for @desktopPromptTemplate.
+  ///
+  /// In en, this message translates to:
+  /// **'Prompt template'**
+  String get desktopPromptTemplate;
+
+  /// No description provided for @desktopPromptTemplateHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Uses the Jinja template embedded in the GGUF by default. Custom templates apply on the next load.'**
+  String get desktopPromptTemplateHint;
+
+  /// No description provided for @desktopPromptTemplateOverride.
+  ///
+  /// In en, this message translates to:
+  /// **'Override embedded template'**
+  String get desktopPromptTemplateOverride;
+
+  /// No description provided for @desktopPromptTemplateReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset to embedded template'**
+  String get desktopPromptTemplateReset;
+
+  /// No description provided for @desktopPromptTemplateMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'No embedded template available.'**
+  String get desktopPromptTemplateMissing;
+
+  /// No description provided for @desktopPromptTemplateError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not read the embedded template.'**
+  String get desktopPromptTemplateError;
+
+  /// No description provided for @structuredFormatJson.
+  ///
+  /// In en, this message translates to:
+  /// **'JSON'**
+  String get structuredFormatJson;
+
+  /// No description provided for @structuredGrammarEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No grammar set. Enter a GBNF grammar before generating.'**
+  String get structuredGrammarEmpty;
+
+  /// No description provided for @modelRemovedLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Removed model'**
+  String get modelRemovedLabel;
+
+  /// No description provided for @desktopLoadPhasePreparing.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing…'**
+  String get desktopLoadPhasePreparing;
+
+  /// No description provided for @desktopLoadPhaseWeights.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading weights {percent}'**
+  String desktopLoadPhaseWeights(String percent);
+
+  /// No description provided for @desktopLoadPhaseContext.
+  ///
+  /// In en, this message translates to:
+  /// **'Creating context'**
+  String get desktopLoadPhaseContext;
+
+  /// No description provided for @desktopLoadPhaseProjector.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading vision projector'**
+  String get desktopLoadPhaseProjector;
+
+  /// No description provided for @desktopLoadPhaseFinishing.
+  ///
+  /// In en, this message translates to:
+  /// **'Finishing…'**
+  String get desktopLoadPhaseFinishing;
+
+  /// No description provided for @desktopLoadPhaseDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Loaded'**
+  String get desktopLoadPhaseDone;
+
+  /// No description provided for @desktopMcpUndoRemoved.
+  ///
+  /// In en, this message translates to:
+  /// **'Server removed'**
+  String get desktopMcpUndoRemoved;
+
+  /// No description provided for @desktopMcpUndoAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Undo'**
+  String get desktopMcpUndoAction;
+
+  /// No description provided for @desktopUsageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Usage'**
+  String get desktopUsageTitle;
+
+  /// No description provided for @desktopUsageRate.
+  ///
+  /// In en, this message translates to:
+  /// **'Requests per minute · last 30 minutes'**
+  String get desktopUsageRate;
+
+  /// No description provided for @desktopUsageTotals.
+  ///
+  /// In en, this message translates to:
+  /// **'{requests} requests · {errors} errors\n{prompt} prompt tokens · {completion} completion tokens\nAverage completion: {speed} tok/s · average answer: {seconds} s'**
+  String desktopUsageTotals(
+    int requests,
+    int errors,
+    int prompt,
+    int completion,
+    String speed,
+    String seconds,
+  );
+
+  /// No description provided for @desktopUsageClients.
+  ///
+  /// In en, this message translates to:
+  /// **'Clients'**
+  String get desktopUsageClients;
+
+  /// No description provided for @desktopUsageModels.
+  ///
+  /// In en, this message translates to:
+  /// **'Models'**
+  String get desktopUsageModels;
+
+  /// No description provided for @desktopUsageGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} · {requests} requests · {tokens} tokens · last seen {time}'**
+  String desktopUsageGroup(String name, int requests, int tokens, String time);
+
+  /// No description provided for @desktopBenchTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Speed test'**
+  String get desktopBenchTitle;
+
+  /// No description provided for @desktopBenchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Loads this model with the settings above. Measures prompt processing and generation at three context fills, up to the loaded context limit.'**
+  String get desktopBenchHint;
+
+  /// No description provided for @desktopBenchStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Speed test'**
+  String get desktopBenchStart;
+
+  /// No description provided for @desktopBenchCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get desktopBenchCancel;
+
+  /// No description provided for @desktopBenchError.
+  ///
+  /// In en, this message translates to:
+  /// **'Speed test failed. Check that the model can load and try again.'**
+  String get desktopBenchError;
+
+  /// No description provided for @desktopBenchLast.
+  ///
+  /// In en, this message translates to:
+  /// **'Last test: {time}'**
+  String desktopBenchLast(String time);
+
+  /// No description provided for @desktopBenchFill.
+  ///
+  /// In en, this message translates to:
+  /// **'Prompt tokens'**
+  String get desktopBenchFill;
+
+  /// No description provided for @desktopBenchPp.
+  ///
+  /// In en, this message translates to:
+  /// **'Processing (pp)'**
+  String get desktopBenchPp;
+
+  /// No description provided for @desktopBenchTg.
+  ///
+  /// In en, this message translates to:
+  /// **'Generation (tg)'**
+  String get desktopBenchTg;
+
+  /// No description provided for @desktopBenchRate.
+  ///
+  /// In en, this message translates to:
+  /// **'{speed} tok/s'**
+  String desktopBenchRate(String speed);
+
+  /// No description provided for @desktopModelPresetLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Variant'**
+  String get desktopModelPresetLabel;
+
+  /// No description provided for @desktopModelPresetDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Default'**
+  String get desktopModelPresetDefault;
+
+  /// No description provided for @desktopModelPresetSaveAs.
+  ///
+  /// In en, this message translates to:
+  /// **'Save as…'**
+  String get desktopModelPresetSaveAs;
+
+  /// No description provided for @desktopModelPresetManage.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage…'**
+  String get desktopModelPresetManage;
+
+  /// No description provided for @desktopModelPresetName.
+  ///
+  /// In en, this message translates to:
+  /// **'Variant name'**
+  String get desktopModelPresetName;
+
+  /// No description provided for @desktopModelPresetNameError.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a unique, non-empty name.'**
+  String get desktopModelPresetNameError;
+
+  /// No description provided for @desktopModelPresetSuggestions.
+  ///
+  /// In en, this message translates to:
+  /// **'Suggestions'**
+  String get desktopModelPresetSuggestions;
+
+  /// No description provided for @desktopModelPresetPrecise.
+  ///
+  /// In en, this message translates to:
+  /// **'Precise'**
+  String get desktopModelPresetPrecise;
+
+  /// No description provided for @desktopModelPresetCreative.
+  ///
+  /// In en, this message translates to:
+  /// **'Creative'**
+  String get desktopModelPresetCreative;
+
+  /// No description provided for @desktopModelPresetUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'Update variant'**
+  String get desktopModelPresetUpdate;
+
+  /// No description provided for @desktopModelPresetRename.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename variant'**
+  String get desktopModelPresetRename;
+
+  /// No description provided for @desktopModelPresetDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete variant'**
+  String get desktopModelPresetDelete;
+
+  /// No description provided for @desktopModelPresetEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No variants saved.'**
+  String get desktopModelPresetEmpty;
+
+  /// No description provided for @desktopModelPresetModified.
+  ///
+  /// In en, this message translates to:
+  /// **'Modified'**
+  String get desktopModelPresetModified;
+
+  /// No description provided for @mermaidDiagram.
+  ///
+  /// In en, this message translates to:
+  /// **'Diagram'**
+  String get mermaidDiagram;
+
+  /// No description provided for @mermaidCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Code'**
+  String get mermaidCode;
+
+  /// No description provided for @mermaidCopySource.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy source'**
+  String get mermaidCopySource;
+
+  /// No description provided for @mermaidUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'Diagram type not supported'**
+  String get mermaidUnsupported;
+
+  /// No description provided for @desktopTrayWhenServing.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep running in the tray when the window closes'**
+  String get desktopTrayWhenServing;
+
+  /// No description provided for @desktopTrayAlways.
+  ///
+  /// In en, this message translates to:
+  /// **'Always keep running in the tray'**
+  String get desktopTrayAlways;
+
+  /// No description provided for @desktopTrayOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Open OnDevice LLM'**
+  String get desktopTrayOpen;
+
+  /// No description provided for @desktopTrayRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Server: running on {model}'**
+  String desktopTrayRunning(String model);
+
+  /// No description provided for @desktopTrayStopped.
+  ///
+  /// In en, this message translates to:
+  /// **'Server: stopped'**
+  String get desktopTrayStopped;
+
+  /// No description provided for @desktopTrayStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Start server'**
+  String get desktopTrayStart;
+
+  /// No description provided for @desktopTrayStop.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop server'**
+  String get desktopTrayStop;
+
+  /// No description provided for @desktopTrayServeModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Serve model'**
+  String get desktopTrayServeModel;
+
+  /// No description provided for @desktopTrayQuit.
+  ///
+  /// In en, this message translates to:
+  /// **'Quit'**
+  String get desktopTrayQuit;
+
+  /// No description provided for @desktopTrayTooltipServing.
+  ///
+  /// In en, this message translates to:
+  /// **'OnDevice LLM — serving {model}'**
+  String desktopTrayTooltipServing(String model);
+
+  /// No description provided for @desktopTrayTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'OnDevice LLM'**
+  String get desktopTrayTooltip;
+
+  /// No description provided for @desktopTrayStillRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Still running in the tray'**
+  String get desktopTrayStillRunning;
+
+  /// No description provided for @desktopTrayActionFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The tray action could not finish. Check the server and model status.'**
+  String get desktopTrayActionFailed;
+
+  /// No description provided for @desktopPoolModels.
+  ///
+  /// In en, this message translates to:
+  /// **'Models'**
+  String get desktopPoolModels;
+
+  /// No description provided for @desktopPoolJit.
+  ///
+  /// In en, this message translates to:
+  /// **'Load other models on request'**
+  String get desktopPoolJit;
+
+  /// No description provided for @desktopPoolJitHint.
+  ///
+  /// In en, this message translates to:
+  /// **'A request\'s model field selects any installed model.'**
+  String get desktopPoolJitHint;
+
+  /// No description provided for @desktopPoolMaxLoaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep at most {count} extra models loaded'**
+  String desktopPoolMaxLoaded(int count);
+
+  /// No description provided for @desktopPoolDecrease.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep fewer models'**
+  String get desktopPoolDecrease;
+
+  /// No description provided for @desktopPoolIncrease.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep more models'**
+  String get desktopPoolIncrease;
+
+  /// No description provided for @desktopPoolIdleUnload.
+  ///
+  /// In en, this message translates to:
+  /// **'Unload after idle'**
+  String get desktopPoolIdleUnload;
+
+  /// No description provided for @desktopPoolMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} minutes'**
+  String desktopPoolMinutes(int count);
+
+  /// No description provided for @desktopPoolNever.
+  ///
+  /// In en, this message translates to:
+  /// **'Never'**
+  String get desktopPoolNever;
+
+  /// No description provided for @desktopPoolLoaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Loaded extra models'**
+  String get desktopPoolLoaded;
+
+  /// No description provided for @desktopPoolLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading'**
+  String get desktopPoolLoading;
+
+  /// No description provided for @desktopPoolAnswering.
+  ///
+  /// In en, this message translates to:
+  /// **'Answering'**
+  String get desktopPoolAnswering;
+
+  /// No description provided for @desktopPoolIdle.
+  ///
+  /// In en, this message translates to:
+  /// **'Idle'**
+  String get desktopPoolIdle;
+
+  /// No description provided for @desktopPoolLastUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'Last used {time}'**
+  String desktopPoolLastUsed(String time);
+
+  /// No description provided for @desktopPoolEject.
+  ///
+  /// In en, this message translates to:
+  /// **'Eject extra model'**
+  String get desktopPoolEject;
+
+  /// No description provided for @desktopPoolClientIds.
+  ///
+  /// In en, this message translates to:
+  /// **'Model IDs for clients'**
+  String get desktopPoolClientIds;
+
+  /// No description provided for @desktopCompareTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Compare'**
+  String get desktopCompareTitle;
+
+  /// No description provided for @desktopComparePrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Prompt'**
+  String get desktopComparePrompt;
+
+  /// No description provided for @desktopCompareSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'System prompt'**
+  String get desktopCompareSystem;
+
+  /// No description provided for @desktopCompareSequential.
+  ///
+  /// In en, this message translates to:
+  /// **'One after the other'**
+  String get desktopCompareSequential;
+
+  /// No description provided for @desktopCompareParallel.
+  ///
+  /// In en, this message translates to:
+  /// **'Side by side'**
+  String get desktopCompareParallel;
+
+  /// No description provided for @desktopCompareRun.
+  ///
+  /// In en, this message translates to:
+  /// **'Run'**
+  String get desktopCompareRun;
+
+  /// No description provided for @desktopCompareStop.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop'**
+  String get desktopCompareStop;
+
+  /// No description provided for @desktopComparePickModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a model'**
+  String get desktopComparePickModel;
+
+  /// No description provided for @desktopCompareUnload.
+  ///
+  /// In en, this message translates to:
+  /// **'Unload'**
+  String get desktopCompareUnload;
+
+  /// No description provided for @desktopCompareCopy.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy answer'**
+  String get desktopCompareCopy;
+
+  /// No description provided for @desktopCompareLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading model'**
+  String get desktopCompareLoading;
+
+  /// No description provided for @desktopCompareBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'Chat engine is busy. Try again when the chat answer finishes.'**
+  String get desktopCompareBusy;
+
+  /// No description provided for @desktopCompareFirstToken.
+  ///
+  /// In en, this message translates to:
+  /// **'First token'**
+  String get desktopCompareFirstToken;
+
+  /// No description provided for @desktopCompareSpeed.
+  ///
+  /// In en, this message translates to:
+  /// **'Speed'**
+  String get desktopCompareSpeed;
+
+  /// No description provided for @desktopCompareTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'Tokens'**
+  String get desktopCompareTokens;
+
+  /// No description provided for @desktopCompareTotal.
+  ///
+  /// In en, this message translates to:
+  /// **'Total time'**
+  String get desktopCompareTotal;
+
+  /// No description provided for @displayHzPhoneLimited.
+  ///
+  /// In en, this message translates to:
+  /// **'The phone is holding the app at {hz} Hz (battery or power mode).'**
+  String displayHzPhoneLimited(int hz);
+
+  /// No description provided for @desktopMtpLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Multi-token prediction (MTP)'**
+  String get desktopMtpLabel;
+
+  /// No description provided for @desktopMtpHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the model’s own prediction heads when available. A selected draft model takes priority. Applies on the next load.'**
+  String get desktopMtpHint;
+
+  /// No description provided for @desktopVoiceMicPrivacy.
+  ///
+  /// In en, this message translates to:
+  /// **'Windows blocked the microphone. Open Windows Settings > Privacy > Microphone and allow desktop apps to use the microphone.'**
+  String get desktopVoiceMicPrivacy;
+
+  /// No description provided for @desktopMtpHeadLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'MTP head file'**
+  String get desktopMtpHeadLabel;
+
+  /// No description provided for @desktopMtpHeadOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get desktopMtpHeadOff;
+
+  /// No description provided for @desktopMtpHeadAuto.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto: {name}'**
+  String desktopMtpHeadAuto(String name);
+
+  /// No description provided for @desktopMtpHeadAutoNone.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto (none found)'**
+  String get desktopMtpHeadAutoNone;
+
+  /// No description provided for @desktopMtpHeadAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a file…'**
+  String get desktopMtpHeadAdd;
+
+  /// No description provided for @desktopMtpHeadHint.
+  ///
+  /// In en, this message translates to:
+  /// **'A small mtp-*.gguf head (like LM Studio\'s MTP sidecar) that drafts tokens from the model\'s own state. Same answers, faster. Auto uses the matching head beside the model or in LM Studio\'s folder. Applies on the next load.'**
+  String get desktopMtpHeadHint;
+
+  /// No description provided for @desktopMtpHeadTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'Tokens drafted per step'**
+  String get desktopMtpHeadTokens;
+
+  /// No description provided for @desktopDeepLoad.
+  ///
+  /// In en, this message translates to:
+  /// **'Advanced load'**
+  String get desktopDeepLoad;
+
+  /// No description provided for @desktopDeepSampling.
+  ///
+  /// In en, this message translates to:
+  /// **'Advanced sampling'**
+  String get desktopDeepSampling;
+
+  /// No description provided for @desktopDeepSpeculative.
+  ///
+  /// In en, this message translates to:
+  /// **'Advanced speculative decoding'**
+  String get desktopDeepSpeculative;
+
+  /// No description provided for @desktopDeepMemory.
+  ///
+  /// In en, this message translates to:
+  /// **'Advanced memory'**
+  String get desktopDeepMemory;
+
+  /// No description provided for @desktopDeepReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset model override'**
+  String get desktopDeepReset;
+
+  /// No description provided for @desktopDeepLoadHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Applies on the next model load.'**
+  String get desktopDeepLoadHint;
+
+  /// No description provided for @desktopDeepSamplingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Applies to the next answer.'**
+  String get desktopDeepSamplingHint;
+
+  /// No description provided for @desktopDeepSpeculativeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Adjusts speculative decoding on the next load.'**
+  String get desktopDeepSpeculativeHint;
+
+  /// No description provided for @desktopDeepMemoryHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Controls reuse within the current model session.'**
+  String get desktopDeepMemoryHint;
+
+  /// No description provided for @desktopDeepMicroBatchSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Microbatch size'**
+  String get desktopDeepMicroBatchSize;
+
+  /// No description provided for @desktopDeepBatchThreads.
+  ///
+  /// In en, this message translates to:
+  /// **'Prefill threads'**
+  String get desktopDeepBatchThreads;
+
+  /// No description provided for @desktopDeepVCacheType.
+  ///
+  /// In en, this message translates to:
+  /// **'V cache type'**
+  String get desktopDeepVCacheType;
+
+  /// No description provided for @desktopDeepRopeScaling.
+  ///
+  /// In en, this message translates to:
+  /// **'RoPE scaling'**
+  String get desktopDeepRopeScaling;
+
+  /// No description provided for @desktopDeepRopeFreqBase.
+  ///
+  /// In en, this message translates to:
+  /// **'RoPE base frequency'**
+  String get desktopDeepRopeFreqBase;
+
+  /// No description provided for @desktopDeepRopeFreqScale.
+  ///
+  /// In en, this message translates to:
+  /// **'RoPE frequency scale'**
+  String get desktopDeepRopeFreqScale;
+
+  /// No description provided for @desktopDeepYarnExtFactor.
+  ///
+  /// In en, this message translates to:
+  /// **'YaRN extension factor'**
+  String get desktopDeepYarnExtFactor;
+
+  /// No description provided for @desktopDeepYarnAttnFactor.
+  ///
+  /// In en, this message translates to:
+  /// **'YaRN attention factor'**
+  String get desktopDeepYarnAttnFactor;
+
+  /// No description provided for @desktopDeepYarnBetaFast.
+  ///
+  /// In en, this message translates to:
+  /// **'YaRN fast beta'**
+  String get desktopDeepYarnBetaFast;
+
+  /// No description provided for @desktopDeepYarnBetaSlow.
+  ///
+  /// In en, this message translates to:
+  /// **'YaRN slow beta'**
+  String get desktopDeepYarnBetaSlow;
+
+  /// No description provided for @desktopDeepYarnOrigCtx.
+  ///
+  /// In en, this message translates to:
+  /// **'YaRN original context'**
+  String get desktopDeepYarnOrigCtx;
+
+  /// No description provided for @desktopDeepSeed.
+  ///
+  /// In en, this message translates to:
+  /// **'Random seed (0 = random)'**
+  String get desktopDeepSeed;
+
+  /// No description provided for @desktopDeepTypicalP.
+  ///
+  /// In en, this message translates to:
+  /// **'Typical P'**
+  String get desktopDeepTypicalP;
+
+  /// No description provided for @desktopDeepTopNSigma.
+  ///
+  /// In en, this message translates to:
+  /// **'Top N sigma'**
+  String get desktopDeepTopNSigma;
+
+  /// No description provided for @desktopDeepXtcProbability.
+  ///
+  /// In en, this message translates to:
+  /// **'XTC probability'**
+  String get desktopDeepXtcProbability;
+
+  /// No description provided for @desktopDeepXtcThreshold.
+  ///
+  /// In en, this message translates to:
+  /// **'XTC threshold'**
+  String get desktopDeepXtcThreshold;
+
+  /// No description provided for @desktopDeepRepeatLastN.
+  ///
+  /// In en, this message translates to:
+  /// **'Repetition window'**
+  String get desktopDeepRepeatLastN;
+
+  /// No description provided for @desktopDeepFrequencyPenalty.
+  ///
+  /// In en, this message translates to:
+  /// **'Frequency penalty'**
+  String get desktopDeepFrequencyPenalty;
+
+  /// No description provided for @desktopDeepDryMultiplier.
+  ///
+  /// In en, this message translates to:
+  /// **'DRY multiplier'**
+  String get desktopDeepDryMultiplier;
+
+  /// No description provided for @desktopDeepDryBase.
+  ///
+  /// In en, this message translates to:
+  /// **'DRY base'**
+  String get desktopDeepDryBase;
+
+  /// No description provided for @desktopDeepDryAllowedLength.
+  ///
+  /// In en, this message translates to:
+  /// **'DRY allowed length'**
+  String get desktopDeepDryAllowedLength;
+
+  /// No description provided for @desktopDeepDryPenaltyLastN.
+  ///
+  /// In en, this message translates to:
+  /// **'DRY penalty window'**
+  String get desktopDeepDryPenaltyLastN;
+
+  /// No description provided for @desktopDeepStopSequences.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop strings (one per line)'**
+  String get desktopDeepStopSequences;
+
+  /// No description provided for @desktopDeepResponseFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'Response format'**
+  String get desktopDeepResponseFormat;
+
+  /// No description provided for @desktopDeepJsonSchema.
+  ///
+  /// In en, this message translates to:
+  /// **'JSON schema'**
+  String get desktopDeepJsonSchema;
+
+  /// No description provided for @desktopDeepGrammar.
+  ///
+  /// In en, this message translates to:
+  /// **'GBNF grammar'**
+  String get desktopDeepGrammar;
+
+  /// No description provided for @desktopDeepDraftMaxTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'Draft tokens per step'**
+  String get desktopDeepDraftMaxTokens;
+
+  /// No description provided for @desktopDeepPromptCache.
+  ///
+  /// In en, this message translates to:
+  /// **'Reuse conversation context'**
+  String get desktopDeepPromptCache;
+
+  /// No description provided for @desktopDeepImageMaxTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'Photo token budget'**
+  String get desktopDeepImageMaxTokens;
+
+  /// No description provided for @desktopDeepSamplerOrder.
+  ///
+  /// In en, this message translates to:
+  /// **'Sampler order (one name per line)'**
+  String get desktopDeepSamplerOrder;
+
+  /// No description provided for @desktopDeepSameAsK.
+  ///
+  /// In en, this message translates to:
+  /// **'Same as K'**
+  String get desktopDeepSameAsK;
+
+  /// No description provided for @desktopDeepVramReserveMb.
+  ///
+  /// In en, this message translates to:
+  /// **'VRAM reserve (MB)'**
+  String get desktopDeepVramReserveMb;
+
+  /// No description provided for @desktopDeepVramReserveHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Memory to leave free for other apps when a model loads.'**
+  String get desktopDeepVramReserveHint;
+
+  /// No description provided for @avx512CpuVariant.
+  ///
+  /// In en, this message translates to:
+  /// **'CPU variant'**
+  String get avx512CpuVariant;
+
+  /// No description provided for @avx512Auto.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic'**
+  String get avx512Auto;
+
+  /// No description provided for @avx512Variant.
+  ///
+  /// In en, this message translates to:
+  /// **'AVX512'**
+  String get avx512Variant;
+
+  /// No description provided for @avx512Avx2.
+  ///
+  /// In en, this message translates to:
+  /// **'AVX2'**
+  String get avx512Avx2;
+
+  /// No description provided for @avx512Compat.
+  ///
+  /// In en, this message translates to:
+  /// **'SSE4.2 (compatibility)'**
+  String get avx512Compat;
+
+  /// No description provided for @avx512Available.
+  ///
+  /// In en, this message translates to:
+  /// **'usable'**
+  String get avx512Available;
+
+  /// No description provided for @avx512Unavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'unavailable'**
+  String get avx512Unavailable;
+
+  /// No description provided for @avx512Detected.
+  ///
+  /// In en, this message translates to:
+  /// **'Detected by Windows: AVX512 {avx512}, AVX2 {avx2}. Applies on the next model load.'**
+  String avx512Detected(Object avx2, Object avx512);
+
+  /// No description provided for @avx512Fallback.
+  ///
+  /// In en, this message translates to:
+  /// **'CPU variant fallback details'**
+  String get avx512Fallback;
+
+  /// No description provided for @avx512OsFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'The requested CPU instructions are unavailable in Windows. Using {variant}.'**
+  String avx512OsFallback(Object variant);
+
+  /// No description provided for @avx512LoadFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'The requested CPU DLL or one of its dependencies could not be loaded. Using {variant}.'**
+  String avx512LoadFallback(Object variant);
+
+  /// No description provided for @nativeSetUseMmap.
+  ///
+  /// In en, this message translates to:
+  /// **'Memory map model'**
+  String get nativeSetUseMmap;
+
+  /// No description provided for @nativeSetUseMlock.
+  ///
+  /// In en, this message translates to:
+  /// **'Lock model in memory'**
+  String get nativeSetUseMlock;
+
+  /// No description provided for @nativeSetMainGpu.
+  ///
+  /// In en, this message translates to:
+  /// **'Main GPU index'**
+  String get nativeSetMainGpu;
+
+  /// No description provided for @nativeSetSplitMode.
+  ///
+  /// In en, this message translates to:
+  /// **'GPU split mode'**
+  String get nativeSetSplitMode;
+
+  /// No description provided for @nativeSetOffloadKv.
+  ///
+  /// In en, this message translates to:
+  /// **'Offload KV operations'**
+  String get nativeSetOffloadKv;
+
+  /// No description provided for @nativeSetSwaFull.
+  ///
+  /// In en, this message translates to:
+  /// **'Full sliding-window cache'**
+  String get nativeSetSwaFull;
+
+  /// No description provided for @nativeSetNCpuMoe.
+  ///
+  /// In en, this message translates to:
+  /// **'CPU expert layers (-1 = auto)'**
+  String get nativeSetNCpuMoe;
+
+  /// No description provided for @nativeSetExpertsUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'Experts per token (-1 = model default)'**
+  String get nativeSetExpertsUsed;
+
+  /// No description provided for @nativeSetDraftGpuLayers.
+  ///
+  /// In en, this message translates to:
+  /// **'Draft model GPU layers (0 = CPU)'**
+  String get nativeSetDraftGpuLayers;
+
+  /// No description provided for @nativeSetDraftMinP.
+  ///
+  /// In en, this message translates to:
+  /// **'Draft confidence floor'**
+  String get nativeSetDraftMinP;
+
+  /// No description provided for @nativeSetPromptStoreMb.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved prompts RAM (MB, -1 = auto)'**
+  String get nativeSetPromptStoreMb;
+
+  /// No description provided for @nativeSetKeepTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep first tokens'**
+  String get nativeSetKeepTokens;
+
+  /// No description provided for @nativeSetContextOverflow.
+  ///
+  /// In en, this message translates to:
+  /// **'Context overflow'**
+  String get nativeSetContextOverflow;
+
+  /// No description provided for @nativeSetLogitBias.
+  ///
+  /// In en, this message translates to:
+  /// **'Token logit biases (JSON)'**
+  String get nativeSetLogitBias;
+
+  /// No description provided for @nativeSetSplitNone.
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get nativeSetSplitNone;
+
+  /// No description provided for @nativeSetSplitLayer.
+  ///
+  /// In en, this message translates to:
+  /// **'By layer'**
+  String get nativeSetSplitLayer;
+
+  /// No description provided for @nativeSetSplitRow.
+  ///
+  /// In en, this message translates to:
+  /// **'By row'**
+  String get nativeSetSplitRow;
+
+  /// No description provided for @nativeSetOverflowTrim.
+  ///
+  /// In en, this message translates to:
+  /// **'Trim old exchanges'**
+  String get nativeSetOverflowTrim;
+
+  /// No description provided for @nativeSetOverflowShift.
+  ///
+  /// In en, this message translates to:
+  /// **'Shift old tokens'**
+  String get nativeSetOverflowShift;
+
+  /// No description provided for @nativeSetOverflowStop.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop at context limit'**
+  String get nativeSetOverflowStop;
+
+  /// No description provided for @tuneCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel tuning'**
+  String get tuneCancel;
+
+  /// No description provided for @tuneError.
+  ///
+  /// In en, this message translates to:
+  /// **'Measurement or local save failed. Check the model and try again.'**
+  String get tuneError;
+
+  /// No description provided for @tuneReceipt.
+  ///
+  /// In en, this message translates to:
+  /// **'Benchmark receipt · {date}'**
+  String tuneReceipt(Object date);
+
+  /// No description provided for @tuneExport.
+  ///
+  /// In en, this message translates to:
+  /// **'Export receipt to JSON'**
+  String get tuneExport;
+
+  /// No description provided for @tuneExported.
+  ///
+  /// In en, this message translates to:
+  /// **'Receipt saved.'**
+  String get tuneExported;
+
+  /// No description provided for @tuneUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown backend'**
+  String get tuneUnknown;
+
+  /// No description provided for @tunePromptClass.
+  ///
+  /// In en, this message translates to:
+  /// **'Prompt class'**
+  String get tunePromptClass;
+
+  /// No description provided for @tuneMedianRate.
+  ///
+  /// In en, this message translates to:
+  /// **'Median tok/s'**
+  String get tuneMedianRate;
+
+  /// No description provided for @tuneSpreadRate.
+  ///
+  /// In en, this message translates to:
+  /// **'Spread tok/s'**
+  String get tuneSpreadRate;
+
+  /// No description provided for @tuneTtft.
+  ///
+  /// In en, this message translates to:
+  /// **'TTFT (ms)'**
+  String get tuneTtft;
+
+  /// No description provided for @tunePromptRate.
+  ///
+  /// In en, this message translates to:
+  /// **'Prompt tok/s'**
+  String get tunePromptRate;
+
+  /// No description provided for @tuneAcceptance.
+  ///
+  /// In en, this message translates to:
+  /// **'Draft acceptance (0–1)'**
+  String get tuneAcceptance;
+
+  /// No description provided for @tuneShortPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Short'**
+  String get tuneShortPrompt;
+
+  /// No description provided for @tuneLongPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Long prefill'**
+  String get tuneLongPrompt;
+
+  /// No description provided for @tuneCodePrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Code'**
+  String get tuneCodePrompt;
+
+  /// No description provided for @tuneUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Unavailable'**
+  String get tuneUnavailable;
+
+  /// No description provided for @tuneReceiptDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Receipt details'**
+  String get tuneReceiptDetails;
+
+  /// No description provided for @tuneBenchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Three measured rounds per prompt class, after warm-up; prompt caching is disabled.'**
+  String get tuneBenchHint;
+
+  /// No description provided for @projectorDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Vision projector'**
+  String get projectorDevice;
+
+  /// No description provided for @projectorAuto.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto'**
+  String get projectorAuto;
+
+  /// No description provided for @projectorGpu.
+  ///
+  /// In en, this message translates to:
+  /// **'Video memory'**
+  String get projectorGpu;
+
+  /// No description provided for @projectorCpu.
+  ///
+  /// In en, this message translates to:
+  /// **'System memory'**
+  String get projectorCpu;
+
+  /// No description provided for @projectorDeviceHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Where the photo encoder\'s weights are kept. Auto keeps them in system memory when that lets the whole model fit on the GPU; photos are still processed on the GPU.'**
+  String get projectorDeviceHelp;
+
+  /// No description provided for @runSendToFirstText.
+  ///
+  /// In en, this message translates to:
+  /// **'Send to first text'**
+  String get runSendToFirstText;
+
+  /// No description provided for @runAppPreparation.
+  ///
+  /// In en, this message translates to:
+  /// **'App preparation'**
+  String get runAppPreparation;
+
+  /// No description provided for @runPromptSetup.
+  ///
+  /// In en, this message translates to:
+  /// **'Prompt setup'**
+  String get runPromptSetup;
+
+  /// No description provided for @runPromptReading.
+  ///
+  /// In en, this message translates to:
+  /// **'Prompt reading'**
+  String get runPromptReading;
+
+  /// No description provided for @runCheckpoints.
+  ///
+  /// In en, this message translates to:
+  /// **'Checkpoints'**
+  String get runCheckpoints;
+
+  /// No description provided for @runProviderAnswered.
+  ///
+  /// In en, this message translates to:
+  /// **'Provider answered'**
+  String get runProviderAnswered;
+
+  /// No description provided for @runProviderBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'Provider busy'**
+  String get runProviderBusy;
+
+  /// No description provided for @runProviderWait.
+  ///
+  /// In en, this message translates to:
+  /// **'{status}, waited {seconds} s'**
+  String runProviderWait(int status, int seconds);
+
+  /// No description provided for @runWarmup.
+  ///
+  /// In en, this message translates to:
+  /// **'Warm-up'**
+  String get runWarmup;
+
+  /// No description provided for @poolPinPin.
+  ///
+  /// In en, this message translates to:
+  /// **'Pin model'**
+  String get poolPinPin;
+
+  /// No description provided for @poolPinUnpin.
+  ///
+  /// In en, this message translates to:
+  /// **'Unpin model'**
+  String get poolPinUnpin;
+
+  /// No description provided for @toolCutMiddleMarker.
+  ///
+  /// In en, this message translates to:
+  /// **'\n[… middle cut to fit the context …]\n'**
+  String get toolCutMiddleMarker;
+
+  /// No description provided for @noticePreparingToolCall.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing a tool call…'**
+  String get noticePreparingToolCall;
+
+  /// No description provided for @noticeProviderWaiting.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for the provider to answer… {seconds} s'**
+  String noticeProviderWaiting(int seconds);
+
+  /// No description provided for @noticeProviderBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'The provider is busy ({status}). Trying again in {seconds} s…'**
+  String noticeProviderBusy(int status, int seconds);
+
+  /// No description provided for @noticePreparingTool.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing {tool}…'**
+  String noticePreparingTool(String tool);
+
+  /// No description provided for @engineFilesVerify.
+  ///
+  /// In en, this message translates to:
+  /// **'Verify engine files'**
+  String get engineFilesVerify;
+
+  /// No description provided for @engineFilesOk.
+  ///
+  /// In en, this message translates to:
+  /// **'OK'**
+  String get engineFilesOk;
+
+  /// No description provided for @engineFilesMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'Missing'**
+  String get engineFilesMissing;
+
+  /// No description provided for @engineFilesWrongSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Wrong size'**
+  String get engineFilesWrongSize;
+
+  /// No description provided for @engineFilesChanged.
+  ///
+  /// In en, this message translates to:
+  /// **'Changed'**
+  String get engineFilesChanged;
+
+  /// No description provided for @engineFilesUnreadable.
+  ///
+  /// In en, this message translates to:
+  /// **'Unreadable'**
+  String get engineFilesUnreadable;
+
+  /// No description provided for @engineFilesUnverified.
+  ///
+  /// In en, this message translates to:
+  /// **'Unverified: this build has no engine manifest.'**
+  String get engineFilesUnverified;
+
+  /// No description provided for @engineFilesMalformed.
+  ///
+  /// In en, this message translates to:
+  /// **'The engine manifest cannot be read. Reinstalling the app restores it.'**
+  String get engineFilesMalformed;
+
+  /// No description provided for @engineFilesProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Verified {done} of {total} files.'**
+  String engineFilesProgress(int done, int total);
+
+  /// No description provided for @engineFilesRepair.
+  ///
+  /// In en, this message translates to:
+  /// **'Engine files need repair: {files}. Reinstalling the app restores them.'**
+  String engineFilesRepair(String files);
+
+  /// A downloaded model whose file is still being checked and read; no progress to show.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyzing…'**
+  String get modelAnalyzing;
+
+  /// No description provided for @modelAnalyzingDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking the file and reading its settings…'**
+  String get modelAnalyzingDetail;
+
+  /// No description provided for @desktopBasic.
+  ///
+  /// In en, this message translates to:
+  /// **'Basic'**
+  String get desktopBasic;
+
+  /// No description provided for @desktopAdvanced.
+  ///
+  /// In en, this message translates to:
+  /// **'Advanced'**
+  String get desktopAdvanced;
+
+  /// No description provided for @desktopChatTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Chat'**
+  String get desktopChatTitle;
+
+  /// No description provided for @desktopCreateTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Create'**
+  String get desktopCreateTitle;
+
+  /// No description provided for @desktopChatExplanation.
+  ///
+  /// In en, this message translates to:
+  /// **'Talk with a model and keep your conversations here.'**
+  String get desktopChatExplanation;
+
+  /// No description provided for @desktopModelsExplanation.
+  ///
+  /// In en, this message translates to:
+  /// **'Import, download and load the models used on this computer.'**
+  String get desktopModelsExplanation;
+
+  /// No description provided for @desktopCreateExplanation.
+  ///
+  /// In en, this message translates to:
+  /// **'Create pictures and videos, or upscale an existing picture.'**
+  String get desktopCreateExplanation;
+
+  /// No description provided for @desktopSettingsExplanation.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose how the app looks and how your models answer.'**
+  String get desktopSettingsExplanation;
+
+  /// No description provided for @desktopLeanPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Lean system prompt'**
+  String get desktopLeanPrompt;
+
+  /// No description provided for @desktopLeanPromptHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Use minimal app instructions for chat. Turn off to restore the detailed writing guidance. Your own instructions still apply.'**
+  String get desktopLeanPromptHint;
+
+  /// No description provided for @desktopRemoteOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off · the model runs on this computer'**
+  String get desktopRemoteOff;
+
+  /// No description provided for @desktopRemoteExplanation.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect to a server you run, such as LM Studio, Ollama or llama-server, or a hosted API with your own key. Messages and web evidence go to that connection instead of a model on this computer.'**
+  String get desktopRemoteExplanation;
+
+  /// No description provided for @desktopOptimize.
+  ///
+  /// In en, this message translates to:
+  /// **'Optimize for this PC'**
+  String get desktopOptimize;
+
+  /// No description provided for @desktopOptimizeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Finds the settings that get the most out of your hardware for this model: it tries several setups (GPU layers, memory, flash attention, MTP), measures the speed of each, checks that the answers stay just as accurate, and keeps the fastest. This takes a couple of minutes for a small model and several minutes for a large one; the model can\'t be used for chat meanwhile.'**
+  String get desktopOptimizeHint;
+
+  /// No description provided for @desktopOptimizeSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Optimized settings saved for this model.'**
+  String get desktopOptimizeSaved;
+
+  /// No description provided for @desktopOptimizeBaseline.
+  ///
+  /// In en, this message translates to:
+  /// **'Measuring the current settings…'**
+  String get desktopOptimizeBaseline;
+
+  /// No description provided for @desktopOptimizeProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}% done'**
+  String desktopOptimizeProgress(int percent);
+
+  /// No description provided for @desktopOptimizeStep.
+  ///
+  /// In en, this message translates to:
+  /// **'Trying setup {n} of {total}…'**
+  String desktopOptimizeStep(int n, int total);
+
+  /// No description provided for @desktopOptimizeKept.
+  ///
+  /// In en, this message translates to:
+  /// **'The optimized settings were not faster, so the current ones were kept.'**
+  String get desktopOptimizeKept;
+
+  /// No description provided for @desktopOptimizeRates.
+  ///
+  /// In en, this message translates to:
+  /// **'Before: {before} tok/s · After: {after} tok/s'**
+  String desktopOptimizeRates(String before, String after);
 }
 
 class _AppLocalizationsDelegate

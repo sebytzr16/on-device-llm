@@ -1,5 +1,7 @@
-import 'dart:io';
 import 'dart:math';
+
+import '../../../../core/platform/cpu_cores.dart';
+import '../../../../core/platform/desktop_host.dart';
 
 import '../../../../core/motion/motion_choice.dart';
 import '../../../../inference/remote/remote_provider.dart';
@@ -15,7 +17,7 @@ enum WebMode { off, auto, always }
 
 // Persisted by name; keep existing names stable. `qnn` is retained only so old
 // preferences still parse — it is never offered and native load rejects it.
-enum GpuBackend { auto, metal, vulkan, opencl, qnn, cpu }
+enum GpuBackend { auto, metal, vulkan, opencl, qnn, cpu, cuda }
 
 /// Position-encoding stretch for contexts beyond what the model was trained
 /// for. `model` keeps whatever the GGUF declares.
@@ -58,6 +60,19 @@ enum ThemeChoice { system, dark, light }
 enum AccentChoice { amber, blue, green, rose, violet, teal }
 
 class InferenceSettings {
+  static Map<String, double> sanitizeLogitBias(Object? raw) => raw is Map
+      ? {
+          for (final e in raw.entries)
+            if (e.key is String &&
+                int.tryParse(e.key as String) != null &&
+                int.parse(e.key as String) >= 0 &&
+                int.parse(e.key as String) <= 0x7fffffff &&
+                e.value is num &&
+                (e.value as num).isFinite)
+              e.key as String: (e.value as num).toDouble(),
+        }
+      : {};
+
   /// Bounds shared by the sliders, the JSON reader and the bridge clamps.
   static const minContext = 512, maxContext = 1 << 20;
   static const maxBatch = 4096;
@@ -141,12 +156,42 @@ class InferenceSettings {
   final int microBatchSize;
   final int nGpuLayers;
   final GpuBackend backend;
+  final String cpuVariant;
+  final String projectorDevice;
   final int cpuThreads;
 
-  /// Threads for prompt evaluation; 0 = auto (every core). Decode keeps
-  /// [cpuThreads]: on the S25+ 8 threads prefill fastest but decode slowest.
+  /// Threads for prompt evaluation; 0 = auto (physical cores on desktop).
+  /// On the phone, 8 threads prefill fastest but decode slowest.
   final int batchThreads;
+
+  /// VRAM left free for other applications while fitting GPU layers.
+  final int vramReserveMb;
+
+  /// MTP stops drafting below this confidence (0 = always draft).
+  final double draftMinP;
+
+  /// RAM for earlier prompts kept to resume them; -1 = the bridge default
+  /// (1 GB on desktop, off on the phone), 0 = off.
+  final int promptStoreMb;
+  final bool useMmap;
+  final bool useMlock;
+  final int mainGpu;
+  final String splitMode;
+  final bool offloadKv;
+  final bool swaFull;
+  final int nCpuMoe;
+
+  /// Experts per token for a mixture-of-experts model; -1 keeps the model's.
+  final int expertsUsed;
+
+  /// Layers of a separate draft model on the GPU; 0 keeps it on the CPU.
+  final int draftGpuLayers;
+  final int keepTokens;
+  final String contextOverflow;
+  final Map<String, double> logitBias;
+
   final bool flashAttention;
+  final bool mtp;
   final double temperature;
   final double topP;
   final double minP;
@@ -191,10 +236,6 @@ class InferenceSettings {
   /// After a grounded answer, flag numbers, versions and dates that appear in
   /// the answer but in none of the supplied passages.
   final bool figureCheck;
-
-  /// No longer read: the Think chip decides for searched answers too
-  /// (tester, 2026-10-08). Kept so saved settings and presets still load.
-  final bool thinkOnSearch;
 
   /// When the pages read leave words of the question unanswered, one more
   /// search (the subject plus those words) and up to two more pages.
@@ -360,6 +401,7 @@ class InferenceSettings {
   final ResponseFormat responseFormat;
   final String jsonSchema;
   final String grammar;
+  final String chatTemplate;
 
   // ----- Tools -----
 
@@ -400,9 +442,28 @@ class InferenceSettings {
     this.microBatchSize = 0,
     this.nGpuLayers = 999,
     this.backend = GpuBackend.auto,
+    this.cpuVariant = 'auto',
+    this.projectorDevice = 'auto',
     this.cpuThreads = 0,
     this.batchThreads = 0,
+    this.vramReserveMb = 768,
+    this.draftMinP = 0,
+    this.promptStoreMb = -1,
+    this.useMmap = true,
+    this.useMlock = false,
+    this.mainGpu = 0,
+    this.splitMode = 'layer',
+    this.offloadKv = true,
+    this.swaFull = false,
+    this.nCpuMoe = -1,
+    this.expertsUsed = -1,
+    this.draftGpuLayers = 0,
+    this.keepTokens = 0,
+    this.contextOverflow = 'trim',
+    this.logitBias = const {},
+
     this.flashAttention = true,
+    this.mtp = false,
     this.temperature = 0.7,
     this.topP = 0.95,
     this.minP = 0.05,
@@ -422,7 +483,6 @@ class InferenceSettings {
     this.researchTimeBudgetSeconds = 25,
     this.evidencePassages = 6,
     this.figureCheck = true,
-    this.thinkOnSearch = true,
     this.searchAgain = true,
     this.wikipediaLookup = true,
     this.autoTitles = true,
@@ -475,6 +535,7 @@ class InferenceSettings {
     this.responseFormat = ResponseFormat.text,
     this.jsonSchema = '',
     this.grammar = '',
+    this.chatTemplate = '',
     this.toolsEnabled = false,
     this.toolChoice = ToolChoice.auto,
     this.toolMaxRounds = 4,
@@ -517,21 +578,29 @@ class InferenceSettings {
   /// sweep says otherwise. [backend] is the resolved one at load time.
   int get effectiveThreads {
     if (cpuThreads > 0) return cpuThreads;
-    final cores = Platform.numberOfProcessors;
+    final cores = CpuCores.logical();
+    // The Windows engines use OpenMP threads, which scale with the physical
+    // cores with or without a GPU: Qwen3.6 35B A3B with experts in RAM on a
+    // 3070 decodes at 31 tok/s at 8 threads against 27 at 4; a model fully on
+    // the card is the same at both (2026-10-29).
+    if (DesktopHost.active) return CpuCores.desktop.clamp(1, 16);
     final gpu =
         (backend == GpuBackend.opencl ||
             backend == GpuBackend.vulkan ||
-            backend == GpuBackend.metal) &&
+            backend == GpuBackend.metal ||
+            backend == GpuBackend.cuda) &&
         nGpuLayers > 0;
     if (gpu) return cores >= 8 ? 4 : (cores ~/ 2).clamp(2, 4);
     return cores >= 8 ? 6 : (cores ~/ 2).clamp(2, 8);
   }
 
-  /// Same sweep, 864-token prefill: 2/4/6/8 threads took 10.0/6.8/5.9/5.1 s,
-  /// so prompt evaluation uses every core by default.
+  /// Desktop avoids SMT contention; phone prefill still uses every core.
   int get effectiveBatchThreads => batchThreads > 0
       ? batchThreads
-      : Platform.numberOfProcessors.clamp(effectiveThreads, 16);
+      : (DesktopHost.active ? CpuCores.desktop : CpuCores.logical()).clamp(
+          effectiveThreads,
+          16,
+        );
 
   int get effectiveGpuLayers => backend == GpuBackend.cpu ? 0 : nGpuLayers;
 
@@ -596,15 +665,32 @@ class InferenceSettings {
   }
 
   static const loadTimeKeys = {
+    'chatTemplate',
     'contextSize',
     'imageMaxTokens',
     'batchSize',
     'microBatchSize',
     'nGpuLayers',
     'backend',
+    'cpuVariant',
+    'projectorDevice',
     'cpuThreads',
     'batchThreads',
+    'vramReserveMb',
+    'draftMinP',
+    'promptStoreMb',
+    'useMmap',
+    'useMlock',
+    'mainGpu',
+    'splitMode',
+    'offloadKv',
+    'swaFull',
+    'nCpuMoe',
+    'expertsUsed',
+    'draftGpuLayers',
+
     'flashAttention',
+    'mtp',
     'kvCacheType',
     'vCacheType',
     'ropeScaling',
@@ -627,9 +713,28 @@ class InferenceSettings {
     int? microBatchSize,
     int? nGpuLayers,
     GpuBackend? backend,
+    String? cpuVariant,
+    String? projectorDevice,
     int? cpuThreads,
     int? batchThreads,
+    int? vramReserveMb,
+    double? draftMinP,
+    int? promptStoreMb,
+    bool? useMmap,
+    bool? useMlock,
+    int? mainGpu,
+    String? splitMode,
+    bool? offloadKv,
+    bool? swaFull,
+    int? nCpuMoe,
+    int? expertsUsed,
+    int? draftGpuLayers,
+    int? keepTokens,
+    String? contextOverflow,
+    Map<String, double>? logitBias,
+
     bool? flashAttention,
+    bool? mtp,
     double? temperature,
     double? topP,
     double? minP,
@@ -650,7 +755,6 @@ class InferenceSettings {
     int? researchTimeBudgetSeconds,
     int? evidencePassages,
     bool? figureCheck,
-    bool? thinkOnSearch,
     bool? searchAgain,
     bool? wikipediaLookup,
     bool? autoTitles,
@@ -703,6 +807,7 @@ class InferenceSettings {
     ResponseFormat? responseFormat,
     String? jsonSchema,
     String? grammar,
+    String? chatTemplate,
     bool? toolsEnabled,
     ToolChoice? toolChoice,
     int? toolMaxRounds,
@@ -727,9 +832,28 @@ class InferenceSettings {
           if (microBatchSize != null) 'microBatchSize',
           if (nGpuLayers != null) 'nGpuLayers',
           if (backend != null) 'backend',
+          if (cpuVariant != null) 'cpuVariant',
+          if (projectorDevice != null) 'projectorDevice',
           if (cpuThreads != null) 'cpuThreads',
           if (batchThreads != null) 'batchThreads',
+          if (vramReserveMb != null) 'vramReserveMb',
+          if (draftMinP != null) 'draftMinP',
+          if (promptStoreMb != null) 'promptStoreMb',
+          if (useMmap != null) 'useMmap',
+          if (useMlock != null) 'useMlock',
+          if (mainGpu != null) 'mainGpu',
+          if (splitMode != null) 'splitMode',
+          if (offloadKv != null) 'offloadKv',
+          if (swaFull != null) 'swaFull',
+          if (nCpuMoe != null) 'nCpuMoe',
+          if (expertsUsed != null) 'expertsUsed',
+          if (draftGpuLayers != null) 'draftGpuLayers',
+          if (keepTokens != null) 'keepTokens',
+          if (contextOverflow != null) 'contextOverflow',
+          if (logitBias != null) 'logitBias',
+
           if (flashAttention != null) 'flashAttention',
+          if (mtp != null) 'mtp',
           if (temperature != null) 'temperature',
           if (topP != null) 'topP',
           if (minP != null) 'minP',
@@ -749,7 +873,6 @@ class InferenceSettings {
           if (researchTimeBudgetSeconds != null) 'researchTimeBudgetSeconds',
           if (evidencePassages != null) 'evidencePassages',
           if (figureCheck != null) 'figureCheck',
-          if (thinkOnSearch != null) 'thinkOnSearch',
           if (searchAgain != null) 'searchAgain',
           if (wikipediaLookup != null) 'wikipediaLookup',
           if (autoTitles != null) 'autoTitles',
@@ -800,6 +923,7 @@ class InferenceSettings {
           if (responseFormat != null) 'responseFormat',
           if (jsonSchema != null) 'jsonSchema',
           if (grammar != null) 'grammar',
+          if (chatTemplate != null) 'chatTemplate',
           if (toolsEnabled != null) 'toolsEnabled',
           if (toolChoice != null) 'toolChoice',
           if (toolMaxRounds != null) 'toolMaxRounds',
@@ -820,9 +944,28 @@ class InferenceSettings {
     microBatchSize: microBatchSize ?? this.microBatchSize,
     nGpuLayers: nGpuLayers ?? this.nGpuLayers,
     backend: backend ?? this.backend,
+    cpuVariant: cpuVariant ?? this.cpuVariant,
+    projectorDevice: projectorDevice ?? this.projectorDevice,
     cpuThreads: cpuThreads ?? this.cpuThreads,
     batchThreads: batchThreads ?? this.batchThreads,
+    vramReserveMb: vramReserveMb ?? this.vramReserveMb,
+    draftMinP: draftMinP ?? this.draftMinP,
+    promptStoreMb: promptStoreMb ?? this.promptStoreMb,
+    useMmap: useMmap ?? this.useMmap,
+    useMlock: useMlock ?? this.useMlock,
+    mainGpu: mainGpu ?? this.mainGpu,
+    splitMode: splitMode ?? this.splitMode,
+    offloadKv: offloadKv ?? this.offloadKv,
+    swaFull: swaFull ?? this.swaFull,
+    nCpuMoe: nCpuMoe ?? this.nCpuMoe,
+    expertsUsed: expertsUsed ?? this.expertsUsed,
+    draftGpuLayers: draftGpuLayers ?? this.draftGpuLayers,
+    keepTokens: keepTokens ?? this.keepTokens,
+    contextOverflow: contextOverflow ?? this.contextOverflow,
+    logitBias: logitBias ?? this.logitBias,
+
     flashAttention: flashAttention ?? this.flashAttention,
+    mtp: mtp ?? this.mtp,
     temperature: temperature ?? this.temperature,
     topP: topP ?? this.topP,
     minP: minP ?? this.minP,
@@ -843,7 +986,6 @@ class InferenceSettings {
         researchTimeBudgetSeconds ?? this.researchTimeBudgetSeconds,
     evidencePassages: evidencePassages ?? this.evidencePassages,
     figureCheck: figureCheck ?? this.figureCheck,
-    thinkOnSearch: thinkOnSearch ?? this.thinkOnSearch,
     searchAgain: searchAgain ?? this.searchAgain,
     wikipediaLookup: wikipediaLookup ?? this.wikipediaLookup,
     autoTitles: autoTitles ?? this.autoTitles,
@@ -901,6 +1043,7 @@ class InferenceSettings {
     responseFormat: responseFormat ?? this.responseFormat,
     jsonSchema: jsonSchema ?? this.jsonSchema,
     grammar: grammar ?? this.grammar,
+    chatTemplate: chatTemplate ?? this.chatTemplate,
     toolsEnabled: toolsEnabled ?? this.toolsEnabled,
     toolChoice: toolChoice ?? this.toolChoice,
     toolMaxRounds: toolMaxRounds ?? this.toolMaxRounds,
@@ -917,16 +1060,37 @@ class InferenceSettings {
   );
 
   Map<String, dynamic> toJson() => {
-    'explicitOverrides': explicitOverrides.toList()..sort(),
+    'explicitOverrides':
+        (explicitOverrides.where((key) => key != 'thinkOnSearch').toList()
+          ..sort()),
     'contextSize': contextSize,
     'imageMaxTokens': imageMaxTokens,
     'batchSize': batchSize,
     'microBatchSize': microBatchSize,
     'nGpuLayers': nGpuLayers,
     'backend': backend.name,
+    'cpuVariant': cpuVariant,
+    'projectorDevice': projectorDevice,
     'cpuThreads': cpuThreads,
     'batchThreads': batchThreads,
+    'vramReserveMb': vramReserveMb,
+    'draftMinP': draftMinP,
+    'promptStoreMb': promptStoreMb,
+    'useMmap': useMmap,
+    'useMlock': useMlock,
+    'mainGpu': mainGpu,
+    'splitMode': splitMode,
+    'offloadKv': offloadKv,
+    'swaFull': swaFull,
+    'nCpuMoe': nCpuMoe,
+    'expertsUsed': expertsUsed,
+    'draftGpuLayers': draftGpuLayers,
+    'keepTokens': keepTokens,
+    'contextOverflow': contextOverflow,
+    'logitBias': logitBias,
+
     'flashAttention': flashAttention,
+    'mtp': mtp,
     'temperature': temperature,
     'topP': topP,
     'minP': minP,
@@ -946,7 +1110,6 @@ class InferenceSettings {
     'researchTimeBudgetSeconds': researchTimeBudgetSeconds,
     'evidencePassages': evidencePassages,
     'figureCheck': figureCheck,
-    'thinkOnSearch': thinkOnSearch,
     'searchAgain': searchAgain,
     'wikipediaLookup': wikipediaLookup,
     'autoTitles': autoTitles,
@@ -1006,6 +1169,7 @@ class InferenceSettings {
     },
     'jsonSchema': jsonSchema,
     'grammar': grammar,
+    'chatTemplate': chatTemplate,
     'toolsEnabled': toolsEnabled,
     'toolChoice': toolChoice.name,
     'toolMaxRounds': toolMaxRounds,
@@ -1033,7 +1197,8 @@ class InferenceSettings {
         : a == b;
     return {
       for (final e in j.entries.take(128))
-        if (!defaults.containsKey(e.key) || !same(defaults[e.key], e.value))
+        if (e.key != 'thinkOnSearch' &&
+            (!defaults.containsKey(e.key) || !same(defaults[e.key], e.value)))
           e.key,
     };
   }
@@ -1082,6 +1247,7 @@ class InferenceSettings {
       explicitOverrides: j['explicitOverrides'] is List
           ? (j['explicitOverrides'] as List)
                 .whereType<String>()
+                .where((key) => key != 'thinkOnSearch')
                 .take(128)
                 .toSet()
           // Older saves wrote every field and carry no provenance. The
@@ -1094,9 +1260,38 @@ class InferenceSettings {
       microBatchSize: integer('microBatchSize', 0, 0, maxBatch),
       nGpuLayers: integer('nGpuLayers', 999, 0, 999),
       backend: named(GpuBackend.values, 'backend') ?? GpuBackend.auto,
+      projectorDevice:
+          const ['auto', 'gpu', 'cpu'].contains(j['projectorDevice'])
+          ? j['projectorDevice'] as String
+          : 'auto',
+      cpuVariant:
+          const ['auto', 'avx512', 'avx2', 'compat'].contains(j['cpuVariant'])
+          ? j['cpuVariant'] as String
+          : 'auto',
       cpuThreads: integer('cpuThreads', 0, 0, 16),
       batchThreads: integer('batchThreads', 0, 0, 16),
+      vramReserveMb: integer('vramReserveMb', 768, 0, 8192),
+      draftMinP: number('draftMinP', 0, 0, 1),
+      promptStoreMb: integer('promptStoreMb', -1, -1, 65536),
+      useMmap: boolean('useMmap', true),
+      useMlock: boolean('useMlock', false),
+      mainGpu: integer('mainGpu', 0, 0, 127),
+      splitMode: ['none', 'layer', 'row'].contains(j['splitMode'])
+          ? j['splitMode'] as String
+          : 'layer',
+      offloadKv: boolean('offloadKv', true),
+      swaFull: boolean('swaFull', false),
+      nCpuMoe: integer('nCpuMoe', -1, -1, 4096),
+      expertsUsed: integer('expertsUsed', -1, -1, 256),
+      draftGpuLayers: integer('draftGpuLayers', 0, 0, 999),
+      keepTokens: integer('keepTokens', 0, 0, maxContext),
+      contextOverflow: ['trim', 'shift', 'stop'].contains(j['contextOverflow'])
+          ? j['contextOverflow'] as String
+          : 'trim',
+      logitBias: sanitizeLogitBias(j['logitBias']),
+
       flashAttention: boolean('flashAttention', true),
+      mtp: boolean('mtp', false),
       temperature: number('temperature', .7, 0, 2),
       topP: number('topP', .95, 0, 1),
       minP: number('minP', .05, 0, 1),
@@ -1139,7 +1334,6 @@ class InferenceSettings {
         maxEvidencePassages,
       ),
       figureCheck: boolean('figureCheck', true),
-      thinkOnSearch: boolean('thinkOnSearch', true),
       searchAgain: boolean('searchAgain', true),
       wikipediaLookup: boolean('wikipediaLookup', true),
       autoTitles: boolean('autoTitles', true),
@@ -1213,13 +1407,15 @@ class InferenceSettings {
       },
       jsonSchema: text('jsonSchema', 32000),
       grammar: text('grammar', 32000),
+      chatTemplate: text('chatTemplate', 128000),
       toolsEnabled: boolean('toolsEnabled', false),
       toolChoice: named(ToolChoice.values, 'toolChoice') ?? ToolChoice.auto,
       toolMaxRounds: integer('toolMaxRounds', 4, 1, maxToolRounds),
       toolCalculator: boolean('toolCalculator', true),
       toolWeb: boolean('toolWeb', true),
       toolDocuments: boolean('toolDocuments', true),
-      draftModelId: text('draftModelId', 200),
+      // An MTP head is a path (`mtp:<path>`), so room for long folders.
+      draftModelId: text('draftModelId', 1024),
       draftMaxTokens: integer('draftMaxTokens', 6, 1, maxDraftTokens),
       themeChoice: named(ThemeChoice.values, 'themeChoice') ?? ThemeChoice.dark,
       accent: named(AccentChoice.values, 'accent') ?? AccentChoice.amber,

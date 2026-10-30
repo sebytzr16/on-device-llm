@@ -81,18 +81,22 @@ class _Turn {
 
   // The answer as it streams in.
   final answer = StringBuffer(), thinking = StringBuffer();
+  int answerRevision = 0;
   final tail = AnswerTail();
   ThinkingStreamParser? parser;
   StreamSubscription<String>? answerSub, thinkSub;
+  StreamSubscription<Map<String, dynamic>>? canvasSub;
   Timer? repaint, checkpoint, deadline;
 
   void clearAnswer() {
+    answerRevision++;
     answer.clear();
     tail.clear();
   }
 
   /// The finished answer rewritten (cleaned, cited, the app's own words).
   void replaceAnswer(String text) {
+    answerRevision++;
     answer
       ..clear()
       ..write(text);

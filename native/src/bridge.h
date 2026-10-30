@@ -9,6 +9,12 @@
 extern "C" {
 #endif
 OD_API int32_t od_version(void);
+// Additive optional query: hardware GPUs (discrete or integrated), zero on failure.
+OD_API int32_t od_gpu_device_count(void);
+// Additive optional query: the CPU cores llama.cpp uses by default
+// (physical cores), at least 1. Load settings with effectiveThreads or
+// effectiveBatchThreads <= 0 use this count.
+OD_API int32_t od_cpu_cores(void);
 // options: JSON, e.g. {"cacheDir": "/data/user/0/<pkg>/cache", "owner": 3}.
 // Backends that compile kernels (OpenCL) persist them under cacheDir; empty
 // disables the cache. owner tags the runtime with the window that made it.
@@ -25,16 +31,23 @@ OD_API void od_cancel_session(int64_t session);
 OD_API void od_reset_cancel(void * handle);
 OD_API int32_t od_cancelled(void * handle);
 OD_API const char * od_error(void * handle);
+// Includes embeddedChatTemplate from the GGUF, even when a load override is active.
 OD_API const char * od_info(void * handle);
-// JSON prompt budget without trimming history or changing generation state.
+// JSON prompt budget and formattedPrompt without trimming history or changing generation state.
 OD_API const char * od_preview(void * handle, const char * request);
 // settings (JSON): context/threads/backend as before, plus (ABI 6)
 //   kvCacheType / vCacheType, ropeScaling + rope/yarn numbers,
+//   chatTemplate: non-empty Jinja override (parse errors fail the load),
 //   loraAdapters: [{path, scale}], draftModel + draftMaxTokens (speculative).
+//   mtp: use the model's own NextN heads (default false; ignored without heads
+//   or with draftModel). od_info reports mtp and mtpAcceptRate; ABI stays 7.
 // The context is capped to the model's trained length and to free memory
 // (memoryGuard: false turns that off); od_info's effectiveSettings reports
 // contextRequested and contextCap ("", "train" or "memory").
 OD_API int32_t od_load(void * handle, const char * path, const char * settings);
+// Additive (optional lookup), safe from another thread: 0..1 during od_load,
+// -1 for an unknown session or when idle. Completion is 1 before returning.
+OD_API float od_load_progress(int64_t session);
 // request (JSON): messages (role/content, optional images, tool_calls,
 // tool_call_id), settings (sampling, stop sequences, seed, response format),
 // tools: [{name, description, parameters}] for native tool calling.
@@ -49,6 +62,11 @@ OD_API const char * od_embed(void * handle, const char * request);
 // Reads GGUF metadata of a LoRA adapter without loading a model:
 // {"architecture", "type", "name", "keys": {...}} or null (see od_error).
 OD_API const char * od_adapter_info(void * handle, const char * path);
+// Additive (optional lookup): what loading [path] with [settings] (the od_load JSON) would use,
+// without loading it: {"contextSize", "layers", "gpuLayers", "ramNeedMb",
+// "vramNeedMb", "gpuFit", "backend", "devices": [...], "ramAvailableMb",
+// "ramTotalMb"}, or null (see od_error). An empty path lists the devices.
+OD_API const char * od_estimate(void * handle, const char * path, const char * settings);
 #ifdef __cplusplus
 }
 #endif

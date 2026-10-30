@@ -4,6 +4,28 @@ import 'package:ondevice_llm/features/attachments/data/attachment_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  test('unavailable OCR is disclosed for scanned and mixed PDFs', () async {
+    Future<String> scan(bool mixed) => PdfTextScanner.scan(
+      pages: 2,
+      textLayer: (page) async => mixed && page == 1 ? 'Existing text' : '',
+      recognize: (_) async => throw const OcrUnavailable(),
+      options: const ScanOptions(),
+      maxCharacters: 10000,
+    );
+    await expectLater(
+      scan(false),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'notice',
+          OcrUnavailable.notice,
+        ),
+      ),
+    );
+    final mixed = await scan(true);
+    expect(mixed, contains('Existing text'));
+    expect(mixed, contains(OcrUnavailable.notice));
+  });
   test('tall scanned pages preserve aspect ratio inside raster limits', () {
     final size = AttachmentStore.pdfRasterSize(1000, 6000);
     expect(size.height / size.width, closeTo(6, .02));

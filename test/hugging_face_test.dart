@@ -1,8 +1,119 @@
+import 'dart:convert';
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/data/network/hugging_face.dart';
 import 'package:ondevice_llm/features/models/domain/entities/model_info.dart';
 
 void main() {
+  test('projector selection prefers F16 then BF16 then smallest', () {
+    const f16 = HfFile(name: 'mmproj-F16.gguf', size: 900, sha256: 'f16');
+    const bf16 = HfFile(name: 'mmproj-BF16.gguf', size: 800, sha256: 'bf16');
+    const f32 = HfFile(name: 'mmproj-F32.gguf', size: 100, sha256: 'f32');
+    const other = HfFile(name: 'mmproj-Q8.gguf', size: 200, sha256: 'q8');
+    expect(HuggingFace.selectProjector([bf16, f32, f16]), same(f16));
+    expect(HuggingFace.selectProjector([f32, bf16]), same(bf16));
+    expect(HuggingFace.selectProjector([other, f32]), same(f32));
+    expect(HuggingFace.selectProjector([]), isNull);
+    const weights = HfFile(
+      name: 'model-Q4_K_M.gguf',
+      size: 1000,
+      sha256: 'weights',
+    );
+    const repo = HfRepoFiles(
+      repo: 'publisher/vision',
+      revision: 'revision',
+      license: 'apache-2.0',
+      files: [weights, f16],
+    );
+    final model = HuggingFace.modelFor(repo, weights, ModelFamily.qwen);
+    expect(model.copyWith(isDownloaded: true).projector?.sha256, 'f16');
+    expect(
+      model.projector?.downloadUrl,
+      contains('/resolve/revision/mmproj-F16.gguf'),
+    );
+    expect(
+      HuggingFace.modelFor(
+        repo,
+        weights,
+        ModelFamily.qwen,
+        includeProjector: false,
+      ).projector,
+      isNull,
+    );
+  });
+
+  test('Hub siblings include nested splits, grouped in loader order', () async {
+    final dio = Dio();
+    addTearDown(dio.close);
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          expect(options.queryParameters['blobs'], true);
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              data: {
+                'sha': 'pinned',
+                'gated': false,
+                'cardData': {'license': 'apache-2.0'},
+                'siblings': [
+                  for (final i in [2, 1, 3])
+                    {
+                      'rfilename': 'Q4_K_M/model-Q4_K_M-0000$i-of-00003.gguf',
+                      'lfs': {'sha256': '$i' * 64, 'size': i * 100},
+                    },
+                  {'rfilename': 'README.md'},
+                  {
+                    'rfilename': 'other/incomplete-00001-of-00002.gguf',
+                    'lfs': {'sha256': 'f' * 64, 'size': 50},
+                  },
+                ],
+              },
+            ),
+          );
+        },
+      ),
+    );
+    final repo = await HuggingFace.files('publisher/model', client: dio);
+    expect(repo.files, hasLength(4));
+    final first = repo.models.single;
+    expect(first.displayName, 'Q4_K_M/model-Q4_K_M.gguf');
+    expect(repo.totalSize(first), 600);
+    final m = HuggingFace.modelFor(
+      repo,
+      repo.files.firstWhere((f) => f.name.endsWith('00002-of-00003.gguf')),
+      ModelFamily.qwen,
+    );
+    expect(m.fileName, endsWith('-model-Q4_K_M-00001-of-00003.gguf'));
+    expect(m.parts.map((f) => f.sha256), ['1' * 64, '2' * 64, '3' * 64]);
+    expect(m.parts.first.fileName, m.fileName);
+    expect(
+      m.parts.every((f) => f.fileName.startsWith(m.id.substring(3))),
+      true,
+    );
+    expect(
+      m.downloadUrl,
+      endsWith('/resolve/pinned/Q4_K_M/model-Q4_K_M-00001-of-00003.gguf'),
+    );
+    expect(m.sizeBytes, 600);
+    expect(m.displayName, 'model');
+    expect(m.copyWith(isDownloaded: true).parts, same(m.parts));
+    expect(
+      ModelDownloadPart.fromJson(
+        jsonDecode(jsonEncode(m.parts[1].toJson())),
+      ).sha256,
+      '2' * 64,
+    );
+    expect(
+      () => HuggingFace.modelFor(
+        repo,
+        repo.files.firstWhere((f) => f.name.startsWith('other/')),
+        ModelFamily.qwen,
+      ),
+      throwsFormatException,
+    );
+  });
+
   test('files carry quantization, projector and split flags', () {
     const q4 = HfFile(name: 'Qwen3-4B-Q4_K_M.gguf', size: 1, sha256: 'a');
     const f16 = HfFile(name: 'model-F16.gguf', size: 1, sha256: 'b');
@@ -30,6 +141,15 @@ void main() {
       ModelFamily.phi,
     );
     expect(HuggingFace.guessFamily('someone/Mystery-GGUF'), ModelFamily.other);
+    // A distill uses its teacher's prompt; "phi" inside a word is not Phi.
+    expect(
+      HuggingFace.guessFamily('unsloth/DeepSeek-R1-Distill-Qwen-7B-GGUF'),
+      ModelFamily.deepseek,
+    );
+    expect(
+      HuggingFace.guessFamily('TheBloke/dolphin-2.6-mistral-7B-GGUF'),
+      ModelFamily.mistral,
+    );
     const repo = HfRepoFiles(
       repo: 'unsloth/Qwen3-4B-GGUF',
       revision: 'abc123',
@@ -38,7 +158,7 @@ void main() {
     );
     final m = HuggingFace.modelFor(repo, repo.files.single, ModelFamily.qwen);
     expect(m.id, startsWith('hf-'));
-    expect(m.displayName, 'Qwen3-4B-Q4_K_M');
+    expect(m.displayName, 'Qwen3 4B');
     expect(m.fileName, endsWith('-Qwen3-4B-Q4_K_M.gguf'));
     expect(
       m.downloadUrl,

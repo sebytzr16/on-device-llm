@@ -1,3 +1,5 @@
+import '../../../../core/l10n/cpu_variant_labels.dart';
+import 'run_timing_rows.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -29,11 +31,19 @@ class _RunDetailsSheet extends StatelessWidget {
     final c = context.colors;
     final t = context.l10n;
     final m = run.metrics;
+    final cpuFallback = cpuVariantFallback(t, m);
     String fmt(Object? v) =>
         v is double ? v.toStringAsFixed(v == v.roundToDouble() ? 0 : 2) : '$v';
     final measured = <(String, String)>[
+      ...runTimingRows(t, m),
       if (m['backend'] != null)
-        ('backend', m['backend'].toString().split(' / ').first),
+        (
+          'backend',
+          m['backend'].toString().startsWith('CPU / ')
+              ? m['backend'].toString()
+              : m['backend'].toString().split(' / ').first,
+        ),
+      if (cpuFallback != null) (t.avx512Fallback, cpuFallback),
       if (m['tokensPerSecond'] is num)
         ('speed', '${fmt(m['tokensPerSecond'])} tok/s'),
       if (m['firstTokenMs'] is num)
@@ -134,6 +144,7 @@ class _RunDetailsSheet extends StatelessWidget {
     ];
     final e = run.engine;
     final engine = <(String, String)>[
+      ...engineTimingRows(t, e),
       for (final k in const [
         'threads',
         'batchThreads',

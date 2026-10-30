@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'desktop_host.dart';
+
 /// Physical memory facts, read once. Used to recommend models and to pick the
 /// North Star memory-pressure defaults (KV q8_0 below 8 GB, ctx 2048 below 6 GB).
 class DeviceMemory {
@@ -82,14 +84,16 @@ class NativeOwner {
 }
 
 /// The display's active refresh rate in Hz (MainActivity asks for the fastest
-/// mode at start-up); 0 when unknown or not Android.
+/// mode at start-up); 0 when unknown.
 class DeviceDisplay {
   static const _channel = MethodChannel('ondevice_llm/device');
+  static const _desktopChannel = MethodChannel('ondevice_llm/desktop');
 
   static Future<double> refreshRate() async {
-    if (!Platform.isAndroid) return 0;
+    if (!Platform.isAndroid && !DesktopHost.active) return 0;
     try {
-      return (await _channel.invokeMethod<num>('refreshRate'))?.toDouble() ?? 0;
+      final channel = DesktopHost.active ? _desktopChannel : _channel;
+      return (await channel.invokeMethod<num>('refreshRate'))?.toDouble() ?? 0;
     } on PlatformException {
       return 0;
     } on MissingPluginException {

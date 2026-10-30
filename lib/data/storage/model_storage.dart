@@ -5,16 +5,46 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/platform/desktop_host.dart';
+import '../../core/platform/device_info.dart';
+import 'model_folders.dart';
+import 'gguf_split.dart';
 
 class ModelStorage {
   static const _subdir = 'models';
   static const _channel = MethodChannel('ondevice_llm/storage');
 
+  static Future<DeviceStorage?> availableStorage() async {
+    if (!DesktopHost.active) return DeviceStorage.read();
+    try {
+      final available = await (await desktopFolders()).availableBytes(
+        (await modelsDir()).path,
+      );
+      return DeviceStorage(totalBytes: 0, availableBytes: available);
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
   /// GGUF models plus the voice files (ONNX models, token lists and the
-  /// Kokoro archive, which is unpacked next to them).
-  static const fileExtensions = ['.gguf', '.onnx', '.txt', '.tar.bz2'];
+  /// Kokoro archive, which is unpacked next to them), and the safetensors
+  /// VAEs and ESRGAN upscaler of the desktop image and video models.
+  static const fileExtensions = [
+    '.gguf',
+    '.onnx',
+    '.txt',
+    '.tar.bz2',
+    '.safetensors',
+    '.pth',
+  ];
 
   static Future<Directory> modelsDir() async {
+    if (DesktopHost.active) {
+      final dir = (await desktopFolders()).current;
+      await dir.create(recursive: true);
+      return dir;
+    }
     // path_provider.getExternalStorageDirectory() on Android maps to the
     // app-private getExternalFilesDir(), which is what the North Star wants.
     final base = Platform.isAndroid
@@ -26,12 +56,36 @@ class ModelStorage {
     return dir;
   }
 
+  static Future<ModelFolders> desktopFolders() async => ModelFolders(
+    Directory(p.join((await getApplicationSupportDirectory()).path, _subdir)),
+    await SharedPreferences.getInstance(),
+    (path) async => (await const MethodChannel(
+      'ondevice_llm/desktop',
+    ).invokeMethod<int>('availableBytes', path))!,
+  );
+
+  /// Manifests and unpacked voice directories follow retained roots too.
+  static Future<String> resourcePath(String relativePath) async {
+    if (p.isAbsolute(relativePath) ||
+        p.split(p.normalize(relativePath)).contains('..')) {
+      throw ArgumentError.value(relativePath, 'relativePath');
+    }
+    if (DesktopHost.active) {
+      return (await desktopFolders()).resolvePath(relativePath);
+    }
+    return p.join((await modelsDir()).path, relativePath);
+  }
+
   static Future<File> modelFile(String fileName) async {
     if (fileName != p.basename(fileName) ||
         fileName.contains('\\') ||
         fileName.contains('/') ||
         !fileExtensions.any(fileName.toLowerCase().endsWith)) {
       throw const FormatException('Choose a single .gguf filename.');
+    }
+    if (DesktopHost.active) {
+      await modelsDir();
+      return (await desktopFolders()).resolve(fileName);
     }
     final dir = await modelsDir();
     return File(p.join(dir.path, fileName));
@@ -42,13 +96,41 @@ class ModelStorage {
 
   static Future<void> delete(String fileName) async {
     final f = await modelFile(fileName);
-    if (f.existsSync()) await f.delete();
+    for (final name in GgufSplit.parse(fileName)?.names ?? [fileName]) {
+      final part = File(p.join(f.parent.path, name));
+      if (await part.exists()) await part.delete();
+    }
   }
 
   /// Removes the downloader's `<file>.part` for [fileName], if any.
   static Future<void> deletePartial(String fileName) async {
-    final part = File('${(await modelFile(fileName)).path}.part');
-    if (part.existsSync()) await part.delete();
+    final file = await modelFile(fileName);
+    for (final name in GgufSplit.parse(fileName)?.names ?? [fileName]) {
+      final part = File(p.join(file.parent.path, '$name.part'));
+      if (await part.exists()) await part.delete();
+    }
+  }
+
+  /// Canonical order even when the user picks a later shard. Validate the
+  /// entire set before copying or adopting any of it.
+  static Future<List<File>> ggufFilesBeside(String path) async {
+    final file = File(path);
+    final split = GgufSplit.parse(p.basename(path));
+    final files = split == null
+        ? [file]
+        : [
+            for (final name in split.names)
+              File(p.join(file.parent.path, name)),
+          ];
+    for (final f in files) {
+      if (!await f.exists()) {
+        throw FormatException(
+          'Missing split GGUF part: ${p.basename(f.path)}. '
+          'Keep all parts together in the same folder.',
+        );
+      }
+    }
+    return files;
   }
 
   /// Flags the file with NSURLIsExcludedFromBackupKey on iOS so multi-GB

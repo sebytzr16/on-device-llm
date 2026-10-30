@@ -12,6 +12,16 @@ class MathSyntax extends md.InlineSyntax {
   @override
   bool onMatch(md.InlineParser parser, Match match) {
     final tex = match[1] ?? match[2] ?? match[3] ?? match[4]!;
+    // A model's "$391$" is a number in math mode: show the number. Prices
+    // ("$5 and $10") have a space before the closing dollar or a digit after.
+    final source = parser.source;
+    if (match[2] != null &&
+        RegExp(r'^\d[\d.,]*$').hasMatch(tex) &&
+        (match.end >= source.length ||
+            !RegExp(r'\d').hasMatch(source[match.end]))) {
+      parser.addNode(md.Text(tex));
+      return true;
+    }
     if (tex.length > 2048 ||
         (match[2] != null &&
             !tex.contains(RegExp(r'[\\=^_+*/<>-]')) &&

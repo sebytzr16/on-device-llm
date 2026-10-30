@@ -6,12 +6,14 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/design/app_design.dart';
 import '../../../../core/design/app_sheet.dart';
 import '../../../../core/l10n/l10n.dart';
+import '../../../../core/platform/desktop_host.dart';
 import '../../../../inference/remote/remote_provider.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/settings_widgets.dart';
 import 'remote_profile_page.dart';
 import 'scan_connection_page.dart';
 import '../../../hosting/host_discovery.dart';
+import '../../../hosting/pairing_code.dart';
 import '../../../hosting/presentation/nearby_hosts_page.dart';
 import '../../../../core/motion/motion.dart';
 import '../../../../core/island/status_island.dart';
@@ -27,7 +29,52 @@ class RemoteServerPage extends ConsumerWidget {
       MaterialPageRoute(builder: (_) => const NearbyHostsPage()),
     );
     if (host == null || !context.mounted) return;
+    final t = context.l10n;
+    // The code trades for the access token; empty keeps the manual way.
+    while (true) {
+      if (!context.mounted) return;
+      final code = await promptText(
+        context,
+        title: t.hostPairCode,
+        message: t.remotePairCodeMessage(host.name),
+        confirmLabel: t.remotePairConnect,
+        keyboardType: TextInputType.number,
+        maxLength: 7,
+        allowEmpty: true,
+        fieldKey: const Key('pair-code'),
+        confirmKey: const Key('pair-code-connect'),
+      );
+      if (code == null || !context.mounted) return;
+      if (PairingCode.normalize(code).isEmpty) break;
+      try {
+        final pairing = await PairingCode.redeem(host.endpoint, code);
+        if (!context.mounted) return;
+        await _addPairing(context, ref, pairing, name: host.name);
+        return;
+      } on PairingException catch (e) {
+        if (!context.mounted) return;
+        showIslandToast(context, switch (e.failure) {
+          PairingFailure.wrongCode => t.remotePairWrong,
+          PairingFailure.lockedOut => t.remotePairLocked,
+          PairingFailure.unreachable => t.remotePairUnreachable(host.name),
+        });
+        if (e.failure != PairingFailure.wrongCode) return;
+      }
+    }
     final settings = ref.read(settingsProvider);
+    final saved = RemoteProfile.savedServer(
+      settings.remoteProfiles,
+      host.endpoint,
+    );
+    if (saved != null) {
+      if (!context.mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => RemoteProfilePage(profileId: saved.id),
+        ),
+      );
+      return;
+    }
     if (settings.remoteProfiles.length >= 32) return;
     final profile = RemoteProfile(
       id: const Uuid().v4(),
@@ -115,6 +162,7 @@ class RemoteServerPage extends ConsumerWidget {
     WidgetRef ref,
     String text, {
     bool askName = false,
+    String? name,
   }) async {
     final pairing = RemoteProfile.fromPairing(text, id: const Uuid().v4());
     if (pairing == null) {
@@ -122,6 +170,7 @@ class RemoteServerPage extends ConsumerWidget {
       return;
     }
     var (profile, key) = pairing;
+    if (name != null) profile = profile.copyWith(name: name);
     if (askName) {
       final name = await _askName(context, profile.label);
       if (name == null || !context.mounted) return;
@@ -129,10 +178,29 @@ class RemoteServerPage extends ConsumerWidget {
     }
     final n = ref.read(settingsProvider.notifier);
     final s = ref.read(settingsProvider);
-    if (s.remoteProfiles.length >= 32) return;
+    // Pairing again with a server already saved (say after its token
+    // changed) updates that connection instead of adding a twin.
+    final existing = RemoteProfile.savedServer(
+      s.remoteProfiles,
+      profile.baseUrl,
+    );
+    if (existing != null) {
+      profile = existing.copyWith(
+        baseUrl: profile.baseUrl,
+        model: profile.model.isEmpty ? null : profile.model,
+      );
+    } else if (s.remoteProfiles.length >= 32) {
+      return;
+    }
     await n.update(
       s.copyWith(
-        remoteProfiles: [...s.remoteProfiles, profile],
+        remoteProfiles: existing == null
+            ? [...s.remoteProfiles, profile]
+            : [
+                for (final p in s.remoteProfiles)
+                  p.id == profile.id ? profile : p,
+              ],
+        remoteEnabled: true,
         remoteProfileId: profile.id,
       ),
     );
@@ -181,8 +249,10 @@ class RemoteServerPage extends ConsumerWidget {
             AppDesign.xxl,
           ),
           children: [
-            const SettingsNote(
-              'Point the app at a server you run yourself — LM Studio, Ollama or llama-server on a PC at home over your LAN or a VPN — or at a hosted API with your own key. Your messages and any web evidence are sent to that connection instead of being answered on the phone.',
+            SettingsNote(
+              DesktopHost.active
+                  ? context.l10n.desktopRemoteExplanation
+                  : 'Point the app at a server you run yourself — LM Studio, Ollama or llama-server on a PC at home over your LAN or a VPN — or at a hosted API with your own key. Your messages and any web evidence are sent to that connection instead of being answered on the phone.',
               icon: Icons.dns_outlined,
             ),
             const SizedBox(height: AppDesign.md),
@@ -202,6 +272,8 @@ class RemoteServerPage extends ConsumerWidget {
                         ? active == null
                               ? context.l10n.remoteNeedsConnection
                               : context.l10n.remoteNeedsUrl
+                        : DesktopHost.active
+                        ? context.l10n.desktopRemoteOff
                         : context.l10n.remoteRowOff,
                   ),
                   value: s.remoteEnabled,
@@ -228,9 +300,15 @@ class RemoteServerPage extends ConsumerWidget {
                     value: p.id,
                     // ignore: deprecated_member_use
                     groupValue: active?.id,
+                    // Picking a connection means "answer with it", the same
+                    // as picking it from the Model chip.
                     // ignore: deprecated_member_use
-                    onChanged: (id) =>
-                        n.update(s.copyWith(remoteProfileId: id ?? p.id)),
+                    onChanged: (id) => n.update(
+                      s.copyWith(
+                        remoteEnabled: true,
+                        remoteProfileId: id ?? p.id,
+                      ),
+                    ),
                     title: Text(p.label),
                     subtitle: Text(
                       [
@@ -434,7 +512,7 @@ class RemoteServerPage extends ConsumerWidget {
               'Sampling, max tokens and thinking mode apply to remote chats too (Anthropic ignores sampling). Context size is the app’s fitting budget; set it no higher than the selected model’s real context window.',
             ),
             SettingsNote(
-              'API keys are stored in the Android keystore, never in the settings file or exports, and are only ever sent to the connection they belong to. Over the internet use HTTPS or a VPN.',
+              "API keys are stored in this device's secure storage (Android keystore, Windows data protection), never in the settings file or exports, and are only ever sent to the connection they belong to. Over the internet use HTTPS or a VPN.",
               icon: Icons.lock_outline,
               tone: c.textMuted,
             ),

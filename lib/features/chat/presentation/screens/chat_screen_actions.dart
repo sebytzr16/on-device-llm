@@ -191,9 +191,7 @@ extension _ChatScreenActions on _ChatScreenState {
                 key: Key('compare-${m.id}'),
                 leading: const Icon(Icons.memory),
                 title: Text(m.displayName),
-                subtitle: Text(
-                  '${m.quantization.name.toUpperCase()} · ${m.sizeLabel}',
-                ),
+                subtitle: Text('${m.quantLabel} · ${m.sizeLabel}'),
                 onTap: () => Navigator.pop(context, m),
               );
             },

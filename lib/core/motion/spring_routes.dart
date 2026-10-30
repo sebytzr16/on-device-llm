@@ -5,6 +5,7 @@ import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 
 import '../design/app_design.dart';
+import '../platform/desktop_host.dart';
 import 'motion.dart';
 
 /// A spring as a [Curve], for duration-based animations such as routes: it
@@ -248,6 +249,7 @@ class _MorphSheetRoute<T> extends PopupRoute<T> {
     final motion = context.motion;
     final c = context.colors;
     final media = MediaQuery.of(context);
+    if (DesktopHost.active) return _desktopDialog(context, animation, child);
     return _MorphSheetFrame(
       animation: motion.animates
           ? _curved ??= CurvedAnimation(
@@ -267,6 +269,63 @@ class _MorphSheetRoute<T> extends PopupRoute<T> {
       draggable: draggable && dismissible,
       onDismiss: () => Navigator.of(context).maybePop(),
       child: child,
+    );
+  }
+
+  /// On the desktop a sheet is a centred dialog: a phone-width bottom sheet
+  /// stretched across a wide window reads badly. Same surface and spring.
+  Widget _desktopDialog(
+    BuildContext context,
+    Animation<double> animation,
+    Widget child,
+  ) {
+    final c = context.colors;
+    final motion = context.motion;
+    final size = MediaQuery.sizeOf(context);
+    final curve = motion.animates
+        ? _curved ??= CurvedAnimation(
+            parent: animation,
+            curve: SpringCurve(motion.spring),
+            reverseCurve: Curves.easeInCubic,
+          )
+        : const AlwaysStoppedAnimation(1.0);
+    return FadeTransition(
+      opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+      child: ScaleTransition(
+        scale: Tween(begin: 0.96, end: 1.0).animate(curve),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(AppDesign.lg),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 560,
+                maxHeight: size.height * (tall ? 0.86 : 0.7),
+              ),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: c.surfaceRaised,
+                  borderRadius: AppDesign.radius(AppDesign.rLg),
+                  border: Border.all(color: c.hairline),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black38,
+                      blurRadius: 32,
+                      offset: Offset(0, 12),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: AppDesign.radius(AppDesign.rLg),
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: AppDesign.sm),
+                    child: child,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

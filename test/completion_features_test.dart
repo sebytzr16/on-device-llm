@@ -521,6 +521,8 @@ void main() {
           old.execute('ALTER TABLE knowledge_chunks DROP COLUMN page_number');
           // v10-v13 kept a page cache, dropped at v14.
           old.execute('CREATE TABLE web_pages (url TEXT PRIMARY KEY)');
+          old.execute('ALTER TABLE models DROP COLUMN projector_json');
+          old.execute('ALTER TABLE models DROP COLUMN parts_json');
           old.execute('PRAGMA user_version = 11');
         } finally {
           old.close();

@@ -8,6 +8,24 @@ sealed class AppException implements Exception {
 
 class ModelLoadException extends AppException {
   const ModelLoadException(super.message);
+
+  @override
+  String toString() => message;
+}
+
+String modelLoadErrorMessage(Object? error) {
+  final message = error is AppException
+      ? error.message
+      : error is StateError
+      ? error.message
+      : '$error';
+  final lower = message.toLowerCase();
+  if (lower.contains('unknown model architecture') ||
+      lower.contains('unsupported model architecture') ||
+      lower.contains('unknown architecture')) {
+    return 'The engine does not support this model yet.';
+  }
+  return message;
 }
 
 /// The model does not fit in the memory free right now, even with a small

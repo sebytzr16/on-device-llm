@@ -1,3 +1,5 @@
+import '../../../../desktop/engine_files_panel.dart';
+import '../../../../core/l10n/cpu_variant_labels.dart';
 import '../../../../core/l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/design/app_design.dart';
 import '../../../../core/design/app_sheet.dart';
 import '../../../../core/platform/device_info.dart';
+import '../../../../core/platform/desktop_host.dart';
 import '../../../benchmark/benchmark.dart';
 import '../../../benchmark/benchmark_dialog.dart';
 import '../../../chat/presentation/providers/chat_provider.dart';
@@ -57,10 +60,10 @@ class _MetricsSheet extends ConsumerWidget {
           _Row(
             label: context.l10n.uiMetricsSheetDisplay,
             value: '${hz.round()} Hz',
-            detail: hz < 90
-                ? 'The phone is holding the app at ${hz.round()} Hz (battery or power mode).'
+            detail: hz < 90 && !DesktopHost.active
+                ? context.l10n.displayHzPhoneLimited(hz.round())
                 : null,
-            tone: hz < 90 ? c.warning : null,
+            tone: hz < 90 && !DesktopHost.active ? c.warning : null,
           ),
         if (model != null)
           if (ref.watch(benchmarkProvider).results[model.id] case final r?)
@@ -71,6 +74,7 @@ class _MetricsSheet extends ConsumerWidget {
                 style: context.text.mono.copyWith(color: c.textMuted),
               ),
             ),
+        if (DesktopHost.active) const EngineFilesPanel(),
         const SizedBox(height: AppDesign.xl),
         Row(
           children: [
@@ -189,9 +193,10 @@ class _Panel extends StatelessWidget {
                 .replaceFirst(RegExp(r'^lib'), '')
                 .replaceFirst(RegExp(r'\.so$'), ''),
             detail:
-                (metrics['nativeLibrarySkipped'] as List?)?.isNotEmpty == true
-                ? 'GPU variant unavailable on this device: ${(metrics['nativeLibrarySkipped'] as List).first.toString().split(': ').last}'
-                : null,
+                cpuVariantFallback(context.l10n, metrics) ??
+                ((metrics['nativeLibrarySkipped'] as List?)?.isNotEmpty == true
+                    ? 'GPU variant unavailable on this device: ${(metrics['nativeLibrarySkipped'] as List).first.toString().split(': ').last}'
+                    : null),
           ),
         if (metrics['stages'] is Map)
           _Row(
@@ -262,7 +267,7 @@ class _ModelRow extends StatelessWidget {
     label: context.l10n.uiMetricsSheetModel,
     value: model == null
         ? 'none loaded'
-        : '${model!.displayName} · ${model!.sizeLabel} · ${model!.quantization.name.toUpperCase()}',
+        : '${model!.displayName} · ${model!.sizeLabel} · ${model!.quantLabel}',
   );
 }
 

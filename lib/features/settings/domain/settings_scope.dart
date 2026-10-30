@@ -92,7 +92,7 @@ class SettingsResolver {
     final out = <String, dynamic>{};
     for (final e in raw.entries) {
       final spec = SettingSpec.byKey(e.key);
-      if (spec == null) continue;
+      if (spec == null || !spec.available) continue;
       final v = spec.coerce(e.value);
       if (v != null) out[e.key] = v;
     }
@@ -152,6 +152,8 @@ class SettingsResolver {
       for (final layer in layers.skip(1)) {
         for (final e in layer.values.entries) {
           if (!base.containsKey(e.key)) continue;
+          final spec = SettingSpec.byKey(e.key);
+          if (spec != null && !spec.available) continue;
           merged[e.key] = e.value;
           origin[e.key] = layer.id;
           (requested[e.key] ??= []).add((layer.id, e.value));

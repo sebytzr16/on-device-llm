@@ -12,10 +12,17 @@ import '../../features/attachments/data/attachment_store.dart';
 import '../../features/retrieval/news_desk.dart';
 import '../../features/zim/zim_wikipedia.dart';
 import '../../inference/engine/llama_engine.dart';
+import '../../inference/engine/diffusiongemma_engine.dart';
 import '../../inference/remote/remote_engine.dart';
 import '../platform/device_info.dart';
 
 final sessionBusyProvider = StateProvider<bool>((ref) => false);
+
+final diffusionGemmaEngineProvider = Provider<DiffusionGemmaEngine>((ref) {
+  final engine = DiffusionGemmaEngine();
+  ref.onDispose(engine.dispose);
+  return engine;
+});
 
 /// Neutral home for cross-feature singletons so that ModelManager and Chat
 /// can both reach them without a circular import.
@@ -24,6 +31,17 @@ final llamaEngineProvider = Provider<LlamaEngine>((ref) {
     cacheDirectory: () async => (await getApplicationCacheDirectory()).path,
     owner: NativeOwner.id,
     onLibrary: (library) => unawaited(NativeOwner.report(library)),
+  );
+  ref.onDispose(engine.dispose);
+  return engine;
+});
+
+/// Memory estimates (load settings, Discover fit badges) on their own
+/// isolate: a GGUF header read and a fit pass can take seconds, and on the
+/// chat engine they made Load wait for them.
+final llamaEstimatorProvider = Provider<LlamaEngine>((ref) {
+  final engine = LlamaEngine(
+    cacheDirectory: () async => (await getApplicationCacheDirectory()).path,
   );
   ref.onDispose(engine.dispose);
   return engine;
@@ -53,6 +71,37 @@ final supportEngineProvider = Provider<LlamaEngine>((ref) {
   ref.onDispose(engine.dispose);
   return engine;
 });
+
+/// The local server's own runtime (desktop): the server shares the chat's
+/// runtime until the chat loads another model, then its model moves here so
+/// both stay loaded.
+final serverEngineProvider = Provider<LlamaEngine>((ref) {
+  final engine = LlamaEngine(
+    cacheDirectory: () async => (await getApplicationCacheDirectory()).path,
+    owner: NativeOwner.id,
+    onLibrary: (library) => unawaited(NativeOwner.report(library)),
+  );
+  ref.onDispose(engine.dispose);
+  return engine;
+});
+
+/// Makes a fresh runtime for each extra model the desktop server holds
+/// (and the comparison's second model); the caller disposes it.
+final engineFactoryProvider = Provider<LlamaEngine Function()>(
+  (ref) =>
+      () => LlamaEngine(
+        cacheDirectory: () async => (await getApplicationCacheDirectory()).path,
+        owner: NativeOwner.id,
+        onLibrary: (library) => unawaited(NativeOwner.report(library)),
+      ),
+);
+
+/// Set while the desktop's local server runs: called with the model about
+/// to replace the chat's, it keeps the server's models loaded (moving the
+/// served one to [serverEngineProvider], or back when the chat loads it).
+/// Null when nothing needs moving.
+final engineHandoffProvider =
+    StateProvider<Future<void> Function(String nextModelId)?>((ref) => null);
 
 /// OpenAI-compatible client for the user's own server (Settings > Remote
 /// server). Idle unless that setting is on.

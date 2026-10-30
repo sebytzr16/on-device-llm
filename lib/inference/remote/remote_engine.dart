@@ -85,6 +85,17 @@ class RemoteEngine implements TextEngine {
   final _geminiNoPenalty = <String>{};
   final _geminiNoLevel = <String, Set<String>>{};
 
+  /// While a busy provider's wait runs: its status (429, 503…) and when
+  /// the next attempt goes out, so the chat can say so instead of showing
+  /// a silent spinner (2026-10-28: Gemini Flash answered 503 "high demand"
+  /// several times an hour; the app's waits made a greeting take 20 s).
+  ({int status, DateTime until})? retrying;
+
+  /// When the request still waiting for the provider's first byte went
+  /// out; null once it answers. Gemini 3.8 Flash took 12 s, and once over
+  /// 120 s, to start answering "hi" (2026-10-28).
+  DateTime? waitingSince;
+
   /// What OpenAI-style servers refused this session, per connection and
   /// model: optional fields they reject by name (`max_tokens` stands for
   /// "wants `max_completion_tokens`"), and `reasoning_effort` values they
@@ -793,9 +804,13 @@ class RemoteEngine implements TextEngine {
     _cancel = cancel;
     final controller = StreamController<String>(onCancel: cancel.cancel);
     final started = DateTime.now();
-    DateTime? first, last;
+    DateTime? first, last, answered;
     var tokens = 0;
     int? promptTokens, completionTokens;
+    // Each busy or rate-limited answer and the wait before sending again,
+    // shown in the run details ("429 · waited 5 s") so a slow first word
+    // says whether the provider or the network was the cause.
+    final waits = <Map<String, Object>>[];
     var inThink = false, contentSeen = false;
     // Streamed tool calls arrive as fragments keyed by index.
     final calls = <int, Map<String, String>>{};
@@ -817,6 +832,9 @@ class RemoteEngine implements TextEngine {
         'tokens': completionTokens ?? tokens,
         'promptTokens': promptTokens,
         'firstTokenMs': first?.difference(started).inMilliseconds ?? 0,
+        if (answered != null)
+          'requestMs': answered!.difference(started).inMilliseconds,
+        if (waits.isNotEmpty) 'providerWaits': waits,
         'tokensPerSecond': seconds > 0
             ? ((completionTokens ?? tokens) - 1) / seconds
             : 0,
@@ -926,7 +944,13 @@ class RemoteEngine implements TextEngine {
         var busy = 0;
         while (true) {
           try {
-            res = await post(body);
+            waitingSince = DateTime.now();
+            try {
+              res = await post(body);
+            } finally {
+              waitingSince = null;
+            }
+            answered = DateTime.now();
             break;
           } on DioException catch (e) {
             final status = e.response?.statusCode;
@@ -940,7 +964,17 @@ class RemoteEngine implements TextEngine {
             final wait = retryDelay(status, e.response?.headers, busy);
             if (wait != null && !cancel.isCancelled) {
               busy++;
-              await Future<void>.delayed(wait);
+              waits.add({'status': status ?? 0, 'waitMs': wait.inMilliseconds});
+              retrying = (status: status ?? 0, until: DateTime.now().add(wait));
+              // Stop ends the wait at once instead of after it.
+              try {
+                await Future.any([
+                  Future<void>.delayed(wait),
+                  cancel.whenCancel,
+                ]);
+              } finally {
+                retrying = null;
+              }
               if (cancel.isCancelled) rethrow;
               continue;
             }
@@ -1644,7 +1678,7 @@ class RemoteEngine implements TextEngine {
 
   /// Gemini thinks by default; the Think pill maps to the knob each family
   /// has. Gemini 3 takes a level (Off is the lowest: "minimal" on Flash,
-  /// "low" on Pro). 2.5 and Gemma take a budget: Off is 0, except on 2.5
+  /// "low" on Pro). 2.5 takes a budget: Off is 0, except on 2.5
   /// Pro, which cannot turn thinking off and gets its minimum of 128; an
   /// unlimited budget is left to the model. So a short answer is not
   /// preceded by a long silent reasoning pass.
@@ -1666,7 +1700,13 @@ class RemoteEngine implements TextEngine {
       }
       return {if (on) 'includeThoughts': true, 'thinkingLevel': ?chosen};
     }
-    if (model.contains('2.5') || model.startsWith('gemma')) {
+    if (model.startsWith('gemma')) {
+      // Gemma on the Gemini API refuses a budget and every level but
+      // "minimal", which skips its thinking (first word 0.8 s against
+      // 2.4 s, 2026-10-28); on, it thinks by default.
+      return on ? {'includeThoughts': true} : {'thinkingLevel': 'minimal'};
+    }
+    if (model.contains('2.5')) {
       final budget = !on
           ? (model.contains('2.5-pro') ? 128 : 0)
           : settings.thinkingBudgetTokens > 0
@@ -1711,7 +1751,12 @@ class RemoteEngine implements TextEngine {
     final model = settings.remoteModel.trim().toLowerCase();
     final thinking = config['thinkingConfig'];
     final level = thinking is Map ? thinking['thinkingLevel'] : null;
-    final next = _geminiNextLevel[level];
+    // Only a refusal that names the level ("Thinking level MINIMAL is not
+    // supported") steps to the next one; "Thinking level is not supported"
+    // (Gemma) refuses them all.
+    final next = level is String && error.toLowerCase().contains(level)
+        ? _geminiNextLevel[level]
+        : null;
     if (thinking is Map && level is String && next != null) {
       _geminiNoLevel.putIfAbsent(model, () => {}).add(level);
       thinking['thinkingLevel'] = next;

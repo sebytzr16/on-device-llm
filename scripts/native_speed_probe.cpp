@@ -1,10 +1,18 @@
-// Android bridge A/B probe: identical model, prompt, sampler and threads.
-// Usage: native_speed_probe /absolute/library.so /absolute/model.gguf [threads] [rounds] [context_words]
+// Bridge A/B probe: identical model, prompt, sampler and threads.
+// Usage: native_speed_probe /absolute/library /absolute/model.gguf [threads] [rounds] [context_words] [load_settings.json]
 // No app settings or data are modified. Output is one JSON line per round.
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#else
 #include <dlfcn.h>
+#endif
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include "json.hpp"
@@ -13,7 +21,11 @@ using json = nlohmann::ordered_json;
 using Clock = std::chrono::steady_clock;
 
 template<class T> T symbol(void * lib, const char * name) {
+#if defined(_WIN32)
+    auto address = GetProcAddress(static_cast<HMODULE>(lib), name);
+#else
     auto address = dlsym(lib, name);
+#endif
     if (!address) throw std::runtime_error(std::string("Missing symbol: ") + name);
     return reinterpret_cast<T>(address);
 }
@@ -21,8 +33,13 @@ template<class T> T symbol(void * lib, const char * name) {
 int main(int argc, char ** argv) {
     if (argc < 3) return 2;
     try {
+#if defined(_WIN32)
+        void * lib = LoadLibraryExA(argv[1], nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+        if (!lib) throw std::runtime_error("LoadLibraryEx failed: " + std::to_string(GetLastError()));
+#else
         void * lib = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
         if (!lib) throw std::runtime_error(dlerror());
+#endif
         const auto create = symbol<void * (*)(const char *)>(lib, "od_create");
         const auto destroy = symbol<void (*)(void *)>(lib, "od_destroy");
         const auto load = symbol<int32_t (*)(void *, const char *, const char *)>(lib, "od_load");
@@ -37,12 +54,16 @@ int main(int argc, char ** argv) {
         for (int i = 0; i < context_words; ++i) context += "traveller city history ";
         void * handle = create("{}");
         if (!handle) throw std::runtime_error("Could not create bridge");
-        const json settings = {
+        json settings = {
             {"backend", "cpu"}, {"contextSize", 4096},
             {"effectiveThreads", threads}, {"effectiveBatchThreads", threads},
             {"effectiveBatchSize", 256}, {"effectiveMicroBatchSize", 256},
             {"flashAttention", true}, {"kvCacheType", "f16"}
         };
+        if (argc > 6) {
+            std::ifstream input(argv[6]);
+            settings.update(json::parse(input));
+        }
         if (load(handle, argv[2], settings.dump().c_str()) < 0)
             throw std::runtime_error(error(handle));
         for (int round = 0; round < rounds; ++round) {
@@ -72,7 +93,11 @@ int main(int argc, char ** argv) {
             std::cout << metrics.dump() << std::endl;
         }
         destroy(handle);
+#if defined(_WIN32)
+        FreeLibrary(static_cast<HMODULE>(lib));
+#else
         dlclose(lib);
+#endif
         return 0;
     } catch (const std::exception & e) {
         std::cerr << e.what() << std::endl;

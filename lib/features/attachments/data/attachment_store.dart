@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import '../../../core/storage/app_directories.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:uuid/uuid.dart';
 
@@ -37,7 +38,7 @@ class AttachmentStore {
   };
 
   static Future<Directory> directory() async {
-    final base = await getApplicationDocumentsDirectory();
+    final base = await appDataDirectory();
     final dir = Directory(p.join(base.path, 'attachments'));
     if (!await dir.exists()) await dir.create(recursive: true);
     return dir;
@@ -72,12 +73,15 @@ class AttachmentStore {
       await file.writeAsBytes(png, flush: true);
       String? recognized;
       double? confidence;
+      String? ocrNotice;
       try {
         final read = await OnDeviceOcr.recognize(file.path, scanOptions);
         recognized = read.text.trim();
         confidence = read.confidence;
-      } catch (_) {
-        // The original photo remains available to a vision model if OCR fails.
+      } catch (error) {
+        ocrNotice = error is OcrUnavailable
+            ? OcrUnavailable.notice
+            : 'Text recognition failed: $error';
       }
       if (cancelled?.call() == true) {
         await file.delete();
@@ -92,6 +96,7 @@ class AttachmentStore {
         sizeBytes: png.length,
         text: recognized == null || recognized.isEmpty ? null : recognized,
         ocrConfidence: confidence,
+        error: ocrNotice,
       );
     }
     final file = File(

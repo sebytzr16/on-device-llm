@@ -2764,7 +2764,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get uiRemoteServerPageExtractDocumentsSafelyOnThePhone =>
-      'Extract documents safely on the phone, then send their text in the prompt. Original files are not uploaded.';
+      'Extract documents safely on this device, then send their text in the prompt. Original files are not uploaded.';
 
   @override
   String get uiRemoteServerPageStreamingIdleTimeout => 'Streaming idle timeout';
@@ -3099,12 +3099,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String remoteKeyHostedHelp(Object provider) {
-    return 'Stored in the Android keystore; sent only to $provider.';
+    return 'Stored in this device\'s secure storage; sent only to $provider.';
   }
 
   @override
   String get remoteKeySelfHelp =>
-      'Only if the server was started with a key. Stored in the Android keystore.';
+      'Only if the server was started with a key. Stored in this device\'s secure storage.';
 
   @override
   String get remoteHideKey => 'Hide key';
@@ -5127,4 +5127,1784 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sheetNotice => 'Notice';
+
+  @override
+  String get desktopMinimize => 'Minimize';
+
+  @override
+  String get desktopMaximize => 'Maximize';
+
+  @override
+  String get desktopRestore => 'Restore down';
+
+  @override
+  String get desktopClose => 'Close';
+
+  @override
+  String get desktopToggleSidebar => 'Show or hide the sidebar (Ctrl+B)';
+
+  @override
+  String get desktopNewChatTip => 'New chat (Ctrl+N)';
+
+  @override
+  String get desktopNoChats => 'No conversations yet';
+
+  @override
+  String get desktopNoMatches => 'No conversations match';
+
+  @override
+  String get desktopEmptyTitle => 'What can I help with?';
+
+  @override
+  String get desktopEmptyHint =>
+      'Answers are worked out on this PC. Nothing leaves it unless you turn on web research or a remote server.';
+
+  @override
+  String get desktopComposerHint =>
+      'Enter to send · Shift+Enter for a new line';
+
+  @override
+  String get desktopPickModel => 'Choose a model';
+
+  @override
+  String get desktopServerPair => 'Connect a phone';
+
+  @override
+  String get desktopServerPairHint =>
+      'On the phone, open Settings > Remote server. Tap Scan QR code, or tap Find nearby hosts, pick this PC and enter the pairing code. Both devices must be on the same Wi-Fi.';
+
+  @override
+  String get desktopServerPairOff =>
+      'Turn on \"Share on the local network\" and start the server to show a pairing code.';
+
+  @override
+  String get desktopServerNeedsModel =>
+      'Load a model first: phones and apps get answers from the model loaded here.';
+
+  @override
+  String get hostPairCode => 'Pairing code';
+
+  @override
+  String remotePairCodeMessage(String name) {
+    return 'Enter the 6-digit pairing code shown next to the server on $name. Leave it empty to type an access token instead.';
+  }
+
+  @override
+  String get remotePairConnect => 'Connect';
+
+  @override
+  String get remotePairWrong =>
+      'Wrong pairing code. Check the code on the other device and try again.';
+
+  @override
+  String get remotePairLocked =>
+      'Too many wrong codes. Restart the server on the other device to get a new code.';
+
+  @override
+  String remotePairUnreachable(String name) {
+    return 'Couldn\'t reach $name. Check that both devices are on the same Wi-Fi and the server is running.';
+  }
+
+  @override
+  String get desktopServerAddress => 'Address for phones';
+
+  @override
+  String get desktopLanTitle => 'Network check';
+
+  @override
+  String get desktopLanChecking => 'Checking Windows network settings…';
+
+  @override
+  String desktopLanPublic(String name) {
+    return 'Windows treats \"$name\" as a public network. If the phone can\'t find or reach this PC, set its network profile to Private.';
+  }
+
+  @override
+  String get desktopLanOpenSettings => 'Open network settings';
+
+  @override
+  String get desktopLanBlocked =>
+      'Windows Firewall blocks this app on the current network.';
+
+  @override
+  String get desktopLanNoRule =>
+      'Windows Firewall has no rule for this app on the current network yet.';
+
+  @override
+  String get desktopLanAllow => 'Allow in firewall';
+
+  @override
+  String get desktopLanFirewallOk =>
+      'Windows Firewall allows this app on the current network.';
+
+  @override
+  String desktopLanVpn(String names) {
+    return 'A VPN is connected ($names). If the phone can\'t connect, allow local network access in the VPN app or pause it.';
+  }
+
+  @override
+  String get desktopLanRecheck => 'Check again';
+
+  @override
+  String get desktopLanClear =>
+      'Nothing on this PC should stop a phone from connecting.';
+
+  @override
+  String get loadPhaseWeights => 'Loading weights into memory';
+
+  @override
+  String get loadPhaseContext => 'Allocating context';
+
+  @override
+  String get loadPhaseFinishing => 'Finishing up';
+
+  @override
+  String timeLeft(String time) {
+    return '$time left';
+  }
+
+  @override
+  String get desktopNoModels =>
+      'No models on this PC yet. Import a GGUF or download one under Models.';
+
+  @override
+  String get desktopLocalModels => 'On this PC';
+
+  @override
+  String get desktopCatalog => 'Available to download';
+
+  @override
+  String get desktopLoad => 'Load';
+
+  @override
+  String get desktopEject => 'Eject';
+
+  @override
+  String get desktopLoaded => 'Loaded';
+
+  @override
+  String get desktopGeneral => 'General';
+
+  @override
+  String get desktopLanguageSystem => 'Follow Windows';
+
+  @override
+  String get desktopAttachTooltip => 'Attach files';
+
+  @override
+  String get desktopInspectorToggle => 'Model and chat settings (Ctrl+I)';
+
+  @override
+  String get desktopInspectorTitle => 'Settings';
+
+  @override
+  String get desktopInspectorHint =>
+      'Changes here apply to this chat only, on top of the model\'s settings.';
+
+  @override
+  String get desktopInspectorReset => 'Reset';
+
+  @override
+  String get desktopInspectorClose => 'Close';
+
+  @override
+  String get desktopInspectorSystemPrompt => 'Instructions';
+
+  @override
+  String get desktopInspectorPromptHint =>
+      'How the model should answer in this chat';
+
+  @override
+  String get desktopInspectorTemperature => 'Temperature';
+
+  @override
+  String get desktopInspectorMaxTokens => 'Max answer tokens';
+
+  @override
+  String get desktopInspectorContext => 'Context length';
+
+  @override
+  String get desktopInspectorContextHint =>
+      'A new context length reloads the model on the next message.';
+
+  @override
+  String get desktopInspectorScopeModel => 'Model';
+
+  @override
+  String get desktopInspectorScopeChat => 'This chat';
+
+  @override
+  String desktopInspectorModelHint(String model) {
+    return 'Saved with $model and used in every chat with it. Switch to This chat for a one-off change.';
+  }
+
+  @override
+  String get desktopInspectorModelPromptHint =>
+      'How this model should answer in every chat';
+
+  @override
+  String get desktopInspectorResetModel => 'Reset model';
+
+  @override
+  String get desktopInspectorRepeatPenalty => 'Repeat penalty';
+
+  @override
+  String get desktopInspectorPresencePenalty => 'Presence penalty';
+
+  @override
+  String get desktopInspectorChatSection => 'This chat';
+
+  @override
+  String get desktopSourceMaker => 'maker\'s';
+
+  @override
+  String get desktopSourceYours => 'yours';
+
+  @override
+  String get desktopSourceModel => 'model';
+
+  @override
+  String get desktopSourcePreset => 'preset';
+
+  @override
+  String get desktopSourceProject => 'project';
+
+  @override
+  String get desktopSourceChat => 'this chat';
+
+  @override
+  String get desktopModelSettingsSampling => 'Answers';
+
+  @override
+  String get desktopModelSettingsSamplingHint =>
+      'Used in every chat with this model. They take effect on the next message, without reloading.';
+
+  @override
+  String get desktopModelServing => 'SERVING';
+
+  @override
+  String get desktopModelServingHint =>
+      'The local server answers other devices with this model. It stays loaded when a chat uses another model.';
+
+  @override
+  String desktopContextUsed(int used, int total) {
+    return '$used of $total context tokens used';
+  }
+
+  @override
+  String get desktopLoadSettingsTitle => 'Model settings';
+
+  @override
+  String get desktopLoadSettingsHint =>
+      'Saved with this model: how it loads and how it answers. A preset or a chat\'s own settings still win over them.';
+
+  @override
+  String get desktopLoadSettingsGpu => 'GPU offload';
+
+  @override
+  String get desktopLoadSettingsGpuAuto => 'Fit to free VRAM';
+
+  @override
+  String desktopLoadSettingsGpuLayers(int count, int total) {
+    return '$count of $total layers on the GPU';
+  }
+
+  @override
+  String get desktopLoadSettingsGpuNone =>
+      'No GPU in use: the model runs on the CPU';
+
+  @override
+  String get desktopLoadSettingsContext => 'Context length';
+
+  @override
+  String desktopLoadSettingsTrained(String tokens) {
+    return 'Trained for $tokens tokens';
+  }
+
+  @override
+  String get desktopLoadSettingsFlash => 'Flash attention';
+
+  @override
+  String get desktopLoadSettingsKv => 'KV cache type';
+
+  @override
+  String get desktopLoadSettingsKvHint =>
+      'Q8_0 halves the cache memory with little quality loss; Q4_0 quarters it.';
+
+  @override
+  String get desktopLoadSettingsThreads => 'CPU threads';
+
+  @override
+  String get desktopLoadSettingsBatch => 'Batch size';
+
+  @override
+  String get desktopLoadSettingsAuto => 'Auto';
+
+  @override
+  String get desktopLoadSettingsEstimate => 'Estimated memory';
+
+  @override
+  String get desktopLoadSettingsVram => 'VRAM';
+
+  @override
+  String get desktopLoadSettingsRam => 'RAM';
+
+  @override
+  String desktopLoadSettingsUsage(String need, String free) {
+    return '$need of $free GB free';
+  }
+
+  @override
+  String get desktopLoadSettingsFitsGpu => 'Fits fully on the GPU';
+
+  @override
+  String get desktopLoadSettingsPartial =>
+      'Partly on the GPU: the other layers run on the CPU, which is slower';
+
+  @override
+  String desktopLoadSettingsSpill(String gb) {
+    return 'Over the card\'s free memory by $gb GB: Windows moves the rest into shared memory and answers get several times slower. Lower the GPU layers or the context.';
+  }
+
+  @override
+  String get desktopLoadSettingsExperts =>
+      'Expert weights stay in RAM so the rest fits on the GPU';
+
+  @override
+  String desktopLoadSettingsCapped(String tokens) {
+    return 'The context will be cut to $tokens tokens to fit in memory';
+  }
+
+  @override
+  String get desktopLoadSettingsMeasuring => 'Measuring…';
+
+  @override
+  String desktopLoadSettingsNoEstimate(String reason) {
+    return 'No estimate: $reason';
+  }
+
+  @override
+  String get desktopLoadSettingsReset => 'Reset to defaults';
+
+  @override
+  String get desktopLoadSettingsSaveLoad => 'Save and load';
+
+  @override
+  String get desktopMoreSettings => 'All settings';
+
+  @override
+  String get desktopShortcuts => 'Keyboard shortcuts';
+
+  @override
+  String get desktopShortcutList =>
+      'Ctrl+N new chat · Ctrl+K search chats · Ctrl+L message box · Ctrl+B sidebar · Ctrl+M models · Ctrl+, settings · Esc stop · F2 rename · Delete delete chat · Ctrl+I chat settings';
+
+  @override
+  String get desktopDeleteChatTitle => 'Delete this conversation?';
+
+  @override
+  String desktopDeleteChatBody(String title) {
+    return '“$title” and its attached files are removed from this PC.';
+  }
+
+  @override
+  String get desktopUntitled => 'New conversation';
+
+  @override
+  String desktopTokensPerSecond(String rate) {
+    return '$rate tok/s';
+  }
+
+  @override
+  String get desktopServerTitle => 'Local server';
+
+  @override
+  String get desktopServerRunning => 'Running';
+
+  @override
+  String get desktopServerStopped => 'Stopped';
+
+  @override
+  String get desktopServerStarting => 'Starting…';
+
+  @override
+  String get desktopServerPort => 'Port';
+
+  @override
+  String get desktopServerInvalidPort => 'Enter a port from 1 to 65535.';
+
+  @override
+  String get desktopServerStart => 'Start server';
+
+  @override
+  String get desktopServerStop => 'Stop server';
+
+  @override
+  String get desktopServerBind => 'Bind address';
+
+  @override
+  String get desktopServerUrl => 'Base URL';
+
+  @override
+  String get desktopServerToken => 'Bearer token';
+
+  @override
+  String get desktopServerReveal => 'Reveal token';
+
+  @override
+  String get desktopServerHide => 'Hide token';
+
+  @override
+  String get desktopServerCopy => 'Copy';
+
+  @override
+  String get desktopServerRegenerate => 'Regenerate token';
+
+  @override
+  String get desktopServerRegenerateHint =>
+      'Regenerating stops the server. Start it again to use the new token.';
+
+  @override
+  String get desktopServerModel => 'Loaded model';
+
+  @override
+  String get desktopServerNoModel => 'No model loaded';
+
+  @override
+  String get desktopServerEndpoints => 'OpenAI-compatible endpoints';
+
+  @override
+  String get desktopServerCurl => 'curl example';
+
+  @override
+  String get desktopServerRequests => 'Request log';
+
+  @override
+  String get desktopServerRequestColumns =>
+      'Method / path · status · duration · prompt / completion tokens';
+
+  @override
+  String get desktopServerNoRequests => 'No requests yet.';
+
+  @override
+  String get desktopServerHint =>
+      'Listens only on this computer unless you share it on the local network. Every endpoint requires a bearer token.';
+
+  @override
+  String get desktopLogsTitle => 'Logs';
+
+  @override
+  String get desktopLogsFilter => 'Filter by tag or message';
+
+  @override
+  String get desktopLogsAll => 'All levels';
+
+  @override
+  String get desktopLogsDebug => 'Debug';
+
+  @override
+  String get desktopLogsInfo => 'Info';
+
+  @override
+  String get desktopLogsWarning => 'Warning';
+
+  @override
+  String get desktopLogsError => 'Error';
+
+  @override
+  String get desktopLogsPause => 'Pause';
+
+  @override
+  String get desktopLogsResume => 'Resume';
+
+  @override
+  String get desktopLogsClear => 'Clear';
+
+  @override
+  String get desktopLogsCopyAll => 'Copy all';
+
+  @override
+  String get desktopLogsEmpty => 'No matching log entries.';
+
+  @override
+  String get desktopLogsHint =>
+      'In memory only · last 2000 lines · copy uses the current filters';
+
+  @override
+  String get desktopHfLocal => 'Local models';
+
+  @override
+  String get desktopHfDiscover => 'Discover';
+
+  @override
+  String get desktopHfSearch => 'Search Hugging Face';
+
+  @override
+  String get desktopHfHint => 'Model name (e.g. Qwen GGUF)';
+
+  @override
+  String get desktopHfIntro =>
+      'Search public GGUF repositories. Enter at least two characters.';
+
+  @override
+  String get desktopHfEmpty => 'No GGUF repositories match.';
+
+  @override
+  String get desktopHfSelect => 'Select a repository to explore quantizations.';
+
+  @override
+  String get desktopHfSort => 'Sort results';
+
+  @override
+  String get desktopHfDownloads => 'Downloads';
+
+  @override
+  String get desktopHfLikes => 'Likes';
+
+  @override
+  String get desktopHfUpdated => 'Updated';
+
+  @override
+  String get desktopHfUnknownDate => 'Unknown date';
+
+  @override
+  String get desktopHfFiles => 'GGUF files by quantization';
+
+  @override
+  String get desktopHfNoFiles =>
+      'No single-file GGUF weights in this repository.';
+
+  @override
+  String get desktopHfProjector =>
+      'Vision projector (mmproj) present. Projectors cannot be added here.';
+
+  @override
+  String get desktopHfSplit => 'Split GGUF files are not supported here.';
+
+  @override
+  String get desktopHfDownload => 'Download';
+
+  @override
+  String get desktopHfDownloaded => 'Downloaded';
+
+  @override
+  String get desktopHfCancel => 'Cancel';
+
+  @override
+  String get desktopHfQueued => 'Queued';
+
+  @override
+  String get desktopHfVerifying => 'Verifying checksum…';
+
+  @override
+  String get desktopHfSearchError =>
+      'Could not search Hugging Face. Try again.';
+
+  @override
+  String get desktopHfFilesError =>
+      'Could not read this repository. It may be gated or unavailable. Try another repository or import a GGUF.';
+
+  @override
+  String get desktopHfDownloadError => 'Download failed. Try again.';
+
+  @override
+  String get desktopChatMenu => 'Chat actions';
+
+  @override
+  String get desktopChatExport => 'Export chat';
+
+  @override
+  String get desktopChatMarkdown => 'Markdown (.md)';
+
+  @override
+  String get desktopChatJson => 'JSON (.json)';
+
+  @override
+  String get desktopChatDuplicate => 'Duplicate chat';
+
+  @override
+  String get desktopChatBranch => 'Branch from here';
+
+  @override
+  String get desktopChatCopy => 'Copy message';
+
+  @override
+  String get desktopChatEdit => 'Edit message';
+
+  @override
+  String get desktopChatRegenerate => 'Regenerate answer';
+
+  @override
+  String get desktopChatDelete => 'Delete message';
+
+  @override
+  String get desktopChatDrop => 'Drop files to attach';
+
+  @override
+  String get desktopChatClipboardImage => 'Clipboard image.png';
+
+  @override
+  String get desktopChatActionFailed => 'Could not complete this chat action.';
+
+  @override
+  String get desktopChatExported => 'Chat exported';
+
+  @override
+  String desktopChatCopyTitle(String title) {
+    return '$title (copy)';
+  }
+
+  @override
+  String desktopChatBranchTitle(String title) {
+    return '$title (branch)';
+  }
+
+  @override
+  String get desktopChatModel => 'Model';
+
+  @override
+  String get desktopChatDate => 'Date';
+
+  @override
+  String get desktopChatThinking => 'Thinking';
+
+  @override
+  String get desktopChatUser => 'User';
+
+  @override
+  String get desktopChatAssistant => 'Assistant';
+
+  @override
+  String get desktopChatSystem => 'System';
+
+  @override
+  String get desktopLoadSettingsLoadedNote =>
+      'Measured with the current model still in memory. Loading frees it first, so more may fit.';
+
+  @override
+  String get desktopServerLan => 'Share on the local network';
+
+  @override
+  String get desktopServerLanHint =>
+      'Other devices on your network can connect with the token. Windows may ask to allow it through the firewall.';
+
+  @override
+  String get desktopThemeDark => 'Dark';
+
+  @override
+  String get desktopThemeLight => 'Light';
+
+  @override
+  String get desktopThemeSystem => 'System';
+
+  @override
+  String get desktopServerStatus => 'Status';
+
+  @override
+  String desktopHfSortLabel(String sort) {
+    return 'Sort: $sort';
+  }
+
+  @override
+  String get desktopHfCopyRepo => 'Copy repository ID';
+
+  @override
+  String desktopHfIncludesProjector(String precision, String size) {
+    return 'Includes vision projector ($precision, $size)';
+  }
+
+  @override
+  String desktopHfUpdatedDate(String date) {
+    return 'Updated $date';
+  }
+
+  @override
+  String desktopHfUpdatedDays(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: 'Updated $days days ago',
+      one: 'Updated 1 day ago',
+      zero: 'Updated today',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get desktopHfFitsGpu => 'Fits GPU';
+
+  @override
+  String get desktopHfPartialGpu => 'Partial GPU';
+
+  @override
+  String get desktopHfTooLarge => 'Too large';
+
+  @override
+  String get desktopProjectsSubtitle =>
+      'Organise conversations into projects, archives and trash.';
+
+  @override
+  String get desktopProjectsAll => 'All conversations';
+
+  @override
+  String get desktopProjectsNew => 'New project';
+
+  @override
+  String get desktopProjectsMove => 'Move to project';
+
+  @override
+  String desktopProjectsSelected(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count selected',
+      one: '1 selected',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get desktopProjectsClear => 'Clear';
+
+  @override
+  String get desktopProjectsTitle => 'Title';
+
+  @override
+  String get desktopProjectsUpdated => 'Updated';
+
+  @override
+  String get desktopProjectsOpen => 'Open';
+
+  @override
+  String get desktopProjectsDeleteForever => 'Delete forever';
+
+  @override
+  String get desktopProjectsTrashConfirm =>
+      'Move the selected conversations to Trash?';
+
+  @override
+  String get desktopKeyboardShortcuts => 'Keyboard shortcuts';
+
+  @override
+  String get desktopShortcutSearch => 'Search conversations';
+
+  @override
+  String get desktopShortcutComposer => 'Focus message box';
+
+  @override
+  String get desktopShortcutStop => 'Stop response';
+
+  @override
+  String get desktopModelsFolder => 'Models folder';
+
+  @override
+  String get desktopModelsFolderChange => 'Change…';
+
+  @override
+  String get desktopModelsFolderOpen => 'Open in Explorer';
+
+  @override
+  String get desktopModelsFolderReset => 'Reset to default';
+
+  @override
+  String get desktopModelsFolderChoice =>
+      'Move existing models to this folder, or keep using them where they are? New downloads and imports will use the selected folder.';
+
+  @override
+  String get desktopModelsFolderMove => 'Move existing models';
+
+  @override
+  String get desktopModelsFolderLeave => 'Leave them where they are';
+
+  @override
+  String get desktopModelsFolderMoving => 'Moving models…';
+
+  @override
+  String get desktopModelsFolderWritable =>
+      'Cannot write to this folder. Choose a writable local folder and try again.';
+
+  @override
+  String get desktopModelsFolderSpace =>
+      'Not enough free space in the destination. Free up space and try again.';
+
+  @override
+  String get desktopModelsFolderConflict =>
+      'The destination contains conflicting files or is inside an existing models folder. Choose a separate folder.';
+
+  @override
+  String get desktopModelsFolderBusy =>
+      'Eject the loaded model and finish imports and downloads before changing folders.';
+
+  @override
+  String get desktopModelsFolderOpenError => 'Could not open Explorer.';
+
+  @override
+  String get desktopGgufAssociation => 'Open .gguf files with OnDevice LLM';
+
+  @override
+  String get desktopFileAssociations => 'File associations:';
+
+  @override
+  String get desktopGgufModel => 'GGUF model';
+
+  @override
+  String get mcpTitle => 'MCP servers';
+
+  @override
+  String get mcpHint =>
+      'Connect local tools. Calls require approval unless you allow a tool permanently.';
+
+  @override
+  String get mcpAdd => 'Add server';
+
+  @override
+  String get mcpEdit => 'Edit mcp.json';
+
+  @override
+  String get mcpName => 'Server name';
+
+  @override
+  String get mcpCommand => 'Command';
+
+  @override
+  String get mcpArgs => 'Arguments (JSON array)';
+
+  @override
+  String get mcpEnv => 'Environment (JSON object)';
+
+  @override
+  String get mcpRestart => 'Restart';
+
+  @override
+  String get mcpRemove => 'Remove';
+
+  @override
+  String get mcpRevoke => 'Revoke automatic approval';
+
+  @override
+  String get mcpDisabled => 'Disabled';
+
+  @override
+  String get mcpConnecting => 'Connecting…';
+
+  @override
+  String get mcpReady => 'Connected';
+
+  @override
+  String get mcpErrorStatus => 'Error';
+
+  @override
+  String mcpTools(int count) {
+    return 'Tools: $count';
+  }
+
+  @override
+  String get mcpEmpty =>
+      'No MCP servers. Add a command or edit mcp.json to add a loopback HTTP URL.';
+
+  @override
+  String get mcpConfirm => 'Allow MCP tool call?';
+
+  @override
+  String get mcpOnce => 'Allow once';
+
+  @override
+  String get mcpAlways => 'Always allow this tool';
+
+  @override
+  String get mcpDeny => 'Deny';
+
+  @override
+  String get mcpConfigError =>
+      'Invalid MCP configuration. Use mcpServers with a unique name and either a command, args array and env object, or a URL.';
+
+  @override
+  String get mcpLoopbackError =>
+      'MCP HTTP only accepts http://127.0.0.1 or http://localhost. Other hosts are blocked by the offline rule.';
+
+  @override
+  String get mcpProtocolError =>
+      'The MCP server returned an invalid response or a protocol error.';
+
+  @override
+  String get mcpClosedError =>
+      'The MCP server stopped. Restart it to restore its tools.';
+
+  @override
+  String get mcpTimeoutError => 'The MCP server did not respond in time.';
+
+  @override
+  String get mcpUnavailableError => 'This MCP tool is no longer available.';
+
+  @override
+  String get mcpDeniedError =>
+      'The user denied this MCP tool call. Do not retry without permission.';
+
+  @override
+  String mcpOtherError(String detail) {
+    return 'MCP operation failed: $detail';
+  }
+
+  @override
+  String get mcpUnsupportedContent =>
+      'The MCP server returned non-text content (image, audio or resource); this chat tool result includes text only.';
+
+  @override
+  String get structuredFormatText => 'Text';
+
+  @override
+  String get structuredFormatGrammar => 'Grammar';
+
+  @override
+  String get structuredSchemaEmpty =>
+      'No schema: any JSON object will be accepted.';
+
+  @override
+  String get structuredSchemaObject => 'The schema must be a JSON object.';
+
+  @override
+  String get structuredSchemaInvalid => 'The schema is not valid JSON.';
+
+  @override
+  String get structuredSmallModelHint =>
+      'Small models may struggle with structured output.';
+
+  @override
+  String get desktopPromptTemplate => 'Prompt template';
+
+  @override
+  String get desktopPromptTemplateHint =>
+      'Uses the Jinja template embedded in the GGUF by default. Custom templates apply on the next load.';
+
+  @override
+  String get desktopPromptTemplateOverride => 'Override embedded template';
+
+  @override
+  String get desktopPromptTemplateReset => 'Reset to embedded template';
+
+  @override
+  String get desktopPromptTemplateMissing => 'No embedded template available.';
+
+  @override
+  String get desktopPromptTemplateError =>
+      'Could not read the embedded template.';
+
+  @override
+  String get structuredFormatJson => 'JSON';
+
+  @override
+  String get structuredGrammarEmpty =>
+      'No grammar set. Enter a GBNF grammar before generating.';
+
+  @override
+  String get modelRemovedLabel => 'Removed model';
+
+  @override
+  String get desktopLoadPhasePreparing => 'Preparing…';
+
+  @override
+  String desktopLoadPhaseWeights(String percent) {
+    return 'Loading weights $percent';
+  }
+
+  @override
+  String get desktopLoadPhaseContext => 'Creating context';
+
+  @override
+  String get desktopLoadPhaseProjector => 'Loading vision projector';
+
+  @override
+  String get desktopLoadPhaseFinishing => 'Finishing…';
+
+  @override
+  String get desktopLoadPhaseDone => 'Loaded';
+
+  @override
+  String get desktopMcpUndoRemoved => 'Server removed';
+
+  @override
+  String get desktopMcpUndoAction => 'Undo';
+
+  @override
+  String get desktopUsageTitle => 'Usage';
+
+  @override
+  String get desktopUsageRate => 'Requests per minute · last 30 minutes';
+
+  @override
+  String desktopUsageTotals(
+    int requests,
+    int errors,
+    int prompt,
+    int completion,
+    String speed,
+    String seconds,
+  ) {
+    return '$requests requests · $errors errors\n$prompt prompt tokens · $completion completion tokens\nAverage completion: $speed tok/s · average answer: $seconds s';
+  }
+
+  @override
+  String get desktopUsageClients => 'Clients';
+
+  @override
+  String get desktopUsageModels => 'Models';
+
+  @override
+  String desktopUsageGroup(String name, int requests, int tokens, String time) {
+    return '$name · $requests requests · $tokens tokens · last seen $time';
+  }
+
+  @override
+  String get desktopBenchTitle => 'Speed test';
+
+  @override
+  String get desktopBenchHint =>
+      'Loads this model with the settings above. Measures prompt processing and generation at three context fills, up to the loaded context limit.';
+
+  @override
+  String get desktopBenchStart => 'Speed test';
+
+  @override
+  String get desktopBenchCancel => 'Cancel';
+
+  @override
+  String get desktopBenchError =>
+      'Speed test failed. Check that the model can load and try again.';
+
+  @override
+  String desktopBenchLast(String time) {
+    return 'Last test: $time';
+  }
+
+  @override
+  String get desktopBenchFill => 'Prompt tokens';
+
+  @override
+  String get desktopBenchPp => 'Processing (pp)';
+
+  @override
+  String get desktopBenchTg => 'Generation (tg)';
+
+  @override
+  String desktopBenchRate(String speed) {
+    return '$speed tok/s';
+  }
+
+  @override
+  String get desktopModelPresetLabel => 'Variant';
+
+  @override
+  String get desktopModelPresetDefault => 'Default';
+
+  @override
+  String get desktopModelPresetSaveAs => 'Save as…';
+
+  @override
+  String get desktopModelPresetManage => 'Manage…';
+
+  @override
+  String get desktopModelPresetName => 'Variant name';
+
+  @override
+  String get desktopModelPresetNameError => 'Enter a unique, non-empty name.';
+
+  @override
+  String get desktopModelPresetSuggestions => 'Suggestions';
+
+  @override
+  String get desktopModelPresetPrecise => 'Precise';
+
+  @override
+  String get desktopModelPresetCreative => 'Creative';
+
+  @override
+  String get desktopModelPresetUpdate => 'Update variant';
+
+  @override
+  String get desktopModelPresetRename => 'Rename variant';
+
+  @override
+  String get desktopModelPresetDelete => 'Delete variant';
+
+  @override
+  String get desktopModelPresetEmpty => 'No variants saved.';
+
+  @override
+  String get desktopModelPresetModified => 'Modified';
+
+  @override
+  String get mermaidDiagram => 'Diagram';
+
+  @override
+  String get mermaidCode => 'Code';
+
+  @override
+  String get mermaidCopySource => 'Copy source';
+
+  @override
+  String get mermaidUnsupported => 'Diagram type not supported';
+
+  @override
+  String get desktopTrayWhenServing =>
+      'Keep running in the tray when the window closes';
+
+  @override
+  String get desktopTrayAlways => 'Always keep running in the tray';
+
+  @override
+  String get desktopTrayOpen => 'Open OnDevice LLM';
+
+  @override
+  String desktopTrayRunning(String model) {
+    return 'Server: running on $model';
+  }
+
+  @override
+  String get desktopTrayStopped => 'Server: stopped';
+
+  @override
+  String get desktopTrayStart => 'Start server';
+
+  @override
+  String get desktopTrayStop => 'Stop server';
+
+  @override
+  String get desktopTrayServeModel => 'Serve model';
+
+  @override
+  String get desktopTrayQuit => 'Quit';
+
+  @override
+  String desktopTrayTooltipServing(String model) {
+    return 'OnDevice LLM — serving $model';
+  }
+
+  @override
+  String get desktopTrayTooltip => 'OnDevice LLM';
+
+  @override
+  String get desktopTrayStillRunning => 'Still running in the tray';
+
+  @override
+  String get desktopTrayActionFailed =>
+      'The tray action could not finish. Check the server and model status.';
+
+  @override
+  String get desktopPoolModels => 'Models';
+
+  @override
+  String get desktopPoolJit => 'Load other models on request';
+
+  @override
+  String get desktopPoolJitHint =>
+      'A request\'s model field selects any installed model.';
+
+  @override
+  String desktopPoolMaxLoaded(int count) {
+    return 'Keep at most $count extra models loaded';
+  }
+
+  @override
+  String get desktopPoolDecrease => 'Keep fewer models';
+
+  @override
+  String get desktopPoolIncrease => 'Keep more models';
+
+  @override
+  String get desktopPoolIdleUnload => 'Unload after idle';
+
+  @override
+  String desktopPoolMinutes(int count) {
+    return '$count minutes';
+  }
+
+  @override
+  String get desktopPoolNever => 'Never';
+
+  @override
+  String get desktopPoolLoaded => 'Loaded extra models';
+
+  @override
+  String get desktopPoolLoading => 'Loading';
+
+  @override
+  String get desktopPoolAnswering => 'Answering';
+
+  @override
+  String get desktopPoolIdle => 'Idle';
+
+  @override
+  String desktopPoolLastUsed(String time) {
+    return 'Last used $time';
+  }
+
+  @override
+  String get desktopPoolEject => 'Eject extra model';
+
+  @override
+  String get desktopPoolClientIds => 'Model IDs for clients';
+
+  @override
+  String get desktopCompareTitle => 'Compare';
+
+  @override
+  String get desktopComparePrompt => 'Prompt';
+
+  @override
+  String get desktopCompareSystem => 'System prompt';
+
+  @override
+  String get desktopCompareSequential => 'One after the other';
+
+  @override
+  String get desktopCompareParallel => 'Side by side';
+
+  @override
+  String get desktopCompareRun => 'Run';
+
+  @override
+  String get desktopCompareStop => 'Stop';
+
+  @override
+  String get desktopComparePickModel => 'Choose a model';
+
+  @override
+  String get desktopCompareUnload => 'Unload';
+
+  @override
+  String get desktopCompareCopy => 'Copy answer';
+
+  @override
+  String get desktopCompareLoading => 'Loading model';
+
+  @override
+  String get desktopCompareBusy =>
+      'Chat engine is busy. Try again when the chat answer finishes.';
+
+  @override
+  String get desktopCompareFirstToken => 'First token';
+
+  @override
+  String get desktopCompareSpeed => 'Speed';
+
+  @override
+  String get desktopCompareTokens => 'Tokens';
+
+  @override
+  String get desktopCompareTotal => 'Total time';
+
+  @override
+  String displayHzPhoneLimited(int hz) {
+    return 'The phone is holding the app at $hz Hz (battery or power mode).';
+  }
+
+  @override
+  String get desktopMtpLabel => 'Multi-token prediction (MTP)';
+
+  @override
+  String get desktopMtpHint =>
+      'Use the model’s own prediction heads when available. A selected draft model takes priority. Applies on the next load.';
+
+  @override
+  String get desktopVoiceMicPrivacy =>
+      'Windows blocked the microphone. Open Windows Settings > Privacy > Microphone and allow desktop apps to use the microphone.';
+
+  @override
+  String get desktopMtpHeadLabel => 'MTP head file';
+
+  @override
+  String get desktopMtpHeadOff => 'Off';
+
+  @override
+  String desktopMtpHeadAuto(String name) {
+    return 'Auto: $name';
+  }
+
+  @override
+  String get desktopMtpHeadAutoNone => 'Auto (none found)';
+
+  @override
+  String get desktopMtpHeadAdd => 'Add a file…';
+
+  @override
+  String get desktopMtpHeadHint =>
+      'A small mtp-*.gguf head (like LM Studio\'s MTP sidecar) that drafts tokens from the model\'s own state. Same answers, faster. Auto uses the matching head beside the model or in LM Studio\'s folder. Applies on the next load.';
+
+  @override
+  String get desktopMtpHeadTokens => 'Tokens drafted per step';
+
+  @override
+  String get desktopDeepLoad => 'Advanced load';
+
+  @override
+  String get desktopDeepSampling => 'Advanced sampling';
+
+  @override
+  String get desktopDeepSpeculative => 'Advanced speculative decoding';
+
+  @override
+  String get desktopDeepMemory => 'Advanced memory';
+
+  @override
+  String get desktopDeepReset => 'Reset model override';
+
+  @override
+  String get desktopDeepLoadHint => 'Applies on the next model load.';
+
+  @override
+  String get desktopDeepSamplingHint => 'Applies to the next answer.';
+
+  @override
+  String get desktopDeepSpeculativeHint =>
+      'Adjusts speculative decoding on the next load.';
+
+  @override
+  String get desktopDeepMemoryHint =>
+      'Controls reuse within the current model session.';
+
+  @override
+  String get desktopDeepMicroBatchSize => 'Microbatch size';
+
+  @override
+  String get desktopDeepBatchThreads => 'Prefill threads';
+
+  @override
+  String get desktopDeepVCacheType => 'V cache type';
+
+  @override
+  String get desktopDeepRopeScaling => 'RoPE scaling';
+
+  @override
+  String get desktopDeepRopeFreqBase => 'RoPE base frequency';
+
+  @override
+  String get desktopDeepRopeFreqScale => 'RoPE frequency scale';
+
+  @override
+  String get desktopDeepYarnExtFactor => 'YaRN extension factor';
+
+  @override
+  String get desktopDeepYarnAttnFactor => 'YaRN attention factor';
+
+  @override
+  String get desktopDeepYarnBetaFast => 'YaRN fast beta';
+
+  @override
+  String get desktopDeepYarnBetaSlow => 'YaRN slow beta';
+
+  @override
+  String get desktopDeepYarnOrigCtx => 'YaRN original context';
+
+  @override
+  String get desktopDeepSeed => 'Random seed (0 = random)';
+
+  @override
+  String get desktopDeepTypicalP => 'Typical P';
+
+  @override
+  String get desktopDeepTopNSigma => 'Top N sigma';
+
+  @override
+  String get desktopDeepXtcProbability => 'XTC probability';
+
+  @override
+  String get desktopDeepXtcThreshold => 'XTC threshold';
+
+  @override
+  String get desktopDeepRepeatLastN => 'Repetition window';
+
+  @override
+  String get desktopDeepFrequencyPenalty => 'Frequency penalty';
+
+  @override
+  String get desktopDeepDryMultiplier => 'DRY multiplier';
+
+  @override
+  String get desktopDeepDryBase => 'DRY base';
+
+  @override
+  String get desktopDeepDryAllowedLength => 'DRY allowed length';
+
+  @override
+  String get desktopDeepDryPenaltyLastN => 'DRY penalty window';
+
+  @override
+  String get desktopDeepStopSequences => 'Stop strings (one per line)';
+
+  @override
+  String get desktopDeepResponseFormat => 'Response format';
+
+  @override
+  String get desktopDeepJsonSchema => 'JSON schema';
+
+  @override
+  String get desktopDeepGrammar => 'GBNF grammar';
+
+  @override
+  String get desktopDeepDraftMaxTokens => 'Draft tokens per step';
+
+  @override
+  String get desktopDeepPromptCache => 'Reuse conversation context';
+
+  @override
+  String get desktopDeepImageMaxTokens => 'Photo token budget';
+
+  @override
+  String get desktopDeepSamplerOrder => 'Sampler order (one name per line)';
+
+  @override
+  String get desktopDeepSameAsK => 'Same as K';
+
+  @override
+  String get desktopDeepVramReserveMb => 'VRAM reserve (MB)';
+
+  @override
+  String get desktopDeepVramReserveHint =>
+      'Memory to leave free for other apps when a model loads.';
+
+  @override
+  String get avx512CpuVariant => 'CPU variant';
+
+  @override
+  String get avx512Auto => 'Automatic';
+
+  @override
+  String get avx512Variant => 'AVX512';
+
+  @override
+  String get avx512Avx2 => 'AVX2';
+
+  @override
+  String get avx512Compat => 'SSE4.2 (compatibility)';
+
+  @override
+  String get avx512Available => 'usable';
+
+  @override
+  String get avx512Unavailable => 'unavailable';
+
+  @override
+  String avx512Detected(Object avx2, Object avx512) {
+    return 'Detected by Windows: AVX512 $avx512, AVX2 $avx2. Applies on the next model load.';
+  }
+
+  @override
+  String get avx512Fallback => 'CPU variant fallback details';
+
+  @override
+  String avx512OsFallback(Object variant) {
+    return 'The requested CPU instructions are unavailable in Windows. Using $variant.';
+  }
+
+  @override
+  String avx512LoadFallback(Object variant) {
+    return 'The requested CPU DLL or one of its dependencies could not be loaded. Using $variant.';
+  }
+
+  @override
+  String get nativeSetUseMmap => 'Memory map model';
+
+  @override
+  String get nativeSetUseMlock => 'Lock model in memory';
+
+  @override
+  String get nativeSetMainGpu => 'Main GPU index';
+
+  @override
+  String get nativeSetSplitMode => 'GPU split mode';
+
+  @override
+  String get nativeSetOffloadKv => 'Offload KV operations';
+
+  @override
+  String get nativeSetSwaFull => 'Full sliding-window cache';
+
+  @override
+  String get nativeSetNCpuMoe => 'CPU expert layers (-1 = auto)';
+
+  @override
+  String get nativeSetExpertsUsed => 'Experts per token (-1 = model default)';
+
+  @override
+  String get nativeSetDraftGpuLayers => 'Draft model GPU layers (0 = CPU)';
+
+  @override
+  String get nativeSetDraftMinP => 'Draft confidence floor';
+
+  @override
+  String get nativeSetPromptStoreMb => 'Saved prompts RAM (MB, -1 = auto)';
+
+  @override
+  String get nativeSetKeepTokens => 'Keep first tokens';
+
+  @override
+  String get nativeSetContextOverflow => 'Context overflow';
+
+  @override
+  String get nativeSetLogitBias => 'Token logit biases (JSON)';
+
+  @override
+  String get nativeSetSplitNone => 'None';
+
+  @override
+  String get nativeSetSplitLayer => 'By layer';
+
+  @override
+  String get nativeSetSplitRow => 'By row';
+
+  @override
+  String get nativeSetOverflowTrim => 'Trim old exchanges';
+
+  @override
+  String get nativeSetOverflowShift => 'Shift old tokens';
+
+  @override
+  String get nativeSetOverflowStop => 'Stop at context limit';
+
+  @override
+  String get tuneCancel => 'Cancel tuning';
+
+  @override
+  String get tuneError =>
+      'Measurement or local save failed. Check the model and try again.';
+
+  @override
+  String tuneReceipt(Object date) {
+    return 'Benchmark receipt · $date';
+  }
+
+  @override
+  String get tuneExport => 'Export receipt to JSON';
+
+  @override
+  String get tuneExported => 'Receipt saved.';
+
+  @override
+  String get tuneUnknown => 'Unknown backend';
+
+  @override
+  String get tunePromptClass => 'Prompt class';
+
+  @override
+  String get tuneMedianRate => 'Median tok/s';
+
+  @override
+  String get tuneSpreadRate => 'Spread tok/s';
+
+  @override
+  String get tuneTtft => 'TTFT (ms)';
+
+  @override
+  String get tunePromptRate => 'Prompt tok/s';
+
+  @override
+  String get tuneAcceptance => 'Draft acceptance (0–1)';
+
+  @override
+  String get tuneShortPrompt => 'Short';
+
+  @override
+  String get tuneLongPrompt => 'Long prefill';
+
+  @override
+  String get tuneCodePrompt => 'Code';
+
+  @override
+  String get tuneUnavailable => 'Unavailable';
+
+  @override
+  String get tuneReceiptDetails => 'Receipt details';
+
+  @override
+  String get tuneBenchHint =>
+      'Three measured rounds per prompt class, after warm-up; prompt caching is disabled.';
+
+  @override
+  String get projectorDevice => 'Vision projector';
+
+  @override
+  String get projectorAuto => 'Auto';
+
+  @override
+  String get projectorGpu => 'Video memory';
+
+  @override
+  String get projectorCpu => 'System memory';
+
+  @override
+  String get projectorDeviceHelp =>
+      'Where the photo encoder\'s weights are kept. Auto keeps them in system memory when that lets the whole model fit on the GPU; photos are still processed on the GPU.';
+
+  @override
+  String get runSendToFirstText => 'Send to first text';
+
+  @override
+  String get runAppPreparation => 'App preparation';
+
+  @override
+  String get runPromptSetup => 'Prompt setup';
+
+  @override
+  String get runPromptReading => 'Prompt reading';
+
+  @override
+  String get runCheckpoints => 'Checkpoints';
+
+  @override
+  String get runProviderAnswered => 'Provider answered';
+
+  @override
+  String get runProviderBusy => 'Provider busy';
+
+  @override
+  String runProviderWait(int status, int seconds) {
+    return '$status, waited $seconds s';
+  }
+
+  @override
+  String get runWarmup => 'Warm-up';
+
+  @override
+  String get poolPinPin => 'Pin model';
+
+  @override
+  String get poolPinUnpin => 'Unpin model';
+
+  @override
+  String get toolCutMiddleMarker => '\n[… middle cut to fit the context …]\n';
+
+  @override
+  String get noticePreparingToolCall => 'Preparing a tool call…';
+
+  @override
+  String noticeProviderWaiting(int seconds) {
+    return 'Waiting for the provider to answer… $seconds s';
+  }
+
+  @override
+  String noticeProviderBusy(int status, int seconds) {
+    return 'The provider is busy ($status). Trying again in $seconds s…';
+  }
+
+  @override
+  String noticePreparingTool(String tool) {
+    return 'Preparing $tool…';
+  }
+
+  @override
+  String get engineFilesVerify => 'Verify engine files';
+
+  @override
+  String get engineFilesOk => 'OK';
+
+  @override
+  String get engineFilesMissing => 'Missing';
+
+  @override
+  String get engineFilesWrongSize => 'Wrong size';
+
+  @override
+  String get engineFilesChanged => 'Changed';
+
+  @override
+  String get engineFilesUnreadable => 'Unreadable';
+
+  @override
+  String get engineFilesUnverified =>
+      'Unverified: this build has no engine manifest.';
+
+  @override
+  String get engineFilesMalformed =>
+      'The engine manifest cannot be read. Reinstalling the app restores it.';
+
+  @override
+  String engineFilesProgress(int done, int total) {
+    return 'Verified $done of $total files.';
+  }
+
+  @override
+  String engineFilesRepair(String files) {
+    return 'Engine files need repair: $files. Reinstalling the app restores them.';
+  }
+
+  @override
+  String get modelAnalyzing => 'Analyzing…';
+
+  @override
+  String get modelAnalyzingDetail =>
+      'Checking the file and reading its settings…';
+
+  @override
+  String get desktopBasic => 'Basic';
+
+  @override
+  String get desktopAdvanced => 'Advanced';
+
+  @override
+  String get desktopChatTitle => 'Chat';
+
+  @override
+  String get desktopCreateTitle => 'Create';
+
+  @override
+  String get desktopChatExplanation =>
+      'Talk with a model and keep your conversations here.';
+
+  @override
+  String get desktopModelsExplanation =>
+      'Import, download and load the models used on this computer.';
+
+  @override
+  String get desktopCreateExplanation =>
+      'Create pictures and videos, or upscale an existing picture.';
+
+  @override
+  String get desktopSettingsExplanation =>
+      'Choose how the app looks and how your models answer.';
+
+  @override
+  String get desktopLeanPrompt => 'Lean system prompt';
+
+  @override
+  String get desktopLeanPromptHint =>
+      'Use minimal app instructions for chat. Turn off to restore the detailed writing guidance. Your own instructions still apply.';
+
+  @override
+  String get desktopRemoteOff => 'Off · the model runs on this computer';
+
+  @override
+  String get desktopRemoteExplanation =>
+      'Connect to a server you run, such as LM Studio, Ollama or llama-server, or a hosted API with your own key. Messages and web evidence go to that connection instead of a model on this computer.';
+
+  @override
+  String get desktopOptimize => 'Optimize for this PC';
+
+  @override
+  String get desktopOptimizeHint =>
+      'Finds the settings that get the most out of your hardware for this model: it tries several setups (GPU layers, memory, flash attention, MTP), measures the speed of each, checks that the answers stay just as accurate, and keeps the fastest. This takes a couple of minutes for a small model and several minutes for a large one; the model can\'t be used for chat meanwhile.';
+
+  @override
+  String get desktopOptimizeSaved => 'Optimized settings saved for this model.';
+
+  @override
+  String get desktopOptimizeBaseline => 'Measuring the current settings…';
+
+  @override
+  String desktopOptimizeProgress(int percent) {
+    return '$percent% done';
+  }
+
+  @override
+  String desktopOptimizeStep(int n, int total) {
+    return 'Trying setup $n of $total…';
+  }
+
+  @override
+  String get desktopOptimizeKept =>
+      'The optimized settings were not faster, so the current ones were kept.';
+
+  @override
+  String desktopOptimizeRates(String before, String after) {
+    return 'Before: $before tok/s · After: $after tok/s';
+  }
 }

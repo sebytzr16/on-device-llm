@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import '../../core/storage/app_directories.dart';
 import '../../data/local/database/app_database.dart';
 import '../attachments/data/attachment_store.dart';
 import '../chat/domain/temporary_files.dart';
@@ -353,7 +354,7 @@ class LocalBackupService {
               await File(p.join(pending.path, 'manifest.json')).readAsString(),
             )
             as Map<String, dynamic>;
-    final documents = await getApplicationDocumentsDirectory();
+    final documents = await appDataDirectory();
     final liveDb = File(p.join(documents.path, 'ondevice_llm.sqlite'));
     final liveAttachments = Directory(p.join(documents.path, 'attachments'));
     final liveDrafts = Directory(p.join(support.path, 'drafts'));
@@ -436,7 +437,7 @@ class LocalBackupService {
     if (!await marker.exists()) return;
     final manifest = jsonDecode(await marker.readAsString()) as Map;
     final oldRoot = manifest['attachmentsRoot'] as String;
-    final documents = await getApplicationDocumentsDirectory();
+    final documents = await appDataDirectory();
     final newRoot = p.join(documents.path, 'attachments');
     if (oldRoot != newRoot) {
       String escaped(String value) {

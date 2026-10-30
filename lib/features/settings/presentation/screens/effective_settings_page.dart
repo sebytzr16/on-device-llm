@@ -69,7 +69,7 @@ class EffectiveSettingsPage extends ConsumerWidget {
               SettingsSection(
                 label: settingGroupLabel(group, context.l10n),
                 children: [
-                  for (final spec in SettingSpec.all.where(
+                  for (final spec in SettingSpec.visible.where(
                     (s) => s.group == group,
                   ))
                     _row(context, spec, json[spec.key], r, running, c),

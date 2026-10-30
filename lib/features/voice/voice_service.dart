@@ -4,9 +4,12 @@ import '../../core/utils/inference_admission.dart';
 import 'package:flutter/foundation.dart'
     show ValueChanged, TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/services.dart';
+import '../../core/l10n/l10n.dart';
+import '../../core/platform/desktop_host.dart';
 
 import '../settings/presentation/providers/settings_provider.dart';
 import 'offline_dictation.dart';
+import 'desktop_voice_policy.dart';
 import 'sherpa_voice.dart';
 import 'voice_models.dart';
 import 'voice_models_provider.dart';
@@ -148,7 +151,10 @@ class VoiceNotifier extends Notifier<VoiceState> {
       _sttReady = await _stt!.initialize(
         onError: (e) {
           if (!_alive) return;
-          state = state.copyWith(listening: false, error: _explain(e.errorMsg));
+          state = state.copyWith(
+            listening: false,
+            error: _speechError(e.errorMsg),
+          );
         },
         onStatus: (s) {
           if (!_alive) return;
@@ -183,6 +189,19 @@ class VoiceNotifier extends Notifier<VoiceState> {
     _ => 'Dictation error ($code).',
   };
 
+  String _speechError(String code) {
+    if (DesktopHost.active &&
+        RegExp(
+          'permission|denied|audio',
+          caseSensitive: false,
+        ).hasMatch(code)) {
+      return stringsFor(
+        ref.read(settingsProvider).localeCode,
+      ).desktopVoiceMicPrivacy;
+    }
+    return _explain(code);
+  }
+
   /// Starts dictation; [onText] receives the running transcript, [onFinal]
   /// the last words when the session ends.
   Future<void> listen({
@@ -193,7 +212,20 @@ class VoiceNotifier extends Notifier<VoiceState> {
   }) async {
     if (state.listening) return stop();
     if (_naturalListening()) {
-      if (await _listenWhisper(onText, onFinal)) return;
+      try {
+        if (await _listenWhisper(onText, onFinal)) return;
+      } on PlatformException catch (e) {
+        if (e.code == 'microphone_denied') {
+          state = state.copyWith(
+            listening: false,
+            error: stringsFor(
+              ref.read(settingsProvider).localeCode,
+            ).desktopVoiceMicPrivacy,
+          );
+          return;
+        }
+        rethrow;
+      }
     }
     if (onDeviceOnly &&
         !kIsWeb &&
@@ -243,6 +275,15 @@ class VoiceNotifier extends Notifier<VoiceState> {
       return;
     }
     _usingOffline = false;
+    if (DesktopHost.active && await VoiceAudioChannel.micPrivacyDenied()) {
+      state = state.copyWith(
+        listening: false,
+        error: stringsFor(
+          ref.read(settingsProvider).localeCode,
+        ).desktopVoiceMicPrivacy,
+      );
+      return;
+    }
     if (!await _initStt() || !_alive) return;
     state = state.copyWith(listening: true, partial: '', clearError: true);
     try {
@@ -270,17 +311,15 @@ class VoiceNotifier extends Notifier<VoiceState> {
     }
   }
 
-  bool _naturalListening() =>
-      !kIsWeb &&
-      defaultTargetPlatform == TargetPlatform.android &&
-      ref.read(settingsProvider).naturalVoice &&
-      ref.read(voiceModelsProvider).canListen;
+  bool _naturalListening() => offlineVoiceReady(
+    enabled: ref.read(settingsProvider).naturalVoice,
+    installed: ref.read(voiceModelsProvider).canListen,
+  );
 
-  bool _naturalSpeaking() =>
-      !kIsWeb &&
-      defaultTargetPlatform == TargetPlatform.android &&
-      ref.read(settingsProvider).naturalVoice &&
-      ref.read(voiceModelsProvider).canSpeak;
+  bool _naturalSpeaking() => offlineVoiceReady(
+    enabled: ref.read(settingsProvider).naturalVoice,
+    installed: ref.read(voiceModelsProvider).canSpeak,
+  );
 
   /// The voice for the app language and the chosen speaker.
   KokoroVoice kokoroVoice() {

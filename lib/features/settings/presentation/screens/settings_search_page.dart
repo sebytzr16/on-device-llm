@@ -28,7 +28,7 @@ class _SettingsSearchPageState extends ConsumerState<SettingsSearchPage> {
     final notifier = ref.read(settingsProvider.notifier);
     final q = _query.trim().toLowerCase();
     bool hit(String text) => q.isEmpty || text.toLowerCase().contains(q);
-    final matches = SettingSpec.all.where(
+    final matches = SettingSpec.visible.where(
       (spec) => hit(
         '${spec.label} ${spec.labelIn(t)} ${spec.key} ${spec.group} '
         '${spec.hint}',

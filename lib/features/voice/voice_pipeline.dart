@@ -107,7 +107,14 @@ class WhisperListener {
       }),
     );
     _frames = VoiceAudioChannel.frames().listen(_onFrame);
-    if (!await VoiceAudioChannel.startMic()) {
+    bool started;
+    try {
+      started = await VoiceAudioChannel.startMic();
+    } catch (_) {
+      await stop();
+      rethrow;
+    }
+    if (!started) {
       await stop();
       return false;
     }

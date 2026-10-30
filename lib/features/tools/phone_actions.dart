@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import '../../core/storage/app_directories.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'domain/tool_spec.dart';
@@ -591,9 +591,7 @@ abstract final class PhoneActions {
 
   /// Where made files are kept.
   static Future<Directory> filesDir() async {
-    final dir = Directory(
-      p.join((await getApplicationDocumentsDirectory()).path, 'made'),
-    );
+    final dir = Directory(p.join((await appDataDirectory()).path, 'made'));
     if (!dir.existsSync()) await dir.create(recursive: true);
     return dir;
   }

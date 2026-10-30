@@ -3,11 +3,22 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
 if (-not (Test-Path native/llama.cpp/include/llama.h)) {
-  git clone --depth 1 --branch b11479 https://github.com/ggml-org/llama.cpp.git native/llama.cpp
+  git clone --depth 1 --branch b11972 https://github.com/ggml-org/llama.cpp.git native/llama.cpp
   if ($LASTEXITCODE -ne 0) { throw 'llama.cpp download failed' }
 }
 $revision = git -C native/llama.cpp rev-parse HEAD
-if ($revision -ne '42c787e8c191d49c01c757f4b7029d69ec0bf2c8') { throw 'Unexpected llama.cpp revision. Restore the pinned source.' }
+if ($revision -ne 'cf24317bea431b807dc93319d74c61bed6e20aff') { throw 'Unexpected llama.cpp revision. Restore the pinned source.' }
+# Local changes to the pinned source (native/patches), each applied once.
+foreach ($patch in Get-ChildItem native/patches/*.patch | Sort-Object Name) {
+  # Windows PowerShell turns a native command's stderr into an error under Stop.
+  $ErrorActionPreference = 'Continue'
+  git -C native/llama.cpp apply --reverse --check --ignore-whitespace $patch.FullName 2>$null
+  $applied = $LASTEXITCODE -eq 0
+  $ErrorActionPreference = 'Stop'
+  if ($applied) { continue }
+  git -C native/llama.cpp apply --ignore-whitespace $patch.FullName
+  if ($LASTEXITCODE -ne 0) { throw "Patch $($patch.Name) does not apply to the pinned llama.cpp" }
+}
 if ($Vulkan) {
   New-Item -ItemType Directory -Force .tools | Out-Null
   if (-not (Test-Path .tools/llvm-mingw-20250709-ucrt-x86_64/bin/clang.exe)) {

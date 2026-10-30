@@ -17,4 +17,20 @@ void main() {
     expect(home, greaterThan(mobile));
     expect(wifi, greaterThan(cgnat));
   });
+
+  test('on Windows the Wi-Fi beats a VPN adapter in a private range', () {
+    final wifi = DeviceHostingNotifier.rankAddress('wi-fi', [10, 0, 0, 187]);
+    final vpn = DeviceHostingNotifier.rankAddress('nordlynx', [10, 5, 0, 2]);
+    final hyperv = DeviceHostingNotifier.rankAddress(
+      'vethernet (default switch)',
+      [172, 20, 0, 1],
+    );
+    final direct = DeviceHostingNotifier.rankAddress(
+      'local area connection* 10',
+      [192, 168, 137, 1],
+    );
+    expect(wifi, greaterThan(vpn));
+    expect(wifi, greaterThan(hyperv));
+    expect(wifi, greaterThan(direct));
+  });
 }

@@ -25,7 +25,7 @@ class InferenceContractPage extends ConsumerWidget {
       error: ref.watch(settingsErrorProvider),
       inherited: defaults,
       overrides: {
-        for (final spec in SettingSpec.all)
+        for (final spec in SettingSpec.visible)
           if (settings.explicitOverrides.contains(spec.key) ||
               jsonEncode(json[spec.key]) != jsonEncode(inherited[spec.key]))
             spec.key: json[spec.key],

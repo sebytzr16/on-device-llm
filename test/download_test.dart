@@ -82,6 +82,22 @@ void main() {
       expect(await File('${dir.path}/model.gguf').readAsBytes(), bytes);
     },
   );
+  test('416 on resume (re-uploaded asset) restarts from zero', () async {
+    await File(
+      '${dir.path}/model.gguf.part',
+    ).writeAsBytes(bytes.take(20).toList());
+    final ranges = <Object?>[];
+    await run(
+      Adapter((o) {
+        ranges.add(o.headers['Range']);
+        return o.headers['Range'] == null
+            ? ResponseBody.fromBytes(bytes, 200)
+            : ResponseBody.fromBytes(const [], 416);
+      }),
+    );
+    expect(ranges, ['bytes=20-', null]);
+    expect(await File('${dir.path}/model.gguf').readAsBytes(), bytes);
+  });
   test('invalid resume offsets cannot promote a file', () async {
     await File(
       '${dir.path}/model.gguf.part',

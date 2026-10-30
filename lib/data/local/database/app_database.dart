@@ -5,7 +5,7 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import '../../../core/storage/app_directories.dart';
 
 import '../../../core/utils/search_terms.dart';
 
@@ -24,7 +24,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
   AppDatabase.forTesting(super.executor);
 
-  static const currentSchemaVersion = 14;
+  static const currentSchemaVersion = 16;
   @override
   int get schemaVersion => currentSchemaVersion;
 
@@ -88,6 +88,8 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(knowledgeDocs, knowledgeDocs.active);
         await m.addColumn(knowledgeChunks, knowledgeChunks.pageNumber);
       }
+      if (from < 15) await m.addColumn(models, models.projectorJson);
+      if (from < 16) await m.addColumn(models, models.partsJson);
       // v14: the web page cache is gone.
       if (from < 14) await customStatement('DROP TABLE IF EXISTS web_pages;');
     },
@@ -701,7 +703,7 @@ class AppDatabase extends _$AppDatabase {
 }
 
 LazyDatabase _openConnection() => LazyDatabase(() async {
-  final dir = await getApplicationDocumentsDirectory();
+  final dir = await appDataDirectory();
   final file = File(p.join(dir.path, 'ondevice_llm.sqlite'));
   return NativeDatabase.createInBackground(file);
 });

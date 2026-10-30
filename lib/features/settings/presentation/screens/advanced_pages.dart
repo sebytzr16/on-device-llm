@@ -1,3 +1,5 @@
+import '../../../../core/platform/desktop_host.dart';
+import '../../../../desktop/cpu_variant_setting.dart';
 import '../../../../core/l10n/l10n.dart';
 import 'dart:io' show Platform;
 
@@ -184,6 +186,7 @@ class HardwarePage extends ConsumerWidget {
               labelOf: backendLabel,
               onChanged: (v) => n.update(s.copyWith(backend: v)),
             ),
+            if (DesktopHost.active) const CpuVariantSetting(),
             SettingSlider(
               label: context.l10n.uiAdvancedPagesGPULayers,
               hint: context.l10n.uiAdvancedPagesLayersOffloadedToTheGPUIgnored,

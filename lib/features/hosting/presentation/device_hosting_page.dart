@@ -112,9 +112,7 @@ class _DeviceHostingPageState extends ConsumerState<DeviceHostingPage> {
                     : Icons.radio_button_unchecked,
               ),
               title: Text(m.displayName),
-              subtitle: Text(
-                '${m.quantization.name.toUpperCase()} · ${m.sizeLabel}',
-              ),
+              subtitle: Text('${m.quantLabel} · ${m.sizeLabel}'),
               onTap: () => Navigator.pop(sheet, m.id),
             ),
           ListTile(
@@ -468,7 +466,24 @@ class _DeviceHostingPageState extends ConsumerState<DeviceHostingPage> {
           child: _showQr
               ? GestureDetector(
                   onTap: () => setState(() => _showQr = false),
-                  child: QrView(state.pairing!),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      QrView(state.pairing!),
+                      if (state.pairCode case final code?) ...[
+                        const SizedBox(height: AppDesign.md),
+                        Text(
+                          context.l10n.hostPairCode,
+                          style: context.text.bodyMuted,
+                        ),
+                        Text(
+                          '${code.substring(0, 3)} ${code.substring(3)}',
+                          key: const Key('host-pair-code'),
+                          style: context.text.title.copyWith(letterSpacing: 4),
+                        ),
+                      ],
+                    ],
+                  ),
                 )
               : FilledButton.tonalIcon(
                   key: const Key('show-qr'),

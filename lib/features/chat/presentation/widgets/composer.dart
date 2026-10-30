@@ -25,6 +25,7 @@ import 'send_button.dart';
 import '../providers/chat_provider.dart';
 import '../../../settings/presentation/providers/effective_settings_provider.dart';
 import '../../../../core/design/app_dialog.dart';
+import '../../../../inference/engine/diffusiongemma_engine.dart';
 
 /// Bottom composer: model, preset, Think and web-mode pills sharing one
 /// row equally, the multiline input and a single send-or-stop button.
@@ -39,6 +40,7 @@ class ChatComposer extends ConsumerStatefulWidget {
   /// Files waiting to go with the next message, and the attach/remove flows.
   /// [onAttach] gets the + button, for the sheet to grow out of.
   final List<Attachment> attachments;
+  final bool textOnly;
   final ValueChanged<BuildContext>? onAttach;
   final ValueChanged<Attachment>? onRemoveAttachment;
 
@@ -57,6 +59,7 @@ class ChatComposer extends ConsumerStatefulWidget {
     required this.onSend,
     required this.onStop,
     this.attachments = const [],
+    this.textOnly = false,
     this.onAttach,
     this.onRemoveAttachment,
     this.onQuickPrompt,
@@ -155,6 +158,9 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
       for (final s in ref.watch(promptShortcutsProvider)) s.localized(lang),
     ];
     final busy = widget.busy;
+    final diffusion =
+        widget.textOnly ||
+        (!settings.usesRemote && loaded?.id == diffusionGemmaModelId);
     return SafeArea(
       top: false,
       child: Padding(
@@ -238,7 +244,9 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                   child: _Pill(
                     key: const Key('think-pill'),
                     selected: settings.thinkingModeEnabled,
-                    onTap: busy ? null : (_) => _cycleThinking(settings),
+                    onTap: busy || diffusion
+                        ? null
+                        : (_) => _cycleThinking(settings),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       mainAxisSize: MainAxisSize.min,
@@ -279,7 +287,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                 Expanded(
                   child: _Pill(
                     key: const Key('web-pill'),
-                    onTap: busy ? null : (_) => _cycleWeb(),
+                    onTap: busy || diffusion ? null : (_) => _cycleWeb(),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       mainAxisSize: MainAxisSize.min,
@@ -503,6 +511,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
   ) {
     final c = context.colors;
     final settings = ref.read(settingsProvider);
+    if (widget.textOnly) return null;
     final matches = PromptShortcut.suggestions(value.text, shortcuts);
     // One shared or pasted link: reader actions.
     final link = ReaderActions.linkIn(value.text);

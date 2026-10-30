@@ -15,6 +15,27 @@ class GgufMetadata {
   final int? contextLength;
   final int? blockCount;
   final bool hasChatTemplate;
+  final int nextnPredictLayers;
+  final bool hasBlockZero;
+
+  /// Mirrors the native policy; filenames and quantization are irrelevant.
+  bool get isMtpOnly =>
+      (architecture?.endsWith('-assistant') ?? false) ||
+      (nextnPredictLayers > 0 && !hasBlockZero);
+
+  String? mtpHeadIssueFor(GgufMetadata target) {
+    if (!isMtpOnly) return 'This file is a full model, not an MTP head.';
+    if (architecture == 'gemma4-assistant' && target.architecture == 'gemma4') {
+      return null;
+    }
+    if ((architecture == 'qwen35' || architecture == 'qwen35moe') &&
+        architecture == target.architecture &&
+        nextnPredictLayers == 1) {
+      return null;
+    }
+    return 'This MTP head for $architecture cannot attach to ${target.architecture}. '
+        'Choose matching heads inside the model file (for example unsloth?s ...-MTP-GGUF).';
+  }
 
   /// `general.sampling.*` keys (the maker's sampling defaults, written by
   /// llama.cpp's converter from generation_config.json).
@@ -30,6 +51,8 @@ class GgufMetadata {
     this.contextLength,
     this.blockCount,
     this.hasChatTemplate = false,
+    this.nextnPredictLayers = 0,
+    this.hasBlockZero = false,
     this.sampling = const {},
   });
 
@@ -81,6 +104,20 @@ class _GgufReader {
         return _asInt(values['$architecture.$suffix']);
       }
 
+      final nextn = architectureValue('nextn_predict_layers') ?? 0;
+      var hasBlockZero = false;
+      // Only head candidates need the tensor directory; never read payloads.
+      if (nextn > 0) {
+        for (var i = 0; i < tensorCount; i++) {
+          final name = await _string(maxBytes: 4096);
+          hasBlockZero |= name.startsWith('blk.0.');
+          final dimensions = await _u32();
+          if (dimensions > 4) {
+            throw const FormatException('Invalid tensor dimensions.');
+          }
+          await _advance(dimensions * 8 + 4 + 8);
+        }
+      }
       return GgufMetadata(
         version: version,
         tensorCount: tensorCount,
@@ -90,6 +127,8 @@ class _GgufReader {
         parameterCount: _asInt(values['general.parameter_count']),
         contextLength: architectureValue('context_length'),
         blockCount: architectureValue('block_count'),
+        nextnPredictLayers: nextn,
+        hasBlockZero: hasBlockZero,
         hasChatTemplate:
             (values['tokenizer.chat_template'] as String?)?.isNotEmpty == true,
         sampling: {
@@ -110,7 +149,8 @@ class _GgufReader {
       key == 'tokenizer.chat_template' ||
       key.startsWith('general.sampling.') ||
       key.endsWith('.context_length') ||
-      key.endsWith('.block_count');
+      key.endsWith('.block_count') ||
+      key.endsWith('.nextn_predict_layers');
 
   static int? _asInt(Object? value) => value is int ? value : null;
 

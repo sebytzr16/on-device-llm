@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/services.dart';
 
+import 'windows_mdns.dart';
+
 class DiscoveredHost {
   final String name, endpoint;
   const DiscoveredHost(this.name, this.endpoint);
@@ -41,10 +43,30 @@ class DiscoveredHost {
 /// Discovery shares a local endpoint only, never pairing keys or chat data.
 class HostDiscovery {
   static const channel = MethodChannel('ondevice_llm/discovery');
+
+  /// Browsing for hosts (the phone apps).
   static bool get supported => Platform.isAndroid || Platform.isIOS;
-  static Future<void> advertise(int port) =>
-      channel.invokeMethod<void>('advertise', {'port': port});
-  static Future<void> stop() => channel.invokeMethod<void>('stop');
+
+  /// Announcing this device's server: the phones, and Windows through its
+  /// own DNS-SD responder.
+  static bool get canAdvertise => supported || WindowsMdns.available;
+
+  /// [address] is the LAN address phones should use (Windows only; the
+  /// phone's resolver picks its own).
+  static Future<void> advertise(int port, {String? address}) {
+    if (Platform.isWindows) {
+      return WindowsMdns.advertise(
+        name: 'OnDevice LLM on ${Platform.localHostname}',
+        address: address ?? '',
+        port: port,
+      );
+    }
+    return channel.invokeMethod<void>('advertise', {'port': port});
+  }
+
+  static Future<void> stop() => Platform.isWindows
+      ? WindowsMdns.stop()
+      : channel.invokeMethod<void>('stop');
   static Future<List<DiscoveredHost>> browse() async {
     final result =
         await channel.invokeListMethod<dynamic>('browse') ?? const [];

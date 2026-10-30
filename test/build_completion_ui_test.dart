@@ -73,6 +73,15 @@ void main() {
           );
           await tester.pumpAndSettle();
           if (page == 'settings') {
+            await tester.scrollUntilVisible(
+              find.byKey(const Key('override-batchSize')),
+              200,
+              scrollable: find.byType(Scrollable).first,
+            );
+            await tester.ensureVisible(
+              find.byKey(const Key('override-batchSize')),
+            );
+            await tester.pumpAndSettle();
             await tester.tap(find.byKey(const Key('override-batchSize')));
             await tester.pumpAndSettle();
             await tester.enterText(find.byType(TextField), '256');

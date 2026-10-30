@@ -250,11 +250,15 @@ class KnowledgeStore {
       contentHash: drift.Value(hash),
       extractionFormat: drift.Value(extracted.format),
       extractionWarning: drift.Value(
-        media &&
-                (extracted.text.contains('[Audio not transcribed]') ||
-                    extracted.text.contains(
-                      '[Photo has no caption or readable text]',
-                    ))
+        extracted.text.contains(OcrUnavailable.notice)
+            ? OcrUnavailable.notice
+            : extracted.text.contains('[Text recognition failed:')
+            ? 'Text recognition failed; the photo is available for visual search.'
+            : media &&
+                  (extracted.text.contains('[Audio not transcribed]') ||
+                      extracted.text.contains(
+                        '[Photo has no caption or readable text]',
+                      ))
             ? 'Media is searchable, but its facts cannot be used until a transcript or caption is available.'
             : extracted.text.length >= DocumentText.maxChars
             ? 'Text reached the extraction limit; part of the document may be missing.'
@@ -320,14 +324,17 @@ class KnowledgeStore {
       await file.writeAsBytes(bytes, flush: true);
       if (KnowledgeMedia.isImage(name)) {
         var text = '';
+        var ocrNotice = '';
         try {
           text = (await (ocr ?? _platformOcr)(file)).trim();
-        } catch (_) {
-          // A photo without readable text is still searchable by meaning.
+        } catch (error) {
+          ocrNotice = error is OcrUnavailable
+              ? OcrUnavailable.notice
+              : 'Text recognition failed: $error';
         }
         final description = (await caption?.call(file))?.trim() ?? '';
         return ExtractedDocument(
-          'Photo: $name${text.isEmpty ? '' : '\nText in the photo:\n$text'}${description.isEmpty ? '' : '\nPhoto caption (model generated):\n$description'}${text.isEmpty && description.isEmpty ? '\n[Photo has no caption or readable text]' : ''}',
+          'Photo: $name${ocrNotice.isEmpty ? '' : '\n[$ocrNotice]'}${text.isEmpty ? '' : '\nText in the photo:\n$text'}${description.isEmpty ? '' : '\nPhoto caption (model generated):\n$description'}${text.isEmpty && description.isEmpty ? '\n[Photo has no caption or readable text]' : ''}',
           'Photo',
         );
       }

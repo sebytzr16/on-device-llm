@@ -1,5 +1,5 @@
 import '../../../../core/l10n/l10n.dart';
-import 'dart:convert';
+import '../../domain/schema_validation.dart';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';

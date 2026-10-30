@@ -1,3 +1,5 @@
+import 'dart:convert';
+import '../../../core/platform/desktop_host.dart';
 import 'entities/inference_settings.dart';
 
 /// How a setting is edited and displayed when a scope overrides it.
@@ -27,6 +29,15 @@ class SettingSpec {
   });
 
   bool get reloadRequired => InferenceSettings.loadTimeKeys.contains(key);
+  bool get desktopOnly =>
+      nativeKeys.contains(key) ||
+      const {
+        'cpuVariant',
+        'vramReserveMb',
+        'mtp',
+        'chatTemplate',
+      }.contains(key);
+  bool get available => DesktopHost.active || !desktopOnly;
 
   static const groupGeneration = 'Generation';
   static const groupReasoning = 'Reasoning';
@@ -37,10 +48,113 @@ class SettingSpec {
   static const groupHardware = 'Hardware';
   static const groupPrompt = 'Prompt';
 
-  /// The settings a profile, preset or chat may override. Appearance,
-  /// remote-server credentials, voice and privacy switches are deliberately
-  /// not here: a model or a chat must never flip them.
+  /// Settings offered by the current host, independent of stored profiles.
+  static List<SettingSpec> get visible => [...all.where((s) => s.available)];
+
+  static const nativeKeys = {
+    'useMmap',
+    'useMlock',
+    'mainGpu',
+    'splitMode',
+    'offloadKv',
+    'swaFull',
+    'nCpuMoe',
+    'expertsUsed',
+    'projectorDevice',
+    'draftGpuLayers',
+    'keepTokens',
+    'contextOverflow',
+    'logitBias',
+    'draftMinP',
+    'promptStoreMb',
+  };
+
+  /// Inference overrides only; profiles cannot change privacy or credentials.
   static const all = <SettingSpec>[
+    SettingSpec(
+      key: 'projectorDevice',
+      label: 'Vision projector',
+      group: groupHardware,
+      kind: SettingKind.choice,
+      options: ['auto', 'gpu', 'cpu'],
+    ),
+    SettingSpec(
+      key: 'useMmap',
+      label: 'Memory map model',
+      group: groupHardware,
+      kind: SettingKind.boolean,
+    ),
+    SettingSpec(
+      key: 'useMlock',
+      label: 'Lock model in memory',
+      group: groupHardware,
+      kind: SettingKind.boolean,
+    ),
+    SettingSpec(
+      key: 'mainGpu',
+      label: 'Main GPU index',
+      group: groupHardware,
+      kind: SettingKind.integer,
+      min: 0,
+      max: 127,
+    ),
+    SettingSpec(
+      key: 'splitMode',
+      label: 'GPU split mode',
+      group: groupHardware,
+      kind: SettingKind.choice,
+      options: ['none', 'layer', 'row'],
+    ),
+    SettingSpec(
+      key: 'offloadKv',
+      label: 'Offload KV operations',
+      group: groupHardware,
+      kind: SettingKind.boolean,
+    ),
+    SettingSpec(
+      key: 'swaFull',
+      label: 'Full sliding-window cache',
+      group: groupHardware,
+      kind: SettingKind.boolean,
+    ),
+    SettingSpec(
+      key: 'nCpuMoe',
+      label: 'CPU expert layers (-1 = auto)',
+      group: groupHardware,
+      kind: SettingKind.integer,
+      min: -1,
+      max: 4096,
+    ),
+    SettingSpec(
+      key: 'expertsUsed',
+      label: 'Experts per token (-1 = model default)',
+      group: groupHardware,
+      kind: SettingKind.integer,
+      min: -1,
+      max: 256,
+    ),
+    SettingSpec(
+      key: 'keepTokens',
+      label: 'Keep first tokens',
+      group: groupHardware,
+      kind: SettingKind.integer,
+      min: 0,
+      max: InferenceSettings.maxContext,
+    ),
+    SettingSpec(
+      key: 'contextOverflow',
+      label: 'Context overflow',
+      group: groupHardware,
+      kind: SettingKind.choice,
+      options: ['trim', 'shift', 'stop'],
+    ),
+    SettingSpec(
+      key: 'logitBias',
+      label: 'Token logit biases (JSON)',
+      group: groupHardware,
+      kind: SettingKind.text,
+    ),
+
     SettingSpec(
       key: 'batchSize',
       label: 'Batch size',
@@ -216,6 +330,30 @@ class SettingSpec {
       kind: SettingKind.integer,
       min: 1,
       max: InferenceSettings.maxDraftTokens,
+    ),
+    SettingSpec(
+      key: 'draftGpuLayers',
+      label: 'Draft model GPU layers (0 = CPU)',
+      group: groupHardware,
+      kind: SettingKind.integer,
+      min: 0,
+      max: 999,
+    ),
+    SettingSpec(
+      key: 'draftMinP',
+      label: 'Draft confidence floor',
+      group: groupHardware,
+      kind: SettingKind.number,
+      min: 0,
+      max: 1,
+    ),
+    SettingSpec(
+      key: 'promptStoreMb',
+      label: 'Saved prompts RAM (MB, -1 = auto)',
+      group: groupContext,
+      kind: SettingKind.integer,
+      min: -1,
+      max: 65536,
     ),
     SettingSpec(
       key: 'imageMaxTokens',
@@ -447,11 +585,18 @@ class SettingSpec {
       kind: SettingKind.boolean,
     ),
     SettingSpec(
+      key: 'cpuVariant',
+      label: 'CPU variant',
+      group: groupHardware,
+      kind: SettingKind.choice,
+      options: ['auto', 'avx512', 'avx2', 'compat'],
+    ),
+    SettingSpec(
       key: 'backend',
       label: 'Backend',
       group: groupHardware,
       kind: SettingKind.choice,
-      options: ['auto', 'cpu', 'opencl', 'vulkan', 'metal'],
+      options: ['auto', 'cpu', 'opencl', 'vulkan', 'metal', 'cuda'],
     ),
     SettingSpec(
       key: 'nGpuLayers',
@@ -476,6 +621,14 @@ class SettingSpec {
       kind: SettingKind.integer,
       min: 0,
       max: 16,
+    ),
+    SettingSpec(
+      key: 'vramReserveMb',
+      label: 'VRAM reserve (MB)',
+      group: groupHardware,
+      kind: SettingKind.integer,
+      min: 0,
+      max: 8192,
     ),
     SettingSpec(
       key: 'flashAttention',
@@ -503,6 +656,18 @@ class SettingSpec {
       group: groupHardware,
       kind: SettingKind.choice,
       options: ['model', 'none', 'linear', 'yarn'],
+    ),
+    SettingSpec(
+      key: 'chatTemplate',
+      label: 'Prompt template',
+      group: groupHardware,
+      kind: SettingKind.text,
+    ),
+    SettingSpec(
+      key: 'mtp',
+      label: 'Multi-token prediction (MTP)',
+      group: groupHardware,
+      kind: SettingKind.boolean,
     ),
     SettingSpec(
       key: 'draftModelId',
@@ -545,6 +710,14 @@ class SettingSpec {
   /// Coerces a raw override into the value shape [InferenceSettings.fromJson]
   /// expects; null means "not a valid override, drop it".
   Object? coerce(Object? value) {
+    if (key == 'logitBias') {
+      try {
+        final raw = value is String ? jsonDecode(value) : value;
+        return raw is Map ? InferenceSettings.sanitizeLogitBias(raw) : null;
+      } on FormatException {
+        return null;
+      }
+    }
     switch (kind) {
       case SettingKind.integer:
         if (value is num && !value.isFinite) return null;
@@ -563,6 +736,7 @@ class SettingSpec {
         if (value is! String) return null;
         final limit = switch (key) {
           'systemPrompt' => 16000,
+          'chatTemplate' => 128000,
           'jsonSchema' || 'grammar' => 32000,
           _ => 200,
         };

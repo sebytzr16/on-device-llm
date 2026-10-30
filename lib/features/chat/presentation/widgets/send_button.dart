@@ -20,11 +20,13 @@ class SendButton extends ConsumerStatefulWidget {
 
   /// Something to send and a model able to take it.
   final bool ready;
+  final String? tooltip;
   final VoidCallback? onSend, onStop;
   const SendButton({
     super.key,
     required this.busy,
     required this.ready,
+    this.tooltip,
     this.onSend,
     this.onStop,
   });
@@ -173,7 +175,9 @@ class _SendButtonState extends ConsumerState<SendButton>
               ),
               IconButton(
                 key: const Key('send-stop'),
-                tooltip: busy ? context.l10n.stop : context.l10n.send,
+                tooltip:
+                    widget.tooltip ??
+                    (busy ? context.l10n.stop : context.l10n.send),
                 onPressed: busy
                     ? (widget.onStop == null ? null : _stop)
                     : widget.ready && widget.onSend != null

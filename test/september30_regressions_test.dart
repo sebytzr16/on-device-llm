@@ -50,6 +50,26 @@ void main() {
     expect(find.text(r'\invalidcommand{x}'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('a number in single dollars shows the number; prices stay', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MarkdownBody(
+            data: r'The answer is $391$. Costs $5 and $10.',
+            inlineSyntaxes: [MathSyntax()],
+            builders: {'math': MathBuilder()},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(Math), findsNothing);
+    expect(find.textContaining(r'$391$'), findsNothing);
+    expect(find.textContaining('391.'), findsOneWidget);
+    expect(find.textContaining(r'$5 and $10'), findsOneWidget);
+  });
   test('ordinary world questions do not receive personal notes', () {
     const notes = ['The user owns a Pixel phone', 'The user is a chef'];
     expect(UserMemory.relevant('Which Pixel phone is newest?', notes), isEmpty);

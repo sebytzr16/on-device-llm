@@ -1,6 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:logging/logging.dart';
 import 'dart:math';
+import 'dart:io' show Platform;
+import '../../../../desktop/mcp/mcp_registry.dart';
+import '../../../../desktop/mcp/mcp_strings.dart';
 import 'package:dio/dio.dart';
 import 'package:drift/drift.dart' as drift;
 import 'package:drift/native.dart';
@@ -28,12 +32,15 @@ import '../../../retrieval/semantic_rerank.dart';
 import '../../../retrieval/support_check.dart';
 import '../../../memory/domain/user_memory.dart';
 import '../../domain/message_deletion.dart';
+import '../../domain/tool_result_cut.dart';
+import '../../domain/chat_copy_repository.dart';
 import '../../domain/conversation_workspace.dart';
 import '../../domain/temporary_files.dart';
 import '../../domain/context_summary.dart';
 import '../../domain/turn_coordinator.dart';
 import '../../../memory/presentation/providers/memory_provider.dart';
 import '../../../../inference/engine/text_engine.dart';
+import '../../../../inference/engine/diffusiongemma_engine.dart';
 import '../../../../inference/engine/turn_budget.dart';
 import '../../../../inference/remote/remote_engine.dart';
 import '../../../retrieval/domain/citation_match.dart';
@@ -46,6 +53,7 @@ import '../../../models/presentation/providers/model_recommendations_provider.da
 import '../../../adapters/adapter_store.dart';
 import '../../../settings/domain/entities/inference_settings.dart';
 import '../../../settings/domain/settings_scope.dart';
+import '../../../../core/platform/desktop_host.dart';
 import '../../../../core/platform/device_info.dart';
 import '../../../hosting/presentation/device_hosting_provider.dart';
 import '../../../settings/domain/battery_saver.dart';
@@ -88,6 +96,7 @@ part 'chat_branches.dart';
 part 'chat_memory.dart';
 part 'chat_export.dart';
 part 'chat_turn.dart';
+part 'chat_prime.dart';
 
 class ChatState {
   final List<ChatMessage> messages;
@@ -97,6 +106,14 @@ class ChatState {
   final String? error, chatId, notice;
   final Map<String, dynamic> metrics;
   final bool temporary;
+
+  /// The turn's answer is saved into [messages] while the turn still runs
+  /// (memory, the chat's title): the live bubble hides, or the answer
+  /// showed twice while the chat was named.
+  final bool answerSaved;
+
+  /// Whether the list shows the answer being written below [messages].
+  bool get showsLiveAnswer => isGenerating && !answerSaved;
 
   /// Facts the memory feature just stored from the last message, for the
   /// compact banner with its edit/discard affordance.
@@ -113,6 +130,7 @@ class ChatState {
     this.metrics = const {},
     this.learned = const [],
     this.temporary = false,
+    this.answerSaved = false,
   });
   ChatState copyWith({
     List<ChatMessage>? messages,
@@ -128,6 +146,7 @@ class ChatState {
     bool clearNotice = false,
     Map<String, dynamic>? metrics,
     List<Memory>? learned,
+    bool? answerSaved,
   }) => ChatState(
     messages: messages ?? this.messages,
     isGenerating: isGenerating ?? this.isGenerating,
@@ -139,6 +158,7 @@ class ChatState {
     notice: clearNotice ? null : notice ?? this.notice,
     metrics: metrics ?? this.metrics,
     learned: learned ?? this.learned,
+    answerSaved: answerSaved ?? this.answerSaved,
     temporary: temporary,
   );
 }
@@ -207,6 +227,89 @@ abstract class _ChatBase extends Notifier<ChatState> {
 
 class ChatNotifier extends _ChatBase
     with _ChatWeb, _ChatBranches, _ChatMemory, _ChatExport {
+  int _primeEpoch = 0, _primedLoad = -1;
+
+  /// Called only for completed loads on the chat's local engine.
+  Future<void> primeLoadedModel(ModelInfo model) async {
+    if (model.id == diffusionGemmaModelId) return;
+    if (!DesktopHost.active || !_alive) return;
+    final engine = ref.read(llamaEngineProvider);
+    if (!engine.isLoaded || engine.isBusy || _primedLoad == engine.loadCount) {
+      return;
+    }
+    final epoch = _primeEpoch;
+    final navigation = _navigation;
+    final load = engine.loadCount;
+    bool eligible() =>
+        _alive &&
+        DesktopHost.active &&
+        epoch == _primeEpoch &&
+        navigation == _navigation &&
+        load == engine.loadCount &&
+        engine.isLoaded &&
+        !engine.isBusy &&
+        !state.isGenerating &&
+        !ref.read(sessionBusyProvider) &&
+        ref.read(modelManagerProvider).loadedModelId == model.id;
+    if (!eligible()) return;
+    try {
+      final project = ref
+          .read(conversationWorkspaceProvider)
+          .projects
+          .where((p) => p.id == _projectId)
+          .firstOrNull;
+      var settings = resolveSettings(
+        global: ref.read(settingsProvider),
+        defaults: ref.read(settingsProvider.notifier).defaults,
+        profiles: ref.read(modelProfilesProvider),
+        preset: ref.read(presetsProvider).active,
+        chat: ref.read(chatOverridesProvider),
+        recommendations: ref.read(modelRecommendationsProvider),
+        model: model,
+        project: project == null || project.collection.isEmpty
+            ? const {}
+            : {'knowledgeCollection': project.collection},
+        projectLabel: project?.name ?? 'Project',
+      ).effective;
+      if (state.temporary) settings = settings.copyWith(memoryEnabled: false);
+      if (settings.usesRemote || !settings.promptCache) return;
+      _primedLoad = load;
+      // No question-specific instructions, history or tool registrations.
+      const neutral = 'Explain how a rainbow forms.';
+      final shared = await _baseSystem(
+        neutral,
+        settings: settings,
+        preset: ref.read(presetsProvider).active,
+        spoken: false,
+      );
+      if (!eligible()) return;
+      final system = StringBuffer('${shared.system}${shared.notes}');
+      _primeThinking(system, settings, engine);
+      final offered = _offerTools(
+        neutral,
+        settings: settings,
+        engine: engine,
+        system: system,
+        turnNotes: StringBuffer(),
+        sources: const [],
+        researchTurn: false,
+        continuing: false,
+        register: false,
+      );
+      await engine.primePrompt(
+        system: system.toString(),
+        fallbackTemplate: model.family.fallbackTemplate,
+        settings: settings,
+        tools: offered.native ? offered.tools : const [],
+        toolChoice: offered.native && settings.toolChoice == ToolChoice.required
+            ? 'required'
+            : 'auto',
+      );
+    } catch (error, stack) {
+      Logger('chat.prime').fine('Chat prompt priming skipped', error, stack);
+    }
+  }
+
   /// How often a streaming answer is pushed to the screen (about 30 a
   /// second, so the per-word fade reads smoothly).
   static const repaintInterval = Duration(milliseconds: 33);
@@ -255,11 +358,13 @@ class ChatNotifier extends _ChatBase
   ChatState build() {
     final engine = ref.read(llamaEngineProvider);
     final remote = ref.read(remoteEngineProvider);
+    final diffusion = ref.read(diffusionGemmaEngineProvider);
     ref.onDispose(() {
       _alive = false;
       _turns.dispose();
       engine.cancel();
       remote.cancel();
+      diffusion.cancel();
       unawaited(_temporaryDb?.close());
     });
     _temporaryReady = TemporaryFiles.clear().catchError((Object _) {});
@@ -305,6 +410,39 @@ class ChatNotifier extends _ChatBase
     } catch (_) {
       return const {};
     }
+  }
+
+  /// Duplicate or branch a persistent chat, then open the independent copy.
+  Future<String?> copyChat(String id, {String? throughMessageId}) async {
+    if (state.isGenerating || ref.read(sessionBusyProvider)) {
+      return null;
+    }
+    final revision = _navigation;
+    final db = ref.read(appDatabaseProvider);
+    state = state.copyWith(isGenerating: true, clearError: true);
+    String? copied;
+    try {
+      final chat = await db.getChat(id);
+      if (chat == null) return null;
+      final title = chat.title.length > 180
+          ? chat.title.substring(0, 180)
+          : chat.title;
+      copied = await ChatCopyRepository(db).copy(
+        id,
+        throughMessageId: throughMessageId,
+        title: throughMessageId == null
+            ? _t.desktopChatCopyTitle(title)
+            : _t.desktopChatBranchTitle(title),
+      );
+    } catch (_) {
+      if (_alive) state = state.copyWith(error: _t.desktopChatActionFailed);
+    } finally {
+      if (_alive) state = state.copyWith(isGenerating: false);
+    }
+    if (copied != null && _alive && revision == _navigation) {
+      await openChat(copied);
+    }
+    return copied;
   }
 
   Future<void> openChat(String id) async {
@@ -463,6 +601,8 @@ class ChatNotifier extends _ChatBase
     bool spoken = false,
   }) async {
     input = input.trim();
+    _primeEpoch++;
+    ref.read(llamaEngineProvider).cancelPriming();
     if (_naming case final naming?) {
       // A late title gives way to the next turn; it is tried again later.
       _namingStopped = true;
@@ -476,8 +616,10 @@ class ChatNotifier extends _ChatBase
     }
     final localEngine = ref.read(llamaEngineProvider);
     final remoteEngine = ref.read(remoteEngineProvider);
+    final diffusionEngine = ref.read(diffusionGemmaEngineProvider);
     final lease = _turns.begin(() {
       localEngine.cancel();
+      diffusionEngine.cancel();
       remoteEngine.cancel();
     });
     _spoken = spoken;
@@ -488,6 +630,7 @@ class ChatNotifier extends _ChatBase
       partialAnswer: '',
       notice: '',
       learned: const [],
+      answerSaved: false,
     );
     ref.read(sessionBusyProvider.notifier).state = true;
     final t = _Turn(
@@ -546,7 +689,10 @@ class ChatNotifier extends _ChatBase
       await _runRounds(t, prompt);
       await _searchAfterRecall(t, asked, planned);
     } catch (e) {
-      t.failure = '$e';
+      t.failure = switch (e) {
+        StateError(:final message) => message,
+        _ => '$e',
+      };
     } finally {
       await _endTurn(t);
     }
@@ -612,6 +758,20 @@ class ChatNotifier extends _ChatBase
       base.batterySaver && !base.usesRemote ? await DevicePower.read() : null,
     );
     var settings = saverReason == null ? base : BatterySaver.apply(base);
+    final diffusion =
+        DesktopHost.active &&
+        (!settings.usesRemote || t.localOnly) &&
+        candidate?.id == diffusionGemmaModelId;
+    if (diffusion) {
+      settings = settings.copyWith(
+        remoteEnabled: false,
+        webMode: WebMode.off,
+        toolsEnabled: false,
+        thinkingModeEnabled: false,
+        memoryEnabled: false,
+      );
+      t.engine = ref.read(diffusionGemmaEngineProvider);
+    }
     if (state.temporary) settings = settings.copyWith(memoryEnabled: false);
     if (t.localOnly && settings.usesRemote) {
       settings = settings.copyWith(remoteEnabled: false);
@@ -1086,14 +1246,17 @@ class ChatNotifier extends _ChatBase
     // Models whose chat template understands enable_thinking (Qwen3.5,
     // Gemma 4) get the switch through the template; only older models need
     // the prompt-level nudge.
-    if (settings.thinkingModeEnabled &&
-        engine.metrics['supportsThinking'] != true) {
-      system.write(
-        '\nIf your model supports reasoning, put your explanation in <think> and </think> before your final answer.',
-      );
+    _primeThinking(system, settings, engine);
+    final turnNotes = StringBuffer();
+    // A French or Spanish question gets its answer in that language, with
+    // or without sources (tester, 2026-10-19).
+    final asked = WikipediaClient.languageFor(input, 'en');
+    if (asked != 'en') {
+      final language = asked == 'fr' ? 'French' : 'Spanish';
+      turnNotes.write('\nThe user writes in $language: answer in $language.');
     }
     if (planned.selfQuestion) {
-      system.write(
+      turnNotes.write(
         settings.webSearchEnabled &&
                 (!settings.usesRemote || settings.remoteWebResearch)
             ? '\nThe user asks what you can do. You can search the web and read pages when a question needs current or outside facts (news, prices, weather, recent events); otherwise you answer from what you know. Say so briefly and offer to look something up.'
@@ -1101,7 +1264,7 @@ class ChatNotifier extends _ChatBase
       );
     }
     if (found.timely && t.sources.isEmpty && !researchTurn && !t.remoteBrain) {
-      system.write(
+      turnNotes.write(
         '\nLive information is unavailable. Explicitly tell the user you cannot verify current facts. Do not invent current news, prices, weather, or office holders.',
       );
     }
@@ -1110,6 +1273,7 @@ class ChatNotifier extends _ChatBase
       settings: settings,
       engine: engine,
       system: system,
+      turnNotes: turnNotes,
       sources: t.sources,
       researchTurn: researchTurn,
       remoteBrain: t.remoteBrain,
@@ -1150,8 +1314,13 @@ class ChatNotifier extends _ChatBase
         : requestedLive;
     t.contextAvailable = live;
     t.contextRequested = sent;
+    // The notes travel with the question, but they are counted while the
+    // documents and the evidence are fitted: the exact text they add to
+    // the question rides with the system prompt until then.
+    final notes = turnNotes.toString();
+    final (:note, :sum) = _turnNote(t, user: user, instructions: notes);
     final messages = <Map<String, Object>>[
-      {'role': 'system', 'content': system.toString()},
+      {'role': 'system', 'content': system},
       for (final m in sent)
         TurnPrompts.renderTurn(
           m,
@@ -1164,6 +1333,16 @@ class ChatNotifier extends _ChatBase
       messages.last = {...messages.last, 'content': override};
       t.sources = [...?t.answerSources];
     }
+    final request = messages.last['content'];
+    final asks = messages.last['role'] == 'user' && request is String;
+    final clockLine = asks && offered.clock && !request.startsWith('Today is')
+        ? TurnPrompts.clockLine()
+        : null;
+    final carried = asks
+        ? [if (note.isNotEmpty) note, ?clockLine].map((n) => '\n\n$n').join()
+        : '';
+    final fitSystem = '$system$carried';
+    messages.first = {'role': 'system', 'content': fitSystem};
     if (t.attachments.any((a) => a.isImage) && !vision && t.resume == null) {
       state = state.copyWith(
         notice: settings.usesRemote
@@ -1209,7 +1388,7 @@ class ChatNotifier extends _ChatBase
     final fitted = await _fitEvidence(
       input,
       messages,
-      system: system.toString(),
+      system: fitSystem,
       sources: t.sources,
       plan: found.plan,
       queries: found.queries,
@@ -1230,9 +1409,17 @@ class ChatNotifier extends _ChatBase
     );
     if (fitted == null) return null;
     t.sources = fitted;
-    t.contextInstructions = messages.first['content'] as String;
+    final fittedSystem = messages.first['content'] as String;
+    if (carried.isNotEmpty && fittedSystem.startsWith(fitSystem)) {
+      messages.first = {
+        ...messages.first,
+        'content': '$system${fittedSystem.substring(fitSystem.length)}',
+      };
+    }
+    // The inspector includes instructions carried with this question too.
+    t.contextInstructions = '${messages.first['content']}$notes';
     t.stage('budgetMs');
-    final sum = _addTurnNotes(t, messages, user: user, clock: offered.clock);
+    _addTurnNotes(messages, note: note, clockLine: clockLine);
     // Tool results number their sources after the evidence already in the
     // prompt, so every [n] means one source.
     t.runner?.seed(t.sources);
@@ -1246,14 +1433,13 @@ class ChatNotifier extends _ChatBase
   }
 
   /// What the app adds to the question itself: the sum it worked out, the
-  /// "these are the user's facts" note, the clock line. A spoken phone turn
-  /// may get the app's own answer instead ([_Turn.appAnswer]). Returns the
-  /// sum's note, if the question was plain arithmetic.
-  String? _addTurnNotes(
-    _Turn t,
-    List<Map<String, Object>> messages, {
+  /// "these are the user's facts" note, turn instructions. A spoken phone
+  /// turn may get the app's own answer instead ([_Turn.appAnswer]). [sum]
+  /// is the sum's note for plain arithmetic.
+  ({String note, String? sum}) _turnNote(
+    _Turn t, {
     required ChatMessage user,
-    required bool clock,
+    required String instructions,
   }) {
     final input = t.input;
     final settings = t.settings!;
@@ -1292,31 +1478,29 @@ class ChatNotifier extends _ChatBase
     // "What's my name?": the phone's small model answered as if the user's
     // facts were its own.
     final note = [
+      if (instructions.isNotEmpty) instructions.trim(),
       ?sum,
       if (!t.remoteBrain && AboutUser.asks(input)) AboutUser.note,
       if (t.appAnswer == null)
         ?AboutUser.statedNote(input, remembered: remembers),
     ].join(' ');
     if (local && AboutUser.asks(input)) t.aboutUser = asked;
-    if (note.isNotEmpty &&
-        messages.last['role'] == 'user' &&
-        messages.last['content'] is String) {
-      messages.last = {
-        ...messages.last,
-        'content': '${messages.last['content']}\n\n$note',
-      };
-    }
+    return (note: note, sum: sum);
+  }
+
+  /// Puts [note] after the question and [clockLine] before it.
+  void _addTurnNotes(
+    List<Map<String, Object>> messages, {
+    required String note,
+    required String? clockLine,
+  }) {
+    if (messages.last['role'] != 'user') return;
     final request = messages.last['content'];
-    if (clock &&
-        messages.last['role'] == 'user' &&
-        request is String &&
-        !request.startsWith('Today is')) {
-      messages.last = {
-        ...messages.last,
-        'content': '${TurnPrompts.clockLine()}\n\n$request',
-      };
-    }
-    return sum;
+    if (request is! String) return;
+    messages.last = {
+      ...messages.last,
+      'content': [?clockLine, request, if (note.isNotEmpty) note].join('\n\n'),
+    };
   }
 
   /// CHAT-01: the assistant row exists before the first token, so a kill
@@ -1375,17 +1559,59 @@ class ChatNotifier extends _ChatBase
     final reasoningId = const Uuid().v4();
     final tools = prompt.tools;
     var painted = (-1, -1);
+    final toolWriting = ToolWritingTracker();
+    var answerRevision = t.answerRevision;
+    String? preparing, busy;
+    final remote = t.engine is RemoteEngine ? t.engine as RemoteEngine : null;
     t.repaint = Timer.periodic(repaintInterval, (_) {
+      // A busy provider's wait says so, counting down to the next try.
+      // A provider slow to start answering says so after a few seconds.
+      final retrying = remote?.retrying, since = remote?.waitingSince;
+      final waited = since == null
+          ? 0
+          : DateTime.now().difference(since).inSeconds;
+      final waitNote = retrying != null
+          ? _t.noticeProviderBusy(
+              retrying.status,
+              max(1, retrying.until.difference(DateTime.now()).inSeconds + 1),
+            )
+          : waited >= 3
+          ? _t.noticeProviderWaiting(waited)
+          : null;
+      if (_alive && waitNote != busy) {
+        final shown = busy;
+        busy = waitNote;
+        if (waitNote != null) {
+          state = state.copyWith(notice: waitNote);
+        } else if (state.notice == shown) {
+          state = state.copyWith(clearNotice: true);
+        }
+      }
       // Nothing new since the last frame (prefill, a tool running): no
       // state change, so nothing listening to the stream rebuilds.
       final lengths = (answer.length, thinking.length);
-      if (_alive && lengths != painted) {
+      if (_alive &&
+          (lengths != painted || answerRevision != t.answerRevision)) {
         painted = lengths;
+        if (answerRevision != t.answerRevision) {
+          toolWriting.reset();
+          answerRevision = t.answerRevision;
+        }
+        final answerText = answer.toString();
+        // A call being written says so before its arguments are complete.
+        final writing = tools.isEmpty ? null : toolWriting.writing(answerText);
+        final notice = writing != null && writing != preparing
+            ? (writing.isEmpty
+                  ? _t.noticePreparingToolCall
+                  : _t.noticePreparingTool(writing))
+            : null;
+        preparing = writing;
         state = state.copyWith(
+          notice: notice ?? state.notice,
           // A tool call being written is not part of the answer.
           partialAnswer: tools.isEmpty
-              ? answer.toString()
-              : ToolMarkup.visible(answer.toString()),
+              ? answerText
+              : ToolMarkup.visible(answerText),
           reasoning: thinking.isEmpty
               ? null
               : ReasoningBlock(id: reasoningId, content: thinking.toString()),
@@ -1424,6 +1650,18 @@ class ChatNotifier extends _ChatBase
     var pastRetried = false;
     Object? echoPrompt;
     var pieces = 0;
+    final canvasSub = engine is DiffusionGemmaEngine
+        ? engine.canvasChanges.listen((event) {
+            if (_alive && !_cancelled && event['canvas'] is String) {
+              state = state.copyWith(
+                partialAnswer: '${event['committed'] ?? ''}${event['canvas']}',
+                metrics: engine.metrics,
+              );
+            }
+          })
+        : null;
+    // The turn owns the preview subscription, including errors/cancellation.
+    t.canvasSub = canvasSub;
     // Out of tool rounds with calls still coming: one last round without
     // tools, answering from what was gathered (the call itself used to end
     // up as the answer).
@@ -1929,6 +2167,7 @@ class ChatNotifier extends _ChatBase
     t.lease.transition(TurnStage.saving);
     try {
       t.repaint?.cancel();
+      await t.canvasSub?.cancel();
       t.checkpoint?.cancel();
       t.parser?.close();
       await t.answerSub?.cancel();
@@ -2241,7 +2480,10 @@ class ChatNotifier extends _ChatBase
     } catch (e) {
       t.failure = _t.chatErrorSave('$e');
     }
-    state = state.copyWith(messages: [...state.messages, msg]);
+    state = state.copyWith(
+      messages: [...state.messages, msg],
+      answerSaved: true,
+    );
   }
 
   /// Memory and the chat's title after a completed, fresh exchange.
@@ -2424,6 +2666,7 @@ class ChatNotifier extends _ChatBase
       isLoadingModel: false,
       clearReasoning: true,
       partialAnswer: '',
+      answerSaved: false,
       error: t.failure,
       metrics: {
         ...?t.metrics,
@@ -2565,12 +2808,13 @@ class ChatNotifier extends _ChatBase
     required InferenceSettings settings,
     required Preset preset,
     String? extraSystem,
+    bool? spoken,
   }) async {
     var facts = const <String>[];
     var notes = '';
     var researchNotes = '';
     final baseSystem = StringBuffer(
-      _spoken
+      (spoken ?? _spoken)
           ? AppConstants.spokenSystemPrompt
           : AppConstants.defaultSystemPrompt,
     );
@@ -2588,13 +2832,6 @@ class ChatNotifier extends _ChatBase
     baseSystem.write('\n${settings.systemPrompt}');
     if (extraSystem != null && extraSystem.trim().isNotEmpty) {
       baseSystem.write('\n${extraSystem.trim()}');
-    }
-    // A French or Spanish question gets its answer in that language, with
-    // or without sources (tester, 2026-10-19).
-    final asked = WikipediaClient.languageFor(input, 'en');
-    if (asked != 'en') {
-      final language = asked == 'fr' ? 'French' : 'Spanish';
-      baseSystem.write('\nThe user writes in $language: answer in $language.');
     }
     if (settings.memoryEnabled &&
         (!settings.usesRemote ||
@@ -2656,20 +2893,25 @@ class ChatNotifier extends _ChatBase
   /// The typed tools this turn offers (those enabled whose host gate is
   /// open), and their instructions added to [system]: the text protocol
   /// when the template cannot carry tools, the tool policy, and the
-  /// research steps of a model-driven research turn.
+  /// research steps added to [turnNotes] for a model-driven research turn.
   ({ToolRunner? runner, List<ToolSpec> tools, bool native, bool clock})
   _offerTools(
     String input, {
     required InferenceSettings settings,
     required TextEngine engine,
     required StringBuffer system,
+    required StringBuffer turnNotes,
     required List<SearchResult> sources,
     required bool researchTurn,
     bool remoteBrain = false,
     required bool continuing,
     bool allowRecall = true,
+    bool register = true,
   }) {
     ToolRunner? offered;
+    if (engine is DiffusionGemmaEngine) {
+      return (runner: null, tools: const [], native: false, clock: false);
+    }
     // Typed tools (roadmap P2): offered only when enabled and only those
     // whose host gate is open. A template that cannot carry tool
     // definitions gets the plain-text protocol instead.
@@ -2681,11 +2923,13 @@ class ChatNotifier extends _ChatBase
     // On the phone, neither does a message with nothing to look up or work
     // out: the descriptions cost about 700 tokens before the first word
     // (review 2026-09-28). A chat that had tools keeps them.
-    final chat = state.chatId;
+    final chat = register ? state.chatId : null;
+    // Phone actions (alarms, calls, apps) have no Windows equivalent.
     final phoneActions =
-        PhoneActions.wanted(input) ||
-        remoteBrain ||
-        (chat != null && _actionChats.contains(chat));
+        !DesktopHost.active &&
+        (PhoneActions.wanted(input) ||
+            remoteBrain ||
+            (chat != null && _actionChats.contains(chat)));
     // After an action, retaining the native schema keeps the conversation's
     // system prefix reusable. Small talk uses toolChoice=none and ignores
     // any unsolicited call; it still gets an ordinary spoken answer.
@@ -2694,7 +2938,12 @@ class ChatNotifier extends _ChatBase
         engine.metrics['supportsTools'] == true &&
         chat != null &&
         _actionChats.contains(chat);
+    final mcp = DesktopHost.active && Platform.isWindows
+        ? ref.read(mcpRegistryProvider)
+        : null;
+    final mcpTools = mcp?.specs ?? const <ToolSpec>[];
     final mayNeed =
+        mcpTools.isNotEmpty ||
         researchTurn ||
         phoneActions ||
         (_canRecall(settings) && UserMemory.personalQuery(input)) ||
@@ -2727,6 +2976,19 @@ class ChatNotifier extends _ChatBase
             : null,
         phoneActions: phoneActions,
         actionsOnly: !settings.toolsEnabled,
+        externalTools: mcpTools,
+        externalRun: mcp == null
+            ? null
+            : (call) => mcp.call(
+                call,
+                explain: (error) => mcpExplain(_t, error),
+                unsupportedContent: _t.mcpUnsupportedContent,
+                permitted: () =>
+                    _alive &&
+                    !_cancelled &&
+                    DesktopHost.active &&
+                    settings.toolsEnabled,
+              ),
       );
       offered = runner;
       tools = runner.specs();
@@ -2776,13 +3038,13 @@ class ChatNotifier extends _ChatBase
         system.write('\n${TurnPrompts.remoteBrainText}');
       }
       if (researchTurn && tools.any((t) => t.name == 'search_web')) {
-        system.write(
+        turnNotes.write(
           NewsIntent.of(input) != null &&
                   tools.any((t) => t.name == 'search_news')
               ? '\nResearch before answering: call search_news for the latest stories, read one or two of the most relevant with read_url if details are needed, then answer from them with [n] citations.'
               : '\nResearch before answering: call search_web with a focused query of a few keywords, read the most promising result with read_url (or find_in_page for one detail), search again with different words if the first results do not answer, then answer from what you read with [n] citations. Say so when the pages do not settle the question.',
         );
-        system.write(
+        turnNotes.write(
           '\nResearch recipe: ${ResearchRecipe.forQuestion(input).instructions}',
         );
       }
@@ -2799,8 +3061,11 @@ class ChatNotifier extends _ChatBase
   /// than raced. False when the user stopped the wait.
   Future<bool> _shareWithHosting(ModelInfo model) async {
     var hosting = ref.read(deviceHostingProvider);
-    if (!hosting.running) return true;
+    // Its own runtime (desktop): nothing shared, nothing to wait for.
+    if (!hosting.running || hosting.ownEngine) return true;
     if (hosting.modelId != null && hosting.modelId != model.id) {
+      // The desktop moves the served model to its own runtime on load.
+      if (ref.read(engineHandoffProvider) != null) return true;
       throw StateError(_t.chatErrorServing(hosting.modelId!));
     }
     final clock = Stopwatch()..start();
@@ -2911,12 +3176,13 @@ class ChatNotifier extends _ChatBase
       if (biggest == null) break;
       final text = biggest['content'] as String;
       if (text.length < 1000) break;
-      final kept = text.substring(0, text.length ~/ 2);
+      final kept = cutMiddle(
+        text,
+        text.runes.length ~/ 2,
+        marker: _t.toolCutMiddleMarker,
+      );
       final at = messages.indexOf(biggest);
-      final shortened = {
-        ...biggest,
-        'content': '$kept\n[… cut to fit the context …]',
-      };
+      final shortened = {...biggest, 'content': kept};
       toolMessages[toolMessages.indexOf(biggest)] = shortened;
       if (at >= 0) messages[at] = shortened;
       cuts++;

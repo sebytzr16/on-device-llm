@@ -103,6 +103,8 @@ class _StreamingRevealState extends State<StreamingReveal>
 class _RevealEdge extends ChangeNotifier {
   /// Width of the soft part of the edge.
   static const soft = 36.0;
+  Object? paragraphRevision;
+  RenderParagraph? paragraph;
 
   double x = 0, v = 0, target = 0;
   double lineTop = -1, lineHeight = 0, lineLeft = 0, lineRight = 0;
@@ -179,7 +181,12 @@ class _RevealPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final root = content.currentContext?.findRenderObject();
     if (root is! RenderBox || !root.hasSize) return;
-    final paragraph = _lastParagraph(root);
+    if (edge.paragraphRevision != revision ||
+        edge.paragraph?.attached != true) {
+      edge.paragraphRevision = revision;
+      edge.paragraph = _lastParagraph(root);
+    }
+    final paragraph = edge.paragraph;
     if (paragraph == null || !paragraph.hasSize) return;
     final end = TextPosition(
       offset: paragraph.text.toPlainText(includeSemanticsLabels: false).length,

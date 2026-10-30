@@ -6,6 +6,14 @@ class ScanCancelled implements Exception {
   const ScanCancelled();
 }
 
+class OcrUnavailable implements Exception {
+  static const notice =
+      'Text recognition is unavailable. Check installed OCR languages in system settings.';
+  const OcrUnavailable();
+  @override
+  String toString() => notice;
+}
+
 class ScanOptions {
   static const key = 'text_recognition_options_v1';
   static Future<void>? _pending;
@@ -92,6 +100,7 @@ class PdfTextScanner {
   }) async {
     final output = StringBuffer();
     var scanned = 0, skipped = 0, unreadable = 0;
+    var ocrUnavailable = false;
     for (var page = 1; page <= pages; page++) {
       if (cancelled?.call() == true) throw const ScanCancelled();
       progress?.call(page, pages);
@@ -108,6 +117,9 @@ class PdfTextScanner {
           text = read.text.trim();
           quality =
               ' (OCR; ${read.confidence == null ? 'confidence unavailable' : 'recognizer confidence ${(read.confidence! * 100).round()}%'}; review for errors)';
+        } on OcrUnavailable {
+          ocrUnavailable = true;
+          text = '';
         } catch (_) {
           text = '';
         }
@@ -125,6 +137,9 @@ class PdfTextScanner {
       }
     }
     if (output.isEmpty) {
+      if (ocrUnavailable) {
+        throw const FormatException(OcrUnavailable.notice);
+      }
       throw const FormatException(
         'No readable text was found. Try a clearer scan or attach page photos.',
       );
@@ -134,6 +149,7 @@ class PdfTextScanner {
         '[OCR limit ${options.maxScannedPages}: $skipped scanned pages skipped. Text layers were still read.]',
       );
     }
+    if (ocrUnavailable) output.writeln('[${OcrUnavailable.notice}]');
     if (unreadable > 0) {
       output.writeln('[$unreadable pages could not be read.]');
     }

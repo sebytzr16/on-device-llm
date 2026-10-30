@@ -15,6 +15,9 @@ class ModelCard extends StatelessWidget {
   final DownloadProgress? progress;
   final DeviceMemory? memory;
   final bool active, busy;
+
+  /// Downloaded, but its file is still being checked and read.
+  final bool preparing;
   final VoidCallback? onDownload, onPause, onLoad, onDelete;
 
   /// Frees the memory of the active (loaded) model.
@@ -42,6 +45,7 @@ class ModelCard extends StatelessWidget {
     this.memory,
     this.active = false,
     this.busy = false,
+    this.preparing = false,
     this.onDownload,
     this.onPause,
     this.onLoad,
@@ -68,6 +72,14 @@ class ModelCard extends StatelessWidget {
     final verifying = status == DownloadStatus.verifying;
     final interrupted =
         status == DownloadStatus.paused || status == DownloadStatus.failed;
+    // The projector's own row shows its download; this one waits quietly.
+    final visionBusy = const {
+      DownloadStatus.queued,
+      DownloadStatus.downloading,
+      DownloadStatus.verifying,
+    }.contains(visionProgress?.status);
+    final analyzing =
+        preparing && !downloading && !verifying && !interrupted && !visionBusy;
     final meta = catalogMeta[model.id];
     final error = progress?.error;
     return Card(
@@ -103,12 +115,12 @@ class ModelCard extends StatelessWidget {
               context.l10n.licenseLabel(model.license),
               style: context.text.mono.copyWith(color: c.textFaint),
             ),
-            if (downloading || verifying) ...[
+            if (downloading || verifying || analyzing) ...[
               const SizedBox(height: AppDesign.lg),
               ClipRRect(
                 borderRadius: AppDesign.radius(AppDesign.rFull),
                 child: LinearProgressIndicator(
-                  value: verifying ? null : progress!.fraction,
+                  value: verifying || analyzing ? null : progress!.fraction,
                   minHeight: 4,
                 ),
               ),
@@ -116,6 +128,8 @@ class ModelCard extends StatelessWidget {
               Text(
                 verifying
                     ? context.l10n.verifyingSha
+                    : analyzing
+                    ? context.l10n.modelAnalyzingDetail
                     : [
                         percentLabel(progress!.fraction),
                         if (progress!.bytesPerSecond != null)
@@ -147,12 +161,16 @@ class ModelCard extends StatelessWidget {
                   ),
                 ),
               )
-            else if (verifying)
+            else if (verifying || analyzing)
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(
                   onPressed: null,
-                  child: Text(context.l10n.verifying),
+                  child: Text(
+                    verifying
+                        ? context.l10n.verifying
+                        : context.l10n.modelAnalyzing,
+                  ),
                 ),
               )
             else if (!model.isDownloaded && model.downloadUrl != null)
@@ -276,7 +294,7 @@ class ModelCard extends StatelessWidget {
   /// or say it is ready and let the user remove it.
   Widget _visionAction(BuildContext context) {
     final c = context.colors;
-    final projector = visionProjectors[model.id]!;
+    final projector = (model.projector ?? visionProjectors[model.id])!;
     final status = visionProgress?.status;
     if (status == DownloadStatus.downloading ||
         status == DownloadStatus.queued) {

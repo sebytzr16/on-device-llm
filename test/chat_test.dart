@@ -503,6 +503,8 @@ class TestModels extends ModelManagerNotifier {
 class TestEngine extends LlamaEngine {
   bool stopped = false;
   int previews = 0;
+  String? previewedSystem;
+  int previewedChars = 0;
   List<Map<String, String>> devices = const [];
   InferenceSettings? loadedWith;
   @override
@@ -533,6 +535,8 @@ class TestEngine extends LlamaEngine {
     List<ToolSpec> tools = const [],
   }) async {
     previews++;
+    previewedSystem = messages.first['content'] as String?;
+    previewedChars = _chars(messages);
     // The clock note (about 250 characters) and the French answer note
     // ride with the evidence.
     return {'fits': (messages.last['content'] as String).length < 2300};
@@ -2119,6 +2123,83 @@ void main() {
     },
   );
 
+  test('stablePrefix: ordinary turns keep the system message stable', () async {
+    final n = container.read(chatProvider.notifier);
+    const first = 'Are you able to do online searches?';
+    const second = 'Pourquoi le ciel est-il bleu ?';
+    expect(await n.send(first), isTrue);
+    final system = engine.receivedMessages!.first['content'];
+    expect(system, isNot(contains('The user asks what you can do')));
+    expect(
+      engine.receivedMessages!.last['content'],
+      contains('The user asks what you can do'),
+    );
+    expect(await n.send(second), isTrue);
+    expect(engine.receivedMessages!.first['content'], system);
+    expect(
+      engine.receivedMessages!.last['content'],
+      contains('The user writes in French: answer in French.'),
+    );
+    // Notes travel only with the current request, never the saved bubble.
+    expect(engine.receivedMessages![1]['content'], first);
+    final shown = container.read(chatProvider).messages;
+    expect(shown.where((m) => m.role == ChatRole.user).map((m) => m.content), [
+      first,
+      second,
+    ]);
+    final stored = await db.getMessages(container.read(chatProvider).chatId!);
+    expect(stored.where((m) => m.role == 'user').map((m) => m.content), [
+      first,
+      second,
+    ]);
+    final run = TurnRun.decode(shown.last.runJson)!;
+    final audit = run.metrics['contextAudit'] as Map;
+    expect(
+      audit['instructions'],
+      contains('The user writes in French: answer in French.'),
+    );
+
+    expect(await n.send('Who is the current president of France?'), isTrue);
+    expect(engine.receivedMessages!.first['content'], system);
+    expect(
+      engine.receivedMessages!.last['content'],
+      contains('Live information is unavailable.'),
+    );
+  });
+
+  test('question notes are counted while the prompt is fitted', () async {
+    final text = 'Le ciel diffuse la lumière bleue. ' * 120;
+    final doc = Attachment(
+      id: 'ciel',
+      kind: AttachmentKind.document,
+      name: 'ciel.txt',
+      mime: 'text/plain',
+      path: '/nowhere/ciel.txt',
+      sizeBytes: text.length,
+      text: text,
+    );
+    final n = container.read(chatProvider.notifier);
+    expect(
+      await n.send('Pourquoi le ciel est-il bleu ?', attachments: [doc]),
+      isTrue,
+    );
+    expect(engine.previews, greaterThan(0));
+    expect(
+      engine.previewedSystem,
+      contains('The user writes in French: answer in French.'),
+    );
+    expect(
+      engine.receivedMessages!.first['content'],
+      isNot(contains('The user writes in French')),
+    );
+    expect(
+      engine.receivedMessages!.last['content'],
+      contains('The user writes in French: answer in French.'),
+    );
+    // Moving the notes to the question adds nothing the fit did not count.
+    expect(_chars(engine.receivedMessages!), engine.previewedChars);
+  });
+
   test('every answer records what produced it (CHAT-04)', () async {
     final n = container.read(chatProvider.notifier);
     engine.metrics = {
@@ -2451,7 +2532,7 @@ void main() {
     );
     expect(
       TurnPolicy.groundedSettings(
-        off.copyWith(thinkOnSearch: true),
+        InferenceSettings.fromJson({'thinkOnSearch': true}),
         grounded: true,
       ).thinkingModeEnabled,
       isFalse,
@@ -2601,13 +2682,16 @@ void main() {
         startsWith('The answer is 42\n\nSources last updated '),
       );
       // The page text (4800 chars) does not fit the fake preview budget
-      // (1800): the tool result was halved until it did, the question
+      // (1800): the tool result was halved (head and tail kept) until it did, the question
       // itself untouched, and the reasoning channel says so.
       final toolMsg = engine.toolMessages!.lastWhere(
         (m) => m['role'] == 'tool',
       );
       expect((toolMsg['content'] as String).length, lessThan(1800));
-      expect(toolMsg['content'], contains('[… cut to fit the context …]'));
+      expect(
+        toolMsg['content'],
+        contains('[… middle cut to fit the context …]'),
+      );
       expect(
         engine.toolMessages!
             .where((m) => m['role'] == 'user')
@@ -2640,7 +2724,13 @@ void main() {
       final n = container.read(chatProvider.notifier);
       expect(await n.send('search for the latest Flutter version'), isTrue);
       final research = engine.receivedMessages!.first['content'] as String;
-      expect(research, contains('Research before answering'));
+      expect(research, isNot(contains('Research before answering')));
+      expect(
+        engine.receivedMessages!.lastWhere(
+          (m) => m['role'] == 'user',
+        )['content'],
+        contains('Research before answering'),
+      );
       expect(research, isNot(contains('Flutter tablet')));
       expect(research, contains('The user lives in Montreal'));
       expect(research, contains('The user prefers concise answers'));
@@ -2679,7 +2769,12 @@ void main() {
       expect(search.calls, 1);
       expect(last.reasoning, contains('search_web'));
       final system = engine.receivedMessages!.first['content'] as String;
-      expect(system, contains('Research before answering'));
+      expect(system, isNot(contains('Research before answering')));
+      final question = engine.receivedMessages!.lastWhere(
+        (m) => m['role'] == 'user',
+      )['content'];
+      expect(question, contains('Research before answering'));
+      expect(question, contains('Research recipe:'));
       expect(system, contains('MUST be a tool call'));
       expect(system, isNot(contains('Live information is unavailable')));
       // What the tools found is this answer's evidence.
@@ -2999,3 +3094,8 @@ void main() {
     );
   }
 }
+
+int _chars(List<Map<String, Object?>> messages) => messages.fold(
+  0,
+  (n, m) => n + (m['content'] is String ? (m['content'] as String).length : 0),
+);

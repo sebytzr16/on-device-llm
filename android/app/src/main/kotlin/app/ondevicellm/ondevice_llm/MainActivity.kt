@@ -3,6 +3,7 @@ package app.ondevicellm.ondevice_llm
 import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
+import android.hardware.display.DisplayManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
@@ -20,6 +21,12 @@ class MainActivity : FlutterActivity() {
     private var scheduledPrompts: ScheduledPrompts? = null
     private var hostDiscovery: HostDiscovery? = null
     private var voiceAudio: VoiceAudio? = null
+    private var displayManager: DisplayManager? = null
+    private val displayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) = refreshDisplay(displayId)
+        override fun onDisplayRemoved(displayId: Int) = Unit
+        override fun onDisplayChanged(displayId: Int) = refreshDisplay(displayId)
+    }
     // Tags the models this window loads; they are freed when it is destroyed.
     private val nativeOwner = NativeBridge.newOwner()
 
@@ -54,6 +61,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        displayManager?.unregisterDisplayListener(displayListener)
         offlineDictation?.close()
         offlineDictation = null
         hostDiscovery?.close()
@@ -67,6 +75,8 @@ class MainActivity : FlutterActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        displayManager = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        displayManager?.registerDisplayListener(displayListener, null)
         requestHighestRefreshRate()
     }
 
@@ -74,6 +84,13 @@ class MainActivity : FlutterActivity() {
         super.onResume()
         // Some OEM power modes reset the preference while the app is backgrounded.
         requestHighestRefreshRate()
+        window.decorView.post { requestHighestRefreshRate() }
+    }
+
+    private fun refreshDisplay(displayId: Int) {
+        val active = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) display
+            else @Suppress("DEPRECATION") windowManager.defaultDisplay
+        if (displayId == active?.displayId) requestHighestRefreshRate()
     }
 
     /// Samsung (and other) phones keep a Flutter app at 60 Hz unless it asks
@@ -86,10 +103,14 @@ class MainActivity : FlutterActivity() {
         val best = display.supportedModes
             .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
             .maxByOrNull { it.refreshRate } ?: return
-        if (best.modeId == current.modeId && best.refreshRate <= current.refreshRate) return
         val attributes = window.attributes
-        attributes.preferredDisplayModeId = best.modeId
-        window.attributes = attributes
+        if (Build.VERSION.SDK_INT >= 35) window.setFrameRateBoostOnTouchEnabled(true)
+        // A mode id is what the phone honours; a bare preferredRefreshRate was
+        // not verified there.
+        if (attributes.preferredDisplayModeId != best.modeId) {
+            attributes.preferredDisplayModeId = best.modeId
+            window.attributes = attributes
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

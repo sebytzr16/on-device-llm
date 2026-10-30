@@ -1,3 +1,7 @@
+import 'dart:io' show Platform;
+import '../../../core/platform/desktop_host.dart';
+import '../../../desktop/mcp/mcp_registry.dart';
+import '../../../desktop/mcp/mcp_config.dart';
 import '../../../core/l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -91,6 +95,7 @@ class ToolsQuickPanel extends ConsumerWidget {
             value: s.toolDocuments,
             onChanged: (v) => update(s.copyWith(toolDocuments: v)),
           ),
+          if (DesktopHost.active && Platform.isWindows) _McpQuickTools(),
           ListTile(
             key: const Key('quick-tool-choice'),
             dense: true,
@@ -155,6 +160,48 @@ class _ToolRow extends StatelessWidget {
       ),
       value: value,
       onChanged: onChanged,
+    );
+  }
+}
+
+class _McpQuickTools extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final registry = ref.watch(mcpRegistryProvider);
+    return ListenableBuilder(
+      listenable: registry,
+      builder: (context, _) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final server in registry.servers.values)
+            if (registry.serverEnabled(server.config.name) &&
+                server.status == McpStatus.ready)
+              for (final tool in server.tools)
+                _ToolRow(
+                  keyName:
+                      'mcp-${mcpToolName(server.config.name, tool['name'] as String)}',
+                  label: '${server.config.name} / ${tool['name']}',
+                  hint: tool['description'] as String? ?? '',
+                  value: registry.toolEnabled(
+                    mcpToolName(server.config.name, tool['name'] as String),
+                  ),
+                  onChanged: (value) async {
+                    try {
+                      await registry.enableTool(
+                        mcpToolName(server.config.name, tool['name'] as String),
+                        value,
+                      );
+                    } catch (_) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(context.l10n.mcpConfigError)),
+                        );
+                      }
+                    }
+                  },
+                ),
+        ],
+      ),
     );
   }
 }

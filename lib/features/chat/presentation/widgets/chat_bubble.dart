@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -9,9 +10,11 @@ import '../../../../core/design/app_design.dart';
 import '../../../../core/design/app_sheet.dart';
 import '../../../../core/design/markdown_tables.dart';
 import '../../../../core/design/markdown_math.dart';
+import '../../../../core/design/mermaid/mermaid_markdown.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/motion/motion.dart';
+import '../../../../core/platform/desktop_host.dart';
 import '../../../../core/utils/external_links.dart';
 import '../../../attachments/presentation/attachment_chips.dart';
 import '../../../knowledge/knowledge_store.dart';
@@ -57,6 +60,9 @@ class ChatBubble extends StatelessWidget {
   final List<ChatMessage> versions;
   final ValueChanged<String>? onRestoreVersion;
 
+  /// Copies the conversation up to this message into a new chat.
+  final VoidCallback? onBranch;
+
   const ChatBubble({
     super.key,
     required this.message,
@@ -73,6 +79,7 @@ class ChatBubble extends StatelessWidget {
     this.onRestore,
     this.versions = const [],
     this.onRestoreVersion,
+    this.onBranch,
   });
 
   @override
@@ -83,7 +90,7 @@ class ChatBubble extends StatelessWidget {
     }
     // Appearance > compact bubbles halves the gap between turns.
     final compact = ChatBubbleDensity.of(context);
-    return Padding(
+    final bubble = Padding(
       padding: EdgeInsets.symmetric(
         vertical: compact ? AppDesign.xs : AppDesign.sm,
         horizontal: compact ? AppDesign.md : AppDesign.lg,
@@ -102,6 +109,34 @@ class ChatBubble extends StatelessWidget {
             : _AssistantTurn(this),
       ),
     );
+    if (streaming) return RepaintBoundary(child: bubble);
+    if (!DesktopHost.active) return bubble;
+    // The conversation sits in a SelectionArea, whose own menu takes the
+    // right-click; the bubble notes where it was pressed so that menu can
+    // show this message's actions when no text is selected.
+    return Listener(
+      onPointerDown: (e) {
+        if (e.kind == PointerDeviceKind.mouse &&
+            e.buttons & kSecondaryMouseButton != 0) {
+          _rightClick = (
+            DateTime.now(),
+            () => showMessageActions(context, at: e.position),
+          );
+        }
+      },
+      child: bubble,
+    );
+  }
+
+  static (DateTime, VoidCallback)? _rightClick;
+
+  /// The actions of the bubble right-clicked a moment ago, once.
+  static VoidCallback? takeRightClick() {
+    final pending = _rightClick;
+    _rightClick = null;
+    if (pending == null) return null;
+    final age = DateTime.now().difference(pending.$1);
+    return age < const Duration(seconds: 1) ? pending.$2 : null;
   }
 }
 
@@ -125,7 +160,7 @@ extension on ChatBubble {
   /// Every action for this message with its name written out (report
   /// 2026-10-04: delete was hidden behind a long press, and the small icons
   /// had no labels). Opened by the ⋯ button or a long press.
-  Future<void> showMessageActions(BuildContext context) async {
+  Future<void> showMessageActions(BuildContext context, {Offset? at}) async {
     final t = context.l10n;
     final isUser = message.role == ChatRole.user;
     AppHaptics.press();
@@ -183,6 +218,13 @@ extension on ChatBubble {
           final run = TurnRun.decode(message.runJson);
           if (run != null) showRunDetailsSheet(context, run);
         }),
+      if (onBranch != null)
+        _MessageAction(
+          'branch',
+          Icons.call_split,
+          t.desktopChatBranch,
+          onBranch!,
+        ),
       if (onDelete != null && !isUser)
         _MessageAction(
           'delete-answer',
@@ -201,6 +243,61 @@ extension on ChatBubble {
         ),
     ];
     if (actions.isEmpty) return;
+    // With a mouse the actions open as a context menu where the pointer is,
+    // not a sheet over the conversation.
+    if (DesktopHost.active) {
+      final box = context.findRenderObject() as RenderBox?;
+      final overlay =
+          Overlay.of(context).context.findRenderObject() as RenderBox?;
+      if (box != null && overlay != null) {
+        final anchor = at != null
+            ? overlay.globalToLocal(at)
+            : box.localToGlobal(
+                isUser
+                    ? box.size.bottomRight(Offset.zero)
+                    : Offset(0, box.size.height),
+                ancestor: overlay,
+              );
+        final c = context.colors;
+        final chosen = await showMenu<_MessageAction>(
+          context: context,
+          position: RelativeRect.fromRect(
+            anchor & Size.zero,
+            Offset.zero & overlay.size,
+          ),
+          items: [
+            for (final (i, a) in actions.indexed) ...[
+              if (a.danger && i > 0 && !actions[i - 1].danger)
+                const PopupMenuDivider(height: 9),
+              PopupMenuItem(
+                key: Key('message-action-${a.key}'),
+                value: a,
+                height: 36,
+                child: Row(
+                  children: [
+                    Icon(
+                      a.icon,
+                      size: 18,
+                      color: a.danger ? c.danger : c.textMuted,
+                    ),
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Text(
+                        a.label,
+                        overflow: TextOverflow.ellipsis,
+                        style: a.danger ? TextStyle(color: c.danger) : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        );
+        if (chosen != null && context.mounted) chosen.run();
+        return;
+      }
+    }
     final picked = await showMorphSheet<_MessageAction>(
       context: context,
       useSafeArea: true,
@@ -426,7 +523,9 @@ class _UserTurn extends StatelessWidget {
             child: AttachmentChips(attachments: message.attachments),
           ),
         if (message.content.isNotEmpty)
-          SelectableText(message.content, style: context.text.body),
+          DesktopHost.active
+              ? Text(message.content, style: context.text.body)
+              : SelectableText(message.content, style: context.text.body),
         if (versions.length > 1)
           _VersionSwitcher(
             current: message,
@@ -562,20 +661,32 @@ class _AssistantTurn extends StatelessWidget {
                 streaming && '```'.allMatches(message.content).length.isEven,
             revision: message.content.length,
             background: t.scaffoldBackgroundColor,
-            child: MarkdownBody(
-              data: message.content,
-              selectable: !streaming,
-              builders: {'pre': CodeBlockBuilder(), 'math': MathBuilder()},
-              inlineSyntaxes: [MathSyntax()],
-              imageBuilder: (uri, title, alt) => Text(alt ?? '[Image omitted]'),
-              onTapLink: (_, href, _) async {
-                if (href != null) {
-                  try {
-                    await openExternalLink(href);
-                  } catch (_) {}
-                }
-              },
-              styleSheet: _styleSheet(context, t, c),
+            // Its own layer: the text re-rasterizes when it grows (about 30
+            // times a second), not on every frame the edge and dots animate.
+            // Desktop 2026-10-28: without it a streaming answer decoded at
+            // 49 tok/s on screen against 76 with the window minimized.
+            child: RepaintBoundary(
+              child: MarkdownBody(
+                data: message.content,
+                // The desktop pane selects across the whole conversation.
+                selectable: !streaming && !DesktopHost.active,
+                builders: {
+                  'pre': CodeBlockBuilder(streaming: streaming),
+                  'math': MathBuilder(),
+                },
+                blockSyntaxes: const [MermaidFenceSyntax()],
+                inlineSyntaxes: [MathSyntax()],
+                imageBuilder: (uri, title, alt) =>
+                    Text(alt ?? '[Image omitted]'),
+                onTapLink: (_, href, _) async {
+                  if (href != null) {
+                    try {
+                      await openExternalLink(href);
+                    } catch (_) {}
+                  }
+                },
+                styleSheet: _styleSheet(context, t, c),
+              ),
             ),
           ),
         if (streaming)
@@ -583,7 +694,9 @@ class _AssistantTurn extends StatelessWidget {
             padding: EdgeInsets.only(
               top: message.content.isEmpty ? AppDesign.xs : AppDesign.sm,
             ),
-            child: const _StreamingDots(),
+            child: RepaintBoundary(
+              child: _StreamingDots(waiting: message.content.isEmpty),
+            ),
           ),
         if (!streaming && message.responseStatus != 'complete')
           Padding(
@@ -619,7 +732,14 @@ class _AssistantTurn extends StatelessWidget {
             padding: const EdgeInsets.only(top: AppDesign.md),
             child: _SourcesBubble(sources: sources),
           ),
-        if (!streaming && sources.isEmpty && bubble.onSearchWeb != null)
+        // A tool (an MCP server, the calculator) answered: not from memory.
+        if (!streaming &&
+            sources.isEmpty &&
+            bubble.onSearchWeb != null &&
+            !(TurnRun.decode(
+                  message.runJson,
+                )?.toolTrace.any((t) => t['ok'] == true) ??
+                false))
           Padding(
             padding: const EdgeInsets.only(top: AppDesign.sm),
             child: Wrap(
@@ -933,9 +1053,13 @@ class _SourcesBubble extends StatelessWidget {
   }
 }
 
-/// Three dots breathing in sequence: the model is still writing.
+/// Three dots breathing in sequence: the model is still writing. They
+/// breathe only while [waiting] for the first word; once text flows it shows
+/// the progress, and a loop running every frame beside it cost decode speed
+/// on a GPU shared with the display.
 class _StreamingDots extends StatefulWidget {
-  const _StreamingDots();
+  final bool waiting;
+  const _StreamingDots({required this.waiting});
   @override
   State<_StreamingDots> createState() => _StreamingDotsState();
 }
@@ -950,7 +1074,15 @@ class _StreamingDotsState extends State<_StreamingDots>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _c.loopAmbient(animate: context.motion.animates);
+    _c.loopAmbient(animate: widget.waiting && context.motion.animates);
+  }
+
+  @override
+  void didUpdateWidget(covariant _StreamingDots old) {
+    super.didUpdateWidget(old);
+    if (old.waiting != widget.waiting) {
+      _c.loopAmbient(animate: widget.waiting && context.motion.animates);
+    }
   }
 
   @override

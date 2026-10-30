@@ -56,3 +56,7 @@ native/build.properties
 # Prebuilt OpenCL bridge variant staged by scripts/build-native-variant.ps1.
 android/app/src/main/jniLibs/
 
+
+# Windows bridge DLL built by scripts/build-windows-native.ps1
+native/out/
+native/stable-diffusion.cpp/

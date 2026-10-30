@@ -25,6 +25,21 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(paths, null);
   });
+  test('photo import retains an unavailable OCR warning', () async {
+    final dir = await Directory.systemTemp.createTemp('ocr-notice-');
+    addTearDown(() => dir.delete(recursive: true));
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final store = KnowledgeStore(db, null, () async => dir);
+    final doc = await store.import(
+      collection: 'Notes',
+      name: 'receipt.png',
+      bytes: Uint8List.fromList([1, 2, 3]),
+      ocr: (_) async => throw const OcrUnavailable(),
+    );
+    expect(doc.extractionWarning, OcrUnavailable.notice);
+    expect(await store.original(doc), isNotNull);
+  });
   test(
     'later segment facts reach the answer sources with one decode pass',
     () async {

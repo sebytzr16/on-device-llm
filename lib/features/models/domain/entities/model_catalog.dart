@@ -1,4 +1,6 @@
+import '../../../../core/platform/desktop_host.dart';
 import 'model_info.dart';
+export 'model_info.dart' show VisionProjector;
 
 /// Static facts about a bundled model that are not persisted per install.
 class CatalogMeta {
@@ -11,19 +13,6 @@ class CatalogMeta {
     required this.reasoning,
     required this.minRamGb,
     required this.blurb,
-  });
-}
-
-/// The multimodal projector (mmproj) that lets a catalog model see photos
-/// through llama.cpp's libmtmd. Same publisher revision as the weights.
-class VisionProjector {
-  final String fileName, downloadUrl, sha256;
-  final int sizeBytes;
-  const VisionProjector({
-    required this.fileName,
-    required this.downloadUrl,
-    required this.sha256,
-    required this.sizeBytes,
   });
 }
 
@@ -72,6 +61,34 @@ const visionProjectors = <String, VisionProjector>{
         'https://huggingface.co/unsloth/gemma-4-E4B-it-qat-GGUF/resolve/8c5a9e4fd5482e2be20fe0bf013b4c262a8f4265/mmproj-F16.gguf',
     sha256: '6a255159ee4b01b304f633a57f017dd7d5a69d30fff52abb2614bf0813cef034',
     sizeBytes: 990372672,
+  ),
+  'qwen35-9b-q4km': VisionProjector(
+    fileName: 'Qwen3.5-9B-mmproj-F16.gguf',
+    downloadUrl:
+        'https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/mmproj-F16.gguf',
+    sha256: 'f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f',
+    sizeBytes: 918166080,
+  ),
+  'gemma4-26b-a4b-qat': VisionProjector(
+    fileName: 'gemma-4-26B-A4B-mmproj-F16.gguf',
+    downloadUrl:
+        'https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF/resolve/7b92b5b28818151e8669af2e45e88d6086f490dd/mmproj-F16.gguf',
+    sha256: 'd00f211a7d4f7fb19bd9b75d8e9342eccffb5920b08fd9562167560fdfcc5dd1',
+    sizeBytes: 1193058784,
+  ),
+  'bonsai2-9b-q2_0': VisionProjector(
+    fileName: 'Ternary-Bonsai-2-9B-mmproj-Q8_0.gguf',
+    downloadUrl:
+        'https://huggingface.co/prism-ml/Ternary-Bonsai-2-9B-gguf/resolve/5b2abb02362efbed46bbe204014b02837778b2c2/Ternary-Bonsai-2-9B-mmproj-Q8_0.gguf',
+    sha256: 'e0cb6f6988cea323ef798cd77d019bbb819af75582f034eaab0e7232314953db',
+    sizeBytes: 624229664,
+  ),
+  'bonsai2-27b-ptq1_0': VisionProjector(
+    fileName: 'Ternary-Bonsai-2-27B-mmproj-Q8_0.gguf',
+    downloadUrl:
+        'https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf/resolve/b072e1d3b35a0a630cece372c2127528e0994386/Ternary-Bonsai-2-27B-mmproj-Q8_0.gguf',
+    sha256: '6807ede61d570bb86ba34b756a0fa109edc33668604de867c6ea6d8f1d631903',
+    sizeBytes: 629246976,
   ),
 };
 
@@ -154,6 +171,41 @@ const supportCheckModel = VisionProjector(
 );
 
 const catalogMeta = <String, CatalogMeta>{
+  'diffusiongemma-26b-a4b-q4km': CatalogMeta(
+    parameterCountB: 26,
+    reasoning: false,
+    minRamGb: 24,
+    blurb:
+        'Writes by diffusion, whole blocks at a time. Text only. Windows desktop with CPU experts.',
+  ),
+  'qwen35-9b-q4km': CatalogMeta(
+    parameterCountB: 9,
+    reasoning: true,
+    minRamGb: 12,
+    blurb:
+        'Qwen3.5 9B: the strongest dense model that fits an 8 GB graphics card. Sees photos.',
+  ),
+  'gemma4-26b-a4b-qat': CatalogMeta(
+    parameterCountB: 26,
+    reasoning: true,
+    minRamGb: 24,
+    blurb:
+        'Google Gemma 4 26B, a mixture of experts with 4B active: big-model answers at small-model speed. Experts that do not fit the graphics card stay in RAM.',
+  ),
+  'bonsai2-9b-q2_0': CatalogMeta(
+    parameterCountB: 9,
+    reasoning: true,
+    minRamGb: 4,
+    blurb:
+        'Ternary Bonsai 2 9B from PrismML: 9B quality in 2.6 GB, very fast. Sees photos.',
+  ),
+  'bonsai2-27b-ptq1_0': CatalogMeta(
+    parameterCountB: 27,
+    reasoning: true,
+    minRamGb: 8,
+    blurb:
+        'Ternary Bonsai 2 27B from PrismML: a 27B model in 5.9 GB, whole on an 8 GB graphics card. Sees photos.',
+  ),
   'lfm25-2.6b-q4km': CatalogMeta(
     parameterCountB: 2.6,
     reasoning: false,
@@ -178,7 +230,8 @@ const catalogMeta = <String, CatalogMeta>{
     parameterCountB: 4,
     reasoning: true,
     minRamGb: 8,
-    blurb: 'Google Gemma 4, effective 4B. Highest quality; needs RAM.',
+    blurb:
+        'Google Gemma 4, effective 4B. Highest quality; needs RAM. Sees photos.',
   ),
   'gemma4-e2b-qat': CatalogMeta(
     parameterCountB: 2,
@@ -208,6 +261,20 @@ const catalogMeta = <String, CatalogMeta>{
         'Qwen3 generation, dense. Measured as more precise than Qwen3.5 2B; 40k context, plain KV cache so turns stay resident.',
   ),
 };
+
+/// Gemma 4 E4B, in both the phone and the desktop lists.
+const gemma4E4b = ModelInfo(
+  id: 'gemma4-e4b-qat',
+  displayName: 'Gemma 4 E4B',
+  fileName: 'gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf',
+  downloadUrl:
+      'https://huggingface.co/unsloth/gemma-4-E4B-it-qat-GGUF/resolve/8c5a9e4fd5482e2be20fe0bf013b4c262a8f4265/gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf',
+  sha256: 'df0fd4ee07072c607c29a0a1cb4f98918426cca12f45a2776bdd6ee6d09a4de3',
+  sizeBytes: 4215695776,
+  family: ModelFamily.gemma,
+  quantization: ModelQuantization.q4_k_m,
+  license: 'Apache-2.0',
+);
 
 // Every entry pins an immutable Hugging Face revision and the publisher's LFS
 // SHA-256 (Hub API, checked 2026-09-19). All repositories are ungated and
@@ -247,18 +314,7 @@ const bundledCatalog = <ModelInfo>[
     quantization: ModelQuantization.iq4_nl,
     license: 'Apache-2.0',
   ),
-  ModelInfo(
-    id: 'gemma4-e4b-qat',
-    displayName: 'Gemma 4 E4B',
-    fileName: 'gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf',
-    downloadUrl:
-        'https://huggingface.co/unsloth/gemma-4-E4B-it-qat-GGUF/resolve/8c5a9e4fd5482e2be20fe0bf013b4c262a8f4265/gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf',
-    sha256: 'df0fd4ee07072c607c29a0a1cb4f98918426cca12f45a2776bdd6ee6d09a4de3',
-    sizeBytes: 4215695776,
-    family: ModelFamily.gemma,
-    quantization: ModelQuantization.q4_k_m,
-    license: 'Apache-2.0',
-  ),
+  gemma4E4b,
   ModelInfo(
     id: 'gemma4-e2b-qat',
     displayName: 'Gemma 4 E2B',
@@ -320,4 +376,90 @@ const retiredCatalogIds = {
   // enough; LFM2.5 2.6B was an experiment).
   'lfm25-2.6b-q4km',
   'smollm3-3b-iq4nl',
+  // 2026-10-28: the desktop keeps strong models only (owner).
+  'bonsai2-2b-q2_0',
+  'bonsai2-4b-q2_0',
 };
+
+// The desktop list (owner, 2026-10-28): a laptop has far more power than a
+// phone, so it offers strong models only, none of the small phone ones.
+// Sizes and hashes from the Hub API, 2026-10-28, pinned to the revision.
+// Bonsai 2 (PrismML) are Qwen3.5-architecture models trained to ternary
+// weights. The 9B's Q2_0 is llama.cpp's own 2-bit type; the 27B is published
+// only as PTQ1_0/PQ2_0, which need native/patches/bonsai-ternary.patch
+// (65/65 layers on an 8 GB RTX 3070, 11.7 tok/s decode). Gemma 4 26B-A4B is
+// a mixture of experts: the bridge's fit keeps the experts that do not fit
+// the card in RAM.
+const desktopCatalog = <ModelInfo>[
+  ModelInfo(
+    id: 'diffusiongemma-26b-a4b-q4km',
+    displayName: 'DiffusionGemma 26B A4B',
+    fileName: 'diffusiongemma-26B-A4B-it-Q4_K_M.gguf',
+    downloadUrl:
+        'https://huggingface.co/unsloth/diffusiongemma-26B-A4B-it-GGUF/resolve/f4183a2c7a354128d02545752303c4354d165bf0/diffusiongemma-26B-A4B-it-Q4_K_M.gguf',
+    sha256: '24523b6c833c9ce9f5f34f9b333ab1517d73d6f1e76a103645353114c8028bc5',
+    sizeBytes: 16806810208,
+    parameterCountB: 26,
+    family: ModelFamily.gemma,
+    quantization: ModelQuantization.q4_k_m,
+    license: 'Gemma',
+  ),
+  ModelInfo(
+    id: 'qwen35-9b-q4km',
+    displayName: 'Qwen3.5 9B',
+    fileName: 'Qwen3.5-9B-Q4_K_M.gguf',
+    downloadUrl:
+        'https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-Q4_K_M.gguf',
+    sha256: '03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8',
+    sizeBytes: 5680522464,
+    parameterCountB: 9,
+    family: ModelFamily.qwen,
+    quantization: ModelQuantization.q4_k_m,
+    license: 'Apache-2.0',
+  ),
+  gemma4E4b,
+  ModelInfo(
+    id: 'gemma4-26b-a4b-qat',
+    displayName: 'Gemma 4 26B',
+    fileName: 'gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf',
+    downloadUrl:
+        'https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF/resolve/7b92b5b28818151e8669af2e45e88d6086f490dd/gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf',
+    sha256: 'a7c5bc715f5ff8e99a3e8901ce7d2b42b402c669bf24f7c5250747633d0f5891',
+    sizeBytes: 14249047104,
+    parameterCountB: 26,
+    family: ModelFamily.gemma,
+    quantization: ModelQuantization.q4_k_m,
+    license: 'Apache-2.0',
+  ),
+  ModelInfo(
+    id: 'bonsai2-9b-q2_0',
+    displayName: 'Bonsai 2 9B',
+    fileName: 'Ternary-Bonsai-2-9B-Q2_0.gguf',
+    downloadUrl:
+        'https://huggingface.co/prism-ml/Ternary-Bonsai-2-9B-gguf/resolve/5b2abb02362efbed46bbe204014b02837778b2c2/Ternary-Bonsai-2-9B-Q2_0.gguf',
+    sha256: '1f884aa56aacd2bbbb2e4b7abaead2b1102b74a9c75a23fc33dab916813a384d',
+    sizeBytes: 2556640128,
+    parameterCountB: 9,
+    family: ModelFamily.qwen,
+    quantization: ModelQuantization.q2_0,
+    license: 'Apache-2.0',
+  ),
+  ModelInfo(
+    id: 'bonsai2-27b-ptq1_0',
+    displayName: 'Bonsai 2 27B',
+    fileName: 'Ternary-Bonsai-2-27B-PTQ1_0.gguf',
+    downloadUrl:
+        'https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf/resolve/b072e1d3b35a0a630cece372c2127528e0994386/Ternary-Bonsai-2-27B-PTQ1_0.gguf',
+    sha256: '53107f530aa52eb00912263ab1ee29bd199261c87cd7b4ad4ca1318c1fe33ee3',
+    sizeBytes: 5946648928,
+    parameterCountB: 27,
+    family: ModelFamily.qwen,
+    quantization: ModelQuantization.ptq1_0,
+    license: 'Apache-2.0',
+  ),
+];
+
+/// The catalog this device offers: the phone list, or [desktopCatalog] alone
+/// on the desktop.
+List<ModelInfo> get catalogModels =>
+    DesktopHost.active ? desktopCatalog : bundledCatalog;

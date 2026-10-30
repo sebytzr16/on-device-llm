@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 
 import '../../features/models/domain/entities/model_info.dart';
+import '../storage/gguf_split.dart';
 
 /// A GGUF repository as the Hub search lists it (FX-12).
 class HfRepo {
@@ -25,18 +26,11 @@ class HfFile {
   final int size;
   const HfFile({required this.name, required this.size, required this.sha256});
 
-  ModelQuantization get quantization {
-    final lower = name.toLowerCase();
-    return ModelQuantization.values
-            .where((q) => lower.contains(q.name))
-            .firstOrNull ??
-        (lower.contains('f16') || lower.contains('bf16')
-            ? ModelQuantization.fp16
-            : ModelQuantization.q4_k_m);
-  }
+  ModelQuantization get quantization => ModelQuantization.of(name);
 
   bool get isProjector => name.toLowerCase().contains('mmproj');
-  bool get isSplit => RegExp(r'-\d{5}-of-\d{5}\.gguf$').hasMatch(name);
+  bool get isSplit => GgufSplit.parse(name) != null;
+  String get displayName => GgufSplit.parse(name)?.displayName ?? name;
 }
 
 /// A repository's revision pin and its GGUF files.
@@ -49,6 +43,28 @@ class HfRepoFiles {
     required this.license,
     required this.files,
   });
+
+  /// One choice per complete set. Incomplete sets cannot be loaded.
+  List<HfFile> get models => files.where((f) {
+    if (f.isProjector) return false;
+    final split = GgufSplit.parse(f.name);
+    return split == null ||
+        (split.index == 1 &&
+            split.names.every((name) => files.any((f) => f.name == name)));
+  }).toList()..sort((a, b) => totalSize(a).compareTo(totalSize(b)));
+
+  List<HfFile> partsFor(HfFile file) {
+    final split = GgufSplit.parse(file.name);
+    if (split == null) return [file];
+    return [
+      for (final name in split.names)
+        files.where((f) => f.name == name).firstOrNull ??
+            (throw FormatException('Missing split GGUF part: $name.')),
+    ];
+  }
+
+  int totalSize(HfFile file) =>
+      partsFor(file).fold(0, (sum, f) => sum + f.size);
 }
 
 class HuggingFace {
@@ -72,6 +88,7 @@ class HuggingFace {
           'sort': 'downloads',
           'direction': -1,
           'limit': limit,
+          'full': true,
         },
       );
       return [
@@ -95,10 +112,10 @@ class HuggingFace {
     }
   }
 
-  /// The GGUF files of [repo] at its current revision, projectors and split
-  /// files listed but flagged. Gated repositories fail with a clear message.
-  static Future<HfRepoFiles> files(String repo) async {
-    final dio = _dio();
+  /// Hub `siblings` contains every file, including nested repository paths.
+  /// Gated repositories fail with a clear message.
+  static Future<HfRepoFiles> files(String repo, {Dio? client}) async {
+    final dio = client ?? _dio();
     try {
       final res = await dio.get<Map<String, dynamic>>(
         'https://huggingface.co/api/models/$repo',
@@ -133,7 +150,7 @@ class HuggingFace {
         'Cannot read this repository (${e.response?.statusCode ?? 'network error'}).',
       );
     } finally {
-      dio.close();
+      if (client == null) dio.close();
     }
   }
 
@@ -190,43 +207,97 @@ class HuggingFace {
   /// Family for the template fallback, guessed from the repository name.
   static ModelFamily guessFamily(String repo) {
     final r = repo.toLowerCase();
+    // A distill speaks its teacher's prompt (DeepSeek-R1-Distill-Qwen), and
+    // "phi" must start a word ("dolphin-mistral" is Mistral).
+    if (r.contains('deepseek')) return ModelFamily.deepseek;
     if (r.contains('qwen')) return ModelFamily.qwen;
     if (r.contains('gemma')) return ModelFamily.gemma;
     if (r.contains('llama')) return ModelFamily.llama;
-    if (r.contains('phi')) return ModelFamily.phi;
     if (r.contains('mistral') || r.contains('mixtral')) {
       return ModelFamily.mistral;
     }
-    if (r.contains('deepseek')) return ModelFamily.deepseek;
+    if (RegExp(r'(^|[^a-z])phi').hasMatch(r)) return ModelFamily.phi;
     return ModelFamily.other;
   }
 
-  /// A catalog entry for [file] of [repo], pinned to [revision].
-  static ModelInfo modelFor(HfRepoFiles repo, HfFile file, ModelFamily family) {
+  /// Prefer half precision projectors, then the smallest verified single file.
+  static HfFile? selectProjector(Iterable<HfFile> files) {
+    final candidates = files.where((f) => f.isProjector && !f.isSplit).toList();
+    int rank(HfFile f) {
+      final name = f.name.toUpperCase();
+      if (RegExp(r'(^|[^A-Z0-9])(F16|FP16)([^A-Z0-9]|$)').hasMatch(name)) {
+        return 0;
+      }
+      if (name.contains('BF16')) return 1;
+      return 2;
+    }
+
+    candidates.sort((a, b) {
+      final order = rank(a).compareTo(rank(b));
+      return order == 0 ? a.size.compareTo(b.size) : order;
+    });
+    return candidates.firstOrNull;
+  }
+
+  /// A catalog entry for [selected] at the repository's pinned revision.
+  static ModelInfo modelFor(
+    HfRepoFiles repo,
+    HfFile selected,
+    ModelFamily family, {
+    bool includeProjector = true,
+  }) {
+    final files = repo.partsFor(selected);
+    final file = files.first;
     final id = sha256
         .convert(utf8.encode('${repo.repo}/${file.name}/${file.sha256}'))
         .toString()
         .substring(0, 16);
     final base = file.name.split('/').last;
+    String url(HfFile f) => Uri(
+      scheme: 'https',
+      host: 'huggingface.co',
+      pathSegments: [
+        ...repo.repo.split('/'),
+        'resolve',
+        repo.revision,
+        ...f.name.split('/'),
+      ],
+    ).toString();
+    final projectorFile = includeProjector && !file.isProjector
+        ? selectProjector(repo.files)
+        : null;
+    final projector = projectorFile == null
+        ? null
+        : modelFor(repo, projectorFile, family, includeProjector: false);
     return ModelInfo(
+      parts: file.isSplit
+          ? [
+              for (final f in files)
+                ModelDownloadPart(
+                  fileName: '$id-${f.name.split('/').last}',
+                  downloadUrl: url(f),
+                  sha256: f.sha256,
+                  sizeBytes: f.size,
+                ),
+            ]
+          : const [],
+      projector: projector == null
+          ? null
+          : VisionProjector(
+              fileName: projector.fileName,
+              downloadUrl: projector.downloadUrl!,
+              sha256: projector.sha256!,
+              sizeBytes: projector.sizeBytes,
+            ),
       id: 'hf-$id',
-      displayName: base.replaceAll('.gguf', ''),
+      displayName: ModelQuantization.tidyName(file.displayName),
       fileName: '$id-$base',
-      sizeBytes: file.size,
+      sizeBytes: repo.totalSize(file),
       family: family,
       quantization: file.quantization,
       sha256: file.sha256,
       license: repo.license,
-      downloadUrl: Uri(
-        scheme: 'https',
-        host: 'huggingface.co',
-        pathSegments: [
-          ...repo.repo.split('/'),
-          'resolve',
-          repo.revision,
-          ...file.name.split('/'),
-        ],
-      ).toString(),
+      downloadUrl: url(file),
     );
   }
 
@@ -245,11 +316,6 @@ class HuggingFace {
         !parts.last.toLowerCase().endsWith('.gguf')) {
       throw const FormatException(
         'Open a GGUF file under Files and versions, then paste its link.',
-      );
-    }
-    if (RegExp(r'-\d{5}-of-\d{5}\.gguf$').hasMatch(parts.last)) {
-      throw const FormatException(
-        'Split GGUF downloads are not yet supported. Choose a single-file model.',
       );
     }
     final repo = await files('${parts[0]}/${parts[1]}');

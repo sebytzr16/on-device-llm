@@ -64,6 +64,10 @@ class ToolRunner {
   /// Only the phone actions (the other tools are off in Settings).
   final bool actionsOnly;
 
+  /// Desktop host tools retain their own live permission gate.
+  final List<ToolSpec> externalTools;
+  final Future<ToolResult> Function(ToolCall)? externalRun;
+
   /// Everything the tools read this turn, in first-seen order; the chat
   /// stores it with the answer as the Sources bubble.
   final List<SearchResult> sources = [];
@@ -85,6 +89,8 @@ class ToolRunner {
     this.recall,
     this.phoneActions = false,
     this.actionsOnly = false,
+    this.externalTools = const [],
+    this.externalRun,
   });
 
   /// Evidence already in the prompt (pipeline pages, recalled pages,
@@ -115,6 +121,7 @@ class ToolRunner {
       : _allSpecs();
 
   List<ToolSpec> _allSpecs() => [
+    ...externalTools,
     if (recall != null)
       const ToolSpec(
         name: 'recall',
@@ -229,6 +236,13 @@ class ToolRunner {
   Future<ToolResult> run(ToolCall call) async {
     // `web_search`, `open_url`, an argument called `q`…: what the model
     // clearly meant is run (ToolAliases).
+    // MCP names and argument keys must remain byte-for-byte intact.
+    if (externalTools.any((t) => t.name == call.name) && externalRun != null) {
+      ++_callCount;
+      final result = await externalRun!(call);
+      trace.add(result);
+      return result;
+    }
     call = ToolAliases.normalize(call);
     final clock = Stopwatch()..start();
     ++_callCount;
@@ -945,7 +959,11 @@ class TextToolProtocol {
         ToolCall(
           id: out.isEmpty ? 'call_$counter' : 'call_${counter}_${out.length}',
           name: tool,
-          arguments: jsonEncode(ToolAliases.args(tool, raw)),
+          arguments: ToolAliases.known(tool)
+              ? jsonEncode(ToolAliases.args(tool, raw))
+              : raw is String
+              ? raw
+              : jsonEncode(raw ?? const {}),
         ),
       );
       if (out.length == 3) break;
