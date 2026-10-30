@@ -18,6 +18,7 @@ import 'package:ondevice_llm/features/settings/presentation/providers/model_prof
 import 'package:ondevice_llm/features/settings/presentation/providers/settings_provider.dart';
 import 'package:ondevice_llm/inference/engine/llama_engine.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path/path.dart' as p;
 
 import 'advanced_pages_2_test.dart' show TestSettings, TestModels, testModel;
 
@@ -101,7 +102,8 @@ void main() {
   });
 
   test('MTP head files are recognised by name, hub prefix or not', () {
-    expect(isMtpHeadFile(r'C:\m\mtp-gemma-4-E4B-it-Q8_0.gguf'), isTrue);
+    // Built with the host's separator: on Linux a backslash is part of the name.
+    expect(isMtpHeadFile(p.join('m', 'mtp-gemma-4-E4B-it-Q8_0.gguf')), isTrue);
     expect(isMtpHeadFile('/m/0123456789abcdef-MTP-gemma.gguf'), isTrue);
     expect(isMtpHeadFile('/m/gemma-4-E4B-mtp.gguf'), isFalse);
     expect(isMtpHeadFile('/m/mtp-notes.txt'), isFalse);
