@@ -113,13 +113,21 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   if (media_import_ && media_import_->HandleMessage(message)) return 0;
   if (voice_audio_ && voice_audio_->HandleMessage(message, wparam, lparam))
     return 0;
-  if (message == WM_CLOSE) SavePlacement();
+  // A shutdown, logoff or the installer's Restart Manager sends no
+  // WM_CLOSE, so placement is also saved then and once a move or maximize
+  // settles (P3-32).
+  if (message == WM_CLOSE || (message == WM_ENDSESSION && wparam)) {
+    SavePlacement();
+  }
   if (message == WM_MOVE || message == WM_DPICHANGED ||
-      message == WM_DISPLAYCHANGE || message == WM_EXITSIZEMOVE) {
+      message == WM_DISPLAYCHANGE || message == WM_EXITSIZEMOVE ||
+      (message == WM_SIZE &&
+       (wparam == SIZE_MAXIMIZED || wparam == SIZE_RESTORED))) {
     SetTimer(hwnd, kDisplaySettledTimer, 150, nullptr);
   }
   if (message == WM_TIMER && wparam == kDisplaySettledTimer) {
     KillTimer(hwnd, kDisplaySettledTimer);
+    if (IsWindowVisible(hwnd) && !IsIconic(hwnd)) SavePlacement();
     const int rate = RefreshRateForWindow(hwnd);
     if (display_ready_ && desktop_channel_ && rate != last_refresh_rate_) {
       last_refresh_rate_ = rate;

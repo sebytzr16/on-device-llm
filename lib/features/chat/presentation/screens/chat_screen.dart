@@ -1,3 +1,4 @@
+import '../../../shortcuts/presentation/chat_slash_actions.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -22,6 +23,9 @@ import '../../../attachments/data/attachment_store.dart';
 import '../../../attachments/domain/attachment.dart';
 import '../../../attachments/presentation/attachment_picker.dart';
 import '../../../tools/presentation/tools_quick_panel.dart';
+import '../../../helper/helper_live_panel.dart';
+import '../../../helper/helper_web_approval.dart';
+import '../../../helper/agent_web_approval_card.dart';
 import '../../../goals/goal_specialization.dart';
 import '../../../goals/presentation/goals_page.dart';
 import '../../../knowledge/knowledge_store.dart';
@@ -34,7 +38,6 @@ import '../../../models/presentation/providers/model_recommendations_provider.da
 import '../../../models/presentation/providers/retired_model_names.dart';
 import '../../../presets/presentation/providers/presets_provider.dart';
 import '../../../settings/presentation/providers/effective_settings_provider.dart';
-import '../../../shortcuts/domain/prompt_shortcut.dart';
 import '../../../shortcuts/prompt_shortcuts_provider.dart';
 import '../../../settings/presentation/providers/model_profiles_provider.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
@@ -260,6 +263,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     } else {
       _atBottom = m.extentAfter < 48;
     }
+    // Folding a long reasoning shortens the chat without a scroll: the jump
+    // button stayed up with nothing under it (owner's phone, 2026-11-01).
+    final away = m.extentAfter > 400;
+    if (away != _awayFromBottom) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _onScroll();
+      });
+    }
     return false;
   }
 
@@ -434,7 +445,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         await _newChat();
       }
       if (share.launch == 'voice') {
-        unawaited(_openConversation());
+        unawaited(_openConversation(listen: share.launchTrusted));
       } else {
         _inputFocus.requestFocus();
       }
@@ -512,7 +523,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   /// Conversation mode: a full-screen voice chat in a new chat, saved like
   /// any other.
-  Future<void> _openConversation() async {
+  Future<void> _openConversation({bool listen = true}) async {
     AppHaptics.tick();
     final chat = ref.read(chatProvider);
     if (!chat.isGenerating && chat.messages.isNotEmpty) await _newChat();
@@ -521,7 +532,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       context,
       MaterialPageRoute<void>(
         fullscreenDialog: true,
-        builder: (_) => const ConversationScreen(),
+        builder: (_) => ConversationScreen(listen: listen),
       ),
     );
   }
@@ -529,13 +540,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Future<void> _send() async {
     if (ref.read(chatProvider).isGenerating) return;
     final text = _input.text;
+    if (isChatAction(text)) {
+      _input.clear();
+      await runChatAction(context, ref, text, export: _exportSheet);
+      return;
+    }
     final attachments = List<Attachment>.of(_pending);
     if (text.trim().isEmpty && attachments.isEmpty) return;
     // "/summarize …" goes out as the saved prompt with the text in it.
-    final shortcut = PromptShortcut.apply(
+    final shortcut = expandChatShortcut(
       text,
       ref.read(promptShortcutsProvider),
       lang: Localizations.localeOf(context).languageCode,
+      messages: ref.read(chatProvider).messages,
     );
     _input.clear();
     setState(_pending.clear);
@@ -851,6 +868,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       drawer: const Drawer(child: ConversationsSheet()),
       body: Column(
         children: [
+          if (ref.watch(agentWebQuestionsProvider)[state.chatId]
+              case final question? when !question.answer.isCompleted)
+            AgentWebApprovalCard(
+              onAnswer: (allow) => ref
+                  .read(agentWebApprovalProvider)
+                  .answer(state.chatId!, allow),
+            ),
           Expanded(
             // The welcome blurs away as the first question arrives, and
             // comes back the same way for a new chat.
@@ -917,6 +941,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                         scaleAlignment: Alignment.bottomRight,
                                         child: ChatBubble(
                                           message: m,
+                                          helperChip: HelperUsedChip(
+                                            messageId: m.id,
+                                          ),
                                           onDelete:
                                               !busy &&
                                                   !m.isSuperseded &&
@@ -1056,6 +1083,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             child: state.error != null
                 ? _ErrorBanner(state.error!, key: ValueKey(state.error))
                 : null,
+          ),
+          // Reserve space above the composer so agents never cover messages.
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: AppDesign.md),
+            child: HelperLivePanel(),
           ),
           ChatComposer(
             controller: _input,

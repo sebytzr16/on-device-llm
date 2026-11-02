@@ -30,3 +30,9 @@ AppLocalizations stringsFor(String code) {
       ? lookupAppLocalizations(Locale(lang))
       : AppLocalizationsEn();
 }
+
+/// The Settings language, kept current by the app shells, for code that has
+/// no [BuildContext] or settings at hand (engine and remote errors).
+String appLanguageCode = '';
+
+AppLocalizations get appStrings => stringsFor(appLanguageCode);

@@ -38,6 +38,12 @@ static std::string without_partial_utf8(std::string s) {
 static std::string visible(const llama_vocab * vocab, const std::vector<llama_token> & tokens) {
     std::string text = common_detokenize(vocab, tokens, false);
     const auto thought = text.find("<|channel>thought");
+    // A thought channel that opens after visible text ends the visible
+    // part instead of hiding what was already committed (P3-17).
+    if (thought != std::string::npos &&
+        text.find_first_not_of(" \t\r\n") < thought) {
+        return without_partial_utf8(text.substr(0, thought));
+    }
     if (thought != std::string::npos) {
         const auto end = text.find("<channel|>", thought);
         return end == std::string::npos ? "" : without_partial_utf8(text.substr(end + 10));

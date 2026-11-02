@@ -74,6 +74,7 @@ OD_SD_API uint8_t* od_sd_upscale(od_sd_ctx_t* ctx,
     int32_t* out_height);
 
 OD_SD_API void    od_sd_free_image(uint8_t* image);
+OD_SD_API void    od_sd_reset_cancel(od_sd_ctx_t* ctx);
 OD_SD_API void    od_sd_cancel(od_sd_ctx_t* ctx);
 OD_SD_API int32_t od_sd_version(void);
 

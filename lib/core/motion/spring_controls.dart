@@ -79,8 +79,8 @@ class _SpringSwitchState extends State<SpringSwitch>
               size: const Size(52, 32),
               painter: _SwitchPainter(
                 position: _position.value,
-                speed: _position.velocity,
-                press: _press.value,
+                speed: context.motion.full ? _position.velocity : 0,
+                press: context.motion.full ? _press.value : 0,
                 onTrack: c.accent,
                 offTrack: c.surfaceRaised,
                 outline: c.hairlineStrong,
@@ -218,7 +218,7 @@ class _RubberBandState extends State<RubberBand>
   }
 
   void _move(PointerMoveEvent e) {
-    if (!_down || !context.motion.animates) return;
+    if (!_down || !context.motion.full) return;
     final box = context.findRenderObject();
     if (box is! RenderBox) return;
     final x = box.globalToLocal(e.position).dx;

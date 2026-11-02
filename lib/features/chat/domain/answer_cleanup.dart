@@ -10,6 +10,10 @@ class AnswerCleanup {
   static bool isRepeating(String answer) {
     final paragraphs = _paragraphs(answer);
     if (paragraphs.length < 2) return false;
+    // Code is never cut: a repeated block there is usually intended.
+    if ('```'.allMatches(answer).length.isOdd || _isCode(paragraphs.last)) {
+      return false;
+    }
     return _repeats(
       paragraphs.last,
       paragraphs.sublist(0, paragraphs.length - 1),
@@ -73,8 +77,14 @@ class AnswerCleanup {
     final paragraphs = _paragraphs(answer);
     if (paragraphs.length < 2) return answer;
     final kept = <String>[];
+    var inFence = false;
     for (final p in paragraphs) {
-      if (kept.isNotEmpty && _repeats(p, kept, minChars: 80)) continue;
+      final fences = '```'.allMatches(p).length;
+      final code = inFence || fences > 0 || _isCode(p);
+      if (fences.isOdd) inFence = !inFence;
+      if (!code && kept.isNotEmpty && _repeats(p, kept, minChars: 80)) {
+        continue;
+      }
       kept.add(p);
     }
     if (kept.length == paragraphs.length) return answer;
@@ -412,6 +422,9 @@ class AnswerCleanup {
   static List<String> _paragraphs(String s) =>
       s.split(RegExp(r'\n\s*\n')).where((p) => p.trim().isNotEmpty).toList();
 
+  /// Near-exact repeats only (audit P2-38): a paragraph that brings a figure
+  /// the earlier text lacks, or says "not" where its closest earlier
+  /// paragraph does not (or the reverse), is a correction and is kept.
   static bool _repeats(
     String paragraph,
     List<String> before, {
@@ -421,10 +434,38 @@ class AnswerCleanup {
     if (text.length < minChars) return false;
     final shingles = _shingles(text);
     if (shingles.length < 8) return false;
-    final earlier = _shingles(_normalize(before.join(' '))).toSet();
+    final earlierText = _normalize(before.join(' '));
+    final earlier = _shingles(earlierText).toSet();
     final seen = shingles.where(earlier.contains).length;
-    return seen / shingles.length >= 0.8;
+    if (seen / shingles.length < 0.9) return false;
+    final known = _figure.allMatches(earlierText).map((m) => m[0]).toSet();
+    if (!_figure.allMatches(text).every((m) => known.contains(m[0]))) {
+      return false;
+    }
+    String? closest;
+    var best = -1;
+    for (final b in before) {
+      final own = _shingles(_normalize(b)).toSet();
+      final n = shingles.where(own.contains).length;
+      if (n > best) (best, closest) = (n, b);
+    }
+    return _negations(paragraph) == _negations(closest ?? '');
   }
+
+  static final _figure = RegExp(r'\d+');
+
+  /// Negation words in English, French or Spanish.
+  static int _negations(String s) => RegExp(
+    r"\b(?:not|no|never|none|without|cannot|\w+n['’]t|ne|pas|jamais|sans|"
+    r'aucun|aucune|sin|nunca|ningún|ninguna|tampoco)\b',
+    caseSensitive: false,
+    unicode: true,
+  ).allMatches(s).length;
+
+  /// A paragraph of indented code (four spaces or a tab on every line).
+  static bool _isCode(String p) => p
+      .split('\n')
+      .every((l) => l.trim().isEmpty || l.startsWith(RegExp(r'    |\t')));
 
   static String _normalize(String s) => s
       .toLowerCase()

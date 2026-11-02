@@ -52,11 +52,17 @@ class _SpringEntranceState extends State<SpringEntrance>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_started || !_animates) return;
-    _started = true;
     final motion = context.motion;
     if (!motion.animates) {
+      _t.stop();
       _t.value = 1;
+      _started = true;
+      return;
+    }
+    if (_started || !_animates) return;
+    _started = true;
+    if (!motion.full) {
+      _t.springTo(1, motion.spring);
       return;
     }
     unawaited(
@@ -80,6 +86,7 @@ class _SpringEntranceState extends State<SpringEntrance>
   @override
   Widget build(BuildContext context) {
     if (!_animates) return widget.child;
+    final full = context.motion.full;
     // One structure from start to rest (identity transforms cost nothing),
     // so the child keeps its state when the entrance ends.
     return AnimatedBuilder(
@@ -89,9 +96,9 @@ class _SpringEntranceState extends State<SpringEntrance>
         return Opacity(
           opacity: t.clamp(0.0, 1.0),
           child: Transform.translate(
-            offset: widget.from * (1 - t),
+            offset: (full ? widget.from : const Offset(0, 6)) * (1 - t),
             child: Transform.scale(
-              scale: widget.fromScale + (1 - widget.fromScale) * t,
+              scale: full ? widget.fromScale + (1 - widget.fromScale) * t : 1,
               alignment: widget.scaleAlignment,
               child: child,
             ),

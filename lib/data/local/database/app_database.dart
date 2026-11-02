@@ -304,24 +304,35 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
-  /// Every indexed passage of [collection] with its vector, for the
-  /// in-memory cosine scan (collections are phone-sized, not corpora).
-  Future<List<KnowledgeChunk>> knowledgeVectors(
-    String collection,
+  /// Id, document and vector of every indexed passage of [docIds], for the
+  /// in-memory cosine scan. The text stays behind (audit P2-11): only the
+  /// winners are read, by [knowledgeChunksByIds].
+  Future<List<(String, String, Uint8List)>> knowledgeVectors(
+    Iterable<String> docIds,
     String model,
   ) async {
-    final ids = [
-      for (final d in await knowledgeDocsIn(collection))
-        if (d.active) d.id,
-    ];
+    final ids = docIds.toList();
     if (ids.isEmpty) return const [];
-    return (select(knowledgeChunks)..where(
-          (t) =>
-              t.docId.isIn(ids) &
-              t.embedding.isNotNull() &
-              t.embeddingModel.equals(model),
-        ))
-        .get();
+    final c = knowledgeChunks;
+    final rows =
+        await (selectOnly(c)
+              ..addColumns([c.id, c.docId, c.embedding])
+              ..where(
+                c.docId.isIn(ids) &
+                    c.embedding.isNotNull() &
+                    c.embeddingModel.equals(model),
+              ))
+            .get();
+    return [
+      for (final r in rows)
+        (r.read(c.id)!, r.read(c.docId)!, r.read(c.embedding)!),
+    ];
+  }
+
+  Future<List<KnowledgeChunk>> knowledgeChunksByIds(Iterable<String> ids) {
+    final list = ids.toList();
+    if (list.isEmpty) return Future.value(const []);
+    return (select(knowledgeChunks)..where((t) => t.id.isIn(list))).get();
   }
 
   Future<void> deleteKnowledgeCollection(String collection) => (delete(

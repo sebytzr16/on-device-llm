@@ -145,6 +145,33 @@ void main() {
     },
   );
 
+  test(
+    'capabilities come from the template and positive pooling metadata',
+    () async {
+      for (final pooling in [0, 1]) {
+        final out = BytesBuilder()..add(ascii.encode('GGUF'));
+        _u32(out, 3);
+        _u64(out, 0);
+        _u64(out, 3);
+        _kvString(out, 'general.architecture', 'qwen35');
+        _kvString(
+          out,
+          'tokenizer.chat_template',
+          '{% if tools is defined %}<tool_call>{% endif %}<think>',
+        );
+        _kvUint32(out, 'qwen35.pooling_type', pooling);
+        final dir = await Directory.systemTemp.createTemp('gguf-capabilities-');
+        addTearDown(() => dir.delete(recursive: true));
+        final file = File('${dir.path}/model.gguf');
+        await file.writeAsBytes(out.takeBytes());
+        final metadata = await GgufMetadata.inspect(file.path);
+        expect(metadata.supportsTools, isTrue);
+        expect(metadata.supportsThinking, isTrue);
+        expect(metadata.isEmbedding, pooling > 0);
+      }
+    },
+  );
+
   test('unsafe declared metadata sizes are rejected', () async {
     final out = BytesBuilder()..add(ascii.encode('GGUF'));
     _u32(out, 3);

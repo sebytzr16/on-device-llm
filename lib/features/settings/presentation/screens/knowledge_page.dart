@@ -23,6 +23,7 @@ import '../widgets/settings_widgets.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/design/app_dialog.dart';
+import '../../../../core/platform/form_factor.dart';
 
 /// Settings > Knowledge library (FX-02): collections of documents whose
 /// passages are retrieved for every question while a collection is active.
@@ -46,6 +47,7 @@ class _KnowledgePageState extends ConsumerState<KnowledgePage> {
   );
 
   Future<void> _addFiles(String collection) async {
+    final t = context.l10n;
     final files = await FilePicker.pickFiles(type: FileType.any);
     if (files.isEmpty || !mounted) return;
     setState(() => _importing = true);
@@ -56,11 +58,11 @@ class _KnowledgePageState extends ConsumerState<KnowledgePage> {
       if (_scanCancelled || !mounted) break;
       try {
         if ((await f.length() ?? 0) > AttachmentStore.maxDocumentBytes) {
-          throw const FormatException('File is larger than 64 MB.');
+          throw FormatException(t.documentTooLarge);
         }
         final bytes = await f.readAsBytes();
         if (bytes.length > AttachmentStore.maxDocumentBytes) {
-          throw const FormatException('File is larger than 64 MB.');
+          throw FormatException(t.documentTooLarge);
         }
         await store.import(
           collection: collection,
@@ -85,6 +87,7 @@ class _KnowledgePageState extends ConsumerState<KnowledgePage> {
           },
           pdfText: (bytes) => AttachmentStore.pdfText(
             bytes,
+            localeCode: t.localeName,
             cancelled: () => _scanCancelled || !mounted,
             progress: (page, total) {
               if (mounted) {
@@ -180,8 +183,17 @@ class _KnowledgePageState extends ConsumerState<KnowledgePage> {
               const SizedBox(height: AppDesign.xs),
               Text(
                 models.embeddingReady
-                    ? '${embeddingModel.displayName}: passages are also matched by meaning (multilingual), fused with the word index.'
-                    : '${embeddingModel.displayName} finds passages that say the same thing in other words, in any language. Runs on the phone; ~$mb MB once.',
+                    ? context.l10n.knowledgeMeaningReady(
+                        embeddingModel.displayName,
+                      )
+                    : context.l10n.knowledgeMeaningHint(
+                        embeddingModel.displayName,
+                        context.byFormFactor(
+                          context.l10n.knowledgePhone,
+                          context.l10n.knowledgePc,
+                        ),
+                        '$mb',
+                      ),
                 style: context.text.bodyMuted,
               ),
               const SizedBox(height: AppDesign.sm),
@@ -252,7 +264,9 @@ class _KnowledgePageState extends ConsumerState<KnowledgePage> {
       Text(
         models.embeddingMediaReady
             ? context.l10n.photosAndVoiceNotesReady
-            : context.l10n.photosAndVoiceNotesBody(mb),
+            : (context.isDesktop
+                  ? context.l10n.photosAndVoiceNotesBodyPc
+                  : context.l10n.photosAndVoiceNotesBody)(mb),
         style: context.text.bodyMuted,
       ),
       const SizedBox(height: AppDesign.sm),
@@ -369,7 +383,9 @@ class _KnowledgePageState extends ConsumerState<KnowledgePage> {
                   SliverList.list(
                     children: [
                       SettingsNote(
-                        context.l10n.knowledgeIntro,
+                        (context.isDesktop
+                            ? context.l10n.knowledgeIntroPc
+                            : context.l10n.knowledgeIntro),
                         icon: Icons.local_library_outlined,
                       ),
                       const SizedBox(height: AppDesign.md),
@@ -483,7 +499,16 @@ class _KnowledgePageState extends ConsumerState<KnowledgePage> {
                                   title: Text(d.name),
                                   content: SingleChildScrollView(
                                     child: SelectableText(
-                                      '${d.extractionFormat ?? d.mime}\n${d.sizeBytes} bytes\n${d.chars} characters\n${d.chunkCount} passages\nSHA-256: ${d.contentHash ?? '—'}${d.extractionWarning == null ? '' : '\n\n${d.extractionWarning}'}',
+                                      context.l10n.knowledgeDocumentFacts(
+                                        d.extractionFormat ?? d.mime,
+                                        '${d.sizeBytes}',
+                                        '${d.chars}',
+                                        '${d.chunkCount}',
+                                        d.contentHash ?? '—',
+                                        d.extractionWarning == null
+                                            ? ''
+                                            : '\n\n${d.extractionWarning}',
+                                      ),
                                     ),
                                   ),
                                   actions: [

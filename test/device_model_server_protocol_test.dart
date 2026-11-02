@@ -83,7 +83,11 @@ void main() {
     {'role': 'user', 'content': 'hi'},
   ];
 
-  Future<void> start(FakeEngine next, {_Vectors? vectorEngine}) async {
+  Future<void> start(
+    FakeEngine next, {
+    _Vectors? vectorEngine,
+    bool vision = false,
+  }) async {
     engine = next;
     server = DeviceModelServer(
       engine: engine,
@@ -92,6 +96,7 @@ void main() {
       fallbackTemplate: 'must-not-be-used-for-raw',
       accessToken: token,
       vectors: vectorEngine,
+      hasProjector: (_) => vision,
     );
     await server.start();
   }
@@ -179,6 +184,55 @@ void main() {
     expect(denied.statusCode, 401);
     await denied.drain<void>();
   });
+
+  test(
+    'P2-04: /v1/messages takes array system and array tool results',
+    () async {
+      final response = await ask(
+        '/v1/messages',
+        apiKey: true,
+        body: {
+          'max_tokens': 8,
+          'system': [
+            {'type': 'text', 'text': 'Be brief.'},
+            {'type': 'text', 'text': 'Answer in French.'},
+          ],
+          'messages': [
+            {'role': 'user', 'content': 'Weather?'},
+            {
+              'role': 'assistant',
+              'content': [
+                {
+                  'type': 'tool_use',
+                  'id': 't1',
+                  'name': 'weather',
+                  'input': {'city': 'Paris'},
+                },
+              ],
+            },
+            {
+              'role': 'user',
+              'content': [
+                {
+                  'type': 'tool_result',
+                  'tool_use_id': 't1',
+                  'content': [
+                    {'type': 'text', 'text': 'Sunny, 21 C'},
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      );
+      expect(response.statusCode, 200);
+      await response.drain<void>();
+      final sent = jsonEncode(engine.lastMessages);
+      expect(sent, contains('Be brief.'));
+      expect(sent, contains('Answer in French.'));
+      expect(sent, contains('Sunny, 21 C'));
+    },
+  );
 
   test(
     'sampling is request local for chat and raw completion, JSON and SSE',
@@ -374,10 +428,10 @@ void main() {
     await server.stop();
     await start(FakeEngine());
     final unavailable = await ask('/v1/completions', body: {'prompt': 'hello'});
-    expect(unavailable.statusCode, 503);
+    expect(unavailable.statusCode, 501);
     expect(
       (await json(unavailable))['error']['message'],
-      contains('raw-prompt API'),
+      contains('/v1/chat/completions'),
     );
     expect(engine.received, isEmpty);
   });
@@ -514,5 +568,110 @@ void main() {
       InferenceSettings.fromJson({'thinkOnSearch': false}).explicitOverrides,
       isNot(contains('thinkOnSearch')),
     );
+  });
+
+  test(
+    'messages accepts system and tool result arrays and thinking history',
+    () async {
+      final response = await ask(
+        '/v1/messages',
+        body: {
+          'system': [
+            {'type': 'text', 'text': 'Keep instructions'},
+          ],
+          'messages': [
+            {
+              'role': 'assistant',
+              'content': [
+                {'type': 'thinking', 'thinking': 'hidden', 'signature': 'sig'},
+                {'type': 'redacted_thinking', 'data': 'opaque'},
+                {'type': 'tool_use', 'id': 'a', 'name': 'search', 'input': {}},
+              ],
+            },
+            {
+              'role': 'user',
+              'content': [
+                {
+                  'type': 'tool_result',
+                  'tool_use_id': 'a',
+                  'content': [
+                    {'type': 'text', 'text': 'result'},
+                  ],
+                },
+                {'type': 'tool_result', 'tool_use_id': 'b'},
+              ],
+            },
+          ],
+        },
+      );
+      expect(response.statusCode, 200);
+      await response.drain<void>();
+      expect(engine.lastMessages.first['content'], 'Keep instructions');
+      expect(
+        engine.lastMessages
+            .where((m) => m['role'] == 'tool')
+            .map((m) => m['content']),
+        ['result', ''],
+      );
+    },
+  );
+
+  test('embedding dimensions exceeding model width returns 400', () async {
+    final response = await ask(
+      '/v1/embeddings',
+      body: {'model': 'embed', 'input': 'hi', 'dimensions': 3},
+    );
+    expect(response.statusCode, 400);
+    expect((await json(response))['error']['message'], contains('dimensions'));
+  });
+
+  test('function description is optional', () async {
+    final response = await ask(
+      '/v1/chat/completions',
+      body: {
+        'messages': messages,
+        'tools': [
+          {
+            'type': 'function',
+            'function': {
+              'name': 'search',
+              'parameters': {'type': 'object'},
+            },
+          },
+        ],
+      },
+    );
+    expect(response.statusCode, 200);
+    await response.drain<void>();
+  });
+  test('messages base64 image uses the existing vision path', () async {
+    await server.stop();
+    await start(FakeEngine(), vision: true);
+    final response = await ask(
+      '/v1/messages',
+      body: {
+        'messages': [
+          {
+            'role': 'user',
+            'content': [
+              {'type': 'text', 'text': 'See this'},
+              {
+                'type': 'image',
+                'source': {
+                  'type': 'base64',
+                  'media_type': 'image/png',
+                  'data': base64Encode([137, 80, 78, 71]),
+                },
+              },
+            ],
+          },
+        ],
+      },
+    );
+    expect(response.statusCode, 200);
+    await response.drain<void>();
+    final path =
+        (engine.lastMessages.single['images'] as List).single as String;
+    expect(File(path).existsSync(), false);
   });
 }

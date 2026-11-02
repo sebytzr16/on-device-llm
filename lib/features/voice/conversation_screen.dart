@@ -41,7 +41,11 @@ enum ConversationPhase { starting, idle, listening, thinking, speaking }
 /// normal chat. Without the on-device voice, the system recognizer and
 /// voice take turns instead.
 class ConversationScreen extends ConsumerStatefulWidget {
-  const ConversationScreen({super.key});
+  const ConversationScreen({super.key, this.listen = true});
+
+  /// Whether the microphone opens by itself. Off for a launch another app
+  /// could have sent: the screen opens muted until the user taps the mic.
+  final bool listen;
 
   /// True while the screen is open (the chat screen then does not read
   /// answers aloud itself).
@@ -110,8 +114,7 @@ class ConversationScreen extends ConsumerStatefulWidget {
     'maxTokens': maxAnswerTokens,
   };
 
-  /// A spoken answer's length cap: about a minute of speech, and the
-  /// answer is spoken only once it is complete (tester, 2026-10-09).
+  /// A spoken answer's length cap: about a minute of speech.
   static const maxAnswerTokens = 300;
 
   /// An answer held by talking over it stays held after a segment that was
@@ -348,6 +351,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
   void initState() {
     super.initState();
     ConversationScreen.open = true;
+    // Muted from the first frame: a pause and resume while the model loads
+    // must not open the microphone either.
+    _muted = !widget.listen;
     // Kept for dispose, where ref can no longer be used (Riverpod 3: the
     // read threw there, and the answer went on in the chat after End).
     _chat = ref.read(chatProvider.notifier);
@@ -368,6 +374,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
       if (_answering || (_mouth?.busy ?? false)) _stopAnswer();
       if (_natural) {
         unawaited(_ears?.stop());
+        unawaited(VoiceAudioChannel.conversation(false));
         _micLevel = 0;
       } else {
         unawaited(_voice.stop());
@@ -377,15 +384,26 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
       _away = false;
       if (_muted) return;
       if (_natural) {
-        unawaited(
-          _ears?.start().then((ok) {
-            if (ok) _set(() => _phase = ConversationPhase.listening);
-          }),
-        );
+        unawaited(_resumeNatural());
       } else {
         _listenSystem();
       }
     }
+  }
+
+  Future<void> _resumeNatural() async {
+    await VoiceAudioChannel.conversation(true, call: _talkOver);
+    if (_closed || _away) {
+      await VoiceAudioChannel.conversation(false);
+      return;
+    }
+    if (_muted) return;
+    final ok = await _ears?.start() ?? false;
+    if (_closed || _away || _muted) {
+      await _ears?.stop();
+      return;
+    }
+    if (ok) _set(() => _phase = ConversationPhase.listening);
   }
 
   late final ChatNotifier _chat;
@@ -394,12 +412,15 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
   /// End (the button, the X or back): silence and stop the answer at once,
   /// not after the page has slid away.
   void _end() {
+    _closed = true;
     _stopAll();
     unawaited(_chat.nameChatLater());
     unawaited(Navigator.of(context).maybePop());
   }
 
   void _stopAll() {
+    unawaited(_ears?.stop());
+    if (_natural) unawaited(VoiceAudioChannel.conversation(false));
     _held = null;
     _wake?.cancel();
     _settle?.cancel();
@@ -437,14 +458,20 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
     final packs = ref.read(voiceModelsProvider);
     _natural = offlineVoiceReady(
       enabled: settings.naturalVoice,
-      installed: packs.canListen && packs.canSpeak,
+      installed:
+          packs.canListen &&
+          packs.canSpeakWith(ref.read(settingsProvider).readingVoice),
     );
     if (!_natural) {
-      if (!packs.canListen || !packs.canSpeak) {
+      if (!packs.canListen ||
+          !packs.canSpeakWith(ref.read(settingsProvider).readingVoice)) {
         _set(() => _notice ??= l10n.convNeedsVoice);
       }
-      _set(() => _phase = ConversationPhase.idle);
-      _listenSystem();
+      _set(() {
+        _phase = ConversationPhase.idle;
+        if (!widget.listen) _muted = true;
+      });
+      if (widget.listen) _listenSystem();
       return;
     }
     final sherpa = ref.read(sherpaVoiceProvider);
@@ -459,7 +486,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
     );
     _talkOver = settings.talkOver;
     await VoiceAudioChannel.conversation(true, call: _talkOver);
+    if (_closed || _away) {
+      await VoiceAudioChannel.conversation(false);
+      return;
+    }
     _mouth = KokoroSpeaker(voice: sherpa, kokoro: kokoro)
+      ..speed = settings.readingSpeed.clamp(0.6, 1.6)
       ..onPlaying = _onPlaying
       ..onAudio = (a) {
         // Each sentence's level from its own start: the voice no longer
@@ -487,6 +519,13 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
       onFinal: _onHeard,
       onDropped: _onNothingHeard,
     );
+    if (!widget.listen) {
+      _set(() {
+        _phase = ConversationPhase.idle;
+        _muted = true;
+      });
+      return;
+    }
     bool micStarted;
     try {
       micStarted = await _ears!.start();
@@ -495,6 +534,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
       if (e.code == 'microphone_denied') {
         _set(() => _notice = l10n.desktopVoiceMicPrivacy);
       }
+    }
+    if (_closed || _away || _muted) {
+      await _ears?.stop();
+      return;
     }
     if (!micStarted) {
       _set(() {
@@ -835,11 +878,16 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
     }
     if (now.isGenerating) {
       if (_answered) return;
-      // Spoken only once the answer is complete: Kokoro reading while the
-      // model wrote shared the cores with it and paused about two seconds
-      // at every comma and stop (tester, 2026-10-09). The words show as
-      // they come.
       _showAnswer(now.partialAnswer);
+      // Each finished sentence is spoken while the model writes the next
+      // (owner 2026-11-01). On 2026-10-09 a slow model shared the cores
+      // with Kokoro and the voice paused at commas, so speech waited for
+      // the whole answer; LFM3 (47 tok/s) and the 0.8B now finish well
+      // ahead of the voice. Not while a lookup runs: its words are notes.
+      if (_natural && !_lookingUp) {
+        final done = _stream.take(now.partialAnswer);
+        if (done.trim().isNotEmpty) _say(done);
+      }
       return;
     }
     if (before?.isGenerating != true) return;
@@ -1177,11 +1225,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
       ConversationPhase.speaking =>
         _natural && !_talkOver ? t.convSpeakingTap : t.convSpeaking,
     };
-    final downloading = VoiceModels.packs.any(
-      (p) =>
-          packs.of(p).status != VoicePackStatus.missing &&
-          packs.of(p).status != VoicePackStatus.ready,
-    );
+    final downloading =
+        VoiceModels.packsFor(ref.read(settingsProvider).readingVoice).any(
+          (p) =>
+              packs.of(p).status != VoicePackStatus.missing &&
+              packs.of(p).status != VoicePackStatus.ready,
+        );
     return Scaffold(
       key: const Key('conversation-screen'),
       backgroundColor: c.ink,
@@ -1232,7 +1281,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
                       children: [
                         Text(_notice!, style: context.text.bodyMuted),
                         if (!_natural &&
-                            (!packs.canListen || !packs.canSpeak)) ...[
+                            (!packs.canListen ||
+                                !packs.canSpeakWith(
+                                  ref.read(settingsProvider).readingVoice,
+                                ))) ...[
                           const SizedBox(height: AppDesign.sm),
                           Align(
                             alignment: Alignment.centerRight,
@@ -1245,7 +1297,11 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
                                         voiceModelsProvider.notifier,
                                       );
                                       unawaited(() async {
-                                        for (final p in VoiceModels.packs) {
+                                        for (final p in VoiceModels.packsFor(
+                                          ref
+                                              .read(settingsProvider)
+                                              .readingVoice,
+                                        )) {
                                           if (!packs.of(p).isReady) {
                                             await n.download(p);
                                           }

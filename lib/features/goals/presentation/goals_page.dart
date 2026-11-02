@@ -953,7 +953,10 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
     final toast = islandToastFor(context);
     final t = context.l10n;
     try {
-      await ScheduleStore.requestPermission();
+      if (!await ScheduleStore.requestPermission()) {
+        toast(t.goalWatchNotificationsDenied, tone: IslandTone.warning);
+        return;
+      }
       final items = [...await ScheduleStore.list()];
       final existing = items.indexWhere(
         (p) => p.isGoal && p.prompt.trim() == g.spec.objective.trim(),

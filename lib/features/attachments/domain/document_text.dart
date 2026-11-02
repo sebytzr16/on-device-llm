@@ -1,10 +1,14 @@
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+
+import '../data/bounded_zip.dart';
 import 'package:path/path.dart' as p;
 
 import '../../../data/network/web_search/web_page_reader.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// Result of turning a file into text the model can read.
 class ExtractedDocument {
@@ -22,6 +26,10 @@ class ExtractedDocument {
 class DocumentText {
   /// Per-document ceiling; the chat still fits the result to the context.
   static const maxChars = 400000;
+
+  /// Blank columns a sheet row is padded to; a cell further right is kept
+  /// after the last padded one instead of after thousands of tabs.
+  static const maxSheetColumns = 256;
   static const maxArchiveEntries = 2048;
   static const maxExpandedArchiveBytes = 64 * 1024 * 1024;
   static const maxArchiveEntryBytes = 32 * 1024 * 1024;
@@ -100,14 +108,33 @@ class DocumentText {
     Uint8List bytes,
     String name, {
     Future<String> Function(Uint8List bytes)? pdfText,
+    String localeCode = '',
   }) async {
+    final t = stringsFor(localeCode);
     final ext = p.extension(name).toLowerCase();
     if (ext == '.pdf' || _startsWith(bytes, '%PDF')) {
       if (pdfText == null) {
-        throw const FormatException('PDF text extraction is unavailable.');
+        throw FormatException(t.documentPdfUnavailable);
       }
       return ExtractedDocument(_bounded(await pdfText(bytes)), 'PDF');
     }
+    // ZIP inflate and Office/HTML scans of large files froze the UI for
+    // seconds (audit P3-27); PDFs need the platform channel and stay here.
+    if (_isZip(bytes) || bytes.length > isolateThreshold) {
+      return Isolate.run(() => _extractOther(bytes, name, ext, t));
+    }
+    return _extractOther(bytes, name, ext, t);
+  }
+
+  /// Files above this size are extracted on a background isolate.
+  static const isolateThreshold = 256 * 1024;
+
+  static ExtractedDocument _extractOther(
+    Uint8List bytes,
+    String name,
+    String ext,
+    AppLocalizations t,
+  ) {
     if (_htmlExtensions.contains(ext)) {
       final (title, text) = WebPageReader.extract(_decode(bytes));
       return ExtractedDocument(
@@ -125,8 +152,27 @@ class DocumentText {
       return ExtractedDocument(_bounded(rtfToText(_decode(bytes))), 'RTF');
     }
     if (_isZip(bytes)) {
-      final archive = ZipDecoder().decodeBytes(bytes, verify: false);
-      validateArchive(archive);
+      var archive = readZipMetadata(
+        InputMemoryStream(bytes),
+        maxEntries: maxArchiveEntries,
+        strings: t,
+      );
+      validateArchive(archive, strings: t);
+      var actual = 0;
+      final inflated = Archive();
+      for (final file in archive.files) {
+        if (!file.isFile) continue;
+        final out = BytesBuilder(copy: false);
+        final remaining = maxExpandedArchiveBytes - actual;
+        actual += inflateZipEntry(
+          file,
+          remaining < maxArchiveEntryBytes ? remaining : maxArchiveEntryBytes,
+          out.add,
+          strings: t,
+        );
+        inflated.addFile(ArchiveFile.bytes(file.name, out.takeBytes()));
+      }
+      archive = inflated;
       String? entry(String path) {
         final f = archive.findFile(path);
         return f == null ? null : _decode(f.content as List<int>);
@@ -226,32 +272,29 @@ class DocumentText {
         }
         return ExtractedDocument(_bounded(out.toString()), 'EPUB book');
       }
-      throw const FormatException('This archive holds no readable document.');
+      throw FormatException(t.documentArchiveEmpty);
     }
     if (looksLikeText(bytes)) {
       return ExtractedDocument(_bounded(_decode(bytes)), 'Text file');
     }
-    throw FormatException(
-      'Unsupported file type${ext.isEmpty ? '' : ' ($ext)'}. Supported: text, code, Markdown, CSV, JSON, HTML, PDF, Word, PowerPoint, Excel, OpenDocument, EPUB, RTF.',
-    );
+    throw FormatException(t.documentUnsupported(ext.isEmpty ? '' : ' ($ext)'));
   }
 
   /// Rejects expansion bombs before any lazy ZIP entry is decompressed.
-  static void validateArchive(Archive archive) {
+  static void validateArchive(Archive archive, {AppLocalizations? strings}) {
+    final t = strings ?? stringsFor('');
     if (archive.files.length > maxArchiveEntries) {
-      throw const FormatException('The archive contains too many files.');
+      throw FormatException(t.documentArchiveManyFiles);
     }
     var expanded = 0;
     for (final file in archive.files) {
       if (!file.isFile) continue;
       if (file.size < 0 || file.size > maxArchiveEntryBytes) {
-        throw const FormatException('An archived file is too large.');
+        throw FormatException(t.documentArchiveEntryLarge);
       }
       expanded += file.size;
       if (expanded > maxExpandedArchiveBytes) {
-        throw const FormatException(
-          'The archive expands beyond the safe size limit.',
-        );
+        throw FormatException(t.documentArchiveExpandedLarge);
       }
     }
   }
@@ -337,6 +380,8 @@ class DocumentText {
 
   /// One worksheet: rows as lines, cells tab-separated, shared strings and
   /// inline strings resolved, formulas replaced by their cached value.
+  /// Cells sit under the column their `r="C2"` reference names: the file
+  /// omits empty cells, so file order alone shifts values left (audit P1-14).
   static String sheetToText(String xml, List<String> shared) {
     final out = StringBuffer();
     for (final row in RegExp(
@@ -361,11 +406,28 @@ class DocumentText {
         } else if (type == 'b') {
           value = value == '1' ? 'TRUE' : 'FALSE';
         }
+        final column = _columnIndex(attrs);
+        if (column != null && column < maxSheetColumns) {
+          while (cells.length < column) {
+            cells.add('');
+          }
+        }
         cells.add(_unescape(value));
       }
       if (cells.any((c) => c.trim().isNotEmpty)) out.writeln(cells.join('\t'));
     }
     return out.toString().trimRight();
+  }
+
+  /// The zero-based column of a cell's `r="AB12"` reference, or null.
+  static int? _columnIndex(String attrs) {
+    final letters = RegExp(r'\br="([A-Z]{1,3})\d+"').firstMatch(attrs);
+    if (letters == null) return null;
+    var n = 0;
+    for (final unit in letters.group(1)!.codeUnits) {
+      n = n * 26 + unit - 64;
+    }
+    return n - 1;
   }
 
   /// RTF: control words and groups stripped, `\par` kept as line breaks,

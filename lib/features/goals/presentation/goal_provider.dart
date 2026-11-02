@@ -39,6 +39,9 @@ class GoalNotifier extends Notifier<GoalProgress?> {
   int _goalContext = 8192;
   bool _stopping = false;
 
+  /// A planner or reviewer call holds the engine (audit P1-17).
+  bool _ownsEngine = false;
+
   /// The history entry this goal was last kept under (a continued or
   /// refined goal replaces it when it finishes again).
   String? _archivedId;
@@ -529,10 +532,10 @@ class GoalNotifier extends Notifier<GoalProgress?> {
     final remaining = deadline?.difference(DateTime.now());
     final timer = remaining == null
         ? null
-        : Timer(remaining < Duration.zero ? Duration.zero : remaining, () {
-            ref.read(chatProvider.notifier).cancel();
-            _model().engine.cancel();
-          });
+        : Timer(
+            remaining < Duration.zero ? Duration.zero : remaining,
+            _cancelOwned,
+          );
     try {
       await runner.run(spec, resume: resume);
     } finally {
@@ -775,11 +778,17 @@ class GoalNotifier extends Notifier<GoalProgress?> {
 
   void pause() => _runner?.pause();
 
+  /// Stops only work this goal started: its chat turn or its own engine
+  /// call, never a chat the user sent meanwhile (audit P1-17).
+  void _cancelOwned() {
+    if (_ownsEngine) _model().engine.cancel();
+    ref.read(chatProvider.notifier).cancelOwned(this);
+  }
+
   void stop() {
     _stopping = true;
     _runner?.stop();
-    ref.read(chatProvider.notifier).cancel();
-    _model().engine.cancel();
+    _cancelOwned();
   }
 
   Future<void> clear() async {
@@ -1070,6 +1079,7 @@ class GoalNotifier extends Notifier<GoalProgress?> {
         .read(chatProvider.notifier)
         .send(
           task.question,
+          owner: this,
           forceResearch: true,
           budget: budget,
           learn: false,
@@ -1235,10 +1245,38 @@ class GoalNotifier extends Notifier<GoalProgress?> {
     GoalSpec? budgetSpec,
     String Function(int maxCharacters)? promptForLimit,
   }) async {
-    final budget = budgetSpec == null ? TurnBudget() : _budget(budgetSpec);
-    if (ref.read(chatProvider).isGenerating) {
+    // Claimed before any await, so a chat sent meanwhile is refused instead
+    // of failing with "engine busy" (audit P1-17).
+    if (ref.read(chatProvider).isGenerating || ref.read(sessionBusyProvider)) {
       throw StateError('The chat is busy.');
     }
+    final busy = ref.read(sessionBusyProvider.notifier);
+    busy.state = true;
+    _ownsEngine = true;
+    try {
+      return await _jsonHeld(
+        system,
+        prompt,
+        maxTokens: maxTokens,
+        thinkBudget: thinkBudget,
+        budgetSpec: budgetSpec,
+        promptForLimit: promptForLimit,
+      );
+    } finally {
+      _ownsEngine = false;
+      if (ref.mounted) busy.state = false;
+    }
+  }
+
+  Future<(Map<String, dynamic>?, String)> _jsonHeld(
+    String system,
+    String prompt, {
+    required int maxTokens,
+    required int thinkBudget,
+    GoalSpec? budgetSpec,
+    String Function(int maxCharacters)? promptForLimit,
+  }) async {
+    final budget = budgetSpec == null ? TurnBudget() : _budget(budgetSpec);
     final m = _model();
     // A remote model is used as configured; a local one must be loaded.
     if (!m.settings.usesRemote &&
@@ -1711,6 +1749,33 @@ class GoalNotifier extends Notifier<GoalProgress?> {
   /// reply does not assess is a format error. The exact-quote check this
   /// replaces failed every review of the tester's camera Goal, which then
   /// ended at 0% with no gap it could research.
+  ///
+  /// The words and figures must sit together in one sentence (or a sentence
+  /// and the next), with the same negation: "not waterproof" no longer backs
+  /// "waterproof", nor a figure from one page a claim from another (audit
+  /// P1-16). The wording may still differ.
+  /// A negation in English, French or Spanish.
+  static final _negation = RegExp(
+    r"\b(not|no|never|none|without|cannot|can't|isn't|aren't|doesn't|"
+    r"don't|didn't|won't|lacks?|ne|n'|pas|jamais|sans|aucun|aucune|sin|"
+    r'nunca|ningún|ninguna|tampoco)\b',
+    caseSensitive: false,
+    unicode: true,
+  );
+
+  /// Each sentence of [text], then each sentence with the next: a fact's
+  /// support may run over a sentence break, not across a whole page.
+  static Iterable<String> _windows(String text) sync* {
+    final sentences = [
+      for (final s in text.split(RegExp(r'\n+|(?<=[.!?;])\s+')))
+        if (s.trim().isNotEmpty) s.trim(),
+    ];
+    yield* sentences;
+    for (var i = 0; i + 1 < sentences.length; i++) {
+      yield '${sentences[i]} ${sentences[i + 1]}';
+    }
+  }
+
   static List<GoalCriterion> validateCriteria(
     Map<String, dynamic> reply,
     GoalProgress p,
@@ -1724,26 +1789,31 @@ class GoalNotifier extends Notifier<GoalProgress?> {
             p.tasks[i].findings.trim().isNotEmpty)
           i + 1: p.tasks[i].findings,
     };
-    final words = {
-      for (final e in usable.entries) e.key: GoalRunner.terms(e.value),
-    };
     final pool = usable.values.join('\n');
-    final poolWords = {for (final w in words.values) ...w};
     // Every fact names the goal's subject: its words prove nothing.
     final common = {
       ...GoalRunner.terms(p.spec.objective),
       for (final t in p.spec.subject.terms) ...GoalRunner.terms(t),
     };
-    bool backs(String text, Set<String> textWords, String fact) {
+    bool backs(String text, String fact) {
       final plain = fact.replaceAll(_citationMarks, ' ');
-      if (EvidenceRanker.unsupportedFigures(plain, [text]).isNotEmpty) {
-        return false;
-      }
       final content = GoalRunner.terms(plain).difference(common);
       if (content.isEmpty) {
-        return EvidenceRanker.unsupportedFigures(plain, const []).isNotEmpty;
+        return EvidenceRanker.unsupportedFigures(plain, [text]).isEmpty &&
+            EvidenceRanker.unsupportedFigures(plain, const []).isNotEmpty;
       }
-      return content.intersection(textWords).length * 2 >= content.length;
+      final negated = _negation.hasMatch(plain);
+      for (final passage in _windows(text)) {
+        if (_negation.hasMatch(passage) != negated) continue;
+        if (EvidenceRanker.unsupportedFigures(plain, [passage]).isNotEmpty) {
+          continue;
+        }
+        final known = GoalRunner.terms(passage);
+        if (content.intersection(known).length * 2 >= content.length) {
+          return true;
+        }
+      }
+      return false;
     }
 
     final assessed = _assessments(reply['criteria'], items);
@@ -1783,9 +1853,9 @@ class GoalNotifier extends Notifier<GoalProgress?> {
       ];
       final quotes = <GoalCriterionQuote>[];
       for (final fact in facts) {
-        if (order.isEmpty || !backs(pool, poolWords, fact)) continue;
+        if (order.isEmpty || !backs(pool, fact)) continue;
         final step = order.firstWhere(
-          (n) => backs(usable[n]!, words[n]!, fact),
+          (n) => backs(usable[n]!, fact),
           orElse: () => order.first,
         );
         final quote = given.isEmpty ? _passage(usable[step]!, fact) : fact;

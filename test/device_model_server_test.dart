@@ -497,7 +497,7 @@ void main() {
         'tools': [
           {
             'type': 'function',
-            'function': {'name': 'lookup'},
+            'function': {'name': 'lookup', 'description': 123},
           },
         ],
       }),

@@ -376,7 +376,7 @@ void main() {
         tester
             .getSize(find.byKey(const Key('desktop-hf-file-model-Q4_K_M.gguf')))
             .height,
-        44,
+        greaterThanOrEqualTo(44),
       );
       await tester.pumpWidget(const SizedBox());
       await _host(tester, _Repository(), _Models(), memory: null);

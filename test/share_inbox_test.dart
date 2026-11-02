@@ -24,6 +24,15 @@ void main() {
     );
   });
 
+  test('only a launch with the app token may open the mic at once', () {
+    final assist = SharedPayload.fromMap({'launch': 'voice', 'trusted': false});
+    expect(assist.launch, 'voice');
+    expect(assist.launchTrusted, isFalse);
+    expect(SharedPayload.fromMap({'launch': 'voice'}).launchTrusted, isFalse);
+    final tile = SharedPayload.fromMap({'launch': 'voice', 'trusted': true});
+    expect(tile.launchTrusted, isTrue);
+  });
+
   test('a subject-only share is a usable draft', () {
     const payload = SharedPayload(subject: 'Article title');
     expect(payload.isEmpty, false);

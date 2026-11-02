@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:logging/logging.dart';
 import 'dart:math';
 import 'dart:io' show Platform;
+import '../../../attachments/domain/document_passages.dart';
 import '../../../../desktop/mcp/mcp_registry.dart';
 import '../../../../desktop/mcp/mcp_strings.dart';
 import 'package:dio/dio.dart';
@@ -29,6 +30,8 @@ import '../../../retrieval/claim_check_runner.dart';
 import '../../../retrieval/domain/claim_check.dart';
 import '../../../retrieval/domain/date_check.dart';
 import '../../../retrieval/semantic_rerank.dart';
+import '../../../retrieval/overlap_prefill.dart';
+import '../../../../inference/engine/llama_engine.dart';
 import '../../../retrieval/support_check.dart';
 import '../../../memory/domain/user_memory.dart';
 import '../../domain/message_deletion.dart';
@@ -65,6 +68,10 @@ import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../tools/domain/tool_markup.dart';
 import '../../../tools/domain/tool_spec.dart';
 import '../../../tools/tool_runner.dart';
+import '../../../helper/helper_runner.dart';
+import '../../../helper/helper_request.dart';
+import '../../../helper/helper_jobs.dart';
+import '../../../helper/helper_web_approval.dart';
 import '../../../tools/phone_actions.dart';
 import '../../domain/entities/chat_message.dart';
 import '../../domain/export/chat_document.dart';
@@ -98,9 +105,12 @@ part 'chat_export.dart';
 part 'chat_turn.dart';
 part 'chat_prime.dart';
 
+final _turnLog = Logger('chat');
+
 class ChatState {
   final List<ChatMessage> messages;
   final bool isGenerating, isLoadingModel;
+  final bool hasReasoningTokens;
   final ReasoningBlock? reasoning;
   final String partialAnswer;
   final String? error, chatId, notice;
@@ -122,6 +132,7 @@ class ChatState {
     this.messages = const [],
     this.isGenerating = false,
     this.isLoadingModel = false,
+    this.hasReasoningTokens = false,
     this.reasoning,
     this.partialAnswer = '',
     this.error,
@@ -136,6 +147,7 @@ class ChatState {
     List<ChatMessage>? messages,
     bool? isGenerating,
     bool? isLoadingModel,
+    bool? hasReasoningTokens,
     ReasoningBlock? reasoning,
     bool clearReasoning = false,
     String? partialAnswer,
@@ -151,6 +163,7 @@ class ChatState {
     messages: messages ?? this.messages,
     isGenerating: isGenerating ?? this.isGenerating,
     isLoadingModel: isLoadingModel ?? this.isLoadingModel,
+    hasReasoningTokens: hasReasoningTokens ?? this.hasReasoningTokens,
     reasoning: clearReasoning ? null : reasoning ?? this.reasoning,
     partialAnswer: partialAnswer ?? this.partialAnswer,
     error: clearError ? null : error ?? this.error,
@@ -175,6 +188,9 @@ abstract class _ChatBase extends Notifier<ChatState> {
   String? _projectId;
   AppDatabase get _database => _temporaryDb ?? ref.read(appDatabaseProvider);
   final _turns = TurnCoordinator();
+
+  /// Who sent the running turn ([ChatNotifier.send]'s `owner`).
+  Object? _turnOwner;
   bool get _cancelled => _turns.active?.cancelled ?? false;
 
   /// The current turn is heard, not read ([send]'s `spoken`).
@@ -395,9 +411,22 @@ class ChatNotifier extends _ChatBase
     final id = state.chatId;
     if (id == null) return;
     final db = _database;
-    await (db.update(db.chats)..where((t) => t.id.equals(id))).write(
-      ChatsCompanion(overridesJson: drift.Value(jsonEncode(clean))),
-    );
+    await db.transaction(() async {
+      final previous = AgentWebDecisions.decode(
+        (await db.getChat(id))?.overridesJson ?? '{}',
+      );
+      await (db.update(db.chats)..where((t) => t.id.equals(id))).write(
+        ChatsCompanion(
+          overridesJson: drift.Value(
+            jsonEncode({
+              ...clean,
+              if (previous[agentWebDecisionKey] is bool)
+                agentWebDecisionKey: previous[agentWebDecisionKey],
+            }),
+          ),
+        ),
+      );
+    });
   }
 
   static Map<String, dynamic> overridesOf(Chat? chat) {
@@ -599,6 +628,8 @@ class ChatNotifier extends _ChatBase
     // Conversation: the answer is heard, so one from web pages is a few
     // spoken sentences instead of a list.
     bool spoken = false,
+    // A Goal's step: the goal's Stop ends only its own turns.
+    Object? owner,
   }) async {
     input = input.trim();
     _primeEpoch++;
@@ -610,23 +641,29 @@ class ChatNotifier extends _ChatBase
       await naming;
     }
     if (state.isGenerating ||
+        ref.read(sessionBusyProvider) ||
         (input.isEmpty && attachments.isEmpty) ||
         ref.read(modelManagerProvider).isLoadingModel) {
       return false;
     }
+    ref.read(helperJobsProvider.notifier).dismiss();
     final localEngine = ref.read(llamaEngineProvider);
     final remoteEngine = ref.read(remoteEngineProvider);
     final diffusionEngine = ref.read(diffusionGemmaEngineProvider);
+    final models = ref.read(modelManagerProvider.notifier);
     final lease = _turns.begin(() {
+      models.stopLoad();
       localEngine.cancel();
       diffusionEngine.cancel();
       remoteEngine.cancel();
     });
+    _turnOwner = owner;
     _spoken = spoken;
     state = state.copyWith(
       isGenerating: true,
       clearError: true,
       clearReasoning: true,
+      hasReasoningTokens: false,
       partialAnswer: '',
       notice: '',
       learned: const [],
@@ -676,6 +713,12 @@ class ChatNotifier extends _ChatBase
       );
     }
     _fittedOmitted = 0;
+    final turnClock = Stopwatch()..start();
+    _turnLog.info(
+      'Turn started: ${input.length} chars'
+      '${attachments.isEmpty ? '' : ', ${attachments.length} attachment(s)'}'
+      '${resume != null ? ', resuming' : ''}',
+    );
     try {
       final asked = await _prepareTurn(t);
       if (asked == null) return t.accepted;
@@ -688,13 +731,23 @@ class ChatNotifier extends _ChatBase
       await _startAnswer(t, prompt);
       await _runRounds(t, prompt);
       await _searchAfterRecall(t, asked, planned);
-    } catch (e) {
+    } catch (e, stack) {
       t.failure = switch (e) {
         StateError(:final message) => message,
         _ => '$e',
       };
+      _turnLog.warning('Turn failed: ${t.failure}', e, stack);
     } finally {
       await _endTurn(t);
+      _turnLog.info(
+        'Turn ${t.failure != null
+            ? 'failed'
+            : _cancelled
+            ? 'stopped'
+            : 'finished'} '
+        'in ${turnClock.elapsedMilliseconds} ms, ${t.answer.length} answer chars, '
+        '${t.sources.length} source(s)',
+      );
     }
     return t.accepted;
   }
@@ -799,6 +852,9 @@ class ChatNotifier extends _ChatBase
         !t.forceResearch &&
         !t.localOnly &&
         !settings.structuredOutput;
+    // Research turns on the web tools only: the user's Tools switch still
+    // decides MCP, recall and document tools (audit P1-04).
+    t.userTools = settings.toolsEnabled;
     if (remoteBrain) {
       settings = settings.copyWith(
         toolsEnabled: true,
@@ -841,8 +897,20 @@ class ChatNotifier extends _ChatBase
       // This phone may be serving its model to another device: the chat
       // shares that model and waits for a request in progress.
       if (!await _shareWithHosting(model)) return null;
-      state = state.copyWith(isLoadingModel: true);
-      await manager.loadModel(model, forChat: true, settings: settings);
+      // "Loading" shows only when a load starts: an unchanged model is
+      // used as it is (audit P1-18).
+      await manager.loadModel(
+        model,
+        forChat: true,
+        settings: settings,
+        onLoadStart: () => state = state.copyWith(isLoadingModel: true),
+        // The projector loads only for a chat with a photo in it.
+        vision:
+            t.attachments.any((a) => a.isImage) ||
+            state.messages.any(
+              (m) => isLive(m) && m.attachments.any((a) => a.isImage),
+            ),
+      );
       t.stage('loadMs');
       state = state.copyWith(isLoadingModel: false, metrics: t.engine.metrics);
     }
@@ -1044,6 +1112,9 @@ class ChatNotifier extends _ChatBase
     final engine = t.engine;
     final model = t.model!;
     final remoteBrain = t.remoteBrain;
+    final webAllowed =
+        settings.webSearchEnabled &&
+        (!settings.usesRemote || settings.remoteWebResearch);
     final user = asked.user;
     var plan = planned.plan;
     // The part of the system prompt every path shares. Built before the
@@ -1064,6 +1135,7 @@ class ChatNotifier extends _ChatBase
     // report). Not on the phone ([TurnPolicy.judgeLocalModels]).
     if (plan.mode == RetrievalMode.none &&
         settings.webMode == WebMode.auto &&
+        webAllowed &&
         (settings.usesRemote || TurnPolicy.judgeLocalModels) &&
         !remoteBrain &&
         t.resume == null &&
@@ -1141,6 +1213,11 @@ class ChatNotifier extends _ChatBase
     if (researchTurn) {
       plan = RetrievalPlan.of(plan.query, webEnabled: false);
       state = state.copyWith(notice: _t.noticeResearchingTools);
+    }
+    // One web permission for every way a plan is made (audit P1-05): a
+    // Remote profile with web research off fetches nothing.
+    if (!webAllowed && plan.mode != RetrievalMode.none) {
+      plan = RetrievalPlan.of(plan.query, webEnabled: false);
     }
     if (researchTurn || plan.mode == RetrievalMode.search) {
       t.lease.transition(TurnStage.researching);
@@ -1275,8 +1352,10 @@ class ChatNotifier extends _ChatBase
       system: system,
       turnNotes: turnNotes,
       sources: t.sources,
+      helperMessageId: t.assistantId,
       researchTurn: researchTurn,
       remoteBrain: t.remoteBrain,
+      userTools: t.userTools,
       allowRecall: !researching,
       continuing:
           t.resume != null ||
@@ -1362,19 +1441,37 @@ class ChatNotifier extends _ChatBase
     if (cut != null) state = state.copyWith(notice: cut);
     // Knowledge library (FX-02): passages from the chosen collection join
     // the evidence ahead of any web pages; a continuation or comparison
-    // keeps what its original turn saw.
-    if (settings.knowledgeCollection.isNotEmpty &&
+    // keeps what its original turn saw. A Remote profile with document
+    // sharing off gets none (audit P1-03).
+    if (documents &&
+        settings.knowledgeCollection.isNotEmpty &&
         t.resume == null &&
         t.reuseSourcesJson == null &&
         t.promptOverride == null &&
         input.isNotEmpty) {
-      final own = await ref
+      Future<List<SearchResult>> retrieve() => ref
           .read(knowledgeStoreProvider)
           .search(
             settings.knowledgeCollection,
             input,
             maxPassages: settings.evidencePassages,
           );
+      final own =
+          engine is LlamaEngine &&
+              DesktopHost.active &&
+              settings.promptCache &&
+              !settings.usesRemote
+          ? await overlapPrefill(
+              retrieve: retrieve,
+              engine: engine,
+              prefill: () => engine.primePrompt(
+                system: fitSystem,
+                fallbackTemplate: model.family.fallbackTemplate,
+                settings: settings,
+                tools: offered.native ? offered.tools : const [],
+              ),
+            )
+          : await retrieve();
       if (_cancelled || !_alive) return null;
       if (own.isNotEmpty) {
         t.sources = [...own, ...t.sources];
@@ -1384,6 +1481,14 @@ class ChatNotifier extends _ChatBase
               '${t.sources.length > own.length ? _t.noticePlusWebResults(t.sources.length - own.length) : ''}.',
         );
       }
+    }
+    // Reused or recalled sources may carry Knowledge passages from a
+    // local turn: none reach a Remote profile without document sharing.
+    if (!documents) {
+      t.sources = [
+        for (final s in t.sources)
+          if (!KnowledgeStore.isKnowledgeUrl(s.url)) s,
+      ];
     }
     final fitted = await _fitEvidence(
       input,
@@ -1459,13 +1564,16 @@ class ChatNotifier extends _ChatBase
     // capture when the turn starts.
     final remembers =
         t.learn && t.insertUser && !state.temporary && settings.memoryEnabled;
+    // Only what the user stated about themself, not a story or a fact
+    // they took back.
+    final theirs = AboutUser.grounded(asked);
     if (t.spoken) {
       t.appAnswer =
           MathQuestion.spoken(input, earlier: asked) ??
           (local
-              ? AboutUser.spokenName(input, asked) ??
-                    AboutUser.spokenFact(input, asked) ??
-                    AboutUser.spokenNames(input, asked) ??
+              ? AboutUser.spokenName(input, theirs) ??
+                    AboutUser.spokenFact(input, theirs) ??
+                    AboutUser.spokenNames(input, theirs) ??
                     AboutUser.spokenIntro(input) ??
                     AboutUser.spokenNoted(input, remembered: remembers) ??
                     AboutUser.spokenGreeting(input) ??
@@ -1484,7 +1592,7 @@ class ChatNotifier extends _ChatBase
       if (t.appAnswer == null)
         ?AboutUser.statedNote(input, remembered: remembers),
     ].join(' ');
-    if (local && AboutUser.asks(input)) t.aboutUser = asked;
+    if (local && AboutUser.asks(input)) t.aboutUser = theirs;
     return (note: note, sum: sum);
   }
 
@@ -1612,6 +1720,7 @@ class ChatNotifier extends _ChatBase
           partialAnswer: tools.isEmpty
               ? answerText
               : ToolMarkup.visible(answerText),
+          hasReasoningTokens: t.hasReasoningTokens,
           reasoning: thinking.isEmpty
               ? null
               : ReasoningBlock(id: reasoningId, content: thinking.toString()),
@@ -1638,6 +1747,75 @@ class ChatNotifier extends _ChatBase
     final local = engine is! RemoteEngine;
     final answer = t.answer, thinking = t.thinking;
     final toolMessages = <Map<String, Object>>[];
+    final pendingHelpers = <({ToolCall call, Future<ToolResult> reply})>[];
+    final helperSlots = Map<ToolCall, Map<String, Object>>.identity();
+    var helperCount = 0;
+    Future<void> collectHelpers() async {
+      // Keep native tool-call pairs valid by replacing their start acknowledgements (owner, 2026-11-02).
+      final waiting = Stopwatch()..start();
+      var remaining = pendingHelpers.length;
+      void update() {
+        if (_alive && !_cancelled) {
+          state = state.copyWith(
+            notice: _t.helpersWaiting(remaining, waiting.elapsed.inSeconds),
+          );
+        }
+      }
+
+      update();
+      final timer = Timer.periodic(const Duration(seconds: 1), (_) => update());
+      late List<ToolResult> results;
+      try {
+        results = await Future.wait(
+          pendingHelpers.map(
+            (job) => job.reply.then((reply) {
+              remaining--;
+              return reply;
+            }),
+          ),
+        );
+      } finally {
+        timer.cancel();
+        if (_alive && !_cancelled) state = state.copyWith(clearNotice: true);
+      }
+      if (_cancelled || !_alive) return;
+      for (var i = 0; i < results.length; i++) {
+        final result = results[i];
+        final call = pendingHelpers[i].call;
+        // Text-parsed calls all have an empty id, so the start
+        // acknowledgement is found by identity, not by tool_call_id.
+        final slot = helperSlots.remove(call);
+        final index = slot == null
+            ? -1
+            : toolMessages.indexWhere((m) => identical(m, slot));
+        final reply = {
+          'role': 'tool',
+          'tool_call_id': call.id,
+          'name': call.name,
+          'content': result.output,
+        };
+        if (index < 0) {
+          toolMessages.add(reply);
+        } else {
+          toolMessages[index] = reply;
+        }
+        thinking.write(
+          '\n▸ ${call.name}${_argSummary(call)} → ${result.ok ? '' : 'error: '}'
+          '${result.output.length > 160 ? '${result.output.substring(0, 160)}…' : result.output}\n',
+        );
+        if (result.ok) {
+          ref
+              .read(helperJobsProvider.notifier)
+              .report(
+                t.assistantId,
+                '${call.args['task']}'.trim(),
+                model.displayName,
+              );
+        }
+      }
+      pendingHelpers.clear();
+    }
+
     var rounds = 0;
     // A model restating its whole answer is stopped at the repeat.
     var repeatStopped = false;
@@ -1669,426 +1847,510 @@ class ChatNotifier extends _ChatBase
     // The remote model offered to read on instead of reading; told yes
     // once.
     var toldToRead = false;
-    while (true) {
-      if (_cancelled) break;
-      budget?.check();
-      if (toolMessages.isNotEmpty) {
-        // Tool results can outgrow the context (nine pages plus thinking did
-        // on the phone); the bridge would then drop the question itself.
-        // Shorten the largest results until the prompt fits.
-        final roundPrompt = [...messages, ...toolMessages];
-        final cut = await fitToolResults(
-          engine,
-          roundPrompt,
-          toolMessages,
+    var sent = false;
+    final helpers = tools.any((tool) => tool.name == 'ask_helper')
+        ? ref.read(helperRunnerProvider)
+        : null;
+    helpers?.beginTurn();
+    try {
+      while (true) {
+        if (_cancelled) break;
+        budget?.check();
+        if (toolMessages.isNotEmpty) {
+          // Tool results can outgrow the context (nine pages plus thinking did
+          // on the phone); the bridge would then drop the question itself.
+          // Shorten the largest results until the prompt fits.
+          final roundPrompt = [...messages, ...toolMessages];
+          final cut = await fitToolResults(
+            engine,
+            roundPrompt,
+            toolMessages,
+            settings,
+            model,
+            tools: nativeTools ? tools : const [],
+          );
+          messages.removeWhere((m) => !roundPrompt.contains(m));
+          if (cut != null) thinking.write('\n$cut\n');
+        }
+        // A spoken phone answer gets the same cap: at the card's 1.0 the 0.8B
+        // put Canberra "in New Zealand's northern island" and answered "¿qué
+        // tal?" with nonsense (Conversation probe round 7, 2026-10-18).
+        var roundSettings = TurnPolicy.groundedSettings(
           settings,
-          model,
-          tools: nativeTools ? tools : const [],
+          grounded: t.sources.isNotEmpty || (t.spoken && local),
         );
-        messages.removeWhere((m) => !roundPrompt.contains(m));
-        if (cut != null) thinking.write('\n$cut\n');
-      }
-      // A spoken phone answer gets the same cap: at the card's 1.0 the 0.8B
-      // put Canberra "in New Zealand's northern island" and answered "¿qué
-      // tal?" with nonsense (Conversation probe round 7, 2026-10-18).
-      var roundSettings = TurnPolicy.groundedSettings(
-        settings,
-        grounded: t.sources.isNotEmpty || (t.spoken && local),
-      );
-      if (budget != null) {
-        final preview = await engine.previewPrompt(
-          messages: [...messages, ...toolMessages],
-          fallbackTemplate: model.family.fallbackTemplate,
-          settings: roundSettings,
-          tools: nativeTools ? tools : const [],
-        );
-        final allowed = budget.outputAllowance(
-          (preview['promptTokens'] as num?)?.toInt() ?? 0,
-          roundSettings.outputCeiling,
-        );
-        roundSettings = roundSettings.withinOutput(allowed);
-      }
-      try {
-        await for (final event in _turns.stream(
-          t.lease,
-          () => engine.generate(
+        if (budget != null) {
+          final preview = await engine.previewPrompt(
             messages: [...messages, ...toolMessages],
             fallbackTemplate: model.family.fallbackTemplate,
             settings: roundSettings,
-            assistantPrefix: t.resume?.content ?? '',
             tools: nativeTools ? tools : const [],
-            // Required applies to the first round only; once a result is in,
-            // the model must be free to answer. An outright action request
-            // must prepare its card, not promise to.
-            toolChoice:
-                nativeTools && (lastRound || RetrievalPlan.smallTalk(input))
-                ? 'none'
-                : nativeTools &&
-                      rounds == 0 &&
-                      (prompt.researchTurn ||
-                          (t.remoteBrain &&
-                              settings.webMode == WebMode.always &&
-                              !RetrievalPlan.greetingOnly(input)) ||
-                          settings.toolChoice == ToolChoice.required ||
-                          (PhoneActions.command(input) &&
-                              tools.any(
-                                (s) => PhoneActions.kinds.contains(s.name),
-                              )))
-                ? 'required'
-                : 'auto',
-          ),
-        )) {
-          if (event is! TextDelta) continue;
-          t.parser!.add(event.text);
-          if (_cancelled) engine.cancel();
-          if (++pieces % 24 == 0 &&
-              !repeatStopped &&
-              AnswerCleanup.isRepeating(answer.toString())) {
-            repeatStopped = true;
-            engine.cancel();
-          }
-          // The model narrates the request on a new line: the answer is
-          // over (stopped before the voice reaches that line).
-          if (!repeatStopped && event.text.isNotEmpty && t.tail.narrating) {
-            repeatStopped = true;
-            engine.cancel();
-          }
-          // Checked while the answer's opening is being written, on a turn
-          // with sources: their prompt opens with the app's own paragraphs,
-          // while a chat turn's may be the user's text, which a corrected
-          // copy starts with.
-          // The second try is checked against the same sources turn.
-          final asked = echoPrompt ??= messages.last['content'];
-          if (!echoed &&
-              !t.echoStopped &&
-              t.resume == null &&
-              t.sources.isNotEmpty &&
-              answer.length >= 60 &&
-              answer.length < 400 &&
-              asked is String &&
-              AnswerCleanup.echoes(answer.toString(), asked)) {
-            if (echoRetried) {
-              t.echoStopped = true;
-            } else {
-              echoed = true;
-            }
-            engine.cancel();
-          }
+          );
+          final allowed = budget.outputAllowance(
+            (preview['promptTokens'] as num?)?.toInt() ?? 0,
+            roundSettings.outputCeiling,
+          );
+          roundSettings = roundSettings.withinOutput(allowed);
         }
-      } finally {
-        final prompt = (engine.metrics['promptTokens'] as num?)?.toInt() ?? 0;
-        final generated = (engine.metrics['tokens'] as num?)?.toInt() ?? 0;
-        budget?.charge(prompt, generated);
-        t.promptTokens += prompt;
-        t.generatedTokens += generated;
-        t.generationRounds++;
-        t.nativeOmitted = max(
-          t.nativeOmitted,
-          (engine.metrics['trimmedMessages'] as num?)?.toInt() ?? 0,
-        );
-        t.metrics = {
-          ...engine.metrics,
-          'promptTokens': t.promptTokens,
-          'tokens': t.generatedTokens,
-          'generationRounds': t.generationRounds,
-          'trimmedMessages': _fittedOmitted + t.nativeOmitted,
-        };
-      }
-      // A copy of the prompt is no answer: once, ask again in a short turn
-      // of its own after the cached prompt. The same order appended to the
-      // end of the sources turn was copied too (frozen-web benchmark,
-      // 2026-10-11: 3 of 3 on the weather tables).
-      if (echoed && !echoRetried && !_cancelled && _alive) {
-        echoRetried = true;
-        echoed = false;
-        t.parser!.close();
-        final copied = answer.toString().trim().split('\n').first;
-        t.clearAnswer();
-        thinking.write('\n(The answer copied the prompt; asked again.)\n');
-        final question = input.isEmpty ? 'the question above' : input;
-        (toolMessages.isEmpty ? messages : toolMessages).addAll([
-          {'role': 'assistant', 'content': copied},
-          {
-            'role': 'user',
-            'content':
-                'That copies the prompt. Answer in your own words, from '
-                'the sources above, citing them like [1]: $question',
-          },
-        ]);
-        t.newParser();
-        continue;
-      }
-      // The phone's model says the figure is unknown while its pages give
-      // one: once, ask again for it from them. Qwen3.5 0.8B said "There is
-      // no current record of how many people live in Ottawa" (phone probe
-      // round 6, 2026-10-18).
-      if (!denialRetried &&
-          !_cancelled &&
-          _alive &&
-          !repeatStopped &&
-          !t.echoStopped &&
-          t.resume == null &&
-          local &&
-          t.sources.isNotEmpty &&
-          // A recalled page that lacks it: the turn searches instead
-          // ([_searchAfterRecall]).
-          !t.searchIfLacking &&
-          AnswerCleanup.deniesFigure(answer.toString(), input) &&
-          t.sources.any(
-            (s) => RegExp(r'\d').hasMatch('${s.snippet} ${s.pageText ?? ''}'),
-          )) {
-        denialRetried = true;
-        t.parser!.close();
-        final denied = answer.toString().trim();
-        t.clearAnswer();
-        thinking.write(
-          '\n(The answer said the figure is unknown; asked again.)\n',
-        );
-        (toolMessages.isEmpty ? messages : toolMessages).addAll([
-          {'role': 'assistant', 'content': denied},
-          {
-            'role': 'user',
-            'content':
-                'The sources above do give a figure for this. Answer '
-                'with it, citing them like [1]: $input',
-          },
-        ]);
-        t.newParser();
-        continue;
-      }
-      // "The next eclipse is on August 12, 2026" asked on October 20,
-      // 2026: once, ask for the first date after today. Qwen3.5 0.8B took
-      // the page's most recent date (speed set, 2026-10-20). The parser
-      // holds back the answer's last characters until it is closed, and
-      // every path from here closes it anyway.
-      t.parser!.close();
-      if (!pastRetried &&
-          !_cancelled &&
-          _alive &&
-          !repeatStopped &&
-          !t.echoStopped &&
-          t.resume == null &&
-          local &&
-          t.sources.isNotEmpty &&
-          DateCheck.passedNext(answer.toString(), input, DateTime.now())) {
-        pastRetried = true;
-        final dated = answer.toString().trim();
-        t.clearAnswer();
-        thinking.write(
-          '\n(The answer gave a date already past; asked again.)\n',
-        );
-        final now = DateTime.now();
-        final today =
-            '${now.year}-${now.month.toString().padLeft(2, '0')}-'
-            '${now.day.toString().padLeft(2, '0')}';
-        (toolMessages.isEmpty ? messages : toolMessages).addAll([
-          {'role': 'assistant', 'content': dated},
-          {
-            'role': 'user',
-            'content':
-                'That date has already passed: today is $today. Answer with '
-                'the first date after today that the sources give, citing '
-                'them like [1], or say they give none: $input',
-          },
-        ]);
-        t.newParser();
-        continue;
-      }
-      if (runner == null ||
-          tools.isEmpty ||
-          _cancelled ||
-          repeatStopped ||
-          t.echoStopped ||
-          !_alive) {
-        break;
-      }
-      // Flush the parser so the round's text is complete before reading it.
-      t.parser!.close();
-      final roundText = answer.toString();
-      var calls = lastRound || (nativeTools && RetrievalPlan.smallTalk(input))
-          ? const <ToolCall>[]
-          : nativeTools
-          ? TextEngine.toolCallsOf(engine.metrics)
-          : TextToolProtocol.parse(roundText, counter: rounds + 1);
-      // A plain timer request the phone's model answered with chat instead
-      // of the required call is prepared from its own words.
-      var appCall = false;
-      if (calls.isEmpty &&
-          rounds == 0 &&
-          !lastRound &&
-          local &&
-          PhoneActions.command(input) &&
-          tools.any((s) => s.name == 'set_timer')) {
-        final timer = PhoneActions.plainTimer(input);
-        if (timer != null) {
-          calls = [
-            ToolCall(
-              id: 'app_timer',
-              name: 'set_timer',
-              arguments: jsonEncode(timer),
+        // Memory sharing turned off mid-turn: the next request would carry
+        // the notes already in this prompt (system notes, recall results).
+        // Checked after the awaits above, right before sending; the turn ends
+        // with what it has (audit P2-15).
+        if (sent &&
+            !local &&
+            (t.memoryFacts.isNotEmpty ||
+                (runner?.trace.any((r) => r.call.name == 'recall') ?? false)) &&
+            !_remoteMemoryShared(settings)) {
+          break;
+        }
+        sent = true;
+        try {
+          await for (final event in _turns.stream(
+            t.lease,
+            () => engine.generate(
+              messages: [...messages, ...toolMessages],
+              fallbackTemplate: model.family.fallbackTemplate,
+              settings: roundSettings,
+              assistantPrefix: t.resume?.content ?? '',
+              tools: nativeTools ? tools : const [],
+              // Required applies to the first round only; once a result is in,
+              // the model must be free to answer. An outright action request
+              // must prepare its card, not promise to.
+              toolChoice:
+                  nativeTools && (lastRound || RetrievalPlan.smallTalk(input))
+                  ? 'none'
+                  : nativeTools &&
+                        rounds == 0 &&
+                        (prompt.researchTurn ||
+                            (t.remoteBrain &&
+                                settings.webMode == WebMode.always &&
+                                !RetrievalPlan.greetingOnly(input)) ||
+                            (HelperRequest.wanted(input) &&
+                                tools.any((t) => t.name == 'ask_helper')) ||
+                            settings.toolChoice == ToolChoice.required ||
+                            (PhoneActions.command(input) &&
+                                tools.any(
+                                  (s) => PhoneActions.kinds.contains(s.name),
+                                )))
+                  ? 'required'
+                  : 'auto',
             ),
-          ];
-          appCall = true;
+          )) {
+            if (event is! TextDelta) continue;
+            t.parser!.add(event.text);
+            if (_cancelled) engine.cancel();
+            if (++pieces % 24 == 0 &&
+                !repeatStopped &&
+                AnswerCleanup.isRepeating(answer.toString())) {
+              repeatStopped = true;
+              engine.cancel();
+            }
+            // The model narrates the request on a new line: the answer is
+            // over (stopped before the voice reaches that line).
+            if (!repeatStopped && event.text.isNotEmpty && t.tail.narrating) {
+              repeatStopped = true;
+              engine.cancel();
+            }
+            // Checked while the answer's opening is being written, on a turn
+            // with sources: their prompt opens with the app's own paragraphs,
+            // while a chat turn's may be the user's text, which a corrected
+            // copy starts with.
+            // The second try is checked against the same sources turn.
+            final asked = echoPrompt ??= messages.last['content'];
+            if (!echoed &&
+                !t.echoStopped &&
+                t.resume == null &&
+                t.sources.isNotEmpty &&
+                answer.length >= 60 &&
+                answer.length < 400 &&
+                asked is String &&
+                AnswerCleanup.echoes(answer.toString(), asked)) {
+              if (echoRetried) {
+                t.echoStopped = true;
+              } else {
+                echoed = true;
+              }
+              engine.cancel();
+            }
+          }
+        } finally {
+          final prompt = (engine.metrics['promptTokens'] as num?)?.toInt() ?? 0;
+          final generated = (engine.metrics['tokens'] as num?)?.toInt() ?? 0;
+          budget?.charge(prompt, generated);
+          t.promptTokens += prompt;
+          t.generatedTokens += generated;
+          t.generationRounds++;
+          t.nativeOmitted = max(
+            t.nativeOmitted,
+            (engine.metrics['trimmedMessages'] as num?)?.toInt() ?? 0,
+          );
+          t.metrics = {
+            ...engine.metrics,
+            'promptTokens': t.promptTokens,
+            'tokens': t.generatedTokens,
+            'generationRounds': t.generationRounds,
+            'trimmedMessages': _fittedOmitted + t.nativeOmitted,
+          };
         }
-      }
-      // The round's words without any tool-call markup: the parser's own
-      // split when the native library reports calls, else the known markers
-      // (the text protocol only drops blocks that are calls).
-      final stripped = nativeTools
-          ? ToolMarkup.strip(roundText)
-          : TextToolProtocol.strip(roundText);
-      final said = appCall
-          ? ''
-          : calls.isNotEmpty &&
-                nativeTools &&
-                engine.metrics['toolContent'] is String
-          ? (engine.metrics['toolContent'] as String).trim()
-          : stripped;
-      // A changing figure with nothing looked up this turn: "tomorrow in
-      // Rome… twenty-eight degrees" from no page (round 5).
-      // Only when the question asks for one: an explanation that names a
-      // cost or a forecast was moved to the thinking pop-up and asked again,
-      // and the second, shorter answer was the one shown (tester,
-      // 2026-10-20: "it answered twice").
-      final unchecked =
-          rounds == 0 &&
-          t.appAnswer == null &&
-          prompt.sum == null &&
-          t.sources.isEmpty &&
-          (RetrievalPlan.timeSensitive(input) ||
-              RetrievalPlan.productSpec(input)) &&
-          AnswerCleanup.statesLiveFigure(said);
-      // An age "as of" an earlier year, copied from a dated snippet.
-      final dated =
-          rounds > 0 && AnswerCleanup.staleAge(input, said, DateTime.now());
-      if (calls.isEmpty &&
-          t.remoteBrain &&
-          !toldToRead &&
-          !lastRound &&
-          rounds < settings.toolMaxRounds &&
-          (unchecked ||
-              dated ||
-              // A full answer that ends by pointing at a site is kept.
-              (rounds > 0 &&
-                  said.length < 600 &&
-                  (AnswerCleanup.offersToLookFurther(said) ||
-                      AnswerCleanup.defersToSources(said))))) {
-        // "Would you like the specific details from Environment Canada?"
-        // after a search (LM Studio Gemma 4 E4B, conversation probe
-        // 2026-10-18), although it was told to read on rather than ask; or
-        // "you can check Environment Canada for detailed hourly forecasts"
-        // with no figure (round 4).
-        final offered = AnswerCleanup.offersToLookFurther(said);
-        toldToRead = true;
+        // A copy of the prompt is no answer: once, ask again in a short turn
+        // of its own after the cached prompt. The same order appended to the
+        // end of the sources turn was copied too (frozen-web benchmark,
+        // 2026-10-11: 3 of 3 on the weather tables).
+        if (echoed && !echoRetried && !_cancelled && _alive) {
+          echoRetried = true;
+          echoed = false;
+          t.parser!.close();
+          final copied = answer.toString().trim().split('\n').first;
+          t.clearAnswer();
+          thinking.write('\n(The answer copied the prompt; asked again.)\n');
+          final question = input.isEmpty ? 'the question above' : input;
+          (toolMessages.isEmpty ? messages : toolMessages).addAll([
+            {'role': 'assistant', 'content': copied},
+            {
+              'role': 'user',
+              'content':
+                  'That copies the prompt. Answer in your own words, from '
+                  'the sources above, citing them like [1]: $question',
+            },
+          ]);
+          t.newParser();
+          continue;
+        }
+        // The phone's model says the figure is unknown while its pages give
+        // one: once, ask again for it from them. Qwen3.5 0.8B said "There is
+        // no current record of how many people live in Ottawa" (phone probe
+        // round 6, 2026-10-18).
+        if (!denialRetried &&
+            !_cancelled &&
+            _alive &&
+            !repeatStopped &&
+            !t.echoStopped &&
+            t.resume == null &&
+            local &&
+            t.sources.isNotEmpty &&
+            // A recalled page that lacks it: the turn searches instead
+            // ([_searchAfterRecall]).
+            !t.searchIfLacking &&
+            AnswerCleanup.deniesFigure(answer.toString(), input) &&
+            t.sources.any(
+              (s) => RegExp(r'\d').hasMatch('${s.snippet} ${s.pageText ?? ''}'),
+            )) {
+          denialRetried = true;
+          t.parser!.close();
+          final denied = answer.toString().trim();
+          t.clearAnswer();
+          thinking.write(
+            '\n(The answer said the figure is unknown; asked again.)\n',
+          );
+          (toolMessages.isEmpty ? messages : toolMessages).addAll([
+            {'role': 'assistant', 'content': denied},
+            {
+              'role': 'user',
+              'content':
+                  'The sources above do give a figure for this. Answer '
+                  'with it, citing them like [1]: $input',
+            },
+          ]);
+          t.newParser();
+          continue;
+        }
+        // "The next eclipse is on August 12, 2026" asked on October 20,
+        // 2026: once, ask for the first date after today. Qwen3.5 0.8B took
+        // the page's most recent date (speed set, 2026-10-20). The parser
+        // holds back the answer's last characters until it is closed, and
+        // every path from here closes it anyway.
+        t.parser!.close();
+        if (!pastRetried &&
+            !_cancelled &&
+            _alive &&
+            !repeatStopped &&
+            !t.echoStopped &&
+            t.resume == null &&
+            local &&
+            t.sources.isNotEmpty &&
+            DateCheck.passedNext(answer.toString(), input, DateTime.now())) {
+          pastRetried = true;
+          final dated = answer.toString().trim();
+          t.clearAnswer();
+          thinking.write(
+            '\n(The answer gave a date already past; asked again.)\n',
+          );
+          final now = DateTime.now();
+          final today =
+              '${now.year}-${now.month.toString().padLeft(2, '0')}-'
+              '${now.day.toString().padLeft(2, '0')}';
+          (toolMessages.isEmpty ? messages : toolMessages).addAll([
+            {'role': 'assistant', 'content': dated},
+            {
+              'role': 'user',
+              'content':
+                  'That date has already passed: today is $today. Answer with '
+                  'the first date after today that the sources give, citing '
+                  'them like [1], or say they give none: $input',
+            },
+          ]);
+          t.newParser();
+          continue;
+        }
+        if (runner == null ||
+            tools.isEmpty ||
+            _cancelled ||
+            repeatStopped ||
+            t.echoStopped ||
+            !_alive) {
+          break;
+        }
+        // Flush the parser so the round's text is complete before reading it.
+        t.parser!.close();
+        final roundText = answer.toString();
+        var calls = lastRound || (nativeTools && RetrievalPlan.smallTalk(input))
+            ? const <ToolCall>[]
+            : nativeTools
+            ? TextEngine.toolCallsOf(engine.metrics)
+            : TextToolProtocol.parse(
+                roundText,
+                counter: rounds + 1,
+                maxCalls: settings.agentMaxConcurrent.clamp(3, 4),
+              );
+        // An explicit delegation should not end at a promise to call (owner, 2026-11-02).
+        var appCall = false;
+        if (calls.isEmpty) {
+          final helperCall = HelperRequest.fallback(
+            input,
+            offered: tools.any((s) => s.name == 'ask_helper'),
+            round: rounds,
+            lastRound: lastRound,
+          );
+          if (helperCall != null) {
+            calls = [helperCall];
+            appCall = true;
+          }
+        }
+        // A plain timer request the phone's model answered with chat instead
+        // of the required call is prepared from its own words.
+        if (calls.isEmpty &&
+            rounds == 0 &&
+            !lastRound &&
+            local &&
+            PhoneActions.command(input) &&
+            tools.any((s) => s.name == 'set_timer')) {
+          final timer = PhoneActions.plainTimer(input);
+          if (timer != null) {
+            calls = [
+              ToolCall(
+                id: 'app_timer',
+                name: 'set_timer',
+                arguments: jsonEncode(timer),
+              ),
+            ];
+            appCall = true;
+          }
+        }
+        // The round's words without any tool-call markup: the parser's own
+        // split when the native library reports calls, else the known markers
+        // (the text protocol only drops blocks that are calls).
+        final stripped = nativeTools
+            ? ToolMarkup.strip(roundText)
+            : TextToolProtocol.strip(roundText);
+        final said = appCall
+            ? ''
+            : calls.isNotEmpty &&
+                  nativeTools &&
+                  engine.metrics['toolContent'] is String
+            ? (engine.metrics['toolContent'] as String).trim()
+            : stripped;
+        // A changing figure with nothing looked up this turn: "tomorrow in
+        // Rome… twenty-eight degrees" from no page (round 5).
+        // Only when the question asks for one: an explanation that names a
+        // cost or a forecast was moved to the thinking pop-up and asked again,
+        // and the second, shorter answer was the one shown (tester,
+        // 2026-10-20: "it answered twice").
+        final unchecked =
+            rounds == 0 &&
+            t.appAnswer == null &&
+            prompt.sum == null &&
+            t.sources.isEmpty &&
+            (RetrievalPlan.timeSensitive(input) ||
+                RetrievalPlan.productSpec(input)) &&
+            AnswerCleanup.statesLiveFigure(said);
+        // An age "as of" an earlier year, copied from a dated snippet.
+        final dated =
+            rounds > 0 && AnswerCleanup.staleAge(input, said, DateTime.now());
+        if (calls.isEmpty &&
+            t.remoteBrain &&
+            !toldToRead &&
+            !lastRound &&
+            rounds < settings.toolMaxRounds &&
+            (unchecked ||
+                dated ||
+                // A full answer that ends by pointing at a site is kept.
+                (rounds > 0 &&
+                    said.length < 600 &&
+                    (AnswerCleanup.offersToLookFurther(said) ||
+                        AnswerCleanup.defersToSources(said))))) {
+          // "Would you like the specific details from Environment Canada?"
+          // after a search (LM Studio Gemma 4 E4B, conversation probe
+          // 2026-10-18), although it was told to read on rather than ask; or
+          // "you can check Environment Canada for detailed hourly forecasts"
+          // with no figure (round 4).
+          final offered = AnswerCleanup.offersToLookFurther(said);
+          toldToRead = true;
+          t.clearAnswer();
+          if (said.isNotEmpty) thinking.write('\n$said\n');
+          toolMessages.addAll([
+            {'role': 'assistant', 'content': said},
+            {
+              'role': 'user',
+              'content': unchecked
+                  ? 'Search first: that figure changes, so look it up now '
+                        'and answer my question from what you find.'
+                  : dated
+                  ? 'Today is ${DateTime.now().toIso8601String().substring(0, 10)}. '
+                        'Give the age as of today, worked out from the birth '
+                        'date in the sources.'
+                  : offered
+                  ? 'Yes. Read the best source now and answer my question '
+                        'from what it says.'
+                  : 'Read the best page now with read_url and answer my '
+                        'question with the figures it gives.',
+            },
+          ]);
+          t.newParser();
+          continue;
+        }
+        if (pendingHelpers.isNotEmpty &&
+            (calls.isEmpty || rounds >= settings.toolMaxRounds)) {
+          await collectHelpers();
+          if (_cancelled || !_alive) break;
+          lastRound = true;
+          t.clearAnswer();
+          toolMessages.add({
+            'role': 'user',
+            'content':
+                'All helper replies are now available above. Check them and write the final answer from them and your own work.',
+          });
+          t.newParser();
+          continue;
+        }
+        if (calls.isEmpty) {
+          if (rounds == 0 && prompt.researchTurn) t.researchSkipped = true;
+          // A stray block the model wrote without stopping is not shown.
+          if (said != roundText.trim()) t.replaceAnswer(said);
+          break;
+        }
+        if (rounds >= settings.toolMaxRounds) {
+          lastRound = true;
+          t.clearAnswer();
+          toolMessages.add({
+            'role': 'user',
+            'content':
+                '(No more tool calls are available. Answer my question now from the tool results above, citing their source numbers.)',
+          });
+          t.newParser();
+          continue;
+        }
+        rounds++;
         t.clearAnswer();
         if (said.isNotEmpty) thinking.write('\n$said\n');
-        toolMessages.addAll([
-          {'role': 'assistant', 'content': said},
-          {
-            'role': 'user',
-            'content': unchecked
-                ? 'Search first: that figure changes, so look it up now '
-                      'and answer my question from what you find.'
-                : dated
-                ? 'Today is ${DateTime.now().toIso8601String().substring(0, 10)}. '
-                      'Give the age as of today, worked out from the birth '
-                      'date in the sources.'
-                : offered
-                ? 'Yes. Read the best source now and answer my question '
-                      'from what it says.'
-                : 'Read the best page now with read_url and answer my '
-                      'question with the figures it gives.',
-          },
-        ]);
-        t.newParser();
-        continue;
-      }
-      if (calls.isEmpty) {
-        if (rounds == 0 && prompt.researchTurn) t.researchSkipped = true;
-        // A stray block the model wrote without stopping is not shown.
-        if (said != roundText.trim()) t.replaceAnswer(said);
-        break;
-      }
-      if (rounds >= settings.toolMaxRounds) {
-        lastRound = true;
-        t.clearAnswer();
         toolMessages.add({
-          'role': 'user',
-          'content':
-              '(No more tool calls are available. Answer my question now from the tool results above, citing their source numbers.)',
+          'role': 'assistant',
+          // Native turns carry their calls structurally; repeating the markup
+          // in the text made the template render every call twice.
+          'content': nativeTools ? said : roundText,
+          if (nativeTools)
+            'tool_calls': [
+              for (final c in calls)
+                {...c.toJson(), 'arguments': c.jsonArguments},
+            ],
         });
-        t.newParser();
-        continue;
-      }
-      rounds++;
-      t.clearAnswer();
-      if (said.isNotEmpty) thinking.write('\n$said\n');
-      toolMessages.add({
-        'role': 'assistant',
-        // Native turns carry their calls structurally; repeating the markup
-        // in the text made the template render every call twice.
-        'content': nativeTools ? said : roundText,
-        if (nativeTools)
-          'tool_calls': [
-            for (final c in calls)
-              {...c.toJson(), 'arguments': c.jsonArguments},
-          ],
-      });
-      var repeated = false;
-      for (final call in calls) {
-        if (_cancelled) break;
-        // The same phone action again (Qwen3.5 0.8B prepared one timer four
-        // times, 2026-10-08): not prepared twice; the model answers. On the
-        // phone any second one of the same kind counts: after a five-minute
-        // timer the 0.8B prepared two "0 minute" timers (Conversation probe
-        // round 7, 2026-10-18).
-        if (PhoneActions.kinds.contains(call.name) &&
-            runner.trace.any(
-              (r) =>
-                  r.ok &&
-                  r.call.name == call.name &&
-                  (local ||
-                      PhoneAction(r.call.name, r.call.args).detail ==
-                          PhoneAction(call.name, call.args).detail),
-            )) {
-          repeated = true;
-          toolMessages.add({
+        // Start every helper before awaiting other tools; they can span model rounds (owner, 2026-11-02).
+        if (!_cancelled) {
+          for (final call in calls.where((c) => c.name == 'ask_helper')) {
+            pendingHelpers.add((call: call, reply: runner.run(call)));
+          }
+        }
+        var repeated = false;
+        for (final call in calls) {
+          if (_cancelled) break;
+          // The same phone action again (Qwen3.5 0.8B prepared one timer four
+          // times, 2026-10-08): not prepared twice; the model answers. On the
+          // phone any second one of the same kind counts: after a five-minute
+          // timer the 0.8B prepared two "0 minute" timers (Conversation probe
+          // round 7, 2026-10-18).
+          if (PhoneActions.kinds.contains(call.name) &&
+              runner.trace.any(
+                (r) =>
+                    r.ok &&
+                    r.call.name == call.name &&
+                    (local ||
+                        PhoneAction(r.call.name, r.call.args).detail ==
+                            PhoneAction(call.name, call.args).detail),
+              )) {
+            repeated = true;
+            toolMessages.add({
+              'role': 'tool',
+              'tool_call_id': call.id,
+              'name': call.name,
+              'content':
+                  'Already prepared: the card is shown under your answer. '
+                  'Do not prepare it again; answer the user now.',
+            });
+            continue;
+          }
+          t.lease.transition(TurnStage.tools);
+          budget?.useTool();
+          state = state.copyWith(
+            notice: call.name == 'ask_helper'
+                ? _t.helperWorking
+                : _t.noticeUsingTool(call.name, _argSummary(call)),
+          );
+          final ToolResult result;
+          if (call.name == 'ask_helper') {
+            final helperName = await ref
+                .read(helperRunnerProvider)
+                .modelNameFor(settings.helperModelId, agentSettings: settings);
+            result = ToolResult(
+              call: call,
+              ok: true,
+              elapsedMs: 0,
+              output:
+                  'Helper job ${++helperCount} started on $helperName: ${call.args['task']}. '
+                  'Its reply will be added before you write the answer; keep working (research, more helpers, or outline).',
+            );
+          } else {
+            result = await runner.run(call);
+          }
+          thinking.write(
+            '\n▸ ${call.name}${_argSummary(call)} → ${result.ok ? '' : 'error: '}'
+            '${result.output.length > 160 ? '${result.output.substring(0, 160)}…' : result.output}\n',
+          );
+          final message = <String, Object>{
             'role': 'tool',
             'tool_call_id': call.id,
             'name': call.name,
-            'content':
-                'Already prepared: the card is shown under your answer. '
-                'Do not prepare it again; answer the user now.',
-          });
-          continue;
+            'content': result.output,
+          };
+          if (call.name == 'ask_helper') helperSlots[call] = message;
+          toolMessages.add(message);
         }
-        t.lease.transition(TurnStage.tools);
-        budget?.useTool();
-        state = state.copyWith(
-          notice: _t.noticeUsingTool(call.name, _argSummary(call)),
-        );
-        final result = await runner.run(call);
-        thinking.write(
-          '\n▸ ${call.name}${_argSummary(call)} → ${result.ok ? '' : 'error: '}'
-          '${result.output.length > 160 ? '${result.output.substring(0, 160)}…' : result.output}\n',
-        );
-        toolMessages.add({
-          'role': 'tool',
-          'tool_call_id': call.id,
-          'name': call.name,
-          'content': result.output,
-        });
+        if (repeated) lastRound = true;
+        t.stage('tools${rounds}Ms');
+        // Pages the tools read become this answer's sources, numbered as the
+        // tool results numbered them (the runner was seeded with the evidence
+        // already in the prompt).
+        t.sources = List.of(runner.sources);
+        for (final s in runner.sponsored) {
+          if (!t.sponsored.any((x) => x.url == s.url)) t.sponsored.add(s);
+        }
+        t.newParser();
       }
-      if (repeated) lastRound = true;
-      t.stage('tools${rounds}Ms');
-      // Pages the tools read become this answer's sources, numbered as the
-      // tool results numbered them (the runner was seeded with the evidence
-      // already in the prompt).
-      t.sources = List.of(runner.sources);
-      for (final s in runner.sponsored) {
-        if (!t.sponsored.any((x) => x.url == s.url)) t.sponsored.add(s);
+    } finally {
+      // Stop/error paths must settle jobs before saving their trace or starting another turn (owner, 2026-11-02).
+      if (pendingHelpers.isNotEmpty) {
+        t.lease.retrieval.cancel('helper turn ended');
+        await Future.wait(pendingHelpers.map((job) => job.reply));
       }
-      t.newParser();
+      helpers?.endTurn();
     }
   }
 
@@ -2198,6 +2460,7 @@ class ChatNotifier extends _ChatBase
       }
     } finally {
       _turns.release(t.lease);
+      _turnOwner = null;
       if (_alive) {
         ref.read(sessionBusyProvider.notifier).state = false;
         if (state.isGenerating) {
@@ -2904,9 +3167,11 @@ class ChatNotifier extends _ChatBase
     required List<SearchResult> sources,
     required bool researchTurn,
     bool remoteBrain = false,
+    bool userTools = true,
     required bool continuing,
     bool allowRecall = true,
     bool register = true,
+    String? helperMessageId,
   }) {
     ToolRunner? offered;
     if (engine is DiffusionGemmaEngine) {
@@ -2927,6 +3192,7 @@ class ChatNotifier extends _ChatBase
     // Phone actions (alarms, calls, apps) have no Windows equivalent.
     final phoneActions =
         !DesktopHost.active &&
+        settings.toolActions &&
         (PhoneActions.wanted(input) ||
             remoteBrain ||
             (chat != null && _actionChats.contains(chat)));
@@ -2941,9 +3207,16 @@ class ChatNotifier extends _ChatBase
     final mcp = DesktopHost.active && Platform.isWindows
         ? ref.read(mcpRegistryProvider)
         : null;
-    final mcpTools = mcp?.specs ?? const <ToolSpec>[];
+    final mcpTools = userTools
+        ? mcp?.specs ?? const <ToolSpec>[]
+        : const <ToolSpec>[];
+    // Turning Tools off mid-turn stops the MCP calls still to come.
+    final globalTools = ref.read(settingsProvider).toolsEnabled;
     final mayNeed =
         mcpTools.isNotEmpty ||
+        // Summaries, translations and drafts of supplied text are the
+        // helper's work, which the retrieval gate would leave out.
+        (settings.toolHelper && settings.helperModelId.isNotEmpty) ||
         researchTurn ||
         phoneActions ||
         (_canRecall(settings) && UserMemory.personalQuery(input)) ||
@@ -2963,6 +3236,8 @@ class ChatNotifier extends _ChatBase
         (!RetrievalPlan.smallTalk(input) || keepActionPrefix) &&
         mayNeed) {
       final runner = ToolRunner(
+        helperOwnsDeadline: true,
+        helperMaxConcurrent: settings.agentMaxConcurrent,
         scraper: ref.read(duckDuckGoScraperProvider),
         reader: ref.read(webPageReaderProvider),
         knowledge: ref.read(knowledgeStoreProvider),
@@ -2974,8 +3249,59 @@ class ChatNotifier extends _ChatBase
         recall: _canRecall(settings) && !researchTurn && allowRecall
             ? (query) => _recallMemory(query, settings)
             : null,
+        // Settings > Tools > Helper model: side jobs on a small second
+        // model. A refusal (not downloaded, no memory) reaches the chat
+        // model as a tool error, so it does the job itself.
+        helper:
+            settings.toolHelper &&
+                settings.helperModelId.isNotEmpty &&
+                settings.toolsEnabled
+            ? (task, text) async {
+                try {
+                  final reply = await ref
+                      .read(helperRunnerProvider)
+                      .run(
+                        modelId: settings.helperModelId,
+                        agentSettings: settings,
+                        task: task,
+                        input: text,
+                        messageId: helperMessageId,
+                        webTools: ToolRunner(
+                          scraper: ref.read(duckDuckGoScraperProvider),
+                          reader: ref.read(webPageReaderProvider),
+                          settings: settings,
+                          cancel: _retrievalCancel,
+                          userText: input,
+                          webOnly: true,
+                        ),
+                        approveWeb: (cancel) async {
+                          final id = state.chatId;
+                          if (id == null) return false;
+                          final decisions = AgentWebDecisions(_database);
+                          return ref
+                              .read(agentWebApprovalProvider)
+                              .request(
+                                chatId: id,
+                                mode: settings.agentWebAccess,
+                                read: () => decisions.read(id),
+                                save: (allow) => decisions.write(id, allow),
+                                cancel: cancel,
+                              );
+                        },
+                        cancel: _retrievalCancel,
+                      );
+                  return 'Helper model: ${reply.modelName}\n${reply.text}';
+                } on HelperUnavailable catch (e) {
+                  throw StateError(
+                    'The helper is unavailable (${e.reason}); do the job yourself.',
+                  );
+                }
+              }
+            : null,
         phoneActions: phoneActions,
         actionsOnly: !settings.toolsEnabled,
+        webOnly: !userTools,
+        userText: input,
         externalTools: mcpTools,
         externalRun: mcp == null
             ? null
@@ -2987,11 +3313,19 @@ class ChatNotifier extends _ChatBase
                     _alive &&
                     !_cancelled &&
                     DesktopHost.active &&
-                    settings.toolsEnabled,
+                    userTools &&
+                    settings.toolsEnabled &&
+                    (!globalTools || ref.read(settingsProvider).toolsEnabled),
               ),
       );
       offered = runner;
       tools = runner.specs();
+      if (HelperRequest.wanted(input) &&
+          tools.any((t) => t.name == 'ask_helper')) {
+        turnNotes.writeln(
+          'The user explicitly requested a helper/sub-agent. Start ALL helper jobs in your FIRST round: make one ask_helper call per independent part together, then keep working while they run in the background. Their replies will be added before your final answer. If the user asks for N sub-agents/helpers (e.g. "use 3 sub-agents" or "two helpers"), make N calls.',
+        );
+      }
       // Evidence is already in the prompt: offering the web tools too
       // invites a needless extra round (each one a full request).
       if (sources.isNotEmpty && !researchTurn && !remoteBrain) {
@@ -3124,6 +3458,11 @@ class ChatNotifier extends _ChatBase
     if (!_namingStopped && identical(_titleLater, run)) _titleLater = null;
   }
 
+  /// Stops the running turn only when [owner] sent it.
+  void cancelOwned(Object owner) {
+    if (identical(owner, _turnOwner)) cancel();
+  }
+
   void cancel() {
     if (!state.isGenerating) return;
     _turns.active?.cancel();
@@ -3164,10 +3503,21 @@ class ChatNotifier extends _ChatBase
       // (see [ContextUse.omitOldestExchange]).
       final longResult =
           biggest != null && (biggest['content'] as String).length >= 4000;
-      var omitted = ContextUse.omitOldestExchange(messages, keep: 2);
-      if (omitted == 0 && !longResult) {
-        omitted = ContextUse.omitOldestExchange(messages);
-      }
+      final available = (budget['availableTokens'] as num?)?.toInt();
+      final omitted = await ContextUse.omitToFit(
+        messages,
+        deficit: available == null ? 1 : max(1, -available),
+        keep: longResult ? 2 : 0,
+        cancelled: () => _cancelled,
+        count: (exchange) async {
+          final measured = await engine.previewPrompt(
+            messages: exchange,
+            fallbackTemplate: model.family.fallbackTemplate,
+            settings: settings,
+          );
+          return max(1, (measured['promptTokens'] as num?)?.toInt() ?? 1);
+        },
+      );
       if (omitted > 0) {
         _fittedOmitted += omitted;
         rounds--;
@@ -3191,8 +3541,8 @@ class ChatNotifier extends _ChatBase
   }
 
   /// Shortens attached document text in the last user turn until the prompt
-  /// fits (halving the largest file each round, keeping its beginning).
-  /// Returns a notice when something was cut.
+  /// fits (the largest file each round, keeping its passages closest to the
+  /// request). Returns a notice when something was left out.
   Future<String?> fitDocuments(
     TextEngine engine,
     List<Map<String, Object>> messages,
@@ -3206,6 +3556,9 @@ class ChatNotifier extends _ChatBase
     }
     final original = last['content'] as String;
     var content = original;
+    final whole = <String, String>{};
+    int? target;
+    (int, int)? passages;
     var rounds = 0;
     while (rounds++ < 12) {
       final budget = await engine.previewPrompt(
@@ -3235,21 +3588,49 @@ class ChatNotifier extends _ChatBase
         rounds--;
         continue;
       }
-      // Largest file block first.
+      // Largest file block first: the passages closest to the request
+      // (EmbeddingGemma when downloaded), not its beginning. Halving kept
+      // only the first 25% of a long file (owner, 2026-11-01).
       if (biggest == null) break;
-      final text = biggest.group(2)!;
-      if (text.length < 2000) break;
-      final kept = text.substring(0, text.length ~/ 2);
+      final name = biggest.group(1)!;
+      final full = whole[name] ??= biggest.group(2)!;
+      if (full.length < 2000) break;
+      final prompt = (budget['promptTokens'] as num?)?.toInt() ?? 0;
+      final over =
+          prompt +
+          ((budget['reservedTokens'] as num?)?.toInt() ?? 0) -
+          ((budget['contextSize'] as num?)?.toInt() ?? 0);
+      final perToken = prompt > 0 ? content.length / prompt : 4.0;
+      final current = biggest.group(2)!.length;
+      target = max(
+        1500,
+        min(
+          (target ?? current) * (target == null ? 1 : 0.85),
+          current - over * perToken * 1.1 - 200,
+        ).floor(),
+      );
+      final request = content
+          .substring(content.lastIndexOf('[End of file: ') + 1)
+          .replaceFirst(RegExp(r'^[^\]]*\]'), '')
+          .trim();
+      final fitted = await DocumentPassages.fit(
+        full,
+        request,
+        target,
+        embedder: _webEmbedder(),
+      );
+      passages = (fitted.kept, fitted.total);
       content = content.replaceRange(
         biggest.start,
         biggest.end,
-        '[File: ${biggest.group(1)}]\n$kept\n[… cut to fit the context …]\n[End of file: ${biggest.group(1)}]',
+        '[File: $name]\n${fitted.text}\n[End of file: $name]',
       );
       messages.last = {...last, 'content': content};
+      if (target <= 1500) break;
     }
     if (content == original) return null;
-    final before = original.length, after = content.length;
-    return _t.noticeDocCut((after * 100 / before).round());
+    final (kept, total) = passages ?? (1, 1);
+    return _t.noticeDocPassages(kept, total);
   }
 
   static String _argSummary(ToolCall call) {

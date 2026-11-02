@@ -66,6 +66,7 @@ class DesktopApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final localeCode = ref.watch(settingsProvider.select((s) => s.localeCode));
+    appLanguageCode = localeCode;
     final themeChoice = ref.watch(
       settingsProvider.select((s) => s.themeChoice),
     );
@@ -458,7 +459,8 @@ class _EmbeddedPage extends StatelessWidget {
     final c = context.colors;
     return Theme(
       data: theme.copyWith(
-        scaffoldBackgroundColor: Colors.transparent,
+        // Opaque, so a page sliding in covers the one below at once.
+        scaffoldBackgroundColor: DesktopTheme.contentLayer(c),
         canvasColor: DesktopTheme.contentLayer(c),
         appBarTheme: theme.appBarTheme.copyWith(
           backgroundColor: Colors.transparent,

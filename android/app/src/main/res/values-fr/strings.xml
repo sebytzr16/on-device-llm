@@ -6,4 +6,9 @@
     <string name="widget_talk">Parler</string>
     <string name="widget_description">Posez une question à votre modèle local, ou parlez-lui.</string>
     <string name="model_download_description">Téléchargement du modèle ; vérifié à la réouverture</string>
+    <string name="schedule_channel">Requêtes programmées</string>
+    <string name="schedule_goal">Objectif programmé</string>
+    <string name="schedule_prompt">Requête programmée</string>
+    <string name="schedule_tap_goal">Touchez pour configurer : %1$s</string>
+    <string name="schedule_tap_ask">Touchez pour demander : %1$s</string>
 </resources>

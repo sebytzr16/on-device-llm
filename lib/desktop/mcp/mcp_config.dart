@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
+
 /// Validation codes are translated by the desktop host.
 enum McpProblem {
   config,
@@ -117,5 +119,7 @@ String mcpToolName(String server, String tool) {
             : '_${b.toRadixString(16).padLeft(2, '0')}',
       )
       .join();
-  return '${encode(server)}__${encode(tool)}';
+  final full = '${encode(server)}__${encode(tool)}';
+  if (full.length <= 64) return full;
+  return 'mcp_${sha256.convert(utf8.encode(full)).toString().substring(0, 60)}';
 }

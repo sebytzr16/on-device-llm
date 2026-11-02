@@ -7,12 +7,14 @@ import '../core/design/app_dialog.dart';
 import '../core/l10n/l10n.dart';
 import '../data/local/database/app_database.dart';
 import '../features/chat/presentation/providers/chat_provider.dart';
+import '../features/chat/domain/conversation_workspace.dart';
 import '../core/motion/pressable.dart';
 import '../core/motion/spring_entrance.dart';
 import 'desktop_app.dart';
 import '../core/platform/desktop_preferences.dart';
 import 'advanced_toggle.dart';
 import 'chat_tools.dart';
+import 'chat_drafts.dart';
 import 'desktop_theme.dart';
 import 'focus_ring.dart';
 import 'keyboard_shortcuts.dart';
@@ -53,37 +55,84 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Tooltip(
-            message: desktopShortcutTooltip(context, l10n.newChat),
-            child: Pressable(
-              pressedScale: 0.97,
-              child: SizedBox(
-                height: 38,
-                child: OutlinedButton.icon(
-                  onPressed: widget.onNewChat,
-                  icon: Icon(Icons.edit_square, size: 16, color: c.accent),
-                  label: Row(
-                    children: [
-                      Text(l10n.newChat),
-                      const Spacer(),
-                      Text(
-                        'Ctrl+N',
-                        style: context.text.mono.copyWith(
-                          fontSize: 11,
-                          color: c.textFaint,
+          Row(
+            children: [
+              Expanded(
+                child: Tooltip(
+                  message: desktopShortcutTooltip(context, l10n.newChat),
+                  child: Pressable(
+                    pressedScale: 0.97,
+                    child: SizedBox(
+                      height: 38,
+                      child: OutlinedButton.icon(
+                        onPressed: widget.onNewChat,
+                        icon: Icon(
+                          Icons.edit_square,
+                          size: 16,
+                          color: c.accent,
+                        ),
+                        label: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                l10n.newChat,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              'Ctrl+N',
+                              style: context.text.mono.copyWith(
+                                fontSize: 11,
+                                color: c.textFaint,
+                              ),
+                            ),
+                          ],
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          alignment: Alignment.centerLeft,
+                          backgroundColor: c.text.fade(0.04),
+                          side: BorderSide(color: c.hairline),
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
                         ),
                       ),
-                    ],
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    alignment: Alignment.centerLeft,
-                    backgroundColor: c.text.fade(0.04),
-                    side: BorderSide(color: c.hairline),
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    ),
                   ),
                 ),
               ),
-            ),
+              const SizedBox(width: 6),
+              // Temporary chat sits beside New chat, same surface, as on
+              // the phone's app bar.
+              Tooltip(
+                message: '${l10n.temporaryChat} · ${l10n.temporaryChatHint}',
+                child: Pressable(
+                  pressedScale: 0.94,
+                  child: SizedBox.square(
+                    dimension: 38,
+                    child: OutlinedButton(
+                      key: const Key('desktop-new-temporary'),
+                      onPressed: () {
+                        ref
+                            .read(chatProvider.notifier)
+                            .newChat(temporary: true);
+                        nav.show(DesktopSection.chat);
+                      },
+                      style: OutlinedButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        backgroundColor: c.text.fade(0.04),
+                        side: BorderSide(color: c.hairline),
+                      ),
+                      child: Icon(
+                        Icons.visibility_off_outlined,
+                        size: 16,
+                        color: c.textMuted,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           SizedBox(
@@ -140,76 +189,81 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
           const SizedBox(height: 6),
           Expanded(child: _ChatList(query: _query.text.trim().toLowerCase())),
           const Divider(height: 13),
-          const DesktopAdvancedToggle(),
-          const SizedBox(height: 6),
-          _NavRow(
-            icon: Icons.chat_bubble_outline_rounded,
-            label: l10n.desktopChatTitle,
-            selected: section == DesktopSection.chat,
-            onTap: () => nav.show(DesktopSection.chat),
-          ),
-          if (advanced)
-            _NavRow(
-              icon: Icons.folder_outlined,
-              label: l10n.drawerProjects,
-              selected: section == DesktopSection.projects,
-              onTap: () => nav.show(DesktopSection.projects),
+          DesktopSidebarSection(
+            child: Column(
+              children: [
+                const SizedBox(height: 6),
+                _NavRow(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  label: l10n.desktopChatTitle,
+                  selected: section == DesktopSection.chat,
+                  onTap: () => nav.show(DesktopSection.chat),
+                ),
+                if (advanced)
+                  _NavRow(
+                    icon: Icons.folder_outlined,
+                    label: l10n.drawerProjects,
+                    selected: section == DesktopSection.projects,
+                    onTap: () => nav.show(DesktopSection.projects),
+                  ),
+                if (advanced)
+                  _NavRow(
+                    icon: Icons.flag_outlined,
+                    label: l10n.goalsTitle,
+                    selected: section == DesktopSection.goals,
+                    onTap: () => nav.show(DesktopSection.goals),
+                  ),
+                _NavRow(
+                  icon: Icons.memory_rounded,
+                  label: l10n.models,
+                  shortcut: 'Ctrl+M',
+                  selected: section == DesktopSection.models,
+                  onTap: () => nav.show(DesktopSection.models),
+                ),
+                _NavRow(
+                  icon: Icons.auto_awesome_outlined,
+                  label: l10n.desktopCreateTitle,
+                  selected: section == DesktopSection.imageGen,
+                  onTap: () => nav.show(DesktopSection.imageGen),
+                ),
+                _NavRow(
+                  icon: Icons.compare_arrows_rounded,
+                  label: l10n.desktopCompareTitle,
+                  shortcut: 'Ctrl+Shift+D',
+                  selected: section == DesktopSection.compare,
+                  onTap: () => nav.show(DesktopSection.compare),
+                ),
+                _NavRow(
+                  icon: Icons.dns_outlined,
+                  label: l10n.desktopServerTitle,
+                  shortcut: 'Ctrl+Shift+S',
+                  selected: section == DesktopSection.server,
+                  onTap: () => nav.show(DesktopSection.server),
+                ),
+                if (advanced)
+                  _NavRow(
+                    icon: Icons.extension_outlined,
+                    label: l10n.mcpTitle,
+                    selected: section == DesktopSection.mcp,
+                    onTap: () => nav.show(DesktopSection.mcp),
+                  ),
+                if (advanced)
+                  _NavRow(
+                    icon: Icons.terminal_rounded,
+                    label: l10n.desktopLogsTitle,
+                    shortcut: 'Ctrl+Shift+L',
+                    selected: section == DesktopSection.logs,
+                    onTap: () => nav.show(DesktopSection.logs),
+                  ),
+                _NavRow(
+                  icon: Icons.settings_outlined,
+                  label: l10n.settings,
+                  shortcut: 'Ctrl+,',
+                  selected: section == DesktopSection.settings,
+                  onTap: () => nav.show(DesktopSection.settings),
+                ),
+              ],
             ),
-          if (advanced)
-            _NavRow(
-              icon: Icons.flag_outlined,
-              label: l10n.goalsTitle,
-              selected: section == DesktopSection.goals,
-              onTap: () => nav.show(DesktopSection.goals),
-            ),
-          _NavRow(
-            icon: Icons.memory_rounded,
-            label: l10n.models,
-            shortcut: 'Ctrl+M',
-            selected: section == DesktopSection.models,
-            onTap: () => nav.show(DesktopSection.models),
-          ),
-          _NavRow(
-            icon: Icons.auto_awesome_outlined,
-            label: l10n.desktopCreateTitle,
-            selected: section == DesktopSection.imageGen,
-            onTap: () => nav.show(DesktopSection.imageGen),
-          ),
-          _NavRow(
-            icon: Icons.compare_arrows_rounded,
-            label: l10n.desktopCompareTitle,
-            shortcut: 'Ctrl+Shift+D',
-            selected: section == DesktopSection.compare,
-            onTap: () => nav.show(DesktopSection.compare),
-          ),
-          _NavRow(
-            icon: Icons.dns_outlined,
-            label: l10n.desktopServerTitle,
-            shortcut: 'Ctrl+Shift+S',
-            selected: section == DesktopSection.server,
-            onTap: () => nav.show(DesktopSection.server),
-          ),
-          if (advanced)
-            _NavRow(
-              icon: Icons.extension_outlined,
-              label: l10n.mcpTitle,
-              selected: section == DesktopSection.mcp,
-              onTap: () => nav.show(DesktopSection.mcp),
-            ),
-          if (advanced)
-            _NavRow(
-              icon: Icons.terminal_rounded,
-              label: l10n.desktopLogsTitle,
-              shortcut: 'Ctrl+Shift+L',
-              selected: section == DesktopSection.logs,
-              onTap: () => nav.show(DesktopSection.logs),
-            ),
-          _NavRow(
-            icon: Icons.settings_outlined,
-            label: l10n.settings,
-            shortcut: 'Ctrl+,',
-            selected: section == DesktopSection.settings,
-            onTap: () => nav.show(DesktopSection.settings),
           ),
         ],
       ),
@@ -229,9 +283,14 @@ class _ChatList extends ConsumerWidget {
     final onChat = ref.watch(
       desktopSectionProvider.select((s) => s == DesktopSection.chat),
     );
-    final shown = query.isEmpty
-        ? chats
-        : chats.where((c) => c.title.toLowerCase().contains(query)).toList();
+    final workspace = ref.watch(conversationWorkspaceProvider);
+    final shown = chats
+        .where(
+          (c) =>
+              workspace.stateOf(c.id) == 'active' &&
+              (query.isEmpty || c.title.toLowerCase().contains(query)),
+        )
+        .toList();
     if (shown.isEmpty) {
       return Center(
         child: Text(
@@ -342,7 +401,12 @@ class _ChatRowState extends ConsumerState<_ChatRow> {
       confirmLabel: l10n.delete,
       destructive: true,
     );
-    if (ok) await ref.read(chatProvider.notifier).deleteChat(widget.chat.id);
+    if (ok && !ref.read(chatProvider).isGenerating) {
+      final chat = ref.read(chatProvider.notifier);
+      final drafts = ref.read(desktopChatDraftsProvider);
+      await drafts.remove(widget.chat.id);
+      await chat.deleteChat(widget.chat.id);
+    }
   }
 
   @override

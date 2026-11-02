@@ -56,6 +56,7 @@ class _FullCard extends _Engine {
           'vramFreeMb': 1100,
           'vramTotalMb': 8192,
           'ramNeedMb': 2000,
+          'ramPagedMb': 2048,
           'ramAvailableMb': 12000,
           'ramTotalMb': 32000,
         };
@@ -125,6 +126,44 @@ void main() {
   setUp(() => DesktopHost.active = true);
   tearDown(() => DesktopHost.active = false);
 
+  testWidgets(
+    'closing Load settings while MTP discovery waits is safe (P2-55)',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final container = ProviderContainer(
+        overrides: [
+          settingsProvider.overrideWith(TestSettings.new),
+          modelManagerProvider.overrideWith(TestModels.new),
+          llamaEngineProvider.overrideWithValue(_Engine()),
+          llamaEstimatorProvider.overrideWithValue(_Engine()),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: DesktopTheme.of(AccentChoice.amber, dark: true),
+            home: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showDesktopLoadSettings(context, testModel),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pump();
+      await tester.pumpWidget(const SizedBox());
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 150)),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   for (final loaded in [false, true]) {
     testWidgets('the loaded model counts as free memory (loaded: $loaded)', (
       tester,
@@ -164,6 +203,10 @@ void main() {
       );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
+      expect(
+        find.text(AppLocalizationsEn().desktopLoadSettingsPaged('2.0')),
+        findsOneWidget,
+      );
       // 1.1 GB free + the 6 GB the loaded model frees covers 6.8 GB.
       expect(
         find.text(AppLocalizationsEn().desktopLoadSettingsSpill('5.6')),

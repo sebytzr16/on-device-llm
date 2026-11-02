@@ -74,10 +74,23 @@ class ScheduledPrompts(private val activity: Activity, messenger: BinaryMessenge
         const val ACTION_RUN = "app.ondevicellm.ondevice_llm.RUN_SCHEDULED"
         const val EXTRA_PROMPT = "scheduled_prompt"
         const val EXTRA_KIND = "scheduled_kind"
+        /// MainActivity is exported, so any app can send it [ACTION_RUN]:
+        /// only an intent carrying this app-private token (put on our own
+        /// notifications) is asked at once; any other goes in the box.
+        const val EXTRA_TOKEN = "scheduled_token"
         const val PERMISSION_REQUEST = 4712
         private const val PREFS = "scheduled_prompts"
         private const val KEY = "items"
+        private const val TOKEN_KEY = "intent_token"
         private const val CHANNEL_ID = "scheduled"
+
+        fun token(context: Context): String {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            prefs.getString(TOKEN_KEY, null)?.let { return it }
+            val made = java.util.UUID.randomUUID().toString()
+            prefs.edit().putString(TOKEN_KEY, made).commit()
+            return made
+        }
 
         fun load(context: Context): JSONArray {
             val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -169,7 +182,7 @@ class ScheduledPrompts(private val activity: Activity, messenger: BinaryMessenge
         fun notify(context: Context, item: JSONObject, message: String? = null) {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Scheduled prompts", NotificationManager.IMPORTANCE_DEFAULT),
+                NotificationChannel(CHANNEL_ID, context.getString(R.string.schedule_channel), NotificationManager.IMPORTANCE_DEFAULT),
             )
             val id = item.optInt("id")
             val open = Intent(context, MainActivity::class.java)
@@ -177,6 +190,7 @@ class ScheduledPrompts(private val activity: Activity, messenger: BinaryMessenge
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 .putExtra(EXTRA_PROMPT, item.optString("prompt"))
                 .putExtra(EXTRA_KIND, item.optString("kind", "chat"))
+                .putExtra(EXTRA_TOKEN, token(context))
             val tap = PendingIntent.getActivity(
                 context,
                 id,
@@ -186,8 +200,8 @@ class ScheduledPrompts(private val activity: Activity, messenger: BinaryMessenge
             val goal = item.optString("kind") == "goal"
             val notification = Notification.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_stat_schedule)
-                .setContentTitle(item.optString("title").ifBlank { if (goal) "Scheduled goal" else "Scheduled prompt" })
-                .setContentText(message ?: if (goal) "Tap to set up: ${item.optString("prompt")}" else "Tap to ask: ${item.optString("prompt")}")
+                .setContentTitle(item.optString("title").ifBlank { context.getString(if (goal) R.string.schedule_goal else R.string.schedule_prompt) })
+                .setContentText(message ?: context.getString(if (goal) R.string.schedule_tap_goal else R.string.schedule_tap_ask, item.optString("prompt")))
                 .setStyle(Notification.BigTextStyle().bigText(message ?: item.optString("prompt")))
                 .setContentIntent(tap)
                 .setAutoCancel(true)

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/storage/download_jobs.dart';
 import '../../data/storage/download_manager.dart';
 import '../../data/storage/model_storage.dart';
+import '../../data/storage/model_file_leases.dart';
 import 'domain/entities/image_gen_model.dart';
 
 enum ImageGenModelStatus { missing, downloading, ready }
@@ -32,6 +33,7 @@ class ImageGenDownloadsNotifier extends Notifier<ImageGenDownloadsState> {
   DownloadManager? _downloader;
   final _active = <String>{};
   bool _alive = true;
+  Future<void> _maintenance = Future.value();
 
   DownloadManager get _dl => _downloader ??= DownloadManager();
 
@@ -87,6 +89,8 @@ class ImageGenDownloadsNotifier extends Notifier<ImageGenDownloadsState> {
   }
 
   Future<void> download(ImageGenModel model) async {
+    await _maintenance;
+    if (!_alive) return;
     if (!_active.add(model.id)) return;
     var done = 0;
     _set(model, const ImageGenModelState(ImageGenModelStatus.downloading));
@@ -144,20 +148,70 @@ class ImageGenDownloadsNotifier extends Notifier<ImageGenDownloadsState> {
     }
   }
 
-  Future<void> delete(ImageGenModel model) async {
+  /// Removes orphaned catalog components, keeping installed models and every
+  /// active download. File leases still protect loaded runtimes.
+  Future<void> _maintain(Future<void> Function() action) {
+    final operation = _maintenance.then((_) => action());
+    _maintenance = operation.then((_) {}, onError: (Object _, StackTrace _) {});
+    return operation;
+  }
+
+  Future<void> removeUnusedParts() => _maintain(_removeUnusedParts);
+
+  Future<void> _removeUnusedParts() async {
+    final catalog = [...imageGenCatalog, ...upscalerTools];
+    final keep = <String>{};
+    for (final model in catalog) {
+      if (_active.contains(model.id) || await isReady(model)) {
+        keep.addAll(model.files.map((f) => f.fileName));
+      }
+    }
+    final unused = {
+      for (final model in catalog)
+        for (final file in model.files)
+          if (!keep.contains(file.fileName)) file.fileName,
+    };
+    final paths = [
+      for (final name in unused) (await ModelStorage.modelFile(name)).path,
+    ];
+    final guard = ModelFileLeases.instance.beginMutation(paths);
+    try {
+      for (final name in unused) {
+        await ModelStorage.delete(name);
+        await ModelStorage.deletePartial(name);
+      }
+    } finally {
+      guard.release();
+    }
+  }
+
+  Future<void> delete(ImageGenModel model) => _maintain(() => _delete(model));
+
+  Future<void> _delete(ImageGenModel model) async {
     await pause(model);
     await DownloadJobs.remove(model.downloadKey);
     // Quants of one model share the VAE and text encoder, and the picture
     // models share the upscaler with Upscale mode: keep a file another
-    // model still lists.
+    // installed model or active download still uses.
     final shared = {
       for (final other in [...imageGenCatalog, ...upscalerTools])
-        if (other.id != model.id) ...other.files.map((f) => f.fileName),
+        if (other.id != model.id &&
+            (_active.contains(other.id) || await isReady(other)))
+          ...other.files.map((f) => f.fileName),
     };
-    for (final f in model.files) {
-      if (shared.contains(f.fileName)) continue;
-      await ModelStorage.delete(f.fileName);
-      await ModelStorage.deletePartial(f.fileName);
+    final paths = [
+      for (final f in model.files)
+        (await ModelStorage.modelFile(f.fileName)).path,
+    ];
+    final guard = ModelFileLeases.instance.beginMutation(paths);
+    try {
+      for (final f in model.files) {
+        if (shared.contains(f.fileName)) continue;
+        await ModelStorage.delete(f.fileName);
+        await ModelStorage.deletePartial(f.fileName);
+      }
+    } finally {
+      guard.release();
     }
     _set(model, const ImageGenModelState(ImageGenModelStatus.missing));
   }

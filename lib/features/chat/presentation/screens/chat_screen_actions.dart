@@ -648,8 +648,15 @@ extension _ChatScreenActions on _ChatScreenState {
             ? ref.read(remoteEngineProvider)
             : ref.read(llamaEngineProvider);
         final fallback = model?.family.fallbackTemplate ?? '';
-        final draftStore = DocumentDraftStore(drafts: _drafts);
-        final documentKey = chat.chatId ?? 'new';
+        // A temporary or unsaved chat keeps its drafts in memory (P1-21).
+        final draftStore = DocumentDraftStore(
+          drafts: _drafts,
+          persist: chat.chatId != null && !chat.temporary,
+        );
+        final documentKey = DocumentDraftStore.sourceKey(
+          chat.chatId ?? 'new',
+          document,
+        );
         final revisions = await draftStore.read(documentKey, template.name);
         if (!mounted) return;
         var restore = revisions.isNotEmpty;
@@ -672,6 +679,9 @@ extension _ChatScreenActions on _ChatScreenState {
           );
           if (choice == null || !mounted) return;
           restore = choice;
+        }
+        if (DocumentDraftService.truncates(document) && !restore) {
+          showIslandToast(context, context.l10n.documentSourceTrimmed);
         }
         final draft = restore
             ? revisions.first.content

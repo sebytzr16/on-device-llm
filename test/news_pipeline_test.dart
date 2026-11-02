@@ -383,6 +383,31 @@ void main() {
       expect(AnswerCleanup.isRepeating('$p\n\n$distinct'), isFalse);
       expect(AnswerCleanup.dropRepeats('$p\n\n$distinct'), '$p\n\n$distinct');
     });
+
+    test('a correction or a repeated code block is kept (P2-38)', () {
+      const p =
+          'The Blue Jays lost 4-3 to the Orioles on Monday and are now 3.5 games behind the last wild-card spot with five games left [1].';
+      const figures =
+          'The Blue Jays lost 4-3 to the Orioles on Monday and are now 2.5 games behind the last wild-card spot with five games left [1].';
+      expect(AnswerCleanup.isRepeating('$p\n\n$figures'), isFalse);
+      expect(AnswerCleanup.dropRepeats('$p\n\n$figures'), '$p\n\n$figures');
+
+      const sealed =
+          'The Fujifilm X-T5 body is weather sealed against dust and light rain, and it works down to minus ten degrees in winter conditions.';
+      const notSealed =
+          'The Fujifilm X-T5 body is not weather sealed against dust and light rain, and it works down to minus ten degrees in winter conditions.';
+      expect(AnswerCleanup.isRepeating('$sealed\n\n$notSealed'), isFalse);
+      expect(AnswerCleanup.isRepeating('$notSealed\n\n$sealed'), isFalse);
+
+      const code =
+          '```python\nfor item in items:\n    print(item.name, item.price, item.quantity, item.total)\n\n'
+          'for item in items:\n    print(item.name, item.price, item.quantity, item.total)\n```';
+      expect(AnswerCleanup.dropRepeats(code), code);
+      expect(
+        AnswerCleanup.isRepeating(code.substring(0, code.length - 3)),
+        isFalse,
+      );
+    });
   });
 
   group('follow-ups', () {

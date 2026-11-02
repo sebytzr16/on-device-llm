@@ -59,20 +59,36 @@ String? etaLabel(int received, int total, double? bytesPerSecond) {
 class ModelTag extends StatelessWidget {
   final String label;
   final Color? color;
-  const ModelTag(this.label, {super.key, this.color});
+
+  /// Smaller, for lists where the tags sit under a row.
+  final bool dense;
+  const ModelTag(this.label, {super.key, this.color, this.dense = false});
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final tint = color ?? c.textMuted;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      padding: dense
+          ? const EdgeInsets.symmetric(horizontal: 7, vertical: 1)
+          : const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(
         color: color == null ? c.surfaceRaised : tint.fade(0.12),
-        borderRadius: AppDesign.radius(AppDesign.rSm),
+        borderRadius: AppDesign.radius(AppDesign.rFull),
         border: Border.all(color: color == null ? c.hairline : tint.fade(0.4)),
       ),
-      child: Text(label, style: context.text.mono.copyWith(color: tint)),
+      child: Text(
+        label,
+        style: context.text.mono.copyWith(
+          color: tint,
+          height: 1.2,
+          fontSize: dense ? 10.5 : null,
+        ),
+        textHeightBehavior: const TextHeightBehavior(
+          applyHeightToFirstAscent: false,
+          applyHeightToLastDescent: false,
+        ),
+      ),
     );
   }
 }
@@ -108,7 +124,6 @@ class ModelTagRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final params = paramLabel(model);
-    final meta = catalogMeta[model.id];
     return Wrap(
       spacing: AppDesign.sm - 2,
       runSpacing: AppDesign.sm - 2,
@@ -117,8 +132,6 @@ class ModelTagRow extends StatelessWidget {
         if (params.isNotEmpty) ModelTag(params),
         ModelTag(quantLabel(model)),
         ModelTag(model.sizeLabel),
-        if (meta?.reasoning == true)
-          ModelTag('Reasoning', color: context.colors.reasoning),
         if (showFit) FitBadge(modelFit(memory, model)),
       ],
     );

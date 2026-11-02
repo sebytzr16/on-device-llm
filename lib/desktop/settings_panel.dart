@@ -5,7 +5,6 @@ import '../core/design/app_design.dart';
 import '../core/l10n/l10n.dart';
 import '../core/motion/blur_switcher.dart';
 import '../core/motion/pressable.dart';
-import '../core/motion/spring_controls.dart';
 import '../core/motion/spring_entrance.dart';
 import '../features/settings/domain/entities/inference_settings.dart';
 import '../features/settings/presentation/providers/settings_provider.dart';
@@ -15,6 +14,7 @@ import '../features/settings/presentation/screens/knowledge_page.dart';
 import '../features/settings/presentation/screens/memory_page.dart';
 import '../features/settings/presentation/screens/remote_server_page.dart';
 import '../features/settings/presentation/screens/settings_screen.dart';
+import '../features/settings/presentation/widgets/settings_widgets.dart';
 import 'desktop_theme.dart';
 import '../core/platform/desktop_preferences.dart';
 import 'advanced_toggle.dart';
@@ -53,8 +53,29 @@ class _DesktopSettingsPanelState extends ConsumerState<DesktopSettingsPanel> {
         l10n.uiSettingsScreenAppearance,
         const AppearancePage(),
       ),
+      (
+        Icons.auto_awesome_outlined,
+        l10n.sectionAssistant,
+        const SettingsScreen(only: SettingsPart.assistant),
+      ),
+      (
+        Icons.record_voice_over_outlined,
+        l10n.sectionVoice,
+        const SettingsScreen(only: SettingsPart.voice),
+      ),
+      (Icons.psychology_alt_outlined, l10n.memory, const MemoryPage()),
+      (
+        Icons.local_library_outlined,
+        l10n.knowledgeLibrary,
+        const KnowledgePage(),
+      ),
+      (Icons.dns_outlined, l10n.remoteServer, const RemoteServerPage()),
+      (
+        Icons.shield_outlined,
+        l10n.sectionData,
+        const SettingsScreen(only: SettingsPart.data),
+      ),
       if (advanced) ...[
-        (Icons.casino_outlined, l10n.sampling, const SamplingPage()),
         (
           Icons.data_array_rounded,
           l10n.contextAndBatch,
@@ -67,21 +88,20 @@ class _DesktopSettingsPanelState extends ConsumerState<DesktopSettingsPanel> {
           const ReasoningSearchPage(),
         ),
         (Icons.build_outlined, l10n.uiSettingsScreenTools, const ToolsPage()),
-      ],
-      (Icons.psychology_alt_outlined, l10n.memory, const MemoryPage()),
-      (
-        Icons.local_library_outlined,
-        l10n.knowledgeLibrary,
-        const KnowledgePage(),
-      ),
-      (Icons.dns_outlined, l10n.remoteServer, const RemoteServerPage()),
-      if (advanced)
         (
           Icons.more_horiz_rounded,
           l10n.desktopMoreSettings,
-          const SettingsScreen(),
+          const SettingsScreen(only: SettingsPart.advanced),
         ),
+      ],
+      (
+        Icons.info_outline_rounded,
+        l10n.sectionAbout,
+        const SettingsScreen(only: SettingsPart.about),
+      ),
     ];
+    // The advanced pages sit under their own heading, before About.
+    final advancedStart = advanced ? 8 : -1;
     if (_selected >= categories.length) _selected = 0;
     final (_, _, page) = categories[_selected];
     return Row(
@@ -108,7 +128,15 @@ class _DesktopSettingsPanelState extends ConsumerState<DesktopSettingsPanel> {
                   ],
                 ),
               ),
-              for (var i = 0; i < categories.length; i++)
+              for (var i = 0; i < categories.length; i++) ...[
+                if (i == advancedStart)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 16, 0, 6),
+                    child: Text(
+                      l10n.sectionAdvanced,
+                      style: context.text.caption.copyWith(color: c.textMuted),
+                    ),
+                  ),
                 SpringEntrance(
                   delay: SpringEntrance.cascade(i),
                   from: const Offset(-10, 0),
@@ -119,6 +147,7 @@ class _DesktopSettingsPanelState extends ConsumerState<DesktopSettingsPanel> {
                     onTap: () => setState(() => _selected = i),
                   ),
                 ),
+              ],
             ],
           ),
         ),
@@ -130,10 +159,16 @@ class _DesktopSettingsPanelState extends ConsumerState<DesktopSettingsPanel> {
               key: ValueKey((advanced, _selected)),
               alignment: Alignment.topLeft,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 760),
-                child: Navigator(
-                  onGenerateRoute: (_) =>
-                      MaterialPageRoute(builder: (_) => page),
+                constraints: const BoxConstraints(maxWidth: 1000),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Theme(
+                    data: _pageTheme(context),
+                    child: Navigator(
+                      onGenerateRoute: (_) =>
+                          MaterialPageRoute(builder: (_) => page),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -142,6 +177,27 @@ class _DesktopSettingsPanelState extends ConsumerState<DesktopSettingsPanel> {
       ],
     );
   }
+}
+
+/// Every settings page's app bar becomes a Windows page title: a large
+/// heading on the page itself, no bar colour, no shadow. Pages paint the
+/// panel's own colour: a transparent one let the page below show through
+/// while the next slid in (owner 2026-11-01, Assistant > Prompt shortcuts).
+ThemeData _pageTheme(BuildContext context) {
+  final theme = Theme.of(context);
+  return theme.copyWith(
+    scaffoldBackgroundColor: DesktopTheme.contentLayer(context.colors),
+    appBarTheme: theme.appBarTheme.copyWith(
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: false,
+      toolbarHeight: 76,
+      titleSpacing: 16,
+      titleTextStyle: context.text.headline.copyWith(fontSize: 26),
+    ),
+  );
 }
 
 class _CategoryRow extends StatelessWidget {
@@ -210,6 +266,8 @@ class _CategoryRow extends StatelessWidget {
 }
 
 /// The settings people change most, laid out as desktop setting cards.
+/// Thinking and web research live on the Assistant page, the theme on
+/// Appearance.
 class _GeneralSettings extends ConsumerWidget {
   const _GeneralSettings();
 
@@ -217,168 +275,87 @@ class _GeneralSettings extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final s = ref.watch(settingsProvider);
+    final prefs = ref.watch(desktopPreferencesProvider);
     void set(InferenceSettings next) =>
         ref.read(settingsProvider.notifier).update(next);
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: Text(l10n.desktopGeneral),
+        actions: const [SavedIndicator()],
+      ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(32, 28, 32, 32),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
         children: [
-          Text(l10n.desktopGeneral, style: context.text.headline),
-          SwitchListTile(
-            key: const Key('desktop-lean-prompt'),
-            contentPadding: EdgeInsets.zero,
-            title: Text(l10n.desktopLeanPrompt),
-            subtitle: Text(l10n.desktopLeanPromptHint),
-            value: ref.watch(desktopPreferencesProvider).leanPrompt,
-            onChanged: (value) => ref
-                .read(desktopPreferencesProvider.notifier)
-                .set(leanPrompt: value),
-          ),
-          const SizedBox(height: 20),
-          _Card(
-            index: 0,
-            title: l10n.language,
-            trailing: DropdownButton<String>(
-              value: s.localeCode,
-              underline: const SizedBox.shrink(),
-              borderRadius: AppDesign.radius(AppDesign.rMd),
-              items: [
-                DropdownMenuItem(
-                  value: '',
-                  child: Text(l10n.desktopLanguageSystem),
-                ),
-                DropdownMenuItem(
-                  value: 'en',
-                  child: Text(l10n.languageEnglish),
-                ),
-                DropdownMenuItem(value: 'fr', child: Text(l10n.languageFrench)),
-                DropdownMenuItem(
-                  value: 'es',
-                  child: Text(l10n.languageSpanish),
-                ),
-              ],
-              onChanged: (v) => set(s.copyWith(localeCode: v ?? '')),
-            ),
-          ),
-          _Card(
-            index: 1,
-            title: l10n.uiAdvancedAppearancePageTheme,
-            trailing: SegmentedButton<ThemeChoice>(
-              showSelectedIcon: false,
-              segments: [
-                ButtonSegment(
-                  value: ThemeChoice.dark,
-                  icon: const Icon(Icons.dark_mode_outlined, size: 16),
-                  label: Text(l10n.desktopThemeDark),
-                ),
-                ButtonSegment(
-                  value: ThemeChoice.light,
-                  icon: const Icon(Icons.light_mode_outlined, size: 16),
-                  label: Text(l10n.desktopThemeLight),
-                ),
-                ButtonSegment(
-                  value: ThemeChoice.system,
-                  icon: const Icon(Icons.contrast_rounded, size: 16),
-                  label: Text(l10n.desktopThemeSystem),
-                ),
-              ],
-              selected: {s.themeChoice},
-              onSelectionChanged: (v) => set(s.copyWith(themeChoice: v.first)),
-            ),
-          ),
-          _Card(
-            index: 2,
-            title: l10n.webResearch,
-            subtitle: switch (s.webMode) {
-              WebMode.off => l10n.webModeOff,
-              WebMode.auto => l10n.webModeAuto,
-              WebMode.always => l10n.webModeAlways,
-            },
-            trailing: SegmentedButton<WebMode>(
-              showSelectedIcon: false,
-              segments: [
-                ButtonSegment(value: WebMode.off, label: Text(l10n.webLocal)),
-                ButtonSegment(
-                  value: WebMode.auto,
-                  label: Text(_capital(l10n.webAuto)),
-                ),
-                ButtonSegment(
-                  value: WebMode.always,
-                  label: Text(_capital(l10n.webAlways)),
-                ),
-              ],
-              selected: {s.webMode},
-              onSelectionChanged: (v) => set(s.copyWith(webMode: v.first)),
-            ),
-          ),
-          _Card(
-            index: 3,
-            title: l10n.thinkingMode,
-            subtitle: l10n.thinkingModeHint,
-            trailing: SpringSwitch(
-              value: s.thinkingModeEnabled,
-              onChanged: (v) => set(s.copyWith(thinkingModeEnabled: v)),
-            ),
-          ),
-          _Card(
-            index: 4,
-            title: l10n.temperature,
-            trailing: SizedBox(
-              width: 260,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Slider(
-                      value: s.temperature.clamp(0, 2),
-                      max: 2,
-                      divisions: 40,
-                      onChanged: (v) => set(s.copyWith(temperature: v)),
-                    ),
+          SettingsGroup(
+            children: [
+              SettingsRow(
+                key: const Key('language-row'),
+                leading: const Icon(Icons.translate),
+                title: Text(l10n.language),
+                trailing: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: s.localeCode,
+                    borderRadius: AppDesign.radius(AppDesign.rMd),
+                    items: [
+                      DropdownMenuItem(
+                        value: '',
+                        child: Text(l10n.desktopLanguageSystem),
+                      ),
+                      DropdownMenuItem(
+                        value: 'en',
+                        child: Text(l10n.languageEnglish),
+                      ),
+                      DropdownMenuItem(
+                        value: 'fr',
+                        child: Text(l10n.languageFrench),
+                      ),
+                      DropdownMenuItem(
+                        value: 'es',
+                        child: Text(l10n.languageSpanish),
+                      ),
+                    ],
+                    onChanged: (v) => set(s.copyWith(localeCode: v ?? '')),
                   ),
-                  SizedBox(
-                    width: 36,
-                    child: Text(
-                      s.temperature.toStringAsFixed(2),
-                      style: context.text.mono,
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
-          _Card(
-            index: 5,
-            title: l10n.desktopDeepVramReserveMb,
-            subtitle: l10n.desktopDeepVramReserveHint,
-            trailing: SizedBox(
-              width: 260,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Slider(
-                      key: const Key('desktopDeep-global-vramReserveMb'),
-                      value: s.vramReserveMb.toDouble(),
-                      max: 8192,
-                      divisions: 128,
-                      onChanged: (v) =>
-                          set(s.copyWith(vramReserveMb: v.round())),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 42,
-                    child: Text('${s.vramReserveMb}', style: context.text.mono),
-                  ),
-                ],
+              SettingsSwitchRow(
+                key: const Key('desktop-lean-prompt'),
+                secondary: const Icon(Icons.bolt_outlined),
+                title: Text(l10n.desktopLeanPrompt),
+                subtitle: Text(l10n.desktopLeanPromptHint),
+                value: prefs.leanPrompt,
+                onChanged: (value) => ref
+                    .read(desktopPreferencesProvider.notifier)
+                    .set(leanPrompt: value),
               ),
-            ),
+              SettingSlider(
+                label: l10n.temperature,
+                hint: l10n.uiAdvancedPagesRandomnessLowerIsMoreFocusedHigher,
+                value: s.temperature,
+                min: 0,
+                max: 2,
+                divisions: 40,
+                display: s.temperature.toStringAsFixed(2),
+                onChanged: (v) => set(s.copyWith(temperature: v)),
+              ),
+              SettingSlider(
+                key: const Key('desktopDeep-global-vramReserveMb'),
+                label: l10n.desktopDeepVramReserveMb,
+                hint: l10n.desktopDeepVramReserveHint,
+                value: s.vramReserveMb.toDouble(),
+                min: 0,
+                max: 8192,
+                divisions: 128,
+                display: '${s.vramReserveMb}',
+                onChanged: (v) => set(s.copyWith(vramReserveMb: v.round())),
+              ),
+            ],
           ),
           const SizedBox(height: 20),
           const ModelsFolderSetting(),
           const DesktopTraySettingsPanel(),
           const SizedBox(height: 20),
-          if (ref.watch(desktopPreferencesProvider).advanced)
-            const EngineFilesPanel(),
+          if (prefs.advanced) const EngineFilesPanel(),
           const SizedBox(height: 24),
           Align(
             alignment: Alignment.centerLeft,
@@ -396,57 +373,3 @@ class _GeneralSettings extends ConsumerWidget {
     );
   }
 }
-
-class _Card extends StatelessWidget {
-  final String title;
-  final String? subtitle;
-  final Widget trailing;
-
-  /// Place in the page's cascade.
-  final int index;
-  const _Card({
-    required this.title,
-    required this.trailing,
-    this.subtitle,
-    this.index = 0,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    final card = Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: AppDesign.radius(AppDesign.rLg),
-        border: Border.all(color: c.hairline),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: context.text.body.copyWith(fontSize: 14)),
-                if (subtitle != null)
-                  Text(
-                    subtitle!,
-                    style: context.text.small.copyWith(fontSize: 12),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          trailing,
-        ],
-      ),
-    );
-    return SpringEntrance(delay: SpringEntrance.cascade(index), child: card);
-  }
-}
-
-/// The phone's composer pill says "auto" in lower case; a settings control
-/// starts with a capital like its neighbours.
-String _capital(String s) =>
-    s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);

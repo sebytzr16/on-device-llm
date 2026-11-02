@@ -10,6 +10,19 @@ extension SettingSpecLabels on SettingSpec {
           !SettingSpec.nativeKeys.contains(key)
       ? label
       : switch (key) {
+          'agentMaxTokens' => t.agentMaxTokens,
+          'agentTemperature' => t.agentTemperature,
+          'agentTopP' => t.agentTopP,
+          'agentMinP' => t.agentMinP,
+          'agentTopK' => t.agentTopK,
+          'agentRepeatPenalty' => t.agentRepeatPenalty,
+          'agentContextSize' => t.agentContextSize,
+          'agentMaxConcurrent' => t.agentMaxConcurrent,
+          'agentThinking' => t.agentThinking,
+          'agentToolRounds' => t.agentToolRounds,
+          'agentWebAccess' => t.agentWebAccess,
+          'agentInstructions' => t.agentInstructions,
+          'agentInputBudget' => t.agentInputBudget,
           'imageMaxTokens' => t.imageTokenBudget,
           'batchSize' => t.uiAdvancedPagesBatchSize,
           'microBatchSize' => t.uiAdvancedPagesMicroBatch,
@@ -76,6 +89,7 @@ extension SettingSpecLabels on SettingSpec {
           'swaFull' => t.nativeSetSwaFull,
           'nCpuMoe' => t.nativeSetNCpuMoe,
           'projectorDevice' => t.projectorDevice,
+          'visionEnabled' => t.settingLabelVisionEnabled,
           'expertsUsed' => t.nativeSetExpertsUsed,
           'keepTokens' => t.nativeSetKeepTokens,
           'contextOverflow' => t.nativeSetContextOverflow,
@@ -99,6 +113,7 @@ String settingGroupLabel(String group, AppLocalizations t) => switch (group) {
   SettingSpec.groupReasoning => t.settingGroupReasoning,
   SettingSpec.groupWeb => t.settingGroupWeb,
   SettingSpec.groupTools => t.settingGroupTools,
+  SettingSpec.groupAgents => t.agentsSection,
   SettingSpec.groupOutput => t.settingGroupOutput,
   SettingSpec.groupContext => t.settingGroupContext,
   SettingSpec.groupHardware => t.settingGroupHardware,
@@ -108,6 +123,9 @@ String settingGroupLabel(String group, AppLocalizations t) => switch (group) {
 
 String? nativeSettingOption(AppLocalizations t, String key, String value) =>
     switch ((key, value)) {
+      ('agentWebAccess', 'askOnce') => t.agentWebAskOnce,
+      ('agentWebAccess', 'alwaysAllow') => t.agentWebAlwaysAllow,
+      ('agentWebAccess', 'never') => t.agentWebNever,
       ('projectorDevice', 'auto') => t.projectorAuto,
       ('projectorDevice', 'gpu') => t.projectorGpu,
       ('projectorDevice', 'cpu') => t.projectorCpu,

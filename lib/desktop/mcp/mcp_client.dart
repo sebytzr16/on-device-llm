@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../../core/platform/child_process_job.dart';
 import 'mcp_config.dart';
 
 abstract class McpTransport {
@@ -15,6 +16,7 @@ class StdioMcpTransport implements McpTransport {
   final _messages = StreamController<Map<String, dynamic>>();
   late final StreamSubscription<String> _stdout, _stderr;
   bool _closing = false;
+  Future<void> _sends = Future.value();
   StdioMcpTransport._(this._process, void Function(String) log) {
     _stdout = _process.stdout
         .transform(utf8.decoder)
@@ -44,16 +46,17 @@ class StdioMcpTransport implements McpTransport {
   static Future<StdioMcpTransport> start(
     McpServerConfig config, {
     void Function(String)? log,
-  }) async => StdioMcpTransport._(
-    await Process.start(
+  }) async {
+    final process = await Process.start(
       Platform.isWindows
           ? resolveWindowsCommand(config.command!, config.env)
           : config.command!,
       config.args,
       environment: config.env,
-    ),
-    log ?? (_) {},
-  );
+    );
+    ChildProcessJob.adopt(process);
+    return StdioMcpTransport._(process, log ?? (_) {});
+  }
 
   /// mcp.json files say "npx" or "uvx"; on Windows those are npx.cmd and
   /// uvx.exe, which Process.start only finds with the extension. Searches
@@ -94,17 +97,22 @@ class StdioMcpTransport implements McpTransport {
   @override
   Stream<Map<String, dynamic>> get messages => _messages.stream;
   @override
-  Future<void> send(Map<String, dynamic> message) async {
-    _process.stdin.writeln(jsonEncode(message));
-    await _process.stdin.flush();
+  Future<void> send(Map<String, dynamic> message) {
+    if (_closing) return Future.error(const McpException(McpProblem.closed));
+    final next = _sends.then((_) async {
+      _process.stdin.writeln(jsonEncode(message));
+      await _process.stdin.flush();
+    });
+    _sends = next.catchError((_) {});
+    return next;
   }
 
   @override
   Future<void> close() async {
     if (_closing) return;
     _closing = true;
-    // Do not await stdin.close: a server may never drain its input.
-    unawaited(_process.stdin.close().catchError((_) {}));
+    // Let an in-flight flush finish before closing the sink.
+    unawaited(_sends.then((_) => _process.stdin.close()).catchError((_) {}));
     try {
       await _process.exitCode.timeout(const Duration(seconds: 2));
     } on TimeoutException {
@@ -272,7 +280,10 @@ class McpClient {
     // Attach the error handler before sending (a process can exit immediately).
     final result = completer.future.timeout(
       timeout,
-      onTimeout: () => throw const McpException(McpProblem.timeout),
+      onTimeout: () {
+        _cancelRequest(id, 'Request timed out');
+        throw const McpException(McpProblem.timeout);
+      },
     );
     unawaited(
       transport
@@ -294,6 +305,26 @@ class McpClient {
     } finally {
       _pending.remove(id);
     }
+  }
+
+  void _cancelRequest(int id, String reason) {
+    unawaited(
+      transport
+          .send({
+            'jsonrpc': '2.0',
+            'method': 'notifications/cancelled',
+            'params': {'requestId': id, 'reason': reason},
+          })
+          .catchError((_) {}),
+    );
+  }
+
+  void cancelPending() {
+    for (final entry in _pending.entries.toList()) {
+      _cancelRequest(entry.key, 'Stopped by user');
+      entry.value.completeError(const McpException(McpProblem.closed));
+    }
+    _pending.clear();
   }
 
   Future<void> initialize() async {
@@ -323,8 +354,34 @@ class McpClient {
     final tools = <Map<String, dynamic>>[];
     final seen = <String>{};
     String? cursor;
+    final watch = Stopwatch()..start();
+    var pages = 0, bytes = 0;
     do {
-      final result = await request('tools/list', {'cursor': ?cursor});
+      if (++pages > 100 || watch.elapsed >= timeout) {
+        throw const McpException(
+          McpProblem.protocol,
+          'Tool discovery budget exceeded',
+        );
+      }
+      final result = await request('tools/list', {'cursor': ?cursor}).timeout(
+        timeout - watch.elapsed,
+        onTimeout: () {
+          cancelPending();
+          throw const McpException(McpProblem.timeout);
+        },
+      );
+      bytes += utf8.encode(jsonEncode(result)).length;
+      if (bytes > 4 * 1024 * 1024 ||
+          tools.length +
+                  (result['tools'] is List
+                      ? (result['tools'] as List).length
+                      : 0) >
+              1000) {
+        throw const McpException(
+          McpProblem.protocol,
+          'Tool discovery budget exceeded',
+        );
+      }
       if (result['tools'] is! List) {
         throw const McpException(McpProblem.protocol);
       }
@@ -351,11 +408,9 @@ class McpClient {
     Map<String, dynamic> arguments,
   ) => request('tools/call', {'name': name, 'arguments': arguments});
   Future<void> close() async {
+    if (_closed) return;
+    cancelPending();
     _closed = true;
-    for (final pending in _pending.values) {
-      pending.completeError(const McpException(McpProblem.closed));
-    }
-    _pending.clear();
     await _subscription.cancel();
     await transport.close();
   }

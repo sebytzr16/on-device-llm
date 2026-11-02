@@ -14,6 +14,21 @@ abstract final class AboutUser {
       'of it as "you" and "your", never "I" or "my". Answer only what this '
       'question asks.';
 
+  /// The user's messages ([said], oldest first) without the ones memory
+  /// would not take as about them: a story, roleplay or example ("in this
+  /// story, my name is Alice"), or a fact a later message takes back ("my
+  /// name is not Sam") (audit P2-44).
+  static List<String> grounded(List<String> said) => [
+    for (var i = 0; i < said.length; i++)
+      if (!MemoryStatements.isFiction(said[i]) &&
+          !MemoryStatements.extract(said[i]).any(
+            (f) => said
+                .skip(i + 1)
+                .any((later) => MemoryStatements.retracts(f, later)),
+          ))
+        said[i],
+  ];
+
   /// The answer to "what's my name?" from what the user said in this chat
   /// ([said], oldest first): "Your name is Robin.", in the question's
   /// language, or null. On a spoken phone turn it replaces the model's:

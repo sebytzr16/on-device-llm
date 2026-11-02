@@ -74,28 +74,6 @@ Widget harness(Widget home, {ThemeData? theme}) => ProviderScope(
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  testWidgets('sampling extras: seed, stop sequences and the sampler order', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(412, 3000);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    await tester.pumpWidget(harness(const SamplingExtrasPage()));
-    await tester.pump();
-    expect(find.text('Random every answer'), findsOneWidget);
-    expect(find.byKey(const Key('seed-row')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('stop-sequences-row')));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), '###\nEND');
-    await tester.tap(find.text('Save'));
-    await tester.pumpAndSettle();
-    expect(find.text('"###", "END"'), findsOneWidget);
-    final order = find.byKey(const Key('sampler-order'));
-    expect(order, findsOneWidget);
-    expect(find.text('Temperature'), findsOneWidget);
-    expect(find.text('Top-K'), findsOneWidget);
-  });
-
   testWidgets('memory/RoPE page renders cache, RoPE and draft controls', (
     tester,
   ) async {
@@ -142,7 +120,7 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(harness(const ToolsPage()));
     await tester.pump();
-    expect(find.textContaining('Needs web research on'), findsOneWidget);
+    expect(find.textContaining('Same switch as the globe'), findsOneWidget);
     expect(find.textContaining('Needs a knowledge collection'), findsOneWidget);
     await tester.tap(find.byKey(const Key('tools-enabled')));
     await tester.pump();
@@ -171,8 +149,27 @@ void main() {
     await tester.pump();
     expect(find.byKey(const Key('quick-tool-calculator')), findsOneWidget);
     expect(find.byKey(const Key('quick-tool-web')), findsOneWidget);
-    expect(find.textContaining('Web research is off'), findsOneWidget);
+    expect(find.textContaining('Same switch as the globe'), findsOneWidget);
     expect(find.textContaining('No knowledge collection'), findsOneWidget);
+    // Recall shows only with Memory on.
+    expect(find.byKey(const Key('quick-tool-recall')), findsNothing);
+    expect(find.byKey(const Key('quick-tool-actions')), findsOneWidget);
+    // Web follows the globe: off by default, on turns web research on.
+    SwitchListTile row(String key) =>
+        tester.widget<SwitchListTile>(find.byKey(Key(key)));
+    expect(row('quick-tool-web').value, isFalse);
+    await tester.tap(find.byKey(const Key('quick-tool-web')));
+    await tester.pump();
+    expect(row('quick-tool-web').value, isTrue);
+    await tester.tap(find.byKey(const Key('quick-tool-actions')));
+    await tester.pump();
+    expect(row('quick-tool-actions').value, isFalse);
+    // The helper switch is here too, off until turned on for this chat.
+    expect(row('quick-tool-helper').value, isFalse);
+    await tester.ensureVisible(find.byKey(const Key('quick-tool-helper')));
+    await tester.tap(find.byKey(const Key('quick-tool-helper')));
+    await tester.pump();
+    expect(row('quick-tool-helper').value, isTrue);
     await tester.tap(find.byKey(const Key('quick-tool-calculator')));
     await tester.pump();
     expect(

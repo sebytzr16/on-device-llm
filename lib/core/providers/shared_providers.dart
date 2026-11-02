@@ -20,7 +20,7 @@ final sessionBusyProvider = StateProvider<bool>((ref) => false);
 
 final diffusionGemmaEngineProvider = Provider<DiffusionGemmaEngine>((ref) {
   final engine = DiffusionGemmaEngine();
-  ref.onDispose(engine.dispose);
+  ref.onDispose(engine.close);
   return engine;
 });
 
@@ -68,6 +68,19 @@ final supportEngineProvider = Provider<LlamaEngine>((ref) {
     owner: NativeOwner.id,
     onLibrary: (library) => unawaited(NativeOwner.report(library)),
   );
+  ref.onDispose(engine.dispose);
+  return engine;
+});
+
+LlamaEngine createHelperEngine() => LlamaEngine(
+  cacheDirectory: () async => (await getApplicationCacheDirectory()).path,
+  owner: NativeOwner.id,
+  onLibrary: (library) => unawaited(NativeOwner.report(library)),
+);
+
+/// Side jobs keep their own context without replacing the chat model.
+final helperEngineProvider = Provider<LlamaEngine>((ref) {
+  final engine = createHelperEngine();
   ref.onDispose(engine.dispose);
   return engine;
 });

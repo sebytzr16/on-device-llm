@@ -1,3 +1,4 @@
+import '../../../../data/storage/download_history.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -16,6 +17,7 @@ import '../../../../data/local/database/app_database.dart';
 import '../../../../data/storage/download_manager.dart';
 import '../../../../data/storage/download_jobs.dart';
 import '../../../../data/storage/model_storage.dart';
+import '../../../../data/storage/model_file_leases.dart';
 import '../../../../data/storage/model_folders.dart';
 import '../../../../data/storage/gguf_metadata.dart';
 import '../../../../data/storage/gguf_split.dart';
@@ -23,6 +25,7 @@ import '../../../../inference/engine/llama_engine.dart';
 import '../../../../inference/engine/diffusiongemma_engine.dart';
 import 'model_recommendations_provider.dart';
 import '../../../adapters/adapter_store.dart';
+import '../../../helper/helper_runner.dart';
 import '../../../benchmark/benchmark.dart';
 import '../../../chat/presentation/providers/chat_model_pins.dart';
 import '../../../chat/presentation/providers/chat_provider.dart';
@@ -583,13 +586,73 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     ModelInfo info, {
     bool forChat = false,
     InferenceSettings? settings,
+    void Function()? onLoadStart,
+    bool vision = false,
   }) async {
     if (state.isLoadingModel || (ref.read(sessionBusyProvider) && !forChat)) {
-      throw StateError('Stop the current response before switching models.');
+      throw StateError(
+        stringsFor(ref.read(settingsProvider).localeCode).modelStopSwitch,
+      );
     }
     if (!info.isDownloaded || info.localPath == null) {
-      throw StateError('Download or import this model first.');
+      throw StateError(
+        stringsFor(ref.read(settingsProvider).localeCode).modelDownloadFirst,
+      );
     }
+    final resolved =
+        settings ??
+        resolveSettings(
+          global: ref.read(settingsProvider),
+          defaults: ref.read(settingsProvider.notifier).defaults,
+          profiles: ref.read(modelProfilesProvider),
+          preset: ref.read(presetsProvider).active,
+          chat: ref.read(chatOverridesProvider),
+          recommendations: ref.read(modelRecommendationsProvider),
+          model: info,
+          project: {
+            if (ref.read(currentProjectProvider)?.collection.isNotEmpty == true)
+              'knowledgeCollection': ref
+                  .read(currentProjectProvider)!
+                  .collection,
+          },
+          projectLabel: ref.read(currentProjectProvider)?.name ?? 'Project',
+        ).effective;
+    // Every local send asks for its model: when the engine already holds
+    // it with the same settings, nothing is loaded and the chat never
+    // shows "loading" (audit P1-18, owner report OR-01).
+    ({String path, String config})? unchanged;
+    if (info.id != diffusionGemmaModelId && state.loadedModelId == info.id) {
+      try {
+        final plan = await _plan(info, resolved, vision: vision);
+        if (state.loadedModelId == info.id &&
+            !state.isLoadingModel &&
+            ref.read(llamaEngineProvider).holdsLoad(plan.path, plan.config)) {
+          unchanged = (path: plan.path, config: plan.config);
+        }
+      } catch (_) {
+        // The full load below reports it.
+      }
+    }
+    if (unchanged != null) {
+      // The server pool can borrow this runtime even when the primary
+      // server has its own engine. Reuse must also await that handoff
+      // (owner P2-05 re-trace, 2026-11-01).
+      await ref.read(engineHandoffProvider)?.call(info.id);
+      if (state.loadedModelId == info.id &&
+          !state.isLoadingModel &&
+          ref
+              .read(llamaEngineProvider)
+              .holdsLoad(unchanged.path, unchanged.config)) {
+        return;
+      }
+    }
+    if (state.isLoadingModel) {
+      throw StateError(
+        stringsFor(ref.read(settingsProvider).localeCode).modelStopSwitch,
+      );
+    }
+    _loadStopped = false;
+    onLoadStart?.call();
     state = state.copyWith(
       isLoadingModel: true,
       loadingModelId: info.id,
@@ -597,25 +660,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       clearError: true,
     );
     try {
-      final resolved =
-          settings ??
-          resolveSettings(
-            global: ref.read(settingsProvider),
-            defaults: ref.read(settingsProvider.notifier).defaults,
-            profiles: ref.read(modelProfilesProvider),
-            preset: ref.read(presetsProvider).active,
-            chat: ref.read(chatOverridesProvider),
-            recommendations: ref.read(modelRecommendationsProvider),
-            model: info,
-            project: {
-              if (ref.read(currentProjectProvider)?.collection.isNotEmpty ==
-                  true)
-                'knowledgeCollection': ref
-                    .read(currentProjectProvider)!
-                    .collection,
-            },
-            projectLabel: ref.read(currentProjectProvider)?.name ?? 'Project',
-          ).effective;
+      _checkStopped();
       // A local server sharing this runtime keeps its model on its own.
       await ref.read(engineHandoffProvider)?.call(info.id);
       final engine = ref.read(llamaEngineProvider);
@@ -636,6 +681,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         return;
       }
       ref.read(diffusionGemmaEngineProvider).dispose();
+      _checkStopped();
       final loads = engine.loadCount;
       double? pendingProgress;
       _loadSubscription = engine.loadProgressChanges.listen((value) {
@@ -652,7 +698,12 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
           }
         });
       });
-      _chatLoad = await _loadOn(engine, info, resolved);
+      engine.loadStop = () => _loadStopped;
+      try {
+        _chatLoad = await _loadOn(engine, info, resolved, vision: vision);
+      } finally {
+        engine.loadStop = null;
+      }
       if (_alive) {
         state = state.copyWith(
           loadedModelId: info.id,
@@ -674,21 +725,40 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         }
       }
     } catch (e, st) {
-      final memory = _memoryError(e);
+      // A Stop is the user's choice, not an error to show.
+      final stopped = _loadStopped || e is ModelLoadStopped;
+      final memory = stopped ? null : _memoryError(e);
       if (_alive) {
         state = state.copyWith(
           isLoadingModel: false,
           clearLoadingModel: true,
           clearLoadProgress: true,
           clearLoaded: true,
-          error: '${memory ?? e}',
+          error: stopped ? null : '${memory ?? e}',
         );
       }
+      if (stopped) Error.throwWithStackTrace(const ModelLoadStopped(), st);
       if (memory != null) Error.throwWithStackTrace(memory, st);
       rethrow;
     } finally {
+      _loadStopped = false;
       _stopLoadProgress();
     }
+  }
+
+  bool _loadStopped = false;
+
+  void _checkStopped() {
+    if (_loadStopped) throw const ModelLoadStopped();
+  }
+
+  /// Stops the chat's model load at any step: before the file is read, while
+  /// llama.cpp loads it (its progress callback cancels), or right after
+  /// (audit P1-19, owner request OR-02). The chat is left with no model.
+  void stopLoad() {
+    if (!state.isLoadingModel) return;
+    _loadStopped = true;
+    ref.read(llamaEngineProvider).cancel();
   }
 
   ChatLoad? _chatLoad;
@@ -707,8 +777,47 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
   Future<ChatLoad> _loadOn(
     LlamaEngine engine,
     ModelInfo info,
-    InferenceSettings resolved,
-  ) async {
+    InferenceSettings resolved, {
+    bool vision = false,
+  }) async {
+    final plan = await _plan(info, resolved, vision: vision);
+    await engine.loadModel(
+      modelPath: plan.path,
+      settings: plan.load.settings,
+      mmprojPath: plan.load.mmprojPath,
+      adapters: plan.adapters,
+      draftModelPath: plan.load.draftModelPath,
+    );
+    if (plan.missingDraft != null) {
+      ref
+          .read(islandProvider.notifier)
+          .toast(
+            'Selected draft "${plan.missingDraft}" is missing or unavailable. The model loaded without that draft.',
+            tone: IslandTone.warning,
+            icon: Icons.warning_amber_rounded,
+            duration: const Duration(seconds: 8),
+          );
+    }
+    return plan.load;
+  }
+
+  /// Everything a load of [info] needs, and the engine config it makes, so
+  /// a send can tell an unchanged load without starting one. GGUF reads are
+  /// cached by file, so this is cheap after the first load.
+  Future<
+    ({
+      String path,
+      ChatLoad load,
+      List<({String path, double scale})> adapters,
+      String config,
+      String? missingDraft,
+    })
+  >
+  _plan(
+    ModelInfo info,
+    InferenceSettings resolved, {
+    bool vision = false,
+  }) async {
     final projector = info.projector ?? visionProjectors[info.id];
     final draft = draftPathFor(info, resolved.draftModelId);
     final selected = resolved.draftModelId;
@@ -721,7 +830,10 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       final metadata = await GgufMetadata.inspect(draft);
       if (metadata.isMtpOnly) {
         final target = await GgufMetadata.inspect(info.localPath!);
-        final issue = metadata.mtpHeadIssueFor(target);
+        final issue = metadata.mtpHeadIssueFor(
+          target,
+          strings: stringsFor(ref.read(settingsProvider).localeCode),
+        );
         if (issue != null) throw StateError(issue);
       }
     }
@@ -734,32 +846,42 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       resolved = resolved.copyWith(draftMaxTokens: 2);
     }
     final settings = await _resolveBackend(resolved);
-    final mmproj = projector != null && state.vision.contains(info.id)
+    // The projector loads for a chat with a photo ([vision]) and then stays
+    // while the model is loaded, so later turns do not reload; a model
+    // whose vision is off never loads it (owner, 2026-11-01).
+    final current = _chatLoad;
+    final keep =
+        current != null &&
+        current.modelId == info.id &&
+        current.mmprojPath != null &&
+        state.loadedModelId == info.id;
+    final mmproj =
+        projector != null &&
+            state.vision.contains(info.id) &&
+            resolved.visionEnabled &&
+            (vision || keep)
         ? (await ModelStorage.modelFile(projector.fileName)).path
         : null;
-    await engine.loadModel(
-      modelPath: info.localPath!,
-      settings: settings,
-      mmprojPath: mmproj,
-      adapters: await ref.read(adaptersProvider.notifier).resolved(info.id),
-      draftModelPath: draft,
-    );
-    if (missingDraft) {
-      ref
-          .read(islandProvider.notifier)
-          .toast(
-            'Selected draft "$selected" is missing or unavailable. The model loaded without that draft.',
-            tone: IslandTone.warning,
-            icon: Icons.warning_amber_rounded,
-            duration: const Duration(seconds: 8),
-          );
-    }
+    final adapters = await ref
+        .read(adaptersProvider.notifier)
+        .resolved(info.id);
     return (
-      modelId: info.id,
-      modelPath: info.localPath!,
-      settings: settings,
-      mmprojPath: mmproj,
-      draftModelPath: draft,
+      path: info.localPath!,
+      load: (
+        modelId: info.id,
+        modelPath: info.localPath!,
+        settings: settings,
+        mmprojPath: mmproj,
+        draftModelPath: draft,
+      ),
+      adapters: adapters,
+      config: LlamaEngine.loadConfig(
+        settings: settings,
+        mmprojPath: mmproj,
+        adapters: adapters,
+        draftModelPath: draft,
+      ),
+      missingDraft: missingDraft ? selected : null,
     );
   }
 
@@ -786,10 +908,13 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       );
     }
     if (!info.isDownloaded || info.localPath == null) {
-      throw StateError('Download or import this model first.');
+      throw StateError(
+        stringsFor(ref.read(settingsProvider).localeCode).modelDownloadFirst,
+      );
     }
     try {
-      await _loadOn(engine, info, servedSettings(info));
+      // Requests to the server may carry photos at any time.
+      await _loadOn(engine, info, servedSettings(info), vision: true);
     } catch (e, st) {
       final memory = _memoryError(e);
       if (memory != null) Error.throwWithStackTrace(memory, st);
@@ -869,11 +994,14 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
   /// unloads between its own loads.
   Future<void> unloadModel({bool ownsBusy = false}) async {
     if (state.isLoadingModel || (!ownsBusy && ref.read(sessionBusyProvider))) {
-      throw StateError('Stop the current response before unloading.');
+      throw StateError(
+        stringsFor(ref.read(settingsProvider).localeCode).modelStopUnload,
+      );
     }
     // The local server may share this runtime: its model moves to its own
     // first, so ejecting the chat's model does not stop the server's.
     await ref.read(engineHandoffProvider)?.call('');
+    await ref.read(helperRunnerProvider).unload();
     await ref.read(llamaEngineProvider).unload();
     ref.read(diffusionGemmaEngineProvider).dispose();
     if (_alive) state = state.copyWith(clearLoaded: true);
@@ -978,6 +1106,30 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     }
   }
 
+  Future<void> cancelDownload(String id) async {
+    await pauseDownload(id);
+    final modelId = id.replaceFirst(RegExp(r':vision$'), '');
+    final model = state.catalog.where((m) => m.id == modelId).firstOrNull;
+    if (model != null) {
+      if (!id.endsWith(':vision')) {
+        for (final name
+            in model.parts.isEmpty
+                ? [model.fileName]
+                : model.parts.map((p) => p.fileName)) {
+          await ModelStorage.deletePartial(name);
+        }
+      }
+      final projector = model.projector ?? visionProjectors[model.id];
+      if (projector != null) {
+        await ModelStorage.deletePartial(projector.fileName);
+      }
+    }
+    await DownloadHistory.cancelled(id);
+    if (_alive) {
+      state = state.copyWith(downloads: {...state.downloads}..remove(id));
+    }
+  }
+
   /// Which catalog models can see photos right now (projector on disk),
   /// and whether the knowledge library's embedding model is present.
   Future<void> refreshVision() async {
@@ -1016,7 +1168,14 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     if (embeddingReady) {
       for (final name in embeddingModel.legacyFileNames) {
         try {
-          await ModelStorage.delete(name);
+          final guard = _guardModelPaths([
+            (await ModelStorage.modelFile(name)).path,
+          ]);
+          try {
+            await ModelStorage.delete(name);
+          } finally {
+            guard.release();
+          }
         } catch (_) {}
       }
     }
@@ -1063,10 +1222,17 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
   Future<void> deleteEmbeddingMedia() async {
     final projector = embeddingModel.projector;
     if (projector == null) return;
-    ref.read(embeddingEngineProvider).dispose();
-    await DownloadJobs.remove(ModelManagerState.embeddingMediaKey);
-    await ModelStorage.delete(projector.fileName);
-    await refreshVision();
+    await ref.read(embeddingEngineProvider).unload();
+    final guard = _guardModelPaths([
+      (await ModelStorage.modelFile(projector.fileName)).path,
+    ]);
+    try {
+      await DownloadJobs.remove(ModelManagerState.embeddingMediaKey);
+      await ModelStorage.delete(projector.fileName);
+      await refreshVision();
+    } finally {
+      guard.release();
+    }
   }
 
   Future<void> _fetchEmbeddingFile(
@@ -1117,17 +1283,31 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
   }
 
   Future<void> deleteSupportCheck() async {
-    ref.read(supportEngineProvider).dispose();
-    await DownloadJobs.remove(ModelManagerState.supportCheckKey);
-    await ModelStorage.delete(supportCheckModel.fileName);
-    await refreshVision();
+    await ref.read(supportEngineProvider).unload();
+    final guard = _guardModelPaths([
+      (await ModelStorage.modelFile(supportCheckModel.fileName)).path,
+    ]);
+    try {
+      await DownloadJobs.remove(ModelManagerState.supportCheckKey);
+      await ModelStorage.delete(supportCheckModel.fileName);
+      await refreshVision();
+    } finally {
+      guard.release();
+    }
   }
 
   Future<void> deleteEmbedding() async {
-    ref.read(embeddingEngineProvider).dispose();
-    await DownloadJobs.remove(ModelManagerState.embeddingKey);
-    await ModelStorage.delete(embeddingModel.fileName);
-    await refreshVision();
+    await ref.read(embeddingEngineProvider).unload();
+    final guard = _guardModelPaths([
+      (await ModelStorage.modelFile(embeddingModel.fileName)).path,
+    ]);
+    try {
+      await DownloadJobs.remove(ModelManagerState.embeddingKey);
+      await ModelStorage.delete(embeddingModel.fileName);
+      await refreshVision();
+    } finally {
+      guard.release();
+    }
   }
 
   /// Fetches the model's vision projector so photos can be attached.
@@ -1190,14 +1370,22 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
   }
 
   Future<void> deleteVision(ModelInfo info) async {
-    final projector = (info.projector ?? visionProjectors[info.id]);
+    final projector = info.projector ?? visionProjectors[info.id];
     if (projector == null) return;
-    if (state.loadedModelId == info.id) {
-      // The projector is memory-mapped by the engine; drop it first.
-      ref.read(llamaEngineProvider).dispose();
-      ref.read(diffusionGemmaEngineProvider).dispose();
-      state = state.copyWith(clearLoaded: true);
+    if (state.loadedModelId == info.id) await unloadModel();
+    final guard = _guardModelPaths([
+      (await ModelStorage.modelFile(projector.fileName)).path,
+    ]);
+    try {
+      await _deleteVisionFiles(info);
+    } finally {
+      guard.release();
     }
+  }
+
+  Future<void> _deleteVisionFiles(ModelInfo info) async {
+    final projector = info.projector ?? visionProjectors[info.id];
+    if (projector == null) return;
     await DownloadJobs.remove(ModelManagerState.visionKey(info.id));
     final others = await ref.read(appDatabaseProvider).allModels();
     if (!others.any(
@@ -1385,28 +1573,68 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         _projectorDownloads.isNotEmpty) {
       throw const ModelFolderException(ModelFolderFailure.busy);
     }
+    final folders = await ModelStorage.desktopFolders();
+    final ModelFileLease guard;
+    try {
+      guard = ModelFileLeases.instance.beginDirectoryMutation([
+        ...folders.roots,
+        target.path,
+      ]);
+    } on StateError {
+      throw const ModelFolderException(ModelFolderFailure.busy);
+    }
     // Serialize imports and disable the import button while files move.
     state = state.copyWith(isImporting: true);
     _fileOperation = Completer<void>();
     try {
       final db = ref.read(appDatabaseProvider);
-      await (await ModelStorage.desktopFolders()).change(
+      await folders.change(
         target,
         move: move,
         onProgress: onProgress,
-        updatePaths: (paths) => db.transaction(() async {
-          for (final entry in paths.entries) {
-            await (db.update(db.models)
-                  ..where((m) => m.localPath.equals(entry.key)))
-                .write(ModelsCompanion(localPath: drift.Value(entry.value)));
-          }
-        }),
+        updatePaths: (paths) async {
+          await db.transaction(() async {
+            for (final entry in paths.entries) {
+              await (db.update(db.models)
+                    ..where((m) => m.localPath.equals(entry.key)))
+                  .write(ModelsCompanion(localPath: drift.Value(entry.value)));
+            }
+          });
+          await _moveHeadChoices(paths);
+        },
       );
+      _autoMtpCache.clear();
       await refreshVision();
     } finally {
       if (_alive) state = state.copyWith(isImporting: false);
       _fileOperation?.complete();
       _fileOperation = null;
+      guard.release();
+    }
+  }
+
+  /// A hand-picked MTP head (`mtp:<path>`) in the app's settings or a
+  /// model's profile follows its file to the new folder (audit P2-18).
+  Future<void> _moveHeadChoices(Map<String, String> moved) async {
+    String? follow(Object? id) {
+      if (id is! String || !id.startsWith(mtpHeadPrefix)) return null;
+      final to = moved[id.substring(mtpHeadPrefix.length)];
+      return to == null ? null : '$mtpHeadPrefix$to';
+    }
+
+    final settings = ref.read(settingsProvider);
+    final global = follow(settings.draftModelId);
+    if (global != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .update(settings.copyWith(draftModelId: global));
+    }
+    final profiles = ref.read(modelProfilesProvider.notifier);
+    for (final entry in ref.read(modelProfilesProvider).entries) {
+      final head = follow(entry.value['draftModelId']);
+      if (head != null) {
+        await profiles.set(entry.key, {...entry.value, 'draftModelId': head});
+      }
     }
   }
 
@@ -1446,37 +1674,61 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         _ => ModelQuantization.unknown,
       };
 
+  ModelFileLease _guardModelPaths(Iterable<String> paths) =>
+      ModelFileLeases.instance.beginMutation(
+        [
+          for (final path in paths)
+            for (final name
+                in GgufSplit.parse(p.basename(path))?.names ??
+                    [p.basename(path)])
+              p.join(p.dirname(path), name),
+        ],
+        busyMessage: stringsFor(
+          ref.read(settingsProvider).localeCode,
+        ).modelFilesInUse,
+      );
+
   Future<void> deleteModel(ModelInfo info) async {
     if (ref.read(sessionBusyProvider) ||
         state.isLoadingModel ||
         _subscriptions.containsKey(info.id)) {
-      throw StateError('Stop generation and pause downloads before deleting.');
-    }
-    if (state.loadedModelId == info.id) {
-      ref.read(llamaEngineProvider).dispose();
-      ref.read(diffusionGemmaEngineProvider).dispose();
-      state = state.copyWith(clearLoaded: true);
-    }
-    await ref
-        .read(retiredModelNamesProvider.notifier)
-        .remember(info.id, info.displayName);
-    await pauseDownload(info.id);
-    await deleteVision(info);
-    await ModelStorage.deletePartial(info.fileName);
-    await ModelStorage.delete(info.fileName);
-    final db = ref.read(appDatabaseProvider);
-    // Only the bundled catalog keeps an "available to download" row; a model
-    // the user added by link, Hub search or import is gone for good.
-    if (catalogModels.any((m) => m.id == info.id)) {
-      await (db.update(db.models)..where((t) => t.id.equals(info.id))).write(
-        const ModelsCompanion(
-          isDownloaded: drift.Value(false),
-          localPath: drift.Value(null),
-          downloadedAt: drift.Value(null),
-        ),
+      throw StateError(
+        stringsFor(ref.read(settingsProvider).localeCode).modelStopDelete,
       );
-    } else {
-      await db.deleteModel(info.id);
+    }
+    if (state.loadedModelId == info.id) await unloadModel();
+    final projector = info.projector ?? visionProjectors[info.id];
+    final paths = <String>[
+      (await ModelStorage.modelFile(info.fileName)).path,
+      if (info.localPath != null) info.localPath!,
+      if (projector != null)
+        (await ModelStorage.modelFile(projector.fileName)).path,
+    ];
+    final guard = _guardModelPaths(paths);
+    try {
+      await ref
+          .read(retiredModelNamesProvider.notifier)
+          .remember(info.id, info.displayName);
+      await pauseDownload(info.id);
+      await _deleteVisionFiles(info);
+      await ModelStorage.deletePartial(info.fileName);
+      await ModelStorage.delete(info.fileName);
+      final db = ref.read(appDatabaseProvider);
+      // Only the bundled catalog keeps an "available to download" row; a model
+      // the user added by link, Hub search or import is gone for good.
+      if (catalogModels.any((m) => m.id == info.id)) {
+        await (db.update(db.models)..where((t) => t.id.equals(info.id))).write(
+          const ModelsCompanion(
+            isDownloaded: drift.Value(false),
+            localPath: drift.Value(null),
+            downloadedAt: drift.Value(null),
+          ),
+        );
+      } else {
+        await db.deleteModel(info.id);
+      }
+    } finally {
+      guard.release();
     }
   }
 }
@@ -1520,7 +1772,10 @@ List<String> _mtpSearchRoots() {
   return [if (home != null) p.join(home, '.lmstudio', 'models')];
 }
 
-final Map<String, String?> _autoMtpCache = {};
+/// Found heads and misses by model size and folder. A miss expires after
+/// a minute, so a head downloaded later is found, but a send no longer
+/// re-lists LM Studio's folders each time (audit P2-34).
+final Map<String, ({String? path, DateTime at})> _autoMtpCache = {};
 
 /// The MTP head for the model at [modelPath] found on disk: an
 /// `mtp-gemma-4-<size>*.gguf` beside the model, else in LM Studio's model
@@ -1529,8 +1784,16 @@ final Map<String, String?> _autoMtpCache = {};
 String? autoMtpHead(String modelPath) {
   final size = gemma4Size(p.basename(modelPath));
   if (size == null || isMtpHeadFile(modelPath)) return null;
-  final cached = _autoMtpCache[size];
-  if (cached != null && File(cached).existsSync()) return cached;
+  final key = '$size|${File(modelPath).parent.path}';
+  final cached = _autoMtpCache[key];
+  if (cached != null) {
+    final path = cached.path;
+    if (path != null && File(path).existsSync()) return path;
+    if (path == null &&
+        DateTime.now().difference(cached.at) < const Duration(minutes: 1)) {
+      return null;
+    }
+  }
   final found = <String>[];
   void scan(Directory dir, int depth) {
     try {
@@ -1561,7 +1824,9 @@ String? autoMtpHead(String modelPath) {
         (a.toLowerCase().contains('q8') ? 1 : 0);
     return q != 0 ? q : File(a).lengthSync().compareTo(File(b).lengthSync());
   });
-  return _autoMtpCache[size] = found.firstOrNull;
+  final head = found.firstOrNull;
+  _autoMtpCache[key] = (path: head, at: DateTime.now());
+  return head;
 }
 
 /// The MTP head files in the models folder, by path.

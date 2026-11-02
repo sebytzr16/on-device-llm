@@ -7,16 +7,35 @@ void main() {
   test(
     'same-default selection stays above model recommendations after save',
     () {
-      final chosen = const InferenceSettings().copyWith(temperature: .7);
+      final chosen = const InferenceSettings().copyWith(contextSize: 8192);
       final saved = InferenceSettings.fromJson(chosen.toJson());
       final r = SettingsResolver.resolve(
         global: saved,
-        recommended: {'temperature': 1.0},
+        recommended: {'contextSize': 32768},
       );
-      expect(r.effective.temperature, .7);
-      expect(r.originOf('temperature'), SettingsLayer.idGlobal);
+      expect(r.effective.contextSize, 8192);
+      expect(r.originOf('contextSize'), SettingsLayer.idGlobal);
     },
   );
+  test("app-wide sampling is ignored: the model's own values apply", () {
+    final saved = SettingsResolver.editGlobal(const InferenceSettings(), {
+      'temperature': .2,
+      'maxTokens': 65536,
+    });
+    final r = SettingsResolver.resolve(
+      global: saved,
+      recommended: {'temperature': 1.0},
+    );
+    expect(r.effective.temperature, 1.0);
+    expect(r.originOf('temperature'), SettingsLayer.idRecommended);
+    expect(r.effective.maxTokens, const InferenceSettings().maxTokens);
+    final profiled = SettingsResolver.resolve(
+      global: saved,
+      recommended: {'temperature': 1.0},
+      model: {'temperature': .4},
+    );
+    expect(profiled.effective.temperature, .4);
+  });
   test('registry edit records the explicitly selected keys', () {
     final chosen = SettingsResolver.editGlobal(const InferenceSettings(), {
       'temperature': .7,
@@ -28,17 +47,17 @@ void main() {
     () {
       // Pre-provenance saves wrote every field; only values unlike the
       // defaults were the user's, so defaults still follow the model.
-      final legacy = const InferenceSettings(temperature: .3).toJson()
+      final legacy = const InferenceSettings(contextSize: 6144).toJson()
         ..remove('explicitOverrides');
       final saved = InferenceSettings.fromJson(legacy);
       final r = SettingsResolver.resolve(
         global: saved,
-        recommended: {'temperature': 1.0, 'topP': .8},
+        recommended: {'contextSize': 32768, 'batchSize': 256},
       );
-      expect(r.effective.temperature, .3);
-      expect(r.originOf('temperature'), SettingsLayer.idGlobal);
-      expect(r.effective.topP, .8);
-      expect(r.originOf('topP'), SettingsLayer.idRecommended);
+      expect(r.effective.contextSize, 6144);
+      expect(r.originOf('contextSize'), SettingsLayer.idGlobal);
+      expect(r.effective.batchSize, 256);
+      expect(r.originOf('batchSize'), SettingsLayer.idRecommended);
     },
   );
   test('migration preserves ambiguous legacy choices', () {

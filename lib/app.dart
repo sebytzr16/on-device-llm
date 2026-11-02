@@ -25,12 +25,26 @@ abstract final class AppRoutes {
 /// Leaving a page must never bring the keyboard back on its own. Flutter
 /// hands focus back to whatever text field the page below remembered (the
 /// chat composer, a settings field), and on Android that reopens the IME.
-/// Dialogs and sheets are left alone: closing one returns to the field the
-/// user was already typing in.
+/// A dialog, sheet or menu returns to the field only when the keyboard was
+/// up as it opened: closing the sources or a message's details after
+/// reading opened the keyboard (owner's phone, 2026-11-01).
 class KeyboardGuard extends NavigatorObserver {
+  final _typing = Expando<bool>();
+
+  static bool get _keyboardUp => WidgetsBinding
+      .instance
+      .platformDispatcher
+      .views
+      .any((view) => view.viewInsets.bottom > 0);
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _typing[route] = _keyboardUp;
+  }
+
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    if (route is! PageRoute) return;
+    if (route is! PageRoute && _typing[route] == true) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       FocusManager.instance.primaryFocus?.unfocus();
       SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
@@ -48,6 +62,7 @@ class OnDeviceLlmApp extends ConsumerWidget {
     // (not watch) so download progress does not rebuild the app.
     ref.listen(voiceModelsProvider, (_, _) {});
     final localeCode = ref.watch(settingsProvider.select((s) => s.localeCode));
+    appLanguageCode = localeCode;
     final themeChoice = ref.watch(
       settingsProvider.select((s) => s.themeChoice),
     );

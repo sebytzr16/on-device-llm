@@ -20,16 +20,22 @@ void main() {
     expect(ConversationModel.missing('', catalog), isNull);
   });
 
-  test('only the 0.8B is offered; a saved Gemma choice is ignored', () {
-    // Phone test, 2026-10-09: Conversation always runs Qwen3.5 0.8B.
+  test('any downloaded model can be picked, the 0.8B listed first', () {
+    // Owner 2026-11-01: a model picker for Conversation (LFM3 included).
     final catalog = _catalog({'gemma4-e2b-qat', 'qwen35-0.8b-q8_0'});
     expect(
       ConversationModel.pick('gemma4-e2b-qat', catalog)?.id,
-      'qwen35-0.8b-q8_0',
+      'gemma4-e2b-qat',
     );
     expect(ConversationModel.choices(catalog).map((m) => m.id), [
       'qwen35-0.8b-q8_0',
+      'gemma4-e2b-qat',
     ]);
+    // A pick that is no longer downloaded falls back to the 0.8B.
+    expect(
+      ConversationModel.pick('qwen35-9b-q4km', catalog)?.id,
+      'qwen35-0.8b-q8_0',
+    );
   });
 
   test('without the 0.8B another model answers and says so', () {
@@ -40,10 +46,8 @@ void main() {
     );
     expect(ConversationModel.pick('', catalog)?.id, 'qwen35-2b-iq4nl');
     expect(ConversationModel.missing('', catalog)?.id, 'qwen35-0.8b-q8_0');
-    expect(
-      ConversationModel.missing('gemma4-e2b-qat', catalog)?.id,
-      'qwen35-0.8b-q8_0',
-    );
+    // A model picked on purpose needs no notice.
+    expect(ConversationModel.missing('gemma4-e2b-qat', catalog), isNull);
     expect(ConversationModel.pick('', _catalog({})), isNull);
   });
 
@@ -56,7 +60,7 @@ void main() {
     expect(const InferenceSettings().conversationModelId, '');
   });
 
-  test('a remote connection answers unless the 0.8B was picked', () {
+  test('a remote connection answers unless a phone model was picked', () {
     // Phone test, 2026-10-18: a remote model is used in Conversation too.
     const remote = InferenceSettings(
       remoteEnabled: true,
@@ -72,8 +76,7 @@ void main() {
       remoteProfileId: 'laptop',
     );
     expect(ConversationModel.usesRemote('', remote), isTrue);
-    // A Gemma choice saved before is not a phone pick.
-    expect(ConversationModel.usesRemote('gemma4-e2b-qat', remote), isTrue);
+    expect(ConversationModel.usesRemote('gemma4-e2b-qat', remote), isFalse);
     expect(
       ConversationModel.usesRemote(ConversationModel.defaultId, remote),
       isFalse,

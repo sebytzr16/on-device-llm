@@ -17,6 +17,38 @@ Uint8List zip(Map<String, String> files) {
 Uint8List bytes(String s) => Uint8List.fromList(utf8.encode(s));
 
 void main() {
+  test('forged-size DOCX is bounded by actual inflation', () async {
+    final bomb = zip({
+      'word/document.xml': 'x' * (DocumentText.maxArchiveEntryBytes + 1),
+    });
+    final data = ByteData.sublistView(bomb);
+    for (var i = 0; i + 46 < bomb.length; i++) {
+      if (data.getUint32(i, Endian.little) == 0x02014b50) {
+        data.setUint32(i + 24, 1024, Endian.little);
+      }
+      if (data.getUint32(i, Endian.little) == 0x04034b50) {
+        data.setUint32(i + 22, 1024, Endian.little);
+      }
+    }
+    await expectLater(
+      DocumentText.extract(bomb, 'bomb.docx'),
+      throwsFormatException,
+    );
+  });
+
+  test('large files are read off the UI isolate (P3-27)', () async {
+    final big = 'word ' * (DocumentText.isolateThreshold ~/ 4);
+    final doc = await DocumentText.extract(bytes(big), 'big.txt');
+    expect(doc.text, startsWith('word word'));
+    await expectLater(
+      DocumentText.extract(
+        Uint8List(DocumentText.isolateThreshold + 1),
+        'blob.xyz',
+      ),
+      throwsFormatException,
+    );
+  });
+
   test('archive expansion limits are checked before decompression', () {
     final archive = Archive()
       ..addFile(
@@ -97,6 +129,29 @@ void main() {
       'letter.odt',
     );
     expect(odt.text, 'Heading\nPara one.\nPara\ntwo');
+  });
+
+  test('sparse XLSX rows keep cells under their own column (P1-14)', () {
+    final text = DocumentText.sheetToText(
+      '<worksheet><sheetData>'
+      '<row r="1"><c r="A1" t="inlineStr"><is><t>Name</t></is></c>'
+      '<c r="B1" t="inlineStr"><is><t>Size</t></is></c>'
+      '<c r="C1" t="inlineStr"><is><t>Qty</t></is></c></row>'
+      '<row r="2"><c r="A2" t="inlineStr"><is><t>Bolt</t></is></c>'
+      '<c r="C2"><v>12</v></c></row>'
+      '<row r="3"><c r="B3"><v>7</v></c></row>'
+      '<row r="4"><c r="XFD4"><v>9</v></c></row>'
+      '</sheetData></worksheet>',
+      const [],
+    );
+    final lines = text.split('\n');
+    expect(lines.take(3), ['Name\tSize\tQty', 'Bolt\t\t12', '\t7']);
+    expect(
+      lines[3].split('\t').length,
+      lessThanOrEqualTo(DocumentText.maxSheetColumns + 1),
+      reason: 'a far-right cell must not pad thousands of blank columns',
+    );
+    expect(lines[3], endsWith('9'));
   });
 
   test(

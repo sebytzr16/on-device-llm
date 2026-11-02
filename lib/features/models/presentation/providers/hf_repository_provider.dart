@@ -6,9 +6,18 @@ class HfRepository {
   const HfRepository();
 
   Future<List<HfRepo>> search(String query) => HuggingFace.search(query);
+  Future<String> readme(String repo, String revision) =>
+      HuggingFace.readme(repo, revision);
   Future<HfRepoFiles> files(String repo) => HuggingFace.files(repo);
 }
 
 final hfRepositoryProvider = Provider<HfRepository>(
   (ref) => const HfRepository(),
 );
+
+final hfReadmeProvider = FutureProvider.family<String, (String, String)>((
+  ref,
+  key,
+) {
+  return ref.watch(hfRepositoryProvider).readme(key.$1, key.$2);
+});

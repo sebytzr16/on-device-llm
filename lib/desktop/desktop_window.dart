@@ -6,7 +6,6 @@ import 'package:window_manager/window_manager.dart';
 /// it renders black, so the window keeps the app's own solid palette.)
 abstract final class DesktopWindow {
   static const minimumSize = Size(960, 600);
-  static const initialSize = Size(1280, 800);
 
   static Future<void> init() async {
     await windowManager.ensureInitialized();

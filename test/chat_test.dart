@@ -497,6 +497,8 @@ class TestModels extends ModelManagerNotifier {
     ModelInfo info, {
     bool forChat = false,
     InferenceSettings? settings,
+    void Function()? onLoadStart,
+    bool vision = false,
   }) async {}
 }
 
@@ -1281,6 +1283,21 @@ void main() {
       container.read(sessionBusyProvider.notifier).state = false;
       await models.unloadModel();
       expect(container.read(modelManagerProvider).loadedModelId, isNull);
+    },
+  );
+
+  test(
+    'a send waits out a Goal or benchmark holding the engine (P1-17)',
+    () async {
+      final n = container.read(chatProvider.notifier);
+      container.read(sessionBusyProvider.notifier).state = true;
+      expect(await n.send('Hello'), isFalse);
+      expect(container.read(chatProvider).messages, isEmpty);
+      container.read(sessionBusyProvider.notifier).state = false;
+      expect(await n.send('Hello'), isTrue);
+      // A Goal's Stop leaves a turn it did not send alone.
+      n.cancelOwned(Object());
+      expect(container.read(chatProvider).messages.last.status, 'complete');
     },
   );
 
@@ -2673,7 +2690,12 @@ void main() {
         ],
       );
       final n = container.read(chatProvider.notifier);
-      expect(await n.send('search for the latest Flutter version'), isTrue);
+      expect(
+        await n.send(
+          'read https://example.com/evidence for the latest Flutter version',
+        ),
+        isTrue,
+      );
       final last = container.read(chatProvider).messages.last;
       // A timely answer says when its sources were updated (tester,
       // 2026-10-19).

@@ -36,6 +36,27 @@ class _Models extends ModelManagerNotifier {
 class _Packs extends VoiceModelsNotifier {
   _Packs(this.ready);
   final Set<String> ready;
+  final downloaded = <VoicePack>[];
+  final removed = <VoicePack>[];
+
+  @override
+  Future<void> download(VoicePack pack) async {
+    downloaded.add(pack);
+    state = VoiceModelsState({
+      ...state.packs,
+      pack.id: const VoicePackState(VoicePackStatus.ready),
+    });
+  }
+
+  @override
+  Future<void> delete(VoicePack pack) async {
+    removed.add(pack);
+    state = VoiceModelsState({
+      ...state.packs,
+      pack.id: const VoicePackState(VoicePackStatus.missing),
+    });
+  }
+
   @override
   VoiceModelsState build() => VoiceModelsState({
     for (final p in VoiceModels.all)
@@ -124,4 +145,54 @@ void main() {
       isTrue,
     );
   });
+
+  testWidgets(
+    'selecting missing Supertonic offers its download and preserves Kokoro',
+    (tester) async {
+      final container = await pump(
+        tester,
+        ready: {VoiceModels.listening.id, VoiceModels.speaking.id},
+      );
+      expect(
+        tester
+            .widget<ChoiceChip>(find.byKey(const Key('reading-kokoro')))
+            .selected,
+        isTrue,
+      );
+      await tester.tap(find.byKey(const Key('reading-supertonic-2')));
+      await tester.pump();
+      expect(container.read(settingsProvider).readingVoice, 'supertonic-2');
+      expect(find.textContaining('Supertonic 2'), findsWidgets);
+      expect(find.byKey(const Key('voice-add')), findsOneWidget);
+      expect(find.byKey(const Key('kokoro-voice')), findsNothing);
+      await tester.ensureVisible(find.byKey(const Key('voice-add')));
+      await tester.tap(find.byKey(const Key('voice-add')));
+      await tester.pump();
+      final packs = container.read(voiceModelsProvider.notifier) as _Packs;
+      expect(packs.downloaded, [VoiceModels.supertonic]);
+      expect(
+        container.read(voiceModelsProvider).canSpeakWith('kokoro'),
+        isTrue,
+      );
+      expect(find.text('Voice 10'), findsOneWidget);
+      await tester.ensureVisible(find.text('Voice 5'));
+      await tester.tap(find.text('Voice 5'));
+      await tester.pump();
+      expect(container.read(settingsProvider).supertonicSid, 4);
+      await tester.ensureVisible(find.byKey(const Key('voice-remove')));
+      await tester.tap(find.byKey(const Key('voice-remove')));
+      await tester.pump();
+      expect(packs.removed, [VoiceModels.listening, VoiceModels.supertonic]);
+      expect(
+        container.read(voiceModelsProvider).canSpeakWith('kokoro'),
+        isTrue,
+      );
+      expect(find.byKey(const Key('voice-add')), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const Key('reading-kokoro')));
+      await tester.tap(find.byKey(const Key('reading-kokoro')));
+      await tester.pump();
+      expect(container.read(settingsProvider).readingVoice, 'kokoro');
+      expect(find.text('Heart'), findsOneWidget);
+    },
+  );
 }

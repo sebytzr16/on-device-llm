@@ -38,6 +38,10 @@ class WhisperListener {
 
   /// Pause that ends an utterance.
   final double endSilence;
+
+  /// Captions read the whole utterance, not only its last 12 s: dictation
+  /// shows them as the text being written, so its start must not vanish.
+  final bool captionAll;
   WhisperListener({
     required this.voice,
     required this.language,
@@ -47,7 +51,11 @@ class WhisperListener {
     this.onFinal,
     this.onDropped,
     this.endSilence = 0.7,
+    this.captionAll = false,
+    this.listeningPaths = VoiceModels.listeningPaths,
   });
+
+  final Future<ListeningPaths?> Function() listeningPaths;
 
   SpeechDetector? _vad;
   StreamSubscription<Float32List>? _frames;
@@ -98,8 +106,9 @@ class WhisperListener {
   /// False when the models are missing or the microphone was refused.
   Future<bool> start() async {
     if (running) return true;
-    final paths = await VoiceModels.listeningPaths();
-    if (paths == null) return false;
+    final session = _session;
+    final paths = await listeningPaths();
+    if (session != _session || paths == null) return false;
     _vad ??= SpeechDetector.create(paths.vad, minSilence: endSilence);
     unawaited(
       voice.warmListening(language).catchError((Object e) {
@@ -114,7 +123,7 @@ class WhisperListener {
       await stop();
       rethrow;
     }
-    if (!started) {
+    if (session != _session || !started) {
       await stop();
       return false;
     }
@@ -133,6 +142,17 @@ class WhisperListener {
     _speech.clear();
     _preroll.clear();
     _inSpeech = false;
+  }
+
+  /// Ends listening without losing the words still being said: the
+  /// utterance in progress is transcribed and delivered before the
+  /// microphone stops.
+  Future<void> finish() async {
+    if (_inSpeech) _send(_join(_speech));
+    _inSpeech = false;
+    _speech.clear();
+    await _finals;
+    await stop();
   }
 
   /// Drops what was heard so far (the assistant's own echo, a cancelled
@@ -203,7 +223,7 @@ class WhisperListener {
 
   void _partial() {
     final samples = _join(
-      _speech.length > captionFrames
+      !captionAll && _speech.length > captionFrames
           ? _speech.sublist(_speech.length - captionFrames)
           : _speech,
     );

@@ -28,6 +28,8 @@ class SemanticRerank {
     int maxChunks = 6,
     List<String> extraQueries = const [],
     Map<int, String> titles = const {},
+    // Ten by default: each passage costs about a third of a second to
+    // embed against the 2.5 s budget; never more than twenty.
     int candidates = 10,
     Duration budget = const Duration(milliseconds: 2500),
   }) async {
@@ -46,7 +48,7 @@ class SemanticRerank {
       query,
       chunks,
       perSource: perSource + 1,
-      maxChunks: max(candidates, maxChunks),
+      maxChunks: min(20, max(candidates, maxChunks)),
       extraQueries: extraQueries,
       titles: titles,
     );

@@ -196,6 +196,37 @@ class InstantAnswers {
     }
   }
 
+  /// Whether the forecast's [location] ("London, United Kingdom") is the
+  /// [requested] place: the whole city name, then every other word asked
+  /// ("UK", "Ontario") found in it or as its initials. The first word alone
+  /// let London, Canada pass for "London UK" (audit P2-48).
+  static bool samePlace(String requested, String location) {
+    List<String> words(String s) => s
+        .toLowerCase()
+        .split(RegExp(r'[^\p{L}\p{N}]+', unicode: true))
+        .where((w) => w.isNotEmpty)
+        .toList();
+    final asked = words(requested);
+    final parts = location.split(',');
+    final city = words(parts.first);
+    final rest = words(parts.skip(1).join(' '));
+    if (asked.length < city.length) return false;
+    for (var i = 0; i < city.length; i++) {
+      if (asked[i] != city[i]) return false;
+    }
+    final initials = rest
+        .where((w) => w != 'of' && w != 'the')
+        .map((w) => w[0])
+        .join();
+    return asked
+        .skip(city.length)
+        .every(
+          (w) =>
+              rest.contains(w) ||
+              (initials.length > 1 && w.startsWith(initials)),
+        );
+  }
+
   /// The JSONP forecast as readable lines a model can quote: now, today,
   /// then the next days. Rejects a reply for a different place (the
   /// endpoint falls back to a default city for unknown names).
@@ -212,10 +243,7 @@ class InstantAnswers {
       return null;
     }
     final location = '${j['location'] ?? ''}';
-    final head = requested.split(RegExp(r'[,\s]+')).first.toLowerCase();
-    if (location.isEmpty || !location.toLowerCase().contains(head)) {
-      return null;
-    }
+    if (location.isEmpty || !samePlace(requested, location)) return null;
     final now = j['currentWeather'];
     final days = (j['forecastDaily'] as Map?)?['days'];
     if (now is! Map) return null;

@@ -502,6 +502,13 @@ class _DesktopServerPageState extends ConsumerState<DesktopServerPage> {
                           color: context.colors.accent,
                         ),
                       ),
+                      if (host.pairExpiresAt case final until?)
+                        Text(
+                          t.hostPairValidUntil(
+                            TimeOfDay.fromDateTime(until).format(context),
+                          ),
+                          style: context.text.small,
+                        ),
                     ],
                   ],
                 ),

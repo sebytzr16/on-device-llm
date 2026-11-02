@@ -66,6 +66,8 @@ class _Models extends TestModels {
     ModelInfo info, {
     bool forChat = false,
     InferenceSettings? settings,
+    void Function()? onLoadStart,
+    bool vision = false,
   }) async {
     loads.add(settings!);
   }
@@ -145,6 +147,34 @@ void main() {
       );
       expect(result.nGpuLayers, 999);
       expect(result.kvCacheType, KvCacheType.fp16);
+    },
+  );
+
+  test(
+    'every layer with a q8_0 cache wins over F16 with some layers (E4B)',
+    () async {
+      // Gemma 4 E4B on an 8 GB card: F16 fits 33 of 43 layers (16 tok/s),
+      // q8_0 fits all 43 with the projector moved to RAM (101 tok/s).
+      Map<String, dynamic> e4b(InferenceSettings s) {
+        final f16 = s.kvCacheType == KvCacheType.fp16;
+        final placed = s.nGpuLayers >= 999 ? (f16 ? 33 : 43) : s.nGpuLayers;
+        return {
+          'layers': 43,
+          'gpuLayers': placed,
+          'ramNeedMb': 2048,
+          'ramAvailableMb': 16384,
+          'vramNeedMb': 1000 + placed * (f16 ? 180 : 115),
+          'vramFreeMb': 7100,
+        };
+      }
+
+      final result = await pcOptimizationDefaults(
+        current: _stale,
+        defaults: const InferenceSettings(),
+        estimate: (s) async => e4b(s),
+      );
+      expect(result.nGpuLayers, 999);
+      expect(result.kvCacheType, KvCacheType.q8_0);
     },
   );
 
@@ -237,7 +267,10 @@ void main() {
           expect(model['flashAttention'], isTrue);
           expect(model['draftModelId'], '');
           final global = c.read(settingsProvider);
-          expect(global.explicitOverrides, isNot(contains('kvCacheType')));
+          // The winner goes to this model's profile only: the app-wide
+          // choices other models use are kept (audit P1-13).
+          expect(global.explicitOverrides, contains('kvCacheType'));
+          expect(global.kvCacheType, KvCacheType.q8_0);
           expect(global.explicitOverrides, contains('temperature'));
           expect(find.textContaining('Before: 100.0'), findsOneWidget);
         }

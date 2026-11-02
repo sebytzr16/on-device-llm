@@ -39,7 +39,13 @@ class TuneBenchmarkRun implements TuneRunner {
     final ram = e['ramNeedMb'] as num?, available = e['ramAvailableMb'] as num?;
     if (ram == null ||
         available == null ||
-        ram > available - math.max(1024, available / 8)) {
+        ram >
+            ((e['ramBudgetMb'] as num?) ??
+                available -
+                    math.max(
+                      1024,
+                      ((e['ramTotalMb'] as num?) ?? available) / 8,
+                    ))) {
       return false;
     }
     final gpu = (e['gpuLayers'] as num?) ?? 0;

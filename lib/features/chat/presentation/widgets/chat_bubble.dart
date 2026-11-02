@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
+import 'streaming_markdown.dart';
 import '../../../../core/design/app_design.dart';
 import '../../../../core/design/app_sheet.dart';
 import '../../../../core/design/markdown_tables.dart';
@@ -21,6 +22,8 @@ import '../../../knowledge/knowledge_store.dart';
 import '../../../zim/zim_article_page.dart';
 import '../../domain/entities/chat_message.dart';
 import '../../domain/entities/turn_run.dart';
+import '../../../tools/domain/tool_spec.dart';
+import '../../../tools/tool_runner.dart';
 import '../../../tools/phone_actions.dart';
 import '../../../tools/presentation/phone_action_cards.dart';
 import 'notice_sheet.dart';
@@ -35,6 +38,8 @@ import '../../../../core/design/app_dialog.dart';
 class ChatBubble extends StatelessWidget {
   final ChatMessage message;
   final bool streaming;
+  final Widget? helperChip;
+  final String? liveReasoningTitle;
 
   /// Display name of the model that produced this turn, for the caption.
   final String? modelName;
@@ -67,6 +72,8 @@ class ChatBubble extends StatelessWidget {
     super.key,
     required this.message,
     this.streaming = false,
+    this.helperChip,
+    this.liveReasoningTitle,
     this.modelName,
     this.onRegenerate,
     this.onContinue,
@@ -652,7 +659,26 @@ class _AssistantTurn extends StatelessWidget {
         ),
         const SizedBox(height: AppDesign.sm),
         if (reasoning != null && reasoning.isNotEmpty)
-          ReasoningAccordion(content: reasoning, isComplete: !streaming),
+          ReasoningAccordion(
+            content: reasoning,
+            isComplete: !streaming,
+            liveTitle: bubble.liveReasoningTitle,
+          ),
+        // Above the answer, as rounded chips (owner, 2026-11-01).
+        if (!streaming && sources.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppDesign.md),
+            child: _SourcesBubble(sources: sources),
+          ),
+        if (!streaming && message.runJson?.contains('"ask_helper"') == true)
+          _HelperHandoffs(
+            trace: [
+              for (final r
+                  in TurnRun.decode(message.runJson)?.toolTrace ?? const [])
+                if ((r['call'] as Map?)?['name'] == 'ask_helper')
+                  ToolResult.fromJson(Map<String, dynamic>.from(r)),
+            ],
+          ),
         if (message.content.isNotEmpty)
           // While it streams, new words fade in behind a soft trailing edge
           // (not inside an open code block, which sits on its own panel).
@@ -666,26 +692,31 @@ class _AssistantTurn extends StatelessWidget {
             // Desktop 2026-10-28: without it a streaming answer decoded at
             // 49 tok/s on screen against 76 with the window minimized.
             child: RepaintBoundary(
-              child: MarkdownBody(
+              child: StreamingMarkdown(
                 data: message.content,
-                // The desktop pane selects across the whole conversation.
-                selectable: !streaming && !DesktopHost.active,
-                builders: {
-                  'pre': CodeBlockBuilder(streaming: streaming),
-                  'math': MathBuilder(),
-                },
-                blockSyntaxes: const [MermaidFenceSyntax()],
-                inlineSyntaxes: [MathSyntax()],
-                imageBuilder: (uri, title, alt) =>
-                    Text(alt ?? '[Image omitted]'),
-                onTapLink: (_, href, _) async {
-                  if (href != null) {
-                    try {
-                      await openExternalLink(href);
-                    } catch (_) {}
-                  }
-                },
-                styleSheet: _styleSheet(context, t, c),
+                streaming: streaming,
+                blockSpacing: AppDesign.md,
+                builder: (data) => MarkdownBody(
+                  data: data,
+                  // The desktop pane selects across the whole conversation.
+                  selectable: !streaming && !DesktopHost.active,
+                  builders: {
+                    'pre': CodeBlockBuilder(streaming: streaming),
+                    'math': MathBuilder(),
+                  },
+                  blockSyntaxes: const [MermaidFenceSyntax()],
+                  inlineSyntaxes: [MathSyntax()],
+                  imageBuilder: (uri, title, alt) =>
+                      Text(alt ?? '[Image omitted]'),
+                  onTapLink: (_, href, _) async {
+                    if (href != null) {
+                      try {
+                        await openExternalLink(href);
+                      } catch (_) {}
+                    }
+                  },
+                  styleSheet: _styleSheet(context, t, c),
+                ),
               ),
             ),
           ),
@@ -727,11 +758,6 @@ class _AssistantTurn extends StatelessWidget {
                     );
             },
           ),
-        if (!streaming && sources.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: AppDesign.md),
-            child: _SourcesBubble(sources: sources),
-          ),
         // A tool (an MCP server, the calculator) answered: not from memory.
         if (!streaming &&
             sources.isEmpty &&
@@ -765,6 +791,7 @@ class _AssistantTurn extends StatelessWidget {
               ],
             ),
           ),
+        if (bubble.helperChip != null) bubble.helperChip!,
         if (!streaming) _actionBar(context, c),
       ],
     );
@@ -897,159 +924,338 @@ class _AssistantTurn extends StatelessWidget {
   }
 }
 
-/// One compact disclosure at the end of an answer. Expanding it reveals all
-/// cited sources; each row opens the provenance and passage inspector.
+/// Rounded chips above the answer (Figma mock, owner 2026-11-01): the first
+/// two sources by name, then "+N". A chip opens that source's inspector;
+/// "+N" (or the only chip left) lists them all with dates and sponsored
+/// results.
+/// The jobs the chat model handed to the helper model, as one rounded
+/// pill above the answer like the thought pill; tapping it shows each task
+/// and what the helper returned.
+class _HelperHandoffs extends StatelessWidget {
+  final List<ToolResult> trace;
+  const _HelperHandoffs({required this.trace});
+
+  @override
+  Widget build(BuildContext context) {
+    if (trace.isEmpty) return const SizedBox.shrink();
+    final c = context.colors;
+    final t = context.l10n;
+    final ms = trace.fold<int>(0, (sum, r) => sum + r.elapsedMs);
+    final seconds = ms / 1000;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppDesign.md),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Material(
+          key: const Key('helper-handoffs'),
+          color: c.surfaceRaised,
+          shape: StadiumBorder(side: BorderSide(color: c.hairline)),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => _show(context),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppDesign.md,
+                vertical: AppDesign.sm,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.handshake_outlined, size: 14, color: c.textMuted),
+                  const SizedBox(width: AppDesign.sm),
+                  Flexible(
+                    child: Text(
+                      '${t.helperHandoffs(trace.length)} · '
+                      '${seconds < 10 ? seconds.toStringAsFixed(1) : seconds.round()} s',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.text.small.copyWith(
+                        color: c.textMuted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppDesign.xs),
+                  Icon(Icons.chevron_right, size: 16, color: c.textFaint),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _show(BuildContext context) {
+    final c = context.colors;
+    final t = context.l10n;
+    showMorphSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => AppSheet(
+        title: t.helperHandoffs(trace.length),
+        children: [
+          for (final r in trace) ...[
+            Text(t.helperTask, style: context.text.label),
+            const SizedBox(height: AppDesign.xs),
+            SelectableText(
+              r.call.args['task']?.toString() ?? '',
+              style: context.text.body,
+            ),
+            const SizedBox(height: AppDesign.md),
+            Text(t.helperResult, style: context.text.label),
+            const SizedBox(height: AppDesign.xs),
+            SelectableText(
+              ToolRunner.helperReplyText(r.output),
+              style: context.text.body.copyWith(color: r.ok ? null : c.danger),
+            ),
+            const SizedBox(height: AppDesign.lg),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _SourcesBubble extends StatelessWidget {
   final List<Map<String, dynamic>> sources;
   const _SourcesBubble({required this.sources});
+
+  static String label(BuildContext context, Map<String, dynamic> s) {
+    final url = s['url'] as String? ?? '';
+    if (KnowledgeStore.isKnowledgeUrl(url)) {
+      return context.l10n.uiChatBubbleKnowledgeLibrary;
+    }
+    if (url.startsWith('zim://')) return 'Wikipedia';
+    var host = Uri.tryParse(url)?.host ?? '';
+    if (host.endsWith('wikipedia.org')) return 'Wikipedia';
+    host = host.replaceFirst(RegExp(r'^(www|m|en|fr|es)\.'), '');
+    final outlet = s['outlet'] as String?;
+    return outlet?.isNotEmpty == true
+        ? outlet!
+        : host.isNotEmpty
+        ? host
+        : (s['title'] as String? ?? context.l10n.sourceFallbackTitle);
+  }
+
+  static IconData icon(Map<String, dynamic> s) =>
+      KnowledgeStore.isKnowledgeUrl(s['url'] as String? ?? '')
+      ? Icons.local_library_outlined
+      : s['retrievalStatus'] == 'news_story'
+      ? Icons.newspaper_outlined
+      : Icons.public;
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final evidence = sources.where((s) => s['sponsored'] != true).toList();
-    final sponsored = sources.where((s) => s['sponsored'] == true).toList();
-    final border = RoundedRectangleBorder(
-      borderRadius: AppDesign.radius(AppDesign.rMd),
-      side: BorderSide(color: c.hairline),
-    );
-    return ClipRRect(
-      borderRadius: AppDesign.radius(AppDesign.rMd),
-      child: Material(
-        color: c.surfaceRaised,
-        child: ExpansionTile(
-          key: const Key('sources-bubble'),
-          dense: true,
-          initiallyExpanded: false,
-          shape: border,
-          collapsedShape: border,
-          leading: Icon(Icons.source_outlined, size: 18, color: c.textMuted),
-          title: Text(
-            '${evidence.length} ${context.l10n.uiChatBubbleSources.toLowerCase()} · '
-            '${evidence.map((s) => Uri.tryParse(s['url'] as String? ?? '')?.host ?? '').where((h) => h.isNotEmpty).toSet().take(2).join(', ')}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: context.text.monoStrong.copyWith(color: c.text),
+    final shown = evidence.take(2).toList();
+    final rest = sources.length - shown.length;
+    Widget chip({
+      Key? key,
+      IconData? icon,
+      required String text,
+      required VoidCallback onTap,
+    }) => Material(
+      key: key,
+      color: c.surfaceRaised,
+      shape: StadiumBorder(side: BorderSide(color: c.hairline)),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppDesign.md,
+            vertical: AppDesign.sm,
           ),
-          children: [
-            if (sponsored.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.all(AppDesign.sm),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: 15, color: c.textMuted),
+                const SizedBox(width: AppDesign.xs),
+              ],
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 150),
                 child: Text(
-                  '${evidence.length} reference${evidence.length == 1 ? '' : 's'} · ${sponsored.length} sponsored',
-                  style: context.text.mono.copyWith(color: c.textMuted),
-                ),
-              ),
-            for (final s in evidence)
-              ListTile(
-                key: Key('source-${s['number']}'),
-                dense: true,
-                leading: Icon(
-                  KnowledgeStore.isKnowledgeUrl(s['url'] as String)
-                      ? Icons.local_library_outlined
-                      : s['retrievalStatus'] == 'news_story'
-                      ? Icons.newspaper_outlined
-                      : s['retrievalStatus'] == 'page_read'
-                      ? Icons.article_outlined
-                      : Icons.short_text,
-                  size: 17,
-                  color: c.textMuted,
-                ),
-                title: Text(
-                  '[${s['number']}] ${s['title'] ?? context.l10n.sourceFallbackTitle}',
-                  maxLines: 2,
+                  text,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: context.text.small.copyWith(color: c.text),
-                ),
-                subtitle: KnowledgeStore.isKnowledgeUrl(s['url'] as String)
-                    ? Text(context.l10n.uiChatBubbleKnowledgeLibrary)
-                    : Text(
-                        [
-                          (s['outlet'] as String?) ??
-                              Uri.tryParse(s['url'] as String)?.host ??
-                              s['url'] as String,
-                          if (s['retrievalStatus'] == 'news_story' &&
-                              DateTime.tryParse(
-                                    s['publishedAt'] as String? ?? '',
-                                  ) !=
-                                  null)
-                            _age(
-                              context.l10n,
-                              DateTime.parse(s['publishedAt'] as String),
-                            )
-                          else if (s['retrievalStatus'] == 'page_read' &&
-                              s['updatedAt'] is String &&
-                              (s['updatedAt'] as String).length >= 10 &&
-                              DateTime.tryParse(s['updatedAt'] as String) !=
-                                  null)
-                            context.l10n.sourceUpdated(
-                              (s['updatedAt'] as String).substring(0, 10),
-                            )
-                          else if (s['retrievalStatus'] == 'page_read' &&
-                              s['publishedAt'] is String &&
-                              (s['publishedAt'] as String).length >= 10 &&
-                              DateTime.tryParse(s['publishedAt'] as String) !=
-                                  null)
-                            context.l10n.sourcePublished(
-                              (s['publishedAt'] as String).substring(0, 10),
-                            ),
-                          if (s['remembered'] == true)
-                            context.l10n.sourceReadEarlier,
-                          if (s['stale'] == true)
-                            context.l10n.sourceMayBeOutdated,
-                        ].join(' · '),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: context.text.mono.copyWith(color: c.textFaint),
-                      ),
-                trailing: const Icon(Icons.chevron_right, size: 18),
-                onTap: () => showSourceSheet(context, s),
-              ),
-            if (sponsored.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppDesign.md,
-                  AppDesign.sm,
-                  AppDesign.md,
-                  AppDesign.xs,
-                ),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    context.l10n.uiChatBubbleSponsoredNotUsed,
-                    style: context.text.monoStrong.copyWith(color: c.textMuted),
+                  style: context.text.small.copyWith(
+                    color: c.text,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-            for (var i = 0; i < sponsored.length; i++)
-              ListTile(
-                key: Key('sponsored-source-$i'),
-                dense: true,
-                leading: Icon(
-                  Icons.ads_click_outlined,
-                  size: 17,
-                  color: c.textMuted,
-                ),
-                title: Text(
-                  sponsored[i]['title'] as String? ??
-                      context.l10n.sourceSponsored,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: context.text.small.copyWith(color: c.text),
-                ),
-                subtitle: Text(
-                  Uri.tryParse(sponsored[i]['url'] as String)?.host ??
-                      sponsored[i]['url'] as String,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: context.text.mono.copyWith(color: c.textFaint),
-                ),
-                trailing: const Icon(Icons.chevron_right, size: 18),
-                onTap: () => showSourceSheet(context, sponsored[i]),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
+    return Wrap(
+      key: const Key('sources-bubble'),
+      spacing: AppDesign.sm,
+      runSpacing: AppDesign.sm,
+      children: [
+        for (final s in shown)
+          chip(
+            key: Key('source-chip-${s['number']}'),
+            icon: icon(s),
+            text: label(context, s),
+            onTap: () => showSourceSheet(context, s),
+          ),
+        if (rest > 0 || shown.isEmpty)
+          chip(
+            key: const Key('sources-all'),
+            icon: shown.isEmpty ? Icons.source_outlined : null,
+            text: shown.isEmpty
+                ? '${sources.length} ${context.l10n.uiChatBubbleSources.toLowerCase()}'
+                : '+$rest',
+            onTap: () => _showAll(context, evidence),
+          )
+        else
+          chip(
+            key: const Key('sources-all'),
+            icon: Icons.format_list_bulleted,
+            text: '${evidence.length}',
+            onTap: () => _showAll(context, evidence),
+          ),
+      ],
+    );
+  }
+
+  void _showAll(BuildContext context, List<Map<String, dynamic>> evidence) {
+    final sponsored = sources.where((s) => s['sponsored'] == true).toList();
+    showMorphSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => AppSheet(
+        title:
+            '${evidence.length} ${context.l10n.uiChatBubbleSources.toLowerCase()}',
+        padding: EdgeInsets.zero,
+        children: [
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: _rows(context, evidence, sponsored),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _rows(
+    BuildContext context,
+    List<Map<String, dynamic>> evidence,
+    List<Map<String, dynamic>> sponsored,
+  ) {
+    final c = context.colors;
+    return [
+      if (sponsored.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.all(AppDesign.sm),
+          child: Text(
+            '${evidence.length} reference${evidence.length == 1 ? '' : 's'} · ${sponsored.length} sponsored',
+            style: context.text.mono.copyWith(color: c.textMuted),
+          ),
+        ),
+      for (final s in evidence)
+        ListTile(
+          key: Key('source-${s['number']}'),
+          dense: true,
+          leading: Icon(
+            KnowledgeStore.isKnowledgeUrl(s['url'] as String)
+                ? Icons.local_library_outlined
+                : s['retrievalStatus'] == 'news_story'
+                ? Icons.newspaper_outlined
+                : s['retrievalStatus'] == 'page_read'
+                ? Icons.article_outlined
+                : Icons.short_text,
+            size: 17,
+            color: c.textMuted,
+          ),
+          title: Text(
+            '[${s['number']}] ${s['title'] ?? context.l10n.sourceFallbackTitle}',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: context.text.small.copyWith(color: c.text),
+          ),
+          subtitle: KnowledgeStore.isKnowledgeUrl(s['url'] as String)
+              ? Text(context.l10n.uiChatBubbleKnowledgeLibrary)
+              : Text(
+                  [
+                    (s['outlet'] as String?) ??
+                        Uri.tryParse(s['url'] as String)?.host ??
+                        s['url'] as String,
+                    if (s['retrievalStatus'] == 'news_story' &&
+                        DateTime.tryParse(s['publishedAt'] as String? ?? '') !=
+                            null)
+                      _age(
+                        context.l10n,
+                        DateTime.parse(s['publishedAt'] as String),
+                      )
+                    else if (s['retrievalStatus'] == 'page_read' &&
+                        s['updatedAt'] is String &&
+                        (s['updatedAt'] as String).length >= 10 &&
+                        DateTime.tryParse(s['updatedAt'] as String) != null)
+                      context.l10n.sourceUpdated(
+                        (s['updatedAt'] as String).substring(0, 10),
+                      )
+                    else if (s['retrievalStatus'] == 'page_read' &&
+                        s['publishedAt'] is String &&
+                        (s['publishedAt'] as String).length >= 10 &&
+                        DateTime.tryParse(s['publishedAt'] as String) != null)
+                      context.l10n.sourcePublished(
+                        (s['publishedAt'] as String).substring(0, 10),
+                      ),
+                    if (s['remembered'] == true) context.l10n.sourceReadEarlier,
+                    if (s['stale'] == true) context.l10n.sourceMayBeOutdated,
+                  ].join(' · '),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.text.mono.copyWith(color: c.textFaint),
+                ),
+          trailing: const Icon(Icons.chevron_right, size: 18),
+          onTap: () => showSourceSheet(context, s),
+        ),
+      if (sponsored.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppDesign.md,
+            AppDesign.sm,
+            AppDesign.md,
+            AppDesign.xs,
+          ),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              context.l10n.uiChatBubbleSponsoredNotUsed,
+              style: context.text.monoStrong.copyWith(color: c.textMuted),
+            ),
+          ),
+        ),
+      for (var i = 0; i < sponsored.length; i++)
+        ListTile(
+          key: Key('sponsored-source-$i'),
+          dense: true,
+          leading: Icon(Icons.ads_click_outlined, size: 17, color: c.textMuted),
+          title: Text(
+            sponsored[i]['title'] as String? ?? context.l10n.sourceSponsored,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: context.text.small.copyWith(color: c.text),
+          ),
+          subtitle: Text(
+            Uri.tryParse(sponsored[i]['url'] as String)?.host ??
+                sponsored[i]['url'] as String,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: context.text.mono.copyWith(color: c.textFaint),
+          ),
+          trailing: const Icon(Icons.chevron_right, size: 18),
+          onTap: () => showSourceSheet(context, sponsored[i]),
+        ),
+    ];
   }
 }
 

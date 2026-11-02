@@ -46,8 +46,11 @@ abstract final class AppMotion {
   /// A success check or a badge landing: a little more rebound.
   static final SpringDescription pop = spring(dampingRatio: 0.5, response: 0.3);
 
-  /// The Subtle level: the same speed without overshoot.
+  /// Identifies Subtle movement: controllers use a short plain tween instead
+  /// of simulating this spring.
   static final SpringDescription calm = spring(dampingRatio: 1, response: 0.3);
+
+  static const Duration subtle = Duration(milliseconds: 120);
 
   static const Duration fadeIn = Duration(milliseconds: 220);
   static const Duration fadeOut = Duration(milliseconds: 140);
@@ -113,7 +116,11 @@ class Motion {
   SpringDescription get spring => full ? AppMotion.standard : AppMotion.calm;
   SpringDescription get snappy => full ? AppMotion.snappy : AppMotion.calm;
   SpringDescription get pop => full ? AppMotion.pop : AppMotion.calm;
-  Duration fade(Duration d) => animates ? d : Duration.zero;
+  Duration fade(Duration d) => !animates
+      ? Duration.zero
+      : full || d < AppMotion.subtle
+      ? d
+      : AppMotion.subtle;
 }
 
 extension MotionContext on BuildContext {
@@ -131,6 +138,12 @@ extension SpringTo on AnimationController {
     if (!animate) {
       stop();
       value = target;
+      return;
+    }
+    if (identical(spring, AppMotion.calm)) {
+      unawaited(
+        animateTo(target, duration: AppMotion.subtle, curve: AppMotion.ease),
+      );
       return;
     }
     // A spring stops within a hair of its target: land exactly on it.
@@ -170,7 +183,11 @@ extension GlideTo on ScrollController {
       jumpTo(offset);
       return Future.value();
     }
-    return animateTo(offset, duration: duration, curve: AppMotion.ease);
+    return animateTo(
+      offset,
+      duration: motion.fade(duration),
+      curve: AppMotion.ease,
+    );
   }
 }
 

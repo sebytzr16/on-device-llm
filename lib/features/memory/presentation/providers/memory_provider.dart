@@ -130,8 +130,11 @@ class MemoryStore {
 
   Future<void> clear() => _db.clearMemories();
 
-  /// Keeps the newest [UserMemory.maxFacts].
-  Future<void> _trim() async {
+  /// Removes expired notes before keeping the newest [UserMemory.maxFacts].
+  Future<void> _trim() => _db.transaction(() async {
+    await (_db.delete(
+      _db.memories,
+    )..where((t) => t.expiresAt.isSmallerOrEqualValue(DateTime.now()))).go();
     final all = await _db.allMemories();
     final unpinned = all.where((m) => !m.pinned).toList();
     for (final m in unpinned.skip(
@@ -142,7 +145,7 @@ class MemoryStore {
     )) {
       await _db.deleteMemory(m.id);
     }
-  }
+  });
 }
 
 final memoryStoreProvider = Provider<MemoryStore>(

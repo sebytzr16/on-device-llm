@@ -1,5 +1,4 @@
 import 'dart:async';
-import '../../core/utils/inference_admission.dart';
 import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -8,7 +7,9 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/services.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
+import 'package:path/path.dart' as p;
 
+import '../../core/utils/inference_admission.dart';
 import 'voice_models.dart';
 
 /// Synthesized speech: 16-bit mono PCM.
@@ -36,6 +37,8 @@ class SherpaWorker {
   final ReceivePort _receive;
   final Map<int, Completer<Map<Object?, Object?>>> _pending;
   var _next = 0;
+  bool _closed = false;
+  bool get alive => !_closed;
   SherpaWorker._(this._isolate, this._send, this._receive, this._pending);
 
   @visibleForTesting
@@ -47,22 +50,62 @@ class SherpaWorker {
     final receive = ReceivePort();
     final ready = Completer<SendPort>();
     final pending = <int, Completer<Map<Object?, Object?>>>{};
+    SherpaWorker? worker;
+    Isolate? isolate;
+    void failed(Object error) {
+      worker?._closed = true;
+      if (!ready.isCompleted) ready.completeError(error);
+      for (final p in pending.values) {
+        p.complete({'error': '$error'});
+      }
+      pending.clear();
+      receive.close();
+    }
+
     receive.listen((m) {
       if (m is SendPort) {
         if (!ready.isCompleted) ready.complete(m);
       } else if (m is Map) {
         pending.remove(m['id'])?.complete(m);
+      } else {
+        failed(
+          StateError(
+            m == null ? 'Voice worker exited.' : 'Voice worker failed: $m',
+          ),
+        );
       }
     });
-    final isolate = await Isolate.spawn(entry, receive.sendPort);
-    final send = await ready.future.timeout(const Duration(seconds: 20));
-    return SherpaWorker._(isolate, send, receive, pending);
+    try {
+      // Attach handlers at spawn so an early crash cannot miss them.
+      final starting = Isolate.spawn(
+        entry,
+        receive.sendPort,
+        onError: receive.sendPort,
+        onExit: receive.sendPort,
+        errorsAreFatal: true,
+      );
+      // Observe readiness errors immediately, including a crash before spawn returns.
+      final send = ready.future.timeout(const Duration(seconds: 20));
+      await Future.wait<void>([
+        starting.then((value) {
+          isolate = value;
+        }),
+        send.then((_) {}),
+      ], eagerError: true);
+      worker = SherpaWorker._(isolate!, await send, receive, pending);
+      return worker;
+    } catch (_) {
+      isolate?.kill(priority: Isolate.immediate);
+      receive.close();
+      rethrow;
+    }
   }
 
   /// A request is being answered.
   bool get busy => _pending.isNotEmpty;
 
   Future<Map<Object?, Object?>> call(Map<String, Object?> request) {
+    if (_closed) return Future.value({'error': 'closed'});
     final id = _next++;
     final done = Completer<Map<Object?, Object?>>();
     _pending[id] = done;
@@ -75,6 +118,8 @@ class SherpaWorker {
   /// interrupted, and a kill landing as that call returns would skip the
   /// free, leaving Kokoro or Whisper in memory until the app closes.
   void dispose() {
+    if (_closed) return;
+    _closed = true;
     _send.send({'cmd': 'close'});
     for (final p in _pending.values) {
       p.complete({'error': 'closed'});
@@ -115,7 +160,67 @@ void serveSherpaWorker(
   });
 }
 
-/// Kokoro-82M: one engine per espeak language, only one kept loaded.
+/// Both engines use a rate multiplier: faster reading means a larger speed
+/// value, with the same slider limits (owner, 2026-11-02).
+@visibleForTesting
+sherpa.OfflineTtsGenerationConfig speakingGenerationConfig(
+  Map<Object?, Object?> m,
+) => sherpa.OfflineTtsGenerationConfig(
+  sid: m['sid'] as int,
+  speed: (m['speed'] as num).toDouble().clamp(0.6, 1.6),
+  extra: m['engine'] == 'supertonic-2'
+      ? {'lang': m['lang'] as String}
+      : const {},
+);
+
+/// Build the selected engine before crossing FFI, so configuration can be
+/// checked without loading model weights (owner, 2026-11-02).
+@visibleForTesting
+sherpa.OfflineTtsModelConfig speakingModelConfig(Map<Object?, Object?> m) =>
+    sherpa.OfflineTtsModelConfig(
+      supertonic: m['engine'] == 'supertonic-2'
+          ? sherpa.OfflineTtsSupertonicModelConfig(
+              durationPredictor: p.join(
+                m['supertonicDir'] as String,
+                'duration_predictor.int8.onnx',
+              ),
+              textEncoder: p.join(
+                m['supertonicDir'] as String,
+                'text_encoder.int8.onnx',
+              ),
+              vectorEstimator: p.join(
+                m['supertonicDir'] as String,
+                'vector_estimator.int8.onnx',
+              ),
+              vocoder: p.join(
+                m['supertonicDir'] as String,
+                'vocoder.int8.onnx',
+              ),
+              ttsJson: p.join(m['supertonicDir'] as String, 'tts.json'),
+              unicodeIndexer: p.join(
+                m['supertonicDir'] as String,
+                'unicode_indexer.bin',
+              ),
+              voiceStyle: p.join(m['supertonicDir'] as String, 'voice.bin'),
+            )
+          : const sherpa.OfflineTtsSupertonicModelConfig(),
+      kokoro: m['engine'] == 'supertonic-2'
+          ? const sherpa.OfflineTtsKokoroModelConfig()
+          : sherpa.OfflineTtsKokoroModelConfig(
+              model: m['model'] as String,
+              voices: m['voices'] as String,
+              tokens: m['tokens'] as String,
+              dataDir: m['dataDir'] as String,
+              lexicon: m['lexicon'] as String,
+              lang: m['lang'] as String,
+            ),
+      numThreads: m['threads'] as int,
+      provider: m['provider'] as String? ?? 'cpu',
+      debug: false,
+    );
+
+/// Keep only the selected engine/language loaded to bound memory during
+/// the comparison (owner, 2026-11-02).
 void _mouthMain(SendPort boot) {
   sherpa.initBindings();
   String? lang;
@@ -123,36 +228,19 @@ void _mouthMain(SendPort boot) {
   serveSherpaWorker(
     boot,
     (m) {
-      final want = m['lang'] as String;
+      final want = '${m['engine']}:${m['model']}:${m['lang']}';
       if (tts == null || lang != want) {
         tts?.free();
         tts = null;
         tts = sherpa.OfflineTts(
-          sherpa.OfflineTtsConfig(
-            model: sherpa.OfflineTtsModelConfig(
-              kokoro: sherpa.OfflineTtsKokoroModelConfig(
-                model: m['model'] as String,
-                voices: m['voices'] as String,
-                tokens: m['tokens'] as String,
-                dataDir: m['dataDir'] as String,
-                lexicon: m['lexicon'] as String,
-                lang: want,
-              ),
-              numThreads: m['threads'] as int,
-              provider: m['provider'] as String? ?? 'cpu',
-              debug: false,
-            ),
-          ),
+          sherpa.OfflineTtsConfig(model: speakingModelConfig(m)),
         );
         lang = want;
       }
       if (m['cmd'] == 'warm') return const {};
       final audio = tts!.generateWithConfig(
         text: m['text'] as String,
-        config: sherpa.OfflineTtsGenerationConfig(
-          sid: m['sid'] as int,
-          speed: (m['speed'] as num).toDouble(),
-        ),
+        config: speakingGenerationConfig(m),
       );
       final pcm = Int16List(audio.samples.length);
       for (var i = 0; i < pcm.length; i++) {
@@ -270,17 +358,28 @@ class SherpaVoice {
     this.speakProvider = 'cpu',
   });
 
-  static Future<bool> canSpeak() => VoiceModels.isReady(VoiceModels.speaking);
+  static Future<bool> canSpeak({String preferred = 'kokoro'}) =>
+      VoiceModels.isReady(VoiceModels.speakingPack(preferred));
   static Future<bool> canListen() async =>
       await VoiceModels.isReady(VoiceModels.listening) ||
       await VoiceModels.isReady(VoiceModels.parakeet);
 
   Future<SherpaWorker> _mouthWorker() async {
     _idle?.cancel();
-    if (_mouth != null) return _mouth!;
+    if (_mouth?.alive == true) return _mouth!;
+    if (_mouth != null) {
+      _mouth = null;
+      _mouthStart = null;
+    }
     final gen = _mouthGen;
     final start = _mouthStart ??= SherpaWorker.spawn(_mouthMain);
-    final worker = await start;
+    late final SherpaWorker worker;
+    try {
+      worker = await start;
+    } catch (_) {
+      if (identical(_mouthStart, start)) _mouthStart = null;
+      rethrow;
+    }
     if (gen != _mouthGen) {
       worker.dispose();
       return _mouthWorker();
@@ -290,10 +389,20 @@ class SherpaVoice {
 
   Future<SherpaWorker> _earsWorker() async {
     _idle?.cancel();
-    if (_ears != null) return _ears!;
+    if (_ears?.alive == true) return _ears!;
+    if (_ears != null) {
+      _ears = null;
+      _earsStart = null;
+    }
     final gen = _earsGen;
     final start = _earsStart ??= SherpaWorker.spawn(_earsMain);
-    final worker = await start;
+    late final SherpaWorker worker;
+    try {
+      worker = await start;
+    } catch (_) {
+      if (identical(_earsStart, start)) _earsStart = null;
+      rethrow;
+    }
     if (gen != _earsGen) {
       worker.dispose();
       return _earsWorker();
@@ -347,9 +456,19 @@ class SherpaVoice {
   }
 
   Future<Map<String, Object?>?> _speakRequest(KokoroVoice voice) async {
-    final paths = _speaking ??= await VoiceModels.speakingPaths();
-    if (paths == null) return null;
+    final engine = readingVoice;
+    final generation = _mouthGen;
+    final paths =
+        _speaking ?? await VoiceModels.speakingPaths(preferred: engine);
+    // A selection or deletion during disk lookup invalidates these paths
+    // before a native engine can receive them (owner, 2026-11-02).
+    if (paths == null || generation != _mouthGen || engine != readingVoice) {
+      return null;
+    }
+    _speaking = paths;
     return {
+      'engine': engine,
+      'supertonicDir': paths.supertonicDir,
       'model': paths.model,
       'voices': paths.voices,
       'tokens': paths.tokens,
@@ -359,6 +478,19 @@ class SherpaVoice {
       'threads': speakThreads,
       'provider': speakProvider,
     };
+  }
+
+  /// Changing engine drops the cached paths and loaded worker, so Kokoro cannot
+  /// answer a Supertonic request (owner, 2026-11-02).
+  String get readingVoice => _readingVoice;
+  var _readingVoice = 'kokoro';
+  set readingVoice(String id) {
+    final selected = VoiceModels.speakingPack(id) == VoiceModels.supertonic
+        ? VoiceModels.supertonic.id
+        : 'kokoro';
+    if (selected == _readingVoice) return;
+    _readingVoice = selected;
+    releasePack(speaking: true);
   }
 
   /// [InferenceSettings.listeningModel]; a change frees the listening

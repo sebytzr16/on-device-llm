@@ -25,6 +25,7 @@ class VoiceAudio {
     std::vector<uint8_t> pcm;
     int rate;
     std::unique_ptr<Result> result;
+    WAVEHDR header{};
   };
   void StartMic(const Value* args, std::unique_ptr<Result> result);
   void StopMic();
@@ -33,22 +34,26 @@ class VoiceAudio {
   void PlayNext();
   void StopPlayback();
   void FinishPlayback(bool heard);
+  void CloseOutput();
 
   HWND window_;
   std::unique_ptr<flutter::MethodChannel<Value>> method_;
   std::unique_ptr<flutter::EventChannel<Value>> events_;
   std::unique_ptr<flutter::EventSink<Value>> sink_;
   HWAVEIN input_ = nullptr;
-  std::array<WAVEHDR, 4> input_headers_{};
-  std::array<std::array<char, 1024>, 4> input_bytes_{};
+  // 16 × 32 ms: a platform-thread stall up to about half a second loses
+  // no microphone audio (P3-30).
+  std::array<WAVEHDR, 16> input_headers_{};
+  std::array<std::array<char, 1024>, 16> input_bytes_{};
   std::vector<int16_t> wav_samples_;
   size_t wav_offset_ = 0;
   std::deque<Chunk> pending_;
-  std::unique_ptr<Chunk> playing_;
+  // Written to the device, oldest first. The device stays open while the
+  // rate is unchanged and the next sentence is queued behind the current
+  // one, so sentences play without a reopen gap or click (P3-31).
+  std::deque<std::unique_ptr<Chunk>> playing_;
   HWAVEOUT output_ = nullptr;
-  WAVEHDR output_header_{};
-  bool output_prepared_ = false;
-  bool interrupted_ = false;
+  int output_rate_ = 0;
 };
 
 #endif

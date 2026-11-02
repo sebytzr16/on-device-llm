@@ -1,3 +1,6 @@
+import '../features/models/presentation/widgets/model_capabilities.dart';
+import '../features/models/presentation/widgets/hf_model_card.dart';
+import '../features/models/presentation/widgets/model_brand.dart';
 import 'dart:async';
 import 'focus_ring.dart';
 import 'load_progress.dart';
@@ -181,7 +184,7 @@ class _DesktopHfDiscoverState extends ConsumerState<DesktopHfDiscover> {
     setState(() => _cursor = (_cursor + delta).clamp(0, length - 1));
     if (_resultsScroll.hasClients) {
       _resultsScroll.animateTo(
-        (_cursor * 65.0).clamp(0, _resultsScroll.position.maxScrollExtent),
+        (_cursor * 95.0).clamp(0, _resultsScroll.position.maxScrollExtent),
         duration: const Duration(milliseconds: 120),
         curve: Curves.easeOut,
       );
@@ -421,7 +424,7 @@ class _DesktopHfDiscoverState extends ConsumerState<DesktopHfDiscover> {
               _open(repo);
             },
             child: SizedBox(
-              height: 64,
+              height: 94,
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -429,6 +432,8 @@ class _DesktopHfDiscoverState extends ConsumerState<DesktopHfDiscover> {
                 ),
                 child: Row(
                   children: [
+                    ModelBrandIcon(repo.id),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -439,6 +444,10 @@ class _DesktopHfDiscoverState extends ConsumerState<DesktopHfDiscover> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: context.text.label,
+                          ),
+                          ModelCapabilityBadges(
+                            tags: repo.tags,
+                            showFit: false,
                           ),
                           Text(
                             parts.length > 1 ? parts.first : repo.id,
@@ -497,6 +506,8 @@ class _DesktopHfDiscoverState extends ConsumerState<DesktopHfDiscover> {
       children: [
         Row(
           children: [
+            ModelBrandIcon(files.repo),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
                 files.repo,
@@ -522,7 +533,13 @@ class _DesktopHfDiscoverState extends ConsumerState<DesktopHfDiscover> {
           if (_selected!.lastModified != null)
             Text(_updated(_selected!), style: context.text.small),
         ],
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
+        ModelCapabilityBadges(
+          tags: files.tags,
+          contextLength: files.contextLength,
+          showFit: false,
+        ),
+        const SizedBox(height: 8),
         if (projector != null)
           Row(
             children: [
@@ -553,6 +570,10 @@ class _DesktopHfDiscoverState extends ConsumerState<DesktopHfDiscover> {
         for (final entry in groups.entries) ...[
           for (final file in entry.value) _fileRow(files, file, entry.key),
         ],
+        // The card can be long: the files come first so nobody scrolls
+        // past the whole readme to download (owner 2026-11-01).
+        const SizedBox(height: 16),
+        HfModelCard(files: files),
       ],
     );
   }
@@ -594,15 +615,11 @@ class _DesktopHfDiscoverState extends ConsumerState<DesktopHfDiscover> {
           DownloadStatus.verifying,
         }.contains(progress.status);
     final memory = ref.watch(desktopHfMemoryProvider).asData?.value;
-    // Empty-path estimates expose memory on each device, rather than the
-    // load planner's vramFreeMb. Use one discrete GPU's measured free memory.
-    final gpuFree = (memory?['devices'] as List?)
-        ?.whereType<Map>()
-        .where((device) => device['type'] == 'gpu')
-        .map((device) => (device['freeMb'] as num?)?.toDouble() ?? 0)
-        .fold<double>(0, (largest, free) => free > largest ? free : largest);
-    final vram = (memory?['vramFreeMb'] as num?)?.toDouble() ?? gpuFree;
-    final ram = (memory?['ramAvailableMb'] as num?)?.toDouble();
+    // Installed RAM and the card's total (owner 2026-11-01): free RAM at
+    // this moment made 26B/35B MoE models read "too large" on 32 GB + 8 GB.
+    final (ramTotal, vramTotal) = desktopMemoryMb(memory);
+    final vram = memory == null ? null : vramTotal;
+    final ram = memory == null ? null : ramTotal;
     final sizeMb =
         (model.sizeBytes + (model.projector?.sizeBytes ?? 0)) / 1048576;
     final fit = vram != null && vram > 0 && sizeMb <= vram
@@ -623,6 +640,7 @@ class _DesktopHfDiscoverState extends ConsumerState<DesktopHfDiscover> {
         : context.colors.danger;
     return Column(
       key: Key('desktop-hf-file-${file.name}'),
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
           height: 44,
@@ -736,6 +754,18 @@ class _DesktopHfDiscoverState extends ConsumerState<DesktopHfDiscover> {
                   ),
                 ),
             ],
+          ),
+        ),
+        // Small and under the file name, left-aligned (owner 2026-11-01:
+        // centred above the row they read as noise).
+        Padding(
+          padding: const EdgeInsets.only(left: 80, bottom: 8),
+          child: ModelCapabilityBadges(
+            model: model,
+            tags: files.tags,
+            contextLength: files.contextLength,
+            showFit: false,
+            dense: true,
           ),
         ),
         if (active)

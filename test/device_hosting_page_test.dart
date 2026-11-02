@@ -51,6 +51,8 @@ class SwitchingModels extends TestModels {
     ModelInfo info, {
     bool forChat = false,
     InferenceSettings? settings,
+    void Function()? onLoadStart,
+    bool vision = false,
   }) async {
     loaded.add(info.id);
     state = state.copyWith(loadedModelId: info.id);

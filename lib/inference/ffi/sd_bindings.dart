@@ -7,7 +7,7 @@ import 'package:ffi/ffi.dart';
 /// native/out/windows-x64/ondevice_sd.dll.
 class SdBindings {
   static const _sdDllName = 'ondevice_sd.dll';
-  static const supportedVersion = 3;
+  static const supportedVersion = 4;
 
   late final Pointer<Void> Function(Pointer<Utf8>) create;
   late final void Function(Pointer<Void>) destroy;
@@ -39,18 +39,6 @@ class SdBindings {
     Pointer<Void>,
     Pointer<Int32>,
     Pointer<Int32>,
-  )
-  img2img;
-  late final Pointer<Uint8> Function(
-    Pointer<Void>,
-    Pointer<Utf8>,
-    Pointer<Uint8>,
-    int,
-    int,
-    Pointer<NativeFunction<SdProgressFn>>,
-    Pointer<Void>,
-    Pointer<Int32>,
-    Pointer<Int32>,
     Pointer<Int32>,
     Pointer<Int32>,
   )
@@ -71,6 +59,8 @@ class SdBindings {
   late final void Function(Pointer<Uint8>) freeImage;
   late final void Function(Pointer<Void>) cancel;
 
+  late final void Function(Pointer<Void>) resetCancel;
+
   SdBindings() {
     if (!Platform.isWindows) {
       throw UnsupportedError('SdBindings is Windows-only for now.');
@@ -84,6 +74,11 @@ class SdBindings {
         'Unsupported sd bridge version ${version()}; expected $supportedVersion',
       );
     }
+    resetCancel = lib
+        .lookupFunction<
+          Void Function(Pointer<Void>),
+          void Function(Pointer<Void>)
+        >('od_sd_reset_cancel');
     create = lib
         .lookupFunction<
           Pointer<Void> Function(Pointer<Utf8>),
@@ -135,31 +130,6 @@ class SdBindings {
             Pointer<Int32>,
           )
         >('od_sd_txt2img');
-    img2img = lib
-        .lookupFunction<
-          Pointer<Uint8> Function(
-            Pointer<Void>,
-            Pointer<Utf8>,
-            Pointer<Uint8>,
-            Int32,
-            Int32,
-            Pointer<NativeFunction<SdProgressFn>>,
-            Pointer<Void>,
-            Pointer<Int32>,
-            Pointer<Int32>,
-          ),
-          Pointer<Uint8> Function(
-            Pointer<Void>,
-            Pointer<Utf8>,
-            Pointer<Uint8>,
-            int,
-            int,
-            Pointer<NativeFunction<SdProgressFn>>,
-            Pointer<Void>,
-            Pointer<Int32>,
-            Pointer<Int32>,
-          )
-        >('od_sd_img2img');
     txt2vid = lib
         .lookupFunction<
           Pointer<Uint8> Function(

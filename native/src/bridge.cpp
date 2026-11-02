@@ -67,6 +67,8 @@ static bool weight_loading_callback(float progress, void * data) {
     return !cancelled_callback(loading->cancelled);
 }
 struct Runtime;
+struct SideBatch;
+static void close_side_batches(Runtime * r);
 // Every live runtime, so an Android window that closes can free the models
 // it loaded (od_release_owner): the activity and its Dart isolates go away
 // but the process, and native memory, can live on. Relaunching then loaded
@@ -91,11 +93,15 @@ struct Runtime {
     // od_estimate's scratch runtime: memory short of the need is reported
     // (ramNeedMb over ramAvailableMb), not refused, so callers can weigh it.
     bool planning = false;
-    explicit Runtime(int64_t owner_id) : owner(owner_id) {
+    const bool tracked;
+    explicit Runtime(int64_t owner_id, bool track = true) : owner(owner_id), tracked(track) {
+        if (!tracked) return;
         { std::lock_guard<std::mutex> lock(cancellation_mutex); cancellations.emplace(session, cancelled); load_progress.emplace(session, progress); }
         std::lock_guard<std::mutex> lock(registry_mutex);
         registry.insert(this);
     }
+    std::vector<std::weak_ptr<SideBatch>> sides;
+    std::string model_path;
     llama_model * model = nullptr;
     llama_context * ctx = nullptr;
     llama_sampler * sampler = nullptr;
@@ -269,6 +275,7 @@ struct Runtime {
     void forget() { cached.clear(); media_meta.clear(); checkpoints.clear(); checkpoint_at.clear(); reused = 0; draft_cached.clear(); draft_queue.clear(); }
     void drop_chunks() { if (chunks) mtmd_input_chunks_free(chunks); chunks = nullptr; media_pending = false; }
     void unload() {
+        close_side_batches(this);
         progress->store(-1.0f, std::memory_order_relaxed);
         reset(); forget(); drop_chunks(); store.clear(); store_restored = 0;
         for (auto & b : bitmaps) mtmd_bitmap_free(b.second);
@@ -300,6 +307,7 @@ struct Runtime {
         tools_active = false; generated_text.clear(); tool_calls = json::array(); tool_format.clear(); tool_content.clear();
     }
     ~Runtime() {
+        if (!tracked) { unload(); return; }
         { std::lock_guard<std::mutex> lock(cancellation_mutex); cancellations.erase(session); load_progress.erase(session); }
         // Waits for a release in progress; afterwards nobody else can reach this runtime.
         { std::lock_guard<std::mutex> lock(registry_mutex); registry.erase(this); }
@@ -498,6 +506,12 @@ void * od_create(const char * options) {
             cuda_hide_unsupported();
 #endif
             llama_log_set(native_log, nullptr); llama_backend_init(); ggml_backend_load_all();
+            // A GPU backend with no usable device (old driver, no GPU) would
+            // keep its DLL and driver/cuBLAS state loaded for nothing (P3-06).
+            for (size_t i = ggml_backend_reg_count(); i-- > 0;) {
+                ggml_backend_reg_t reg = ggml_backend_reg_get(i);
+                if (ggml_backend_reg_dev_count(reg) == 0) ggml_backend_unload(reg);
+            }
         });
         const auto owner = opts.contains("owner") && opts["owner"].is_number_integer() ? opts["owner"].get<int64_t>() : 0;
         return new Runtime(owner);
@@ -512,6 +526,9 @@ int32_t od_gpu_device_count() {
         if (cuda_plan().known && cuda_plan().usable == 0) return 0;
 #endif
         // Reuse the normal one-time initialization and exception boundary.
+        // Its empty options skip the OpenCL kernel cache folder (P3-07):
+        // only the Windows loader calls this, where OpenCL is not built and
+        // TMPDIR exists; Android always reaches od_create with its options.
         void * h = od_create(nullptr);
         if (!h) return 0;
         od_destroy(h);
@@ -916,6 +933,7 @@ static json admit(Runtime * r, const char * path, const json & s, const llama_mo
         // 32 GB PC and the CPU retry decoded at 5 tok/s instead of 31.
         if (s.value("useMmap", true) && !s.value("useMlock", false)) {
             budget += weights;
+            out["memoryPagedMb"] = weights >> 20;
             if (weights > available) out["memoryWarning"] = "weightsExceedFreeRam";
         }
 #else
@@ -1279,7 +1297,8 @@ static json load_with(Runtime * r, const char * path, const json & s, const std:
         if (estimate_only) {
             uint32_t layers = 0;
             int64_t vram = 0;
-            int64_t ram = measure(path, mp, cp, nullptr, &vram, &layers);
+            int64_t host_weights = 0;
+            int64_t ram = measure(path, mp, cp, nullptr, &vram, &layers, &host_weights);
             // The projector goes where the placement above put it; the draft
             // model is counted as admission counts it.
             const bool on_card = mp.n_gpu_layers > 0 && own_memory(r->devices.empty() ? nullptr : r->devices[mp.split_mode == LLAMA_SPLIT_MODE_NONE ? mp.main_gpu : 0]);
@@ -1295,7 +1314,18 @@ static json load_with(Runtime * r, const char * path, const json & s, const std:
             const uint32_t all_layers = (target_meta.blocks > 0 ? target_meta.blocks : layers) + 1;
             admission["layers"] = all_layers;
             admission["gpuLayers"] = std::min<int64_t>(mp.n_gpu_layers, all_layers);
-            admission["ramNeedMb"] = ram >> 20;
+            // Match admit(): only the target's file-backed host weights are
+            // credited there; sidecars and draft buffers remain resident.
+            int64_t paged = 0;
+#if defined(_WIN32)
+            if (use_mmap && !use_mlock) paged = host_weights;
+#endif
+            admission["ramPagedMb"] = paged >> 20;
+            admission["ramNeedMb"] = std::max<int64_t>(0, ram - paged) >> 20;
+            if (admission.contains("memoryBudgetMb")) {
+                admission["ramBudgetMb"] = std::max<int64_t>(0,
+                    admission["memoryBudgetMb"].get<int64_t>() - (paged >> 20));
+            }
             admission["vramNeedMb"] = vram >> 20;
             admission["backend"] = r->backend;
             return admission;
@@ -1313,6 +1343,7 @@ static json load_with(Runtime * r, const char * path, const json & s, const std:
         }
         r->progress->store(0.9f, std::memory_order_relaxed);
         if (llama_model_has_encoder(r->model) || !llama_model_has_decoder(r->model)) throw std::runtime_error("Only decoder text-generation models are supported.");
+        r->model_path = path;
         const std::string chat_template = s.value("chatTemplate", "");
         if (!r->embedding) {
             try {
@@ -2151,11 +2182,17 @@ static int shared_prefix(const std::vector<llama_token> & a, const std::vector<l
     while (n < limit && a[n] == b[n]) ++n;
     return n;
 }
-static void trim_store(Runtime * r) {
+// [pin] (tokens of the entry about to be restored) is never evicted (P3-09).
+static void trim_store(Runtime * r, const std::vector<llama_token> * pin = nullptr) {
     size_t total = 0;
     for (const auto & s : r->store) total += s.bytes();
     while (total > r->store_limit && !r->store.empty()) {
-        auto oldest = std::min_element(r->store.begin(), r->store.end(), [](const Runtime::Stored & a, const Runtime::Stored & b) { return a.used < b.used; });
+        auto oldest = r->store.end();
+        for (auto it = r->store.begin(); it != r->store.end(); ++it) {
+            if (pin && it->tokens == *pin) continue;
+            if (oldest == r->store.end() || it->used < oldest->used) oldest = it;
+        }
+        if (oldest == r->store.end()) break;
         total -= oldest->bytes();
         r->store.erase(oldest);
     }
@@ -2163,7 +2200,7 @@ static void trim_store(Runtime * r) {
 // Saves the resident sequence before a new prompt replaces it, with the
 // MTP head's own sequence state (llama-server stores both). Photo turns
 // (placeholder tokens) are not stored.
-static void store_resident(Runtime * r) {
+static void store_resident(Runtime * r, const std::vector<llama_token> * pin = nullptr) {
     if (r->store_limit == 0 || r->cached.size() < Runtime::store_min || !r->media_meta.empty()) return;
     if (std::find(r->cached.begin(), r->cached.end(), LLAMA_TOKEN_NULL) != r->cached.end()) return;
     // A stored sequence the resident one extends is superseded by it.
@@ -2178,7 +2215,7 @@ static void store_resident(Runtime * r) {
     if (llama_state_seq_get_data(r->ctx, s.state.data(), size, 0) != size) return;
     if (head && llama_state_seq_get_data(r->mtp_ctx, s.head.data(), head, 0) != head) return;
     r->store.push_back(std::move(s));
-    trim_store(r);
+    trim_store(r, pin);
 }
 // Decides how much of the resident sequence survives for the new prompt.
 static void reuse_prefix(Runtime * r, bool enabled) {
@@ -2195,7 +2232,8 @@ static void reuse_prefix(Runtime * r, bool enabled) {
             const int n = shared_prefix(r->store[i].tokens, r->prompt, limit);
             if (n >= best_len) { best = (int)i; best_len = n; }
         }
-        if (best >= 0 || keep + (int)Runtime::store_gain < (int)r->cached.size()) store_resident(r);
+        const auto chosen = best >= 0 ? r->store[best].tokens : std::vector<llama_token>();
+        if (best >= 0 || keep + (int)Runtime::store_gain < (int)r->cached.size()) store_resident(r, best >= 0 ? &chosen : nullptr);
         if (best >= 0) {
             // store_resident may have reordered the store: find it again.
             auto it = std::find_if(r->store.begin(), r->store.end(), [&](const Runtime::Stored & s) { return shared_prefix(s.tokens, r->prompt, limit) == best_len; });
@@ -2435,10 +2473,6 @@ static llama_token sample(Runtime * r, int idx) {
     if (r->grammar) llama_sampler_accept(r->grammar, token);
     return token;
 }
-// Tokens the bridge puts in the model's mouth (a closed reasoning block).
-static void accept_generated(Runtime * r, const std::vector<llama_token> & tokens) {
-    for (auto t : tokens) { llama_sampler_accept(r->sampler, t); if (r->grammar) llama_sampler_accept(r->grammar, t); }
-}
 // Some template handlers render JSON requests without supplying a grammar.
 // This grammar constrains generated text only, without template prefill/triggers.
 static std::string json_grammar_fallback(const common_chat_params & params, const std::string & schema) {
@@ -2451,6 +2485,8 @@ static std::string json_grammar_fallback(const common_chat_params & params, cons
         throw std::runtime_error(std::string("The JSON schema could not be turned into a grammar: ") + e.what());
     }
 }
+#include "side_batch.inc"
+
 int32_t od_begin(void * h, const char * request) {
     const auto begin_started = Clock::now();
     auto * r = static_cast<Runtime *>(h);
@@ -2504,6 +2540,25 @@ int32_t od_begin(void * h, const char * request) {
         r->drop_chunks(); r->media_tokens = 0;
         std::vector<std::string> images;
         common_chat_params chat_params;
+        // Drops [steps] of the oldest exchanges after the system prompt, but
+        // never the current question or anything after it: in a tool round
+        // the tail is [user, assistant(tool_calls), tool...] and a chat
+        // template refuses a conversation without a user message. False
+        // when that many cannot be dropped.
+        const auto drop = [](json & m, int steps, int & erased) {
+            const size_t head = !m.empty() && m[0].value("role", "") == "system" ? 1 : 0;
+            for (int k = 0; k < steps; ++k) {
+                size_t last_user = m.size();
+                for (size_t i = m.size(); i-- > 0;) if (m[i].value("role", "") == "user") { last_user = i; break; }
+                if (last_user == m.size() || last_user <= head) return false;
+                m.erase(m.begin() + (long)head); ++erased;
+                while (m.size() > head + 1 && m[head].value("role", "") != "user") { m.erase(m.begin() + (long)head); ++erased; }
+            }
+            return true;
+        };
+        // The cut is searched (doubling, then halving) instead of dropping
+        // one exchange per render: O(log n) renders on a long chat (P3-08).
+        int fail = -1, fit = -1, steps = 0;
         while (true) {
             auto text = render(r, messages, fallback, thinking, true, tools, tool_choice, &chat_params, json_schema);
             const auto rendered = text;
@@ -2520,23 +2575,31 @@ int32_t od_begin(void * h, const char * request) {
                 if (r->prompt.empty()) throw std::runtime_error("Tokenization failed.");
                 count = (int)r->prompt.size();
             }
-            if (count + (r->context_overflow == "trim" ? std::min(r->maximum + thinking_room, n_ctx - 1) : 1) <= n_ctx) { r->media_tokens = images.empty() ? 0 : count; prompt_count = count; break; }
-            // Drop the oldest exchange after the system prompt, but never the
-            // current question or anything after it: in a tool round the tail
-            // is [user, assistant(tool_calls), tool...] and a chat template
-            // refuses a conversation without a user message.
-            const size_t head = !messages.empty() && messages[0].value("role", "") == "system" ? 1 : 0;
-            size_t last_user = messages.size();
-            for (size_t i = messages.size(); i-- > 0;) if (messages[i].value("role", "") == "user") { last_user = i; break; }
-            if (last_user == messages.size() || last_user <= head) {
-                if (thinking_room > 0) { thinking_room = 0; messages = original; r->trimmed = 0; continue; }
+            const bool fits = count + (r->context_overflow == "trim" ? std::min(r->maximum + thinking_room, n_ctx - 1) : 1) <= n_ctx;
+            if (fits) fit = steps; else fail = steps;
+            if (fits && fit == fail + 1) { r->media_tokens = images.empty() ? 0 : count; prompt_count = count; break; }
+            int next = fit < 0 ? std::max(1, fail * 2) : fit == fail + 1 ? fit : fail + (fit - fail) / 2;
+            json cut = original;
+            int erased = 0;
+            if (fit < 0 && !drop(cut, next, erased)) {
+                // Fewer than [next] exchanges can be dropped: try the most.
+                cut = original; erased = 0;
+                int most = 0;
+                for (json probe = original; drop(probe, 1, erased);) ++most;
+                cut = original; erased = 0;
+                if (most > fail) { next = most; drop(cut, next, erased); }
+                else next = -1;
+            } else if (fit >= 0) {
+                drop(cut, next, erased);
+            }
+            if (next >= 0) { steps = next; messages = std::move(cut); r->trimmed = erased; continue; }
+            {
+                if (thinking_room > 0) { thinking_room = 0; messages = original; r->trimmed = 0; fail = -1; fit = -1; steps = 0; continue; }
                 const bool tools_in_play = std::any_of(messages.begin(), messages.end(), [](const json & m) { return m.value("role", "") == "tool"; });
                 throw std::runtime_error(tools_in_play
                     ? "Tool results plus the response budget exceed the context. Raise the context size, lower the per-tool output budget or reduce max tokens."
                     : "Message plus response budget exceeds context. Shorten the message or reduce max tokens.");
             }
-            messages.erase(messages.begin() + (long)head); ++r->trimmed;
-            while (messages.size() > head + 1 && messages[head].value("role", "") != "user") { messages.erase(messages.begin() + (long)head); ++r->trimmed; }
         }
         // Trim and stop end at the context limit; shift can reclaim KV space.
         // The reasoning ends at its budget, or where only the answer's room
@@ -2947,9 +3010,27 @@ int32_t od_step(void * h, uint8_t * output, int32_t capacity, int32_t * length) 
                 + (r->think_ends.empty() ? std::string("</think>") : r->think_ends.front()) + "\n\n";
             auto tokens = tokenize(vocab, close, false);
             if (tokens.empty()) throw std::runtime_error("Cannot close the reasoning block.");
+            if (r->grammar) {
+                // A tool grammar may refuse part of the hand-off (Gemma 4's
+                // rejected the newline after its close tag: "empty grammar
+                // stack", 2026-11-02); only what it allows is written.
+                std::vector<llama_token> kept;
+                for (auto t : tokens) {
+                    llama_token_data single = {t, 1.0f, 0.0f};
+                    llama_token_data_array one = {&single, 1, -1, false};
+                    llama_sampler_apply(r->grammar, &one);
+                    if (one.data[0].logit == -INFINITY) continue;
+                    llama_sampler_accept(r->grammar, t);
+                    kept.push_back(t);
+                }
+                if (kept.empty()) throw std::runtime_error("Cannot close the reasoning block.");
+                tokens = kept;
+                close.clear();
+                for (auto t : tokens) close += common_token_to_piece(vocab, t, true);
+            }
             if (!make_context_room(r, (int)tokens.size())) return end("length");
             decode_into_target(r, tokens);
-            accept_generated(r, tokens);
+            for (auto t : tokens) llama_sampler_accept(r->sampler, t);
             r->generated += (int)tokens.size(); r->reasoning += (int)tokens.size(); r->in_think = false; r->tail.clear();
             r->held += close; r->generated_text += close;
             if (r->parser_active) for (auto token : tokens) r->generated_input.append(common_token_to_piece(vocab, token, true), token);

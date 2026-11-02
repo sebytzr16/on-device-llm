@@ -43,6 +43,16 @@ struct od_sd_ctx_t {
     int clip_skip = -1;
     bool vae_tiling = false;
     std::string schedule = "default";
+#if OD_SD_AVAILABLE && OD_SD_MODERN_API
+    // The ESRGAN upscaler stays loaded between upscales of one path (P3-14).
+    upscaler_ctx_t* upscaler = nullptr;
+    std::string upscaler_path;
+    void drop_upscaler() {
+        if (upscaler) free_upscaler_ctx(upscaler);
+        upscaler = nullptr;
+        upscaler_path.clear();
+    }
+#endif
 };
 
 namespace {
@@ -356,7 +366,7 @@ uint8_t* generate(od_sd_ctx_t* ctx, const char* request, const uint8_t* init,
     try {
         std::lock_guard<std::mutex> lock(backend_mutex);
         ctx->error_msg.clear();
-        ctx->cancelled.store(false);
+        if (ctx->cancelled.load()) throw std::runtime_error("Generation cancelled");
         if (!ctx->sd_ctx) throw std::runtime_error("No SD model loaded");
         if (!width || !height) throw std::runtime_error("Output dimension pointers are required");
         Json json(request);
@@ -402,6 +412,7 @@ uint8_t* generate(od_sd_ctx_t* ctx, const char* request, const uint8_t* init,
         std::unique_ptr<sd_image_generation_result_t, decltype(&free_sd_image_generation_result)>
             result(raw, free_sd_image_generation_result);
         if (ctx->cancelled.load()) throw std::runtime_error("Generation cancelled");
+        if (ctx->cancelled.load()) throw std::runtime_error("Upscaling cancelled");
         if (!ok || !result || result->count < 1 || !result->items)
             throw std::runtime_error("Image generation failed");
         // ABI v1 returns the first image; the complete backend batch is freed.
@@ -439,7 +450,7 @@ uint8_t* generate_frames(od_sd_ctx_t* ctx, const char* request, const uint8_t* i
     try {
         std::lock_guard<std::mutex> lock(backend_mutex);
         ctx->error_msg.clear();
-        ctx->cancelled.store(false);
+        if (ctx->cancelled.load()) throw std::runtime_error("Generation cancelled");
         if (!ctx->sd_ctx) throw std::runtime_error("No SD model loaded");
         if (!width || !height || !frames || !fps) throw std::runtime_error("Output pointers are required");
         if (!sd_ctx_supports_video_generation(ctx->sd_ctx))
@@ -524,6 +535,9 @@ void od_sd_destroy(od_sd_ctx_t* ctx) {
 #if OD_SD_AVAILABLE
     std::lock_guard<std::mutex> lock(backend_mutex);
     if (ctx->sd_ctx) free_sd_ctx(ctx->sd_ctx);
+#if OD_SD_MODERN_API
+    ctx->drop_upscaler();
+#endif
 #endif
     delete ctx;
 }
@@ -535,7 +549,8 @@ int32_t od_sd_load(od_sd_ctx_t* ctx, const char* model_path, const char* vae_pat
     try {
         std::lock_guard<std::mutex> lock(backend_mutex);
         watch_log();
-        ctx->error_msg.clear(); ctx->cancelled.store(false);
+        ctx->error_msg.clear();
+        if (ctx->cancelled.load()) throw std::runtime_error("Loading cancelled");
         Json json(settings);
         // Diffusion transformers (Qwen-Image, Wan) load the main file as the
         // diffusion model, with the text encoder given separately.
@@ -559,6 +574,7 @@ int32_t od_sd_load(od_sd_ctx_t* ctx, const char* model_path, const char* vae_pat
         // Release the previous model before loading another to avoid doubling VRAM.
         if (ctx->sd_ctx) { free_sd_ctx(ctx->sd_ctx); ctx->sd_ctx = nullptr; }
 #if OD_SD_MODERN_API
+        ctx->drop_upscaler();
         (void)schedule_enum; // Current upstream applies scheduling per generation.
         sd_ctx_params_t params;
         sd_ctx_params_init(&params);
@@ -583,6 +599,14 @@ int32_t od_sd_load(od_sd_ctx_t* ctx, const char* model_path, const char* vae_pat
         if (!backends.empty()) params.backend = backends.c_str();
         params.flash_attn = flash;
         params.diffusion_flash_attn = flash;
+        struct LoadCancellation {
+            LoadCancellation(od_sd_ctx_t* ctx) {
+                sd_set_load_cancel_callback([](void* data) {
+                    return static_cast<od_sd_ctx_t*>(data)->cancelled.load();
+                }, ctx);
+            }
+            ~LoadCancellation() { sd_set_load_cancel_callback(nullptr, nullptr); }
+        } cancellation(ctx);
         ctx->sd_ctx = new_sd_ctx(&params);
 #else
         if (!model_path || !*model_path) throw std::runtime_error("model_path is required");
@@ -590,6 +614,10 @@ int32_t od_sd_load(od_sd_ctx_t* ctx, const char* model_path, const char* vae_pat
             vae_path ? vae_path : "", "", "", "", "", "", false, tiling, false,
             get_num_physical_cores(), type, STD_DEFAULT_RNG, schedule_enum, false, false, false);
 #endif
+        if (ctx->cancelled.load()) {
+            if (ctx->sd_ctx) { free_sd_ctx(ctx->sd_ctx); ctx->sd_ctx = nullptr; }
+            throw std::runtime_error("Loading cancelled");
+        }
         if (!ctx->sd_ctx) throw std::runtime_error(with_cause("Failed to load SD model"));
         ctx->clip_skip = clip_skip; ctx->vae_tiling = tiling; ctx->schedule = schedule;
         return 1;
@@ -681,6 +709,7 @@ uint8_t* od_sd_upscale(od_sd_ctx_t* ctx, const char* model_path, const uint8_t* 
         std::lock_guard<std::mutex> lock(backend_mutex);
         watch_log();
         ctx->error_msg.clear();
+        if (ctx->cancelled.load()) throw std::runtime_error("Upscaling cancelled");
         if (!model_path || !*model_path || !image || factor < 1 || !out_width || !out_height)
             throw std::runtime_error("Invalid upscale request");
         const size_t n = pixels(width, height);
@@ -688,15 +717,19 @@ uint8_t* od_sd_upscale(od_sd_ctx_t* ctx, const char* model_path, const uint8_t* 
         for (size_t i = 0; i < n; ++i)
             for (size_t c = 0; c < 3; ++c) rgb[i * 3 + c] = image[i * 4 + c];
         // Tiles keep a 4K output inside 8 GB of VRAM.
-        std::unique_ptr<upscaler_ctx_t, decltype(&free_upscaler_ctx)> up(
-            new_upscaler_ctx(model_path, false, sd_get_num_physical_cores(), 256, nullptr, nullptr),
-            free_upscaler_ctx);
-        if (!up) throw std::runtime_error(with_cause("Failed to load the upscaler"));
+        if (!ctx->upscaler || ctx->upscaler_path != model_path) {
+            ctx->drop_upscaler();
+            ctx->upscaler = new_upscaler_ctx(model_path, false, sd_get_num_physical_cores(), 256, nullptr, nullptr);
+            if (!ctx->upscaler) throw std::runtime_error(with_cause("Failed to load the upscaler"));
+            ctx->upscaler_path = model_path;
+        }
+        upscaler_ctx_t* up = ctx->upscaler;
         sd_image_t input = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 3, rgb.data()};
         sd_image_generation_result_t* raw = nullptr;
-        bool ok = upscale(up.get(), input, static_cast<uint32_t>(factor), &raw);
+        bool ok = upscale(up, input, static_cast<uint32_t>(factor), &raw);
         std::unique_ptr<sd_image_generation_result_t, decltype(&free_sd_image_generation_result)>
             result(raw, free_sd_image_generation_result);
+        if (ctx->cancelled.load()) throw std::runtime_error("Upscaling cancelled");
         if (!ok || !result || result->count < 1 || !result->items)
             throw std::runtime_error("Upscaling failed");
         std::unique_ptr<uint8_t[]> big(rgba(result->items[0].image, out_width, out_height));
@@ -730,4 +763,5 @@ uint8_t* od_sd_upscale(od_sd_ctx_t* ctx, const char* model_path, const uint8_t* 
 
 void od_sd_free_image(uint8_t* image) { delete[] image; }
 void od_sd_cancel(od_sd_ctx_t* ctx) { if (ctx) ctx->cancelled.store(true); }
-int32_t od_sd_version(void) { return 3; }
+void od_sd_reset_cancel(od_sd_ctx_t* ctx) { if (ctx) ctx->cancelled.store(false); }
+int32_t od_sd_version(void) { return 4; }

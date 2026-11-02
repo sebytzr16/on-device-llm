@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -290,7 +291,14 @@ void main() {
                     ),
                   ])
                   as Future<void>;
-          await tester.pump();
+          // The import waits for its progress dialog to finish closing,
+          // and that animation only advances when frames are pumped.
+          var finished = false;
+          unawaited(imported.whenComplete(() => finished = true));
+          while (!finished) {
+            await tester.pump(const Duration(milliseconds: 50));
+            await Future<void>.delayed(const Duration(milliseconds: 5));
+          }
           await imported;
           if (image) {
             // Finish decoding before the thumbnail starts listening in the

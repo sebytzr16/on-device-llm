@@ -195,12 +195,33 @@ class ChatDocument {
     return '${out.toString().trimRight()}\n';
   }
 
+  /// A reply's raw HTML (`<script>`, `<img onerror>`) is shown as text, and
+  /// the page's policy blocks scripts, forms and network loads anyway
+  /// (audit P1-20).
   String get html {
-    final body = md.markdownToHtml(
-      markdown,
+    final nodes = md.Document(
       extensionSet: md.ExtensionSet.gitHubFlavored,
-    );
-    return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${const HtmlEscape().convert(title)}</title><style>body{font:16px/1.55 system-ui,sans-serif;max-width:48rem;margin:2rem auto;padding:0 1rem;color:#171717}pre{overflow:auto;padding:1rem;background:#f4f4f4}code{font-family:monospace}table{border-collapse:collapse}td,th{border:1px solid #bbb;padding:.4rem}</style></head><body>$body</body></html>';
+    ).parse(markdown);
+    _escapeRawHtml(nodes);
+    final body = md.renderToHtml(nodes);
+    return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:; form-action \'none\'; base-uri \'none\'"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${const HtmlEscape().convert(title)}</title><style>body{font:16px/1.55 system-ui,sans-serif;max-width:48rem;margin:2rem auto;padding:0 1rem;color:#171717}pre{overflow:auto;padding:1rem;background:#f4f4f4}code{font-family:monospace}table{border-collapse:collapse}td,th{border:1px solid #bbb;padding:.4rem}</style></head><body>$body</body></html>';
+  }
+
+  /// The parser keeps raw HTML as unescaped text; code is escaped already.
+  static void _escapeRawHtml(List<md.Node> nodes) {
+    for (var i = 0; i < nodes.length; i++) {
+      final node = nodes[i];
+      if (node is md.Text) {
+        nodes[i] = md.Text(
+          node.text.replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
+        );
+      } else if (node is md.Element &&
+          node.tag != 'code' &&
+          node.tag != 'pre') {
+        final children = node.children;
+        if (children != null) _escapeRawHtml(children);
+      }
+    }
   }
 
   String get json => const JsonEncoder.withIndent('  ').convert({

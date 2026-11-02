@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 
+import '../../core/platform/desktop_host.dart';
+
 /// A prompt offered once a day at a set time: a notification the user taps
 /// to ask it (a chat) or review a goal. A watched goal's alarm also runs a
 /// bounded background fetch/diff, and alerts only on meaningful changes.
@@ -107,6 +109,8 @@ class ScheduledPrompt {
 /// The platform side (ScheduledPrompts.kt): it owns the list so the daily
 /// alarms can be set again after a reboot.
 class ScheduleStore {
+  static bool get supported => !DesktopHost.active;
+
   static const _channel = MethodChannel('ondevice_llm/schedule');
 
   static Future<List<ScheduledPrompt>> list() async {
@@ -127,13 +131,13 @@ class ScheduleStore {
   /// Asks for notification permission where Android requires it; true when
   /// notifications can already be shown.
   static Future<bool> requestPermission() async {
-    if (!Platform.isAndroid) return true;
+    if (!Platform.isAndroid) return false;
     try {
       return await _channel.invokeMethod<bool>('requestPermission') ?? false;
     } on PlatformException {
       return false;
     } on MissingPluginException {
-      return true;
+      return false;
     }
   }
 }

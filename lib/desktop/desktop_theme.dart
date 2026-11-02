@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/design/app_design.dart';
 import '../core/motion/spring_routes.dart';
+import '../core/platform/form_factor.dart';
 import '../core/theme/app_theme.dart';
 import '../features/settings/domain/entities/inference_settings.dart';
 
@@ -38,6 +39,8 @@ abstract final class DesktopTheme {
               : normal,
         );
     return base.copyWith(
+      // Shared pages read this to lay out and word themselves for a PC.
+      extensions: [...base.extensions.values, FormFactor.pc],
       // Dropdown values and dialog questions read titleMedium: at desktop
       // size it is control text, not a 16 px heading.
       textTheme: base.textTheme.copyWith(

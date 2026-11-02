@@ -155,6 +155,31 @@ class VoiceModels {
     ],
   );
 
+  /// Pinned official multilingual Supertonic 2 export (owner, 2026-11-02).
+  /// Keep this separate so choosing a comparison voice never replaces Kokoro.
+  static const supertonic = VoicePack(
+    id: 'supertonic-2',
+    unpackTo: 'sherpa-onnx-supertonic-tts-int8-2026-03-06',
+    files: [
+      VoiceFile(
+        fileName: 'sherpa-onnx-supertonic-tts-int8-2026-03-06.tar.bz2',
+        url:
+            'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-tts-int8-2026-03-06.tar.bz2',
+        sha256:
+            '8c74359f63edd5045d47747f65331f0f6dbcbc91d7e898dd756d631295fe3259',
+        sizeBytes: 84692981,
+      ),
+    ],
+  );
+
+  static VoicePack speakingPack(String preferred) =>
+      preferred == supertonic.id ? supertonic : speaking;
+
+  static List<VoicePack> packsFor(String preferred) => [
+    listening,
+    speakingPack(preferred),
+  ];
+
   /// Where the int8 Kokoro of earlier versions was unpacked: still used
   /// until the full-precision one is downloaded.
   static const legacySpeakingDir = 'kokoro-int8-multi-lang-v1_0';
@@ -163,7 +188,7 @@ class VoiceModels {
   static const packs = [listening, speaking];
 
   /// Every pack the app can install, the optional ones included.
-  static const all = [listening, speaking, parakeet];
+  static const all = [listening, speaking, parakeet, supertonic];
 
   /// Marker written last when an archive is fully unpacked.
   static const readyMarker = '.ready';
@@ -300,7 +325,21 @@ class VoiceModels {
     return null;
   }
 
-  static Future<SpeakingPaths?> speakingPaths() async {
+  static Future<SpeakingPaths?> speakingPaths({
+    String preferred = 'kokoro',
+  }) async {
+    if (speakingPack(preferred) == supertonic) {
+      if (!await isReady(supertonic)) return null;
+      return SpeakingPaths(
+        model: '',
+        voices: '',
+        tokens: '',
+        dataDir: '',
+        lexiconUs: '',
+        lexiconGb: '',
+        supertonicDir: await ModelStorage.resourcePath(supertonic.unpackTo!),
+      );
+    }
     if (!await isReady(speaking)) return null;
     var dir = await ModelStorage.resourcePath(speaking.unpackTo!);
     var model = 'model.onnx';
@@ -336,6 +375,7 @@ class ListeningPaths {
 }
 
 class SpeakingPaths {
+  final String? supertonicDir;
   final String model, voices, tokens, dataDir, lexiconUs, lexiconGb;
   const SpeakingPaths({
     required this.model,
@@ -344,6 +384,7 @@ class SpeakingPaths {
     required this.dataDir,
     required this.lexiconUs,
     required this.lexiconGb,
+    this.supertonicDir,
   });
 
   /// English voices read words from Kokoro's lexicon; other languages go

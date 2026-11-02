@@ -66,6 +66,10 @@ class _LargerModels extends TestModels {
   }
 }
 
+/// Knowledge originals now live in attachment storage on every platform.
+Future<Directory> _originals() =>
+    Directory.systemTemp.createTemp('knowledge-originals-');
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
@@ -455,7 +459,7 @@ void main() {
     () async {
       final db = AppDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
-      final store = KnowledgeStore(db);
+      final store = KnowledgeStore(db, null, _originals);
       await Future.wait([
         store.import(
           collection: 'Manuals',
@@ -480,7 +484,7 @@ void main() {
     () async {
       final db = AppDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
-      final store = KnowledgeStore(db);
+      final store = KnowledgeStore(db, null, _originals);
       await store.import(
         collection: 'Manuals',
         name: 'guide.pdf',
@@ -503,7 +507,7 @@ void main() {
       final file = File(p.join(dir.path, 'old.sqlite'));
       var db = AppDatabase.forTesting(NativeDatabase(file));
       try {
-        final doc = await KnowledgeStore(db).import(
+        final doc = await KnowledgeStore(db, null, _originals).import(
           collection: 'Manuals',
           name: 'old.txt',
           bytes: _bytes('Old boiler guide.'),

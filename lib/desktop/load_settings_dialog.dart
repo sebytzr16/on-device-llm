@@ -167,6 +167,7 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
   Future<void> _listMtpHeads() async {
     // A head only fits its own base size; others are refused at load.
     final size = gemma4Size(m.fileName);
+    final selected = _resolved().draftModelId;
     final heads = <String>[];
     GgufMetadata? target;
     if (m.localPath != null && await File(m.localPath!).exists()) {
@@ -176,13 +177,14 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
         /* Report invalid target at load. */
       }
     }
-    final selected = _resolved().draftModelId;
+    if (!mounted) return;
     final candidates = {
       ...await mtpHeadFiles(),
       if (selected.startsWith(mtpHeadPrefix) &&
           selected != '$mtpHeadPrefix$mtpOff')
         selected.substring(mtpHeadPrefix.length),
     };
+    if (!mounted) return;
     for (final h in candidates) {
       if (size != null &&
           gemma4Size(p.basename(h)) != null &&
@@ -191,16 +193,17 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
       }
       try {
         final metadata = await GgufMetadata.inspect(h);
+        if (!mounted) return;
         final issue = target == null
-            ? 'Download the target model first.'
-            : metadata.mtpHeadIssueFor(target);
+            ? context.l10n.mtpNeedsTarget
+            : metadata.mtpHeadIssueFor(target, strings: context.l10n);
         if (issue == null) {
           heads.add(h);
         } else {
           _headIssues[h] = issue;
         }
       } catch (e) {
-        _headIssues[h] = 'Cannot read MTP head: $e';
+        _headIssues[h] = context.l10n.mtpReadFailed('$e');
       }
     }
     final auto = m.localPath == null ? null : autoMtpHead(m.localPath!);
@@ -220,15 +223,17 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
       allowedExtensions: const ['gguf'],
     );
     final source = picked.singleOrNull?.path;
-    if (source == null) return;
+    if (source == null || !mounted) return;
     try {
       final metadata = await GgufMetadata.inspect(source);
+      if (!mounted) return;
       final target = m.localPath == null
           ? null
           : await GgufMetadata.inspect(m.localPath!);
+      if (!mounted) return;
       final issue = target == null
-          ? 'Download the target model first.'
-          : metadata.mtpHeadIssueFor(target);
+          ? context.l10n.mtpNeedsTarget
+          : metadata.mtpHeadIssueFor(target, strings: context.l10n);
       if (issue != null) {
         if (mounted) {
           ScaffoldMessenger.of(
@@ -239,9 +244,9 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Cannot read MTP head: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.l10n.mtpReadFailed('$e'))),
+        );
       }
       return;
     }
@@ -251,6 +256,7 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
     final target = await importMtpHead(source, dir.path, name);
     if (!mounted) return;
     await _listMtpHeads();
+    if (!mounted) return;
     _set('draftModelId', '$mtpHeadPrefix$target');
   }
 
@@ -637,6 +643,7 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
     String key,
     Map<String, dynamic> e,
   ) async {
+    if (!mounted) return e;
     final load = ref.read(modelManagerProvider.notifier).loadedConfig;
     if (load == null) return e;
     final metrics = ref.read(llamaEngineProvider).metrics;
@@ -655,7 +662,12 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
             );
     try {
       final held = actual['memoryNeedMb'] != null
-          ? {...actual, 'ramNeedMb': actual['memoryNeedMb']}
+          ? {
+              ...actual,
+              'ramNeedMb':
+                  ((actual['memoryNeedMb'] as num?) ?? 0) -
+                  ((actual['memoryPagedMb'] as num?) ?? 0),
+            }
           : _held?.$1 == load
           ? _held!.$2
           : await ref
@@ -700,6 +712,12 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
           result['ramTotalMb'] as num?,
         );
       }
+      if (ram != null && result['ramBudgetMb'] is num) {
+        result['ramBudgetMb'] =
+            (result['ramBudgetMb'] as num) +
+            (result['ramAvailableMb'] as num) -
+            ram;
+      }
       if (same &&
           actual['contextSize'] != null &&
           actual['gpuLayers'] != null) {
@@ -718,6 +736,7 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
         }
         result['backend'] = metrics['backend'];
         result['ramNeedMb'] = held['ramNeedMb'];
+        result['ramPagedMb'] = actual['memoryPagedMb'] ?? e['ramPagedMb'];
         result['loadedAdmission'] = true;
       }
       return result;
@@ -743,8 +762,12 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
     for (final k in _ownKeys) {
       if (_profile.containsKey(k)) keep[k] = _profile[k];
     }
+    // Every layer is saved as 999, not the model's count: only "all" lets
+    // the engine move the vision projector to RAM to keep every layer on
+    // the card (Gemma 4 E4B fell from 43 to 31 layers on 8 GB without it).
     if (keep['nGpuLayers'] is int && _layers > 0) {
-      keep['nGpuLayers'] = (keep['nGpuLayers'] as int).clamp(0, _layers);
+      final n = keep['nGpuLayers'] as int;
+      keep['nGpuLayers'] = n >= _layers ? 999 : n.clamp(0, _layers);
     }
     await ref.read(modelProfilesProvider.notifier).set(m.id, keep);
     if (!mounted) return;
@@ -882,7 +905,7 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
                               onChanged: (v) => _set(
                                 'nGpuLayers',
                                 v
-                                    ? layers
+                                    ? 999
                                     : ((_estimate?['gpuLayers'] as num?)
                                                   ?.toInt() ??
                                               layers - 1)
@@ -932,7 +955,10 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
                             max: layers.toDouble(),
                             divisions: layers,
                             format: (v) => '${v.round()}',
-                            onChanged: (v) => _set('nGpuLayers', v.round()),
+                            onChanged: (v) => _set(
+                              'nGpuLayers',
+                              v.round() >= layers ? 999 : v.round(),
+                            ),
                           ),
                         const SizedBox(height: 10),
                         DesktopSlider(
@@ -1421,6 +1447,14 @@ class _EstimatePanel extends StatelessWidget {
         notes.add((
           Icons.hub_outlined,
           t.desktopLoadSettingsExperts,
+          c.textMuted,
+        ));
+      }
+      final paged = (e['ramPagedMb'] as num?) ?? 0;
+      if (paged > 0) {
+        notes.add((
+          Icons.storage_rounded,
+          t.desktopLoadSettingsPaged((paged / 1024).toStringAsFixed(1)),
           c.textMuted,
         ));
       }

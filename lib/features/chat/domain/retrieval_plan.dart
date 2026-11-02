@@ -1,3 +1,4 @@
+import '../../helper/helper_request.dart';
 import '../../tools/phone_actions.dart';
 import 'web_terms.dart';
 
@@ -60,6 +61,7 @@ class RetrievalPlan {
   /// "hi" and read eight pages, report 2026-09-19). Anything with a
   /// question mark, a number or a URL is left to the judge.
   static bool smallTalk(String input) {
+    if (HelperRequest.wanted(input)) return false;
     final t = input.trim();
     if (t.isEmpty) return true;
     // Before the question-mark rule: a recognizer writes "Hi?" and "how are

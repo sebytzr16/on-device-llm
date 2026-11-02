@@ -7,6 +7,8 @@ import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONObject
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.security.MessageDigest
 
 /** Durable OS transfers use an isolated staging path, never a loadable GGUF.
@@ -86,6 +88,18 @@ class BackgroundDownloads(context: Context, messenger: BinaryMessenger) {
                         remove(key, data)
                         result.success(null)
                     }
+                    "pause" -> {
+                        // Copy a fixed prefix on a worker: DownloadManager can
+                        // keep its inode open briefly after remove() returns.
+                        Thread({
+                            try {
+                                preservePartial(key)
+                                result.success(null)
+                            } catch (error: Exception) {
+                                result.error("download", error.message ?: "Cannot pause download", null)
+                            }
+                        }, "model-download-pause").start()
+                    }
                     "cancel" -> {
                         record(key)?.let { remove(key, it) }
                         staging(key).delete()
@@ -99,10 +113,46 @@ class BackgroundDownloads(context: Context, messenger: BinaryMessenger) {
         }
     }
 
+    @Synchronized
+    private fun preservePartial(key: String) {
+        val data = record(key) ?: return
+        val source = staging(key)
+        val part = File(root, data.getString("fileName") + ".part")
+        val temp = File(part.path + ".pause")
+        if (source.exists() && !part.exists()) {
+            // The file may be preallocated; only the reported downloaded
+            // prefix is known to contain bytes received from the server.
+            val received = (status(data)["received"] as Number).toLong()
+            var remaining = minOf(received, source.length(), data.getLong("size"))
+            try {
+                FileInputStream(source).use { input ->
+                    FileOutputStream(temp).use { output ->
+                        val buffer = ByteArray(128 * 1024)
+                        while (remaining > 0) {
+                            val count = input.read(buffer, 0, minOf(remaining, buffer.size.toLong()).toInt())
+                            require(count > 0) { "Partial download ended during pause." }
+                            output.write(buffer, 0, count)
+                            remaining -= count
+                        }
+                        output.fd.sync()
+                    }
+                }
+                require(temp.renameTo(part)) { "Cannot preserve partial download." }
+            } catch (error: Exception) {
+                temp.delete()
+                throw error
+            }
+        }
+        // A crash after the rename is safe: the independent .part remains,
+        // and the next Dart resume removes this now-redundant OS job.
+        remove(key, data)
+    }
+
     private fun record(key: String): JSONObject? = prefs.getString(key, null)?.let { JSONObject(it) }
     private fun staging(key: String) = File(root, ".system-$key.download")
     private fun remove(key: String, record: JSONObject) {
         manager.remove(record.getLong("job"))
+        File(root, record.getString("fileName") + ".part.pause").delete()
         require(prefs.edit().remove(key).commit()) { "Cannot remove download recovery information." }
     }
 

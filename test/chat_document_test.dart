@@ -141,6 +141,29 @@ void main() {
       expect(output, contains('[redacted]'));
     }
   });
+  test('HTML export shows raw HTML as text and blocks scripts (P1-20)', () {
+    final html = ChatDocument(
+      messages: [
+        message(
+          'one',
+          '<script>alert(1)</script>\n\nHi <img src=x onerror=alert(2)> '
+              '**bold**\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n'
+              '```\nif (a < b) {}\n```\n\nUse `x<y` & go.',
+        ),
+      ],
+      title: 'Test',
+    ).html;
+    expect(html, isNot(contains('<script>')));
+    expect(html, isNot(contains('<img')));
+    expect(html, contains('&lt;script&gt;'));
+    expect(html, contains('<strong>bold</strong>'));
+    expect(html, contains('<table>'));
+    expect(html, contains("default-src 'none'"));
+    expect(html, contains('if (a &lt; b)'));
+    expect(html, contains('<code>x&lt;y</code> &amp; go'));
+    expect(html, isNot(contains('&amp;lt;')));
+  });
+
   test('Markdown blocks preserve headings, lists, code and tables', () async {
     const content =
         '# Heading\n\n- One\n- Two\n\n1. Third\n\n'

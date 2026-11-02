@@ -115,6 +115,10 @@ class ModelPool implements ServedModelRouter {
   /// The chat's runtime when it holds [id] (loaded, not loading).
   final LlamaEngine? Function(String id)? chatEngineFor;
 
+  /// A chat turn owns the runtime before native generation becomes busy
+  /// (owner P2-05 re-trace, 2026-11-01).
+  final bool Function()? chatReserved;
+
   /// The primary model's id: never pooled, the server answers it itself.
   final String primary;
   final void Function()? onChange;
@@ -133,6 +137,7 @@ class ModelPool implements ServedModelRouter {
     required this.options,
     required this.primary,
     this.chatEngineFor,
+    this.chatReserved,
     this.onChange,
     DateTime Function()? now,
   }) : now = now ?? DateTime.now {
@@ -170,7 +175,7 @@ class ModelPool implements ServedModelRouter {
     final chat = _slots.containsKey(id) ? null : chatEngineFor?.call(id);
     if (chat != null) {
       // One copy is enough: wait for the chat rather than load another.
-      if (chat.isBusy || _onChat.contains(id)) {
+      if (chat.isBusy || chatReserved?.call() == true || _onChat.contains(id)) {
         throw RouteRefusal(
           HttpStatus.tooManyRequests,
           '$id is answering in the chat. Retry in a moment.',

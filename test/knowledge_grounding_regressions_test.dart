@@ -14,16 +14,16 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const channel = MethodChannel('ondevice_llm/audio');
   const paths = MethodChannel('plugins.flutter.io/path_provider');
-  setUp(() {
+  late Directory files;
+  setUp(() async {
+    files = await Directory.systemTemp.createTemp('knowledge-grounding-');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(
-          paths,
-          (_) async => Directory.systemTemp.path,
-        );
+        .setMockMethodCallHandler(paths, (_) async => files.path);
   });
-  tearDown(() {
+  tearDown(() async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(paths, null);
+    await files.delete(recursive: true);
   });
   test('photo import retains an unavailable OCR warning', () async {
     final dir = await Directory.systemTemp.createTemp('ocr-notice-');

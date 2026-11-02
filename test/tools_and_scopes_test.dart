@@ -110,8 +110,8 @@ void main() {
       expect(r.effective.thinkingModeEnabled, isTrue);
       expect(r.originOf('topP'), SettingsLayer.idDefault);
       expect(r.reloadKeys, ['contextSize']);
+      // The app-wide layer no longer sets sampling.
       expect(r.requested['temperature']!.map((e) => e.$1), [
-        SettingsLayer.idGlobal,
         SettingsLayer.idModel,
         SettingsLayer.idPreset,
       ]);

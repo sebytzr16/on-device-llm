@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:io';
+import 'dart:isolate';
 import 'package:path/path.dart' as p;
 
 import 'package:drift/drift.dart' as drift;
@@ -17,6 +18,8 @@ import '../attachments/domain/scan_options.dart';
 import '../models/domain/entities/model_catalog.dart';
 import 'knowledge_embedder.dart';
 import 'knowledge_media.dart';
+import '../../core/l10n/l10n.dart';
+import '../settings/presentation/providers/settings_provider.dart';
 
 /// Knowledge library (FX-02): documents imported once, split into passages
 /// and retrieved for any later question — lexically (FTS5 bm25) and, once
@@ -28,28 +31,51 @@ class KnowledgeStore {
   final AppDatabase _db;
   final TextEmbedder? _embedder;
   final Future<Directory> Function()? _originalDirectory;
-  const KnowledgeStore(this._db, [this._embedder, this._originalDirectory]);
+  final String Function()? _locale;
+  AppLocalizations get _t => stringsFor(_locale?.call() ?? '');
+  const KnowledgeStore(
+    this._db, [
+    this._embedder,
+    this._originalDirectory,
+    this._locale,
+  ]);
 
   Future<Directory?> _directory() async => _originalDirectory != null
       ? _originalDirectory()
-      : Platform.isAndroid || Platform.isIOS
-      ? AttachmentStore.directory()
-      : null;
+      : AttachmentStore.directory();
 
   Future<File?> original(KnowledgeDoc doc) async {
     final name = doc.originalFile;
     final dir = await _directory();
-    if (name == null || dir == null || p.basename(name) != name) return null;
+    if (name == null ||
+        dir == null ||
+        !_safeFileName(name) ||
+        !_safeFileName(doc.id)) {
+      return null;
+    }
     final file = File(p.join(dir.path, name));
-    return await file.exists() ? file : null;
+    if (await FileSystemEntity.type(file.path, followLinks: false) !=
+        FileSystemEntityType.file) {
+      return null;
+    }
+    if (p.dirname(await file.resolveSymbolicLinks()) !=
+        await dir.resolveSymbolicLinks()) {
+      return null;
+    }
+    return file;
   }
+
+  static bool _safeFileName(String name) =>
+      RegExp(r'^[a-zA-Z0-9_.-]+$').hasMatch(name) &&
+      name != '.' &&
+      name != '..';
 
   Future<void> activate(KnowledgeDoc doc) => _db.transaction(() async {
     if (await (_db.select(
           _db.knowledgeDocs,
         )..where((t) => t.id.equals(doc.id))).getSingleOrNull() ==
         null) {
-      throw StateError('This document version no longer exists.');
+      throw StateError(_t.knowledgeVersionMissing);
     }
     await (_db.update(_db.knowledgeDocs)..where(
           (t) => t.collection.equals(doc.collection) & t.name.equals(doc.name),
@@ -114,6 +140,9 @@ class KnowledgeStore {
     return ids;
   }
 
+  static Future<String> contentHash(Uint8List bytes) =>
+      Isolate.run(() => sha256.convert(bytes).toString());
+
   /// Adds one file's text to [collection]. [pdfText] is the platform PDF
   /// extractor (null in tests). Photos and voice notes are kept too: their
   /// passages carry the photo's recognised text or the recording's time
@@ -133,7 +162,7 @@ class KnowledgeStore {
     Future<String?> Function(File)? caption,
     bool Function()? cancelled,
   }) async {
-    final hash = sha256.convert(bytes).toString();
+    final hash = await contentHash(bytes);
     final existing = await _db.knowledgeDocsIn(collection.trim());
     final duplicate = existing.where((d) => d.contentHash == hash).firstOrNull;
     if (duplicate != null) {
@@ -158,9 +187,14 @@ class KnowledgeStore {
             derived: derived,
             cancelled: cancelled,
           )
-        : await DocumentText.extract(bytes, name, pdfText: pdfText);
+        : await DocumentText.extract(
+            bytes,
+            name,
+            pdfText: pdfText,
+            localeCode: _locale?.call() ?? '',
+          );
     if (extracted.text.trim().isEmpty) {
-      throw const FormatException('No text found in this file.');
+      throw FormatException(_t.documentNoText);
     }
     if (media) mime = KnowledgeMedia.mimeFor(name);
     final chunks = <({String text, int? page})>[];
@@ -251,7 +285,7 @@ class KnowledgeStore {
       extractionFormat: drift.Value(extracted.format),
       extractionWarning: drift.Value(
         extracted.text.contains(OcrUnavailable.notice)
-            ? OcrUnavailable.notice
+            ? _t.documentOcrUnavailable
             : extracted.text.contains('[Text recognition failed:')
             ? 'Text recognition failed; the photo is available for visual search.'
             : media &&
@@ -305,7 +339,7 @@ class KnowledgeStore {
     )).firstWhere((d) => d.id == id);
   }
 
-  static Future<ExtractedDocument> _mediaText(
+  Future<ExtractedDocument> _mediaText(
     String name,
     Uint8List bytes,
     Future<String> Function(File)? ocr,
@@ -329,8 +363,8 @@ class KnowledgeStore {
           text = (await (ocr ?? _platformOcr)(file)).trim();
         } catch (error) {
           ocrNotice = error is OcrUnavailable
-              ? OcrUnavailable.notice
-              : 'Text recognition failed: $error';
+              ? _t.documentOcrUnavailable
+              : _t.documentOcrFailed('$error');
         }
         final description = (await caption?.call(file))?.trim() ?? '';
         return ExtractedDocument(
@@ -350,7 +384,7 @@ class KnowledgeStore {
         seconds = await audioSeconds(file);
       }
       if (seconds <= 0) {
-        throw const FormatException('This recording has no audio.');
+        throw FormatException(_t.knowledgeNoAudio);
       }
       // Per-part transcripts replace the whole one: both would put the
       // first part's words in twice and transcribe the recording twice.
@@ -536,10 +570,18 @@ class KnowledgeStore {
   ) async {
     final embedder = _embedder;
     if (embedder == null) return lexical;
-    List<KnowledgeChunk> indexed;
+    List<(String, String, Uint8List)> indexed;
+    final docs = {for (final (_, d) in lexical) d.id: d};
     Float32List q;
     try {
-      indexed = await _db.knowledgeVectors(collection, embedder.modelId);
+      // One documents read per search; vectors without their text.
+      for (final d in await _db.knowledgeDocsIn(collection)) {
+        docs[d.id] = d;
+      }
+      indexed = await _db.knowledgeVectors([
+        for (final d in docs.values)
+          if (d.active) d.id,
+      ], embedder.modelId);
       if (indexed.isEmpty) return lexical;
       final vectors = await embedder.embedQueries([query]);
       if (vectors == null || vectors.isEmpty) return lexical;
@@ -550,39 +592,39 @@ class KnowledgeStore {
     // Keep only the best few while scanning. Sorting every indexed passage
     // made large libraries spend O(N log N) time and allocate one copied
     // float vector per passage on every question.
-    final semantic = <(double, KnowledgeChunk)>[];
-    for (final chunk in indexed) {
-      if (chunk.embedding!.lengthInBytes != q.lengthInBytes) continue;
-      final score = dotBytes(q, chunk.embedding!);
+    final semantic = <(double, String)>[];
+    for (final (id, _, embedding) in indexed) {
+      if (embedding.lengthInBytes != q.lengthInBytes) continue;
+      final score = dotBytes(q, embedding);
       if (semantic.length >= limit && score <= semantic.last.$1) continue;
       var position = 0;
       while (position < semantic.length && semantic[position].$1 >= score) {
         position++;
       }
-      semantic.insert(position, (score, chunk));
+      semantic.insert(position, (score, id));
       if (semantic.length > limit) semantic.removeLast();
     }
     final byId = <String, KnowledgeChunk>{
       for (final (c, _) in lexical) c.id: c,
-      for (final (_, c) in semantic) c.id: c,
     };
-    final docs = {for (final (_, d) in lexical) d.id: d};
-    final missing = byId.values
-        .where((c) => !docs.containsKey(c.docId))
-        .map((c) => c.docId)
-        .toSet();
-    if (missing.isNotEmpty) {
-      for (final d in await _db.knowledgeDocsIn(collection)) {
-        if (missing.contains(d.id)) docs[d.id] = d;
+    try {
+      for (final c in await _db.knowledgeChunksByIds([
+        for (final (_, id) in semantic)
+          if (!byId.containsKey(id)) id,
+      ])) {
+        byId[c.id] = c;
       }
+    } catch (_) {
+      return lexical;
     }
     final order = fuse([
       [for (final (c, _) in lexical) c.id],
-      [for (final (_, c) in semantic) c.id],
+      [for (final (_, id) in semantic) id],
     ]);
     return [
       for (final id in order.take(limit))
-        if (docs[byId[id]!.docId] != null) (byId[id]!, docs[byId[id]!.docId]!),
+        if (byId[id] case final c? when docs[c.docId] != null)
+          (c, docs[c.docId]!),
     ];
   }
 
@@ -593,6 +635,8 @@ final knowledgeStoreProvider = Provider<KnowledgeStore>(
   (ref) => KnowledgeStore(
     ref.watch(appDatabaseProvider),
     ref.watch(textEmbedderProvider),
+    null,
+    () => ref.read(settingsProvider).localeCode,
   ),
 );
 

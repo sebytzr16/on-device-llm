@@ -427,7 +427,10 @@ class RemoteProfile {
   });
 
   /// The cap for the selected model.
-  RemoteLimit get limit => limits[model.trim()] ?? const RemoteLimit();
+  RemoteLimit get limit => limitFor(model);
+
+  RemoteLimit limitFor(String model) =>
+      limits[model.trim()] ?? const RemoteLimit();
 
   RemoteProvider get provider => RemoteProvider.byId(providerId);
 
@@ -465,13 +468,14 @@ class RemoteProfile {
     serverSettings: serverSettings ?? this.serverSettings,
   );
 
-  /// The profile with [limit] applied to the selected model.
-  RemoteProfile withLimit(RemoteLimit limit) {
+  /// The profile with [limit] applied to [model], or the selected model.
+  RemoteProfile withLimit(RemoteLimit limit, {String? model}) {
     final next = {...limits};
+    final key = (model ?? this.model).trim();
     if (limit.isEmpty) {
-      next.remove(model.trim());
+      next.remove(key);
     } else {
-      next[model.trim()] = limit;
+      next[key] = limit;
     }
     return copyWith(limits: next);
   }

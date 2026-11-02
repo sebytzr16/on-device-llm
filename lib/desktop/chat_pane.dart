@@ -1,17 +1,19 @@
-import '../core/platform/desktop_preferences.dart';
-import 'model_visibility.dart';
+import '../features/shortcuts/presentation/slash_command_composer.dart';
+import '../features/shortcuts/presentation/chat_slash_actions.dart';
 import 'dart:async';
 import 'dart:io';
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:pasteboard/pasteboard.dart';
 import 'package:path_provider/path_provider.dart';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/platform/desktop_preferences.dart';
+import 'model_visibility.dart';
+import 'chat_drafts.dart';
 import '../core/design/app_design.dart';
 import '../core/design/app_dialog.dart';
 import '../core/island/status_island.dart';
@@ -25,17 +27,21 @@ import '../features/chat/domain/entities/chat_message.dart';
 import '../features/chat/domain/retrieval_plan.dart';
 import '../features/chat/presentation/providers/chat_provider.dart';
 import '../features/chat/presentation/widgets/chat_bubble.dart';
+import '../features/helper/helper_live_panel.dart';
+import '../features/helper/helper_web_approval.dart';
+import '../features/helper/agent_web_approval_card.dart';
 import '../features/chat/presentation/widgets/composer.dart';
 import '../features/chat/presentation/widgets/send_button.dart';
+import '../features/models/domain/entities/model_catalog.dart';
 import '../features/models/domain/entities/model_info.dart';
 import '../features/models/presentation/providers/model_manager_provider.dart';
 import '../features/models/presentation/providers/retired_model_names.dart';
 import '../features/presets/presentation/providers/presets_provider.dart';
 import '../features/settings/domain/entities/inference_settings.dart';
 import '../features/settings/presentation/providers/effective_settings_provider.dart';
+import '../features/settings/presentation/providers/model_profiles_provider.dart';
 import '../features/settings/presentation/providers/settings_provider.dart';
 import '../features/settings/presentation/widgets/settings_labels.dart';
-import '../features/shortcuts/domain/prompt_shortcut.dart';
 import '../features/shortcuts/prompt_shortcuts_provider.dart';
 import '../features/tools/presentation/tools_quick_panel.dart';
 import '../features/voice/voice_service.dart';
@@ -47,6 +53,18 @@ import 'inspector_panel.dart';
 import 'load_progress.dart';
 import 'model_preset_menu.dart';
 import 'title_bar.dart';
+
+/// Both send paths accept a configured Remote server (including its default
+/// model) or a loaded local model.
+final desktopChatReadyProvider = Provider<bool>((ref) {
+  final remote = ref.watch(
+    effectiveSettingsProvider.select((s) => s.effective.usesRemote),
+  );
+  final local = ref.watch(
+    modelManagerProvider.select((m) => m.loadedModelId != null),
+  );
+  return remote || local;
+});
 
 /// The conversation in a centred reading column, the composer pinned under
 /// it. Turns, answers, sources and maths render with the shared bubble.
@@ -98,10 +116,18 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                   ],
                 ),
               ),
+              if (ref.watch(agentWebQuestionsProvider)[state.chatId]
+                  case final question? when !question.answer.isCompleted)
+                AgentWebApprovalCard(
+                  onAnswer: (allow) => ref
+                      .read(agentWebApprovalProvider)
+                      .answer(state.chatId!, allow),
+                ),
               Expanded(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    const HelperSideColumn(),
                     Expanded(child: _conversation(context, ref, state, count)),
                     const DesktopInspectorSlot(),
                   ],
@@ -279,6 +305,47 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 
     return Column(
       children: [
+        if (state.temporary)
+          // A rounded pill at the top, like the phone's temporary banner.
+          Padding(
+            key: const Key('desktop-temporary-indicator'),
+            padding: const EdgeInsets.only(top: 10),
+            child: Tooltip(
+              message: context.l10n.temporaryChatHint,
+              child: DecoratedBox(
+                decoration: ShapeDecoration(
+                  color: context.colors.accent.fade(0.1),
+                  shape: StadiumBorder(
+                    side: BorderSide(color: context.colors.accent.fade(0.3)),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 5,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.visibility_off_outlined,
+                        size: 14,
+                        color: context.colors.accent,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        context.l10n.temporaryChat,
+                        style: context.text.small.copyWith(
+                          color: context.colors.accent,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         Align(
           alignment: Alignment.centerRight,
           child: MenuAnchor(
@@ -343,6 +410,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                         child = ChatBubble(
                           key: ValueKey(m.id),
                           message: m,
+                          helperChip: HelperUsedChip(messageId: m.id),
                           modelName: m.role == ChatRole.assistant
                               ? modelName(m.modelId)
                               : null,
@@ -457,11 +525,21 @@ class _LiveAnswer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final (answer, reasoning) = ref.watch(
-      chatProvider.select((s) => (s.partialAnswer, s.reasoning?.content)),
+    final (answer, reasoning, hasReasoning, notice) = ref.watch(
+      chatProvider.select(
+        (s) => (
+          s.partialAnswer,
+          s.reasoning?.content,
+          s.hasReasoningTokens,
+          s.notice,
+        ),
+      ),
     );
     return ChatBubble(
       streaming: true,
+      liveReasoningTitle: hasReasoning
+          ? null
+          : (notice?.isNotEmpty == true ? notice : context.l10n.liveWorking),
       modelName: modelName,
       message: ChatMessage(
         id: 'streaming',
@@ -576,11 +654,75 @@ class _Composer extends ConsumerStatefulWidget {
 
 class _ComposerState extends ConsumerState<_Composer> {
   final _text = TextEditingController();
+  late DesktopChatDrafts _drafts;
+  late String _draftKey;
+
+  String _key(ChatState state) =>
+      state.temporary ? 'temporary' : state.chatId ?? 'new';
+
+  void _draftError(Object error) {
+    if (mounted) {
+      showIslandToast(
+        context,
+        context.l10n.desktopChatActionFailed,
+        tone: IslandTone.error,
+      );
+    }
+  }
+
+  void _saveDraft() => _drafts.save(
+    _draftKey,
+    DesktopChatDraft(_text.text, List.of(_pending)),
+    onError: _draftError,
+  );
+
+  Future<void> _loadDraft() async {
+    final key = _draftKey;
+    try {
+      await _drafts.load(key);
+      if (!mounted || key != _draftKey) return;
+      _text.removeListener(_saveDraft);
+      setState(_restoreDraft);
+      _text.addListener(_saveDraft);
+    } catch (_) {
+      if (mounted && key == _draftKey) {
+        showIslandToast(
+          context,
+          context.l10n.desktopChatActionFailed,
+          tone: IslandTone.error,
+        );
+      }
+    }
+  }
+
+  void _restoreDraft() {
+    final draft = _drafts.read(_draftKey);
+    _text.text = draft.text;
+    _pending
+      ..clear()
+      ..addAll(draft.attachments);
+  }
+
   late final FocusNode _field = FocusNode(onKeyEvent: _onKey);
+  final _slash = GlobalKey<SlashCommandComposerState>();
 
   @override
   void initState() {
     super.initState();
+    _drafts = ref.read(desktopChatDraftsProvider);
+    _draftKey = _key(ref.read(chatProvider));
+    _restoreDraft();
+    _text.addListener(_saveDraft);
+    unawaited(_loadDraft());
+    ref.listenManual(chatProvider.select(_key), (_, key) {
+      if (_draftKey == 'temporary') _drafts.discard(_draftKey);
+      _draftKey = key;
+      // Changing the controller also notifies its listener.
+      _text.removeListener(_saveDraft);
+      setState(_restoreDraft);
+      _text.addListener(_saveDraft);
+      unawaited(_loadDraft());
+    });
     // Ctrl+L and new chat focus the outer node; hand it to the field.
     widget.focus.addListener(_handFocus);
     WidgetsBinding.instance.addPostFrameCallback((_) => _field.requestFocus());
@@ -593,13 +735,17 @@ class _ComposerState extends ConsumerState<_Composer> {
   @override
   void dispose() {
     widget.focus.removeListener(_handFocus);
+    if (_draftKey == 'temporary') _drafts.discard(_draftKey);
     _text.dispose();
     _field.dispose();
     super.dispose();
   }
 
   /// Enter sends, Shift+Enter is a new line (the field's own behaviour).
-  KeyEventResult _onKey(FocusNode _, KeyEvent e) {
+  KeyEventResult _onKey(FocusNode node, KeyEvent e) {
+    if (_slash.currentState?.handleKey(node, e) == KeyEventResult.handled) {
+      return KeyEventResult.handled;
+    }
     if (e is! KeyDownEvent) return KeyEventResult.ignored;
     if (e.logicalKey == LogicalKeyboardKey.keyV &&
         HardwareKeyboard.instance.isControlPressed &&
@@ -622,17 +768,32 @@ class _ComposerState extends ConsumerState<_Composer> {
 
   Future<void> _send() async {
     if (ref.read(chatProvider).isGenerating) return;
+    if (isChatAction(_text.text)) {
+      final action = _text.text;
+      _text.clear();
+      await runChatAction(
+        context,
+        ref,
+        action,
+        export: () => exportDesktopChat(context, ref),
+      );
+      return;
+    }
+    if (!_ready) return;
+    final key = _draftKey;
     final text = _text.text;
     final attachments = List<Attachment>.of(_pending);
     if (text.trim().isEmpty && attachments.isEmpty) return;
-    // "/summarize Ã¢â‚¬Â¦" goes out as the saved prompt with the text in it.
-    final shortcut = PromptShortcut.apply(
+    // "/summarize …" goes out as the saved prompt with the text in it.
+    final shortcut = expandChatShortcut(
       text,
       ref.read(promptShortcutsProvider),
       lang: Localizations.localeOf(context).languageCode,
+      messages: ref.read(chatProvider).messages,
     );
     _text.clear();
     setState(_pending.clear);
+    _saveDraft();
     final accepted = await ref
         .read(chatProvider.notifier)
         .send(
@@ -640,30 +801,45 @@ class _ComposerState extends ConsumerState<_Composer> {
           attachments: attachments,
           learn: shortcut == null,
         );
-    if (mounted && !accepted) {
-      if (_text.text.isEmpty) _text.text = text;
-      setState(() => _pending.addAll(attachments));
+    if (!accepted) {
+      final newer = _drafts.read(key);
+      _drafts.save(
+        key,
+        DesktopChatDraft(newer.text.isEmpty ? text : '$text\n${newer.text}', [
+          ...attachments,
+          ...newer.attachments,
+        ]),
+        onError: _draftError,
+      );
+      if (mounted && _draftKey == key) {
+        _text.removeListener(_saveDraft);
+        setState(_restoreDraft);
+        _text.addListener(_saveDraft);
+      }
     }
   }
 
   /// Windows' file dialog straight away: no camera or gallery on a PC.
   Future<void> _attach() async {
+    final key = _draftKey;
     final files = await FilePicker.pickFiles(type: FileType.any);
-    if (files.isEmpty || !mounted) return;
+    if (files.isEmpty || !mounted || key != _draftKey) return;
     final sources = <(String, String?, Uint8List?)>[
       for (final f in files)
         (f.name, f.path, f.path == null ? await f.readAsBytes() : null),
     ];
-    if (!mounted) return;
+    if (!mounted || key != _draftKey) return;
     await _import(sources);
   }
 
   Future<void> _import(List<(String, String?, Uint8List?)> sources) async {
     if (!mounted || ref.read(chatProvider).isGenerating) return;
     try {
+      final key = _draftKey;
       final picked = await importAttachments(context, sources);
-      if (mounted) {
+      if (mounted && key == _draftKey) {
         setState(() => _pending.addAll(picked));
+        _saveDraft();
       } else {
         for (final attachment in picked) {
           await AttachmentStore.delete(attachment);
@@ -680,9 +856,10 @@ class _ComposerState extends ConsumerState<_Composer> {
 
   Future<void> _paste() async {
     if (ref.read(chatProvider).isGenerating) return;
+    final key = _draftKey;
     try {
       final image = await Pasteboard.image;
-      if (!mounted) return;
+      if (!mounted || key != _draftKey) return;
       if (image != null && image.isNotEmpty) {
         final directory = await Directory(
           (await getTemporaryDirectory()).path,
@@ -690,7 +867,7 @@ class _ComposerState extends ConsumerState<_Composer> {
         try {
           final file = File('${directory.path}/image.png');
           await file.writeAsBytes(image, flush: true);
-          if (mounted) {
+          if (mounted && key == _draftKey) {
             await _import([
               (context.l10n.desktopChatClipboardImage, file.path, null),
             ]);
@@ -700,7 +877,7 @@ class _ComposerState extends ConsumerState<_Composer> {
         }
       } else {
         final data = await Clipboard.getData(Clipboard.kTextPlain);
-        if (mounted && data?.text != null) {
+        if (mounted && key == _draftKey && data?.text != null) {
           final selection = _text.selection;
           final start = selection.isValid ? selection.start : _text.text.length;
           final end = selection.isValid ? selection.end : start;
@@ -722,10 +899,11 @@ class _ComposerState extends ConsumerState<_Composer> {
 
   void _remove(Attachment a) {
     setState(() => _pending.remove(a));
+    _saveDraft();
     unawaited(AttachmentStore.delete(a));
   }
 
-  /// Local Ã¢â€ â€™ Auto Ã¢â€ â€™ Always Ã¢â€ â€™ Local; leaving Local asks once per run.
+  /// Local → Auto → Always → Local; leaving Local asks once per run.
   Future<void> _cycleWeb() async {
     final settings = ref.read(settingsProvider);
     final next = switch (settings.webMode) {
@@ -749,7 +927,7 @@ class _ComposerState extends ConsumerState<_Composer> {
         .update(settings.copyWith(webMode: next));
   }
 
-  /// Off Ã¢â€ â€™ Low Ã¢â€ â€™ Medium Ã¢â€ â€™ High Ã¢â€ â€™ Off, for this chat only.
+  /// Off → Low → Medium → High → Off, for this chat only.
   void _cycleThinking(InferenceSettings settings) {
     final next = settings.thinkingLevel.next;
     final overrides = {...ref.read(chatOverridesProvider), ...next.overrides};
@@ -764,9 +942,11 @@ class _ComposerState extends ConsumerState<_Composer> {
       return;
     }
     final before = _text.text;
+    final key = _draftKey;
     n.listen(
       onDeviceOnly: settings.voiceOnDeviceOnly,
       onText: (t) {
+        if (!mounted || key != _draftKey) return;
         _text.text = before.isEmpty ? t : '$before $t';
         _text.selection = TextSelection.collapsed(offset: _text.text.length);
       },
@@ -787,6 +967,10 @@ class _ComposerState extends ConsumerState<_Composer> {
     );
   }
 
+  bool get _ready {
+    return ref.read(desktopChatReadyProvider);
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -799,19 +983,26 @@ class _ComposerState extends ConsumerState<_Composer> {
     );
     final settings = ref.watch(effectiveSettingsProvider).effective;
     final web = settings.webMode;
-    final hasModel = ref.watch(
-      modelManagerProvider.select((m) => m.loadedModelId != null),
-    );
+    final hasModel = ref.watch(desktopChatReadyProvider);
     final variantModelId = ref.watch(
       modelManagerProvider.select((m) => m.loadedModelId),
     );
+    // Photos switch beside Think, for models that ship a projector (owner, 2026-11-02).
+    final visionModel = ref.watch(
+      modelManagerProvider.select(
+        (m) => m.catalog
+            .where((x) => x.id == m.loadedModelId)
+            .where((x) => (x.projector ?? visionProjectors[x.id]) != null)
+            .firstOrNull,
+      ),
+    );
+    final visionOn =
+        visionModel != null &&
+        ref.watch(modelProfilesProvider)[visionModel.id]?['visionEnabled'] !=
+            false;
     final presets = ref.watch(presetsProvider);
     final preset = presets.active;
     final voice = ref.watch(voiceProvider);
-    final lang = Localizations.localeOf(context).languageCode;
-    final shortcuts = [
-      for (final s in ref.watch(promptShortcutsProvider)) s.localized(lang),
-    ];
     final used = ref.watch(
       chatProvider.select(
         (s) =>
@@ -897,67 +1088,30 @@ class _ComposerState extends ConsumerState<_Composer> {
                               ),
                             ),
                     ),
-                    // "/" + the start of a name: matching prompt shortcuts.
-                    ValueListenableBuilder<TextEditingValue>(
-                      valueListenable: _text,
-                      builder: (context, value, _) {
-                        final matches = PromptShortcut.suggestions(
-                          value.text,
-                          shortcuts,
-                        );
-                        return AnimatedSize(
-                          duration: DesktopTheme.medium,
-                          curve: DesktopTheme.curve,
-                          child: matches.isEmpty
-                              ? const SizedBox(width: double.infinity)
-                              : Padding(
-                                  padding: const EdgeInsets.only(top: 6),
-                                  child: Wrap(
-                                    spacing: 6,
-                                    runSpacing: 6,
-                                    children: [
-                                      for (final m in matches)
-                                        ActionChip(
-                                          visualDensity: VisualDensity.compact,
-                                          avatar: Icon(
-                                            Icons.bolt_rounded,
-                                            size: 14,
-                                            color: c.accent,
-                                          ),
-                                          label: Text('/${m.name}'),
-                                          labelStyle: context.text.mono
-                                              .copyWith(color: c.text),
-                                          onPressed: () {
-                                            _text.text = '/${m.name} ';
-                                            _text.selection =
-                                                TextSelection.collapsed(
-                                                  offset: _text.text.length,
-                                                );
-                                            _field.requestFocus();
-                                          },
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                        );
-                      },
-                    ),
-                    TextField(
+                    SlashCommandComposer(
+                      key: _slash,
                       controller: _text,
-                      focusNode: _field,
-                      minLines: 1,
-                      maxLines: 10,
-                      keyboardType: TextInputType.multiline,
-                      style: context.text.body,
-                      decoration: InputDecoration(
-                        hintText: voice.listening
-                            ? l10n.listening
-                            : l10n.messageHint,
-                        filled: false,
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      onSubmit: _send,
+                      enabled: !busy,
+                      child: TextField(
+                        controller: _text,
+                        focusNode: _field,
+                        minLines: 1,
+                        maxLines: 10,
+                        keyboardType: TextInputType.multiline,
+                        style: context.text.body,
+                        decoration: InputDecoration(
+                          hintText: voice.listening
+                              ? l10n.listening
+                              : l10n.messageHint,
+                          filled: false,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 8,
+                          ),
+                        ),
                       ),
                     ),
                     Row(
@@ -1021,6 +1175,26 @@ class _ComposerState extends ConsumerState<_Composer> {
                                       ? null
                                       : () => _cycleThinking(settings),
                                 ),
+                                if (visionModel != null)
+                                  _Pill(
+                                    key: const Key('composer-vision'),
+                                    icon: visionOn
+                                        ? Icons.image_outlined
+                                        : Icons.hide_image_outlined,
+                                    label: l10n.visionPill,
+                                    on: visionOn,
+                                    onTap: busy
+                                        ? null
+                                        : () => ref
+                                              .read(
+                                                modelProfilesProvider.notifier,
+                                              )
+                                              .setKey(
+                                                visionModel.id,
+                                                'visionEnabled',
+                                                visionOn ? false : null,
+                                              ),
+                                  ),
                                 _Pill(
                                   icon: web == WebMode.off
                                       ? Icons.public_off_rounded
@@ -1182,6 +1356,7 @@ class _Pill extends StatelessWidget {
   final bool on;
   final VoidCallback? onTap;
   const _Pill({
+    super.key,
     this.icon,
     this.emoji,
     required this.label,

@@ -27,6 +27,7 @@ class _ZimTileState extends ConsumerState<ZimTile> {
       ZimWikipedia.fileIn((await getApplicationSupportDirectory()).path);
 
   Future<void> _import() async {
+    final container = ProviderScope.containerOf(context, listen: false);
     final toast = islandToastFor(context);
     final notZim = context.l10n.zimNotAZim;
     final files = await FilePicker.pickFiles(type: FileType.any);
@@ -39,15 +40,18 @@ class _ZimTileState extends ConsumerState<ZimTile> {
       final total = await f.length() ?? 0;
       var done = 0;
       final sink = part.openWrite();
-      await for (final chunk in f.readAsByteStream()) {
-        sink.add(chunk);
-        done += chunk.length;
-        final shown = total > 0 ? '${(100 * done / total).floor()} %' : null;
-        if (mounted && shown != null && shown != _progress) {
-          setState(() => _progress = shown);
+      try {
+        await for (final chunk in f.readAsByteStream()) {
+          sink.add(chunk);
+          done += chunk.length;
+          final shown = total > 0 ? '${(100 * done / total).floor()} %' : null;
+          if (mounted && shown != null && shown != _progress) {
+            setState(() => _progress = shown);
+          }
         }
+      } finally {
+        await sink.close();
       }
-      await sink.close();
       if (!await ZimWikipedia.isZim(part.path)) {
         await part.delete();
         toast(notZim, tone: IslandTone.warning);
@@ -61,12 +65,12 @@ class _ZimTileState extends ConsumerState<ZimTile> {
       } finally {
         await checked.close();
       }
-      await (await ref.read(zimWikipediaProvider.future))?.close();
+      await (await container.read(zimWikipediaProvider.future))?.close();
       await part.rename(target);
-      ref.invalidate(zimWikipediaProvider);
+      container.invalidate(zimWikipediaProvider);
     } catch (e) {
       if (await part.exists()) await part.delete();
-      toast('$e', tone: IslandTone.error);
+      toast(notZim, tone: IslandTone.error);
     } finally {
       if (mounted) setState(() => _progress = null);
     }

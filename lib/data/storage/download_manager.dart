@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 import '../../core/errors/exceptions.dart';
 import '../../core/platform/device_info.dart';
 import '../../features/models/domain/entities/model_info.dart';
+import 'download_history.dart';
 import 'model_storage.dart';
 import 'system_downloads.dart';
 
@@ -17,6 +19,8 @@ enum DownloadStatus {
   completed,
   failed,
 }
+
+final _log = Logger('downloads');
 
 class DownloadProgress {
   final String modelId;
@@ -183,7 +187,29 @@ class DownloadManager {
     _finished[modelId] = finished;
     final total = files.fold(0, (sum, f) => sum + f.sizeBytes);
     var received = 0;
+    final started = DateTime.now();
+    final attempt = '$modelId:${started.microsecondsSinceEpoch}';
+    var result = 'interrupted';
+    // The history is a record, never a gate: a slow or failing store must
+    // not hold up or fail the transfer.
+    void history() => unawaited(
+      DownloadHistory.put(
+        DownloadRecord(
+          attempt: attempt,
+          modelId: modelId,
+          name: files.first.fileName,
+          result: result,
+          size: total,
+          date: started,
+        ),
+      ).catchError((_) {}),
+    );
     try {
+      history();
+      _log.info(
+        'Download $modelId: ${files.length} file(s), '
+        '${(total / 1048576).round()} MB',
+      );
       if (!await _admit(modelId, token) || token.isCancelled) {
         throw token.cancelError!;
       }
@@ -284,6 +310,11 @@ class DownloadManager {
         received = files.take(i + 1).fold(0, (sum, f) => sum + f.sizeBytes);
       }
       if (token.isCancelled) throw token.cancelError!;
+      result = 'completed';
+      _log.info(
+        'Download $modelId finished in '
+        '${DateTime.now().difference(started).inSeconds} s',
+      );
       _emit(
         DownloadProgress(
           modelId: modelId,
@@ -294,6 +325,10 @@ class DownloadManager {
       );
     } catch (e) {
       final paused = e is DioException && CancelToken.isCancel(e);
+      result = paused ? 'paused' : 'failed';
+      paused
+          ? _log.info('Download $modelId paused')
+          : _log.warning('Download $modelId failed: $e');
       _emit(
         DownloadProgress(
           modelId: modelId,
@@ -305,6 +340,7 @@ class DownloadManager {
       );
       rethrow;
     } finally {
+      history();
       _tokens.remove(modelId);
       _systemIds.remove(modelId);
       _release(modelId);
@@ -347,6 +383,11 @@ class DownloadManager {
       existing = 0;
     }
     received = existing;
+    if (existing > 0 && _system != null) {
+      // A pause may have preserved its prefix just before the process died.
+      // Remove the redundant OS writer before resuming the independent part.
+      await _system.cancel(systemId);
+    }
     // OS staging bytes already occupy disk after a restart. Reserve only
     // the remainder rather than requiring room for a second full copy.
     if (existing == 0 && _system != null) {
@@ -362,7 +403,7 @@ class DownloadManager {
         size: expectedSize,
       );
       // Enqueue can complete after Pause: remove the newly created job too.
-      if (token.isCancelled && !_disposed) await _system.cancel(systemId);
+      if (token.isCancelled && !_disposed) await _system.pause(systemId);
       var previous = 0;
       final clock = Stopwatch()..start();
       while (true) {
@@ -520,7 +561,7 @@ class DownloadManager {
     final at = _queue.indexWhere((entry) => entry.id == id);
     if (at >= 0) _queue.removeAt(at).ready.complete(false);
     for (final systemId in _systemIds[id] ?? [id]) {
-      await _system?.cancel(systemId);
+      await _system?.pause(systemId);
     }
     await finished?.future;
   }

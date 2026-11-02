@@ -6,4 +6,9 @@
     <string name="widget_talk">Hablar</string>
     <string name="widget_description">Pregunta a tu modelo en el dispositivo o habla con él.</string>
     <string name="model_download_description">Descarga del modelo; se verifica al reabrir la aplicación</string>
+    <string name="schedule_channel">Consultas programadas</string>
+    <string name="schedule_goal">Objetivo programado</string>
+    <string name="schedule_prompt">Consulta programada</string>
+    <string name="schedule_tap_goal">Toca para configurar: %1$s</string>
+    <string name="schedule_tap_ask">Toca para preguntar: %1$s</string>
 </resources>

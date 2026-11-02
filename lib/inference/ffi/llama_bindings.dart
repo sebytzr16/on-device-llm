@@ -98,6 +98,33 @@ class LlamaBindings {
           Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>),
           Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>)
         >('od_adapter_info');
+    if (lib.providesSymbol('od_side_open')) {
+      sideOpen = lib
+          .lookupFunction<
+            Pointer<Void> Function(Pointer<Void>, Pointer<Utf8>),
+            Pointer<Void> Function(Pointer<Void>, Pointer<Utf8>)
+          >('od_side_open');
+      sideSubmit = lib
+          .lookupFunction<
+            Int32 Function(Pointer<Void>, Int32, Pointer<Utf8>),
+            int Function(Pointer<Void>, int, Pointer<Utf8>)
+          >('od_side_submit');
+      sideStep = lib
+          .lookupFunction<
+            Pointer<Utf8> Function(Pointer<Void>),
+            Pointer<Utf8> Function(Pointer<Void>)
+          >('od_side_step');
+      sideCancel = lib
+          .lookupFunction<
+            Void Function(Pointer<Void>, Int32),
+            void Function(Pointer<Void>, int)
+          >('od_side_cancel');
+      sideClose = lib
+          .lookupFunction<
+            Void Function(Pointer<Void>),
+            void Function(Pointer<Void>)
+          >('od_side_close');
+    }
     if (lib.providesSymbol('od_estimate')) {
       estimate = lib
           .lookupFunction<
@@ -354,6 +381,11 @@ class LlamaBindings {
     throw StateError('No native bridge library could be loaded: $last');
   }
 
+  Pointer<Void> Function(Pointer<Void>, Pointer<Utf8>)? sideOpen;
+  int Function(Pointer<Void>, int, Pointer<Utf8>)? sideSubmit;
+  Pointer<Utf8> Function(Pointer<Void>)? sideStep;
+  void Function(Pointer<Void>, int)? sideCancel;
+  void Function(Pointer<Void>)? sideClose;
   late final Pointer<Void> Function(Pointer<Utf8>) create;
   late final void Function(Pointer<Void>) destroy;
   late final Pointer<Utf8> Function(Pointer<Void>) error, info;

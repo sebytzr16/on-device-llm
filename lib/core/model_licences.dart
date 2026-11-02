@@ -35,6 +35,16 @@ const modelLicences = <(String, String)>[
   ),
   ('Silero VAD', 'Silero VAD by Silero Team, licensed under the MIT License.'),
   (
+    'Supertonic 2',
+    'Supertonic 2 by Supertone: weights licensed under OpenRAIL-M '
+        '(including its use restrictions); code licensed under MIT. '
+        'Weights licence: https://huggingface.co/Supertone/supertonic-2/blob/main/LICENSE. '
+        'Code: https://github.com/supertone-inc/supertonic. '
+        'The app uses the unchanged multilingual int8 export from '
+        'https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models '
+        '(sherpa-onnx-supertonic-tts-int8-2026-03-06.tar.bz2).',
+  ),
+  (
     'sherpa-onnx',
     'sherpa-onnx by k2-fsa (Next-gen Kaldi), licensed under the Apache '
         'License 2.0; it bundles ONNX Runtime by Microsoft (MIT License).',

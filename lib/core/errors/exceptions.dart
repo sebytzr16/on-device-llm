@@ -13,6 +13,11 @@ class ModelLoadException extends AppException {
   String toString() => message;
 }
 
+/// The user stopped a model load (audit OR-02).
+class ModelLoadStopped extends ModelLoadException {
+  const ModelLoadStopped() : super('Loading stopped.');
+}
+
 String modelLoadErrorMessage(Object? error) {
   final message = error is AppException
       ? error.message

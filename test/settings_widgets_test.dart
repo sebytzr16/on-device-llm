@@ -53,7 +53,7 @@ void main() {
   testWidgets(
     'settings screen renders privacy card, model row and advanced rows',
     (tester) async {
-      tester.view.physicalSize = const Size(412, 4000);
+      tester.view.physicalSize = const Size(412, 6000);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(harness());
@@ -81,10 +81,9 @@ void main() {
       expect(find.text('4k ctx · auto batch · cache on'), findsOneWidget);
     },
   );
-  testWidgets('advanced row drills down to a slider page with mono values', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(412, 4000);
+  testWidgets("Sampling opens the active model's own settings", (tester) async {
+    // Sampling is per model (owner 2026-11-01): no app-wide page.
+    tester.view.physicalSize = const Size(412, 6000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(harness());
@@ -93,17 +92,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Sampling'));
     await tester.pumpAndSettle();
-    expect(find.text('Temperature'), findsOneWidget);
-    // The value rolls digit by digit; its accessible label is the number.
-    expect(find.bySemanticsLabel('0.70'), findsOneWidget);
-    expect(find.byType(Slider), findsNWidgets(5));
-    // Response length is a stepped choice; the current value is highlighted
-    // and a custom entry is offered.
-    expect(find.byKey(const Key('choice-Max tokens-1k')), findsOneWidget);
-    expect(find.byKey(const Key('choice-Max tokens-custom')), findsOneWidget);
+    expect(find.text('Test Model profile'), findsOneWidget);
+    expect(find.text('More sampling'), findsNothing);
   });
   testWidgets('hardware explains the explicit OpenCL tradeoff', (tester) async {
-    tester.view.physicalSize = const Size(412, 4000);
+    tester.view.physicalSize = const Size(412, 6000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(harness());
@@ -119,7 +112,7 @@ void main() {
   testWidgets('enabling web search asks for confirmation first', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(412, 4000);
+    tester.view.physicalSize = const Size(412, 6000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(harness());

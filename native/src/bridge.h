@@ -56,6 +56,15 @@ OD_API int32_t od_begin(void * handle, const char * request);
 // emit several tokens at once (speculative decoding) or none (a stop
 // sequence prefix is being held back).
 OD_API int32_t od_step(void * handle, uint8_t * output, int32_t capacity, int32_t * length);
+// Independent batched helper context sharing the runtime's immutable weights.
+// All side calls run on one worker. Runtime unload invalidates it before freeing weights.
+OD_API void * od_side_open(void * handle, const char * options);
+// 0 admitted, 1 retry after live work drains, -1 invalid request (owner, 2026-11-02).
+OD_API int32_t od_side_submit(void * side, int32_t seq, const char * request);
+// JSON events with token bytes, done and per-sequence metrics; valid until the next side call.
+OD_API const char * od_side_step(void * side);
+OD_API void od_side_cancel(void * side, int32_t seq);
+OD_API void od_side_close(void * side);
 // Embedding models (loaded with settings {"embedding": true}): request
 // {"texts": [...]} -> {"dim": n, "vectors": [[...], ...]}, L2-normalised.
 OD_API const char * od_embed(void * handle, const char * request);

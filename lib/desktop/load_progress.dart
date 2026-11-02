@@ -78,6 +78,15 @@ class ModelLoadProgress extends ConsumerWidget {
                 style: context.text.small.copyWith(color: c.textMuted),
               ),
             ),
+            // Any moment of a load can be stopped (owner request OR-02).
+            IconButton(
+              tooltip: context.l10n.stopLoading,
+              visualDensity: VisualDensity.compact,
+              iconSize: 16,
+              icon: const Icon(Icons.stop_circle_outlined),
+              onPressed: () =>
+                  ref.read(modelManagerProvider.notifier).stopLoad(),
+            ),
           ],
         ),
         const SizedBox(height: 6),

@@ -64,6 +64,8 @@ class QualityModels extends ModelManagerNotifier {
     ModelInfo info, {
     bool forChat = false,
     InferenceSettings? settings,
+    void Function()? onLoadStart,
+    bool vision = false,
   }) async {
     await ref
         .read(llamaEngineProvider)

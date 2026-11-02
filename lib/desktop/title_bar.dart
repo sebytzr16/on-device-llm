@@ -1,3 +1,4 @@
+import '../features/models/presentation/widgets/download_center.dart';
 import '../core/platform/desktop_preferences.dart';
 import 'model_visibility.dart';
 import 'package:flutter/material.dart';
@@ -74,6 +75,7 @@ class DesktopTitleBar extends ConsumerWidget {
                 ),
               ),
               const Spacer(),
+              const DownloadsButton(onlyWhenActive: true),
               const _CaptionButtons(),
             ],
           ),
@@ -168,6 +170,12 @@ class ModelPickerChip extends ConsumerWidget {
                 ? null
                 : () => _load(context, ref, m),
             child: Text(m.displayName),
+          ),
+        if (models.isLoadingModel)
+          MenuItemButton(
+            leadingIcon: const Icon(Icons.stop_rounded, size: 16),
+            onPressed: () => ref.read(modelManagerProvider.notifier).stopLoad(),
+            child: Text(context.l10n.desktopStopLoading),
           ),
         const Divider(height: 9),
         if (loaded != null)

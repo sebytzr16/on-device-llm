@@ -350,13 +350,31 @@ class EvidenceRanker {
   /// [targetChars]; a single oversized block is split at sentence ends.
   /// Wikipedia-style reference markers. Left in, small models copy them as
   /// citations ("[5]") that point at nothing (seen in the Qwen evaluation).
+  /// Not after `]` or `)` and not before `[`, `(`, `.x` or `=`: `m[i][j]`,
+  /// `arr[0].x` and `x[1] = 2` are code (audit P2-53).
   static final _refMarkers = RegExp(
-    r'\[(?:\d{1,3}|[a-z]|[ivx]{1,4}|citation needed|note \d+|clarification needed|when\?|who\?)\]',
+    r'(?<![\])])\[(?:\d{1,3}|[a-z]|[ivx]{1,4}|citation needed|note \d+|clarification needed|when\?|who\?)\](?![\[(=]|\.\w|\s*[=+\-*/]=?\s)',
     caseSensitive: false,
   );
 
-  static String stripReferenceMarkers(String text) =>
-      text.replaceAll(_refMarkers, '');
+  /// Fenced or inline code, and lines that read as code.
+  static final _codeSpans = RegExp(
+    r'```[\s\S]*?(?:```|(?![\s\S]))|`[^`\n]+`|^.*(?:[;{}]\s*$|^\s*(?:for|if|while|return|def|let|const|var|int|print)\b).*$',
+    multiLine: true,
+  );
+
+  static String stripReferenceMarkers(String text) {
+    final out = StringBuffer();
+    var at = 0;
+    for (final m in _codeSpans.allMatches(text)) {
+      out
+        ..write(text.substring(at, m.start).replaceAll(_refMarkers, ''))
+        ..write(m[0]);
+      at = m.end;
+    }
+    out.write(text.substring(at).replaceAll(_refMarkers, ''));
+    return out.toString();
+  }
 
   static List<EvidenceChunk> chunk(String text, {required int sourceIndex}) {
     text = stripReferenceMarkers(text);

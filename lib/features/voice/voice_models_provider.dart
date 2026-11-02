@@ -28,7 +28,9 @@ class VoiceModelsState {
   bool get canListen =>
       of(VoiceModels.listening).status == VoicePackStatus.ready ||
       of(VoiceModels.parakeet).status == VoicePackStatus.ready;
-  bool get canSpeak => of(VoiceModels.speaking).status == VoicePackStatus.ready;
+  bool get canSpeak => canSpeakWith('kokoro');
+  bool canSpeakWith(String preferred) =>
+      of(VoiceModels.speakingPack(preferred)).status == VoicePackStatus.ready;
 }
 
 /// Downloads, unpacks and removes the on-device voice (Whisper + VAD,
@@ -38,6 +40,17 @@ class VoiceModelsNotifier extends Notifier<VoiceModelsState> {
   DownloadManager? _downloader;
   final _active = <String>{};
   bool _alive = true;
+  int _batchEpoch = 0;
+  final _packEpochs = <String, int>{};
+
+  /// Download a selection until the user pauses any pack in the batch.
+  Future<void> downloadAll(Iterable<VoicePack> packs) async {
+    final epoch = ++_batchEpoch;
+    for (final pack in packs) {
+      if (!_alive || epoch != _batchEpoch) return;
+      await download(pack);
+    }
+  }
 
   DownloadManager get _dl => _downloader ??= DownloadManager();
 
@@ -83,12 +96,25 @@ class VoiceModelsNotifier extends Notifier<VoiceModelsState> {
 
   Future<void> download(VoicePack pack) async {
     if (!_active.add(pack.id)) return;
+    final epoch = _packEpochs[pack.id] ?? 0;
+    void check() {
+      if (!_alive || epoch != (_packEpochs[pack.id] ?? 0)) {
+        throw DioException(
+          requestOptions: RequestOptions(),
+          type: DioExceptionType.cancel,
+        );
+      }
+    }
+
     var done = 0;
     _set(pack, const VoicePackState(VoicePackStatus.downloading));
     try {
       await DownloadJobs.add(pack.downloadKey);
       for (final f in pack.files) {
-        if (await ModelStorage.exists(f.fileName)) {
+        check();
+        final exists = await ModelStorage.exists(f.fileName);
+        check();
+        if (exists) {
           done += f.sizeBytes;
           continue;
         }
@@ -115,6 +141,7 @@ class VoiceModelsNotifier extends Notifier<VoiceModelsState> {
         }
         done += f.sizeBytes;
       }
+      check();
       if (pack.unpackTo != null) {
         _set(pack, const VoicePackState(VoicePackStatus.unpacking));
         await VoiceModels.unpack(pack);
@@ -138,6 +165,8 @@ class VoiceModelsNotifier extends Notifier<VoiceModelsState> {
   }
 
   Future<void> pause(VoicePack pack) async {
+    _batchEpoch++;
+    _packEpochs[pack.id] = (_packEpochs[pack.id] ?? 0) + 1;
     for (final f in pack.files) {
       await _dl.pause('${pack.downloadKey}:${f.fileName}');
     }

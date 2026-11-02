@@ -532,6 +532,9 @@ class _ConversationsSheetState extends ConsumerState<ConversationsSheet> {
                       for (final c in chats)
                         if (c.folder != null) c.folder!,
                     }.toList()..sort();
+                    if (_folder != null && !folders.contains(_folder)) {
+                      _folder = null;
+                    }
                     if (_folder != null) {
                       filtered = filtered
                           .where((c) => c.folder == _folder)
@@ -574,11 +577,13 @@ class _ConversationsSheetState extends ConsumerState<ConversationsSheet> {
                             ? context.l10n.noConversations
                             : context.l10n.nothingMatches(_search.text.trim()),
                       );
-                      if (q.isNotEmpty) return empty;
                       return ListView(
                         children: [
-                          _SectionLabel(context.l10n.drawerWorkspace),
-                          workspaceCard,
+                          if (q.isEmpty) ...[
+                            _SectionLabel(context.l10n.drawerWorkspace),
+                            workspaceCard,
+                          ],
+                          ?folderBar,
                           empty,
                         ],
                       );

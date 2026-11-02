@@ -389,6 +389,30 @@ void main() {
       expect(loads, isEmpty);
     });
 
+    test(
+      'reserved chat cannot be borrowed before native generation starts',
+      () async {
+        var reserved = true;
+        final engine = _PoolEngine('chat');
+        final p = ModelPool(
+          primary: 'primary',
+          installed: () => [_model('a')],
+          load: (_, _) async => fail('Do not load a duplicate chat model'),
+          settingsOf: (_) => const InferenceSettings(),
+          newEngine: () => engine,
+          options: () => const PoolOptions(jit: true),
+          chatEngineFor: (_) => engine,
+          chatReserved: () => reserved,
+        );
+        addTearDown(p.close);
+        await expectLater(p.acquire('a'), throwsA(isA<RouteRefusal>()));
+        expect(p.usingChat, isFalse);
+        reserved = false;
+        expect(await p.acquire('a'), same(engine));
+        p.release('a');
+      },
+    );
+
     test('a failed load refuses and leaves nothing behind', () async {
       final p = pool(onLoad: (_) async => throw StateError('Out of memory.'));
       addTearDown(p.close);

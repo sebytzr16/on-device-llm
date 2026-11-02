@@ -253,6 +253,11 @@ class _SpringDialogRoute<T> extends DialogRoute<T> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
+    final current = context.motion;
+    if (!current.animates) return child;
+    if (!current.full) {
+      return FadeTransition(opacity: animation, child: child);
+    }
     _scale ??= CurvedAnimation(
       parent: animation,
       curve: SpringCurve(

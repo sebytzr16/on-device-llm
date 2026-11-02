@@ -50,17 +50,37 @@ class ToolMarkup {
   );
 
   /// [text] without any tool-call block or stray closing tag.
-  static String strip(String text) {
-    var t = text;
+  /// Code is kept as written: a `<tool_call>` example in a code block is
+  /// part of the answer (audit P2-52).
+  static String strip(String text) => _outsideCode(text, (t) {
     for (final r in _blocks) {
       t = t.replaceAll(r, '');
     }
-    return stripOrphans(t);
-  }
+    return t.replaceAll(_orphans, '');
+  }).trim();
 
   /// [text] without closing tags whose block is gone.
   static String stripOrphans(String text) =>
-      text.replaceAll(_orphans, '').trim();
+      _outsideCode(text, (t) => t.replaceAll(_orphans, '')).trim();
+
+  /// Fenced (but not ```tool) and inline code.
+  static final _code = RegExp(
+    r'```(?!tool)[^\n]*\n[\s\S]*?(?:```|$)|`[^`\n]+`',
+  );
+
+  /// [text] with [edit] applied to everything but code.
+  static String _outsideCode(String text, String Function(String) edit) {
+    final out = StringBuffer();
+    var at = 0;
+    for (final m in _code.allMatches(text)) {
+      out
+        ..write(edit(text.substring(at, m.start)))
+        ..write(m[0]);
+      at = m.end;
+    }
+    out.write(edit(text.substring(at)));
+    return out.toString();
+  }
 
   /// What may be shown of a streaming answer: everything before the first
   /// tool-call marker, holding back a marker that is still arriving.

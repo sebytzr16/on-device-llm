@@ -10,6 +10,9 @@ import 'tool_spec.dart';
 /// the runner as before).
 class ToolAliases {
   static const _names = {
+    'helper': 'ask_helper', 'sub_agent': 'ask_helper',
+    'ask_sub_agent': 'ask_helper', 'subagent': 'ask_helper',
+    'delegate': 'ask_helper', 'use_helper': 'ask_helper',
     // search_web
     'web_search': 'search_web', 'websearch': 'search_web',
     'searchweb': 'search_web', 'search': 'search_web',
@@ -64,6 +67,10 @@ class ToolAliases {
   /// The argument each tool cannot do without, and the other names models
   /// give it. A lone string argument goes to the first key.
   static const _args = <String, Map<String, List<String>>>{
+    'ask_helper': {
+      'task': ['prompt', 'instruction', 'question'],
+      'input': ['text', 'context'],
+    },
     'search_web': {
       'query': [
         'q',
@@ -139,6 +146,7 @@ class ToolAliases {
   };
 
   static const canonical = {
+    'ask_helper',
     'search_web',
     'search_news',
     'read_url',

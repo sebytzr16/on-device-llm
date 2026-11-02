@@ -22,11 +22,21 @@ class _LiveAnswer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final (answer, reasoning) = ref.watch(
-      chatProvider.select((s) => (s.partialAnswer, s.reasoning?.content)),
+    final (answer, reasoning, hasReasoning, notice) = ref.watch(
+      chatProvider.select(
+        (s) => (
+          s.partialAnswer,
+          s.reasoning?.content,
+          s.hasReasoningTokens,
+          s.notice,
+        ),
+      ),
     );
     return ChatBubble(
       streaming: true,
+      liveReasoningTitle: hasReasoning
+          ? null
+          : (notice?.isNotEmpty == true ? notice : context.l10n.liveWorking),
       modelName: modelName,
       message: ChatMessage(
         id: 'streaming',

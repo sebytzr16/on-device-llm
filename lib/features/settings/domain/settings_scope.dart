@@ -130,9 +130,12 @@ class SettingsResolver {
       // the app's defaults, below anything the user chose.
       SettingsLayer(SettingsLayer.idRecommended, recommendedLabel, rec),
       SettingsLayer(SettingsLayer.idGlobal, 'Your settings', {
-        ...diff(device, globalJson),
-        for (final k in global.explicitOverrides)
-          if (SettingSpec.byKey(k) != null) k: globalJson[k],
+        for (final e in {
+          ...diff(device, globalJson),
+          for (final k in global.explicitOverrides)
+            if (SettingSpec.byKey(k) != null) k: globalJson[k],
+        }.entries)
+          if (SettingSpec.byKey(e.key)?.perModel != true) e.key: e.value,
       }),
       SettingsLayer(SettingsLayer.idModel, modelLabel, sanitize(model)),
       SettingsLayer(SettingsLayer.idPreset, presetLabel, sanitize(preset)),

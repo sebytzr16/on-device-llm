@@ -6,4 +6,9 @@
     <string name="widget_talk">Talk</string>
     <string name="widget_description">Ask your on-device model, or talk to it.</string>
     <string name="model_download_description">Model download; verified when you reopen the app</string>
+    <string name="schedule_channel">Scheduled prompts</string>
+    <string name="schedule_goal">Scheduled goal</string>
+    <string name="schedule_prompt">Scheduled prompt</string>
+    <string name="schedule_tap_goal">Tap to set up: %1$s</string>
+    <string name="schedule_tap_ask">Tap to ask: %1$s</string>
 </resources>

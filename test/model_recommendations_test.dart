@@ -106,7 +106,7 @@ void main() {
   group('cascade', () {
     const rec = {'temperature': 1.0, 'topK': 64, 'repetitionPenalty': 1.0};
 
-    test('recommended values beat app defaults, not the user', () {
+    test('recommended values beat app defaults, not the model profile', () {
       var r = SettingsResolver.resolve(
         global: const InferenceSettings(),
         recommended: rec,
@@ -115,11 +115,13 @@ void main() {
       expect(r.effective.topK, 64);
       expect(r.originOf('temperature'), SettingsLayer.idRecommended);
       expect(r.overriddenKeys, isEmpty);
+      // Sampling is per model (owner 2026-11-01): an app-wide value no
+      // longer hides the model's own.
       r = SettingsResolver.resolve(
         global: const InferenceSettings(temperature: 0.3),
         recommended: rec,
       );
-      expect(r.effective.temperature, 0.3);
+      expect(r.effective.temperature, 1.0);
       expect(r.effective.topK, 64);
       r = SettingsResolver.resolve(
         global: const InferenceSettings(),

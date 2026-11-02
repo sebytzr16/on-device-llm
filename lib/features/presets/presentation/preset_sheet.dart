@@ -232,6 +232,14 @@ Future<Preset?> showPresetEditor(
                     value: 1.0,
                     child: Text(context.l10n.uiPresetSheet10Creative),
                   ),
+                  // Built-ins use values off the menu (0.2, 0.5): keep the
+                  // current one selectable rather than blank (P2-40).
+                  if (temperature != null &&
+                      !const [0.0, 0.3, 0.7, 1.0].contains(temperature))
+                    DropdownMenuItem(
+                      value: temperature,
+                      child: Text(temperature!.toStringAsFixed(1)),
+                    ),
                 ],
                 onChanged: (v) => setState(() => temperature = v),
               ),
@@ -275,15 +283,25 @@ Future<Preset?> showPresetEditor(
             key: const Key('preset-save'),
             onPressed: () => Navigator.pop(
               context,
-              Preset(
-                id: existing?.id ?? '',
-                name: name.text,
-                emoji: emoji.text,
-                systemPrompt: prompt.text.trim(),
-                temperature: temperature,
-                thinking: thinking,
-                webMode: webMode,
-              ),
+              // Built from [existing] so its "More" overrides survive (P1-28).
+              (existing ??
+                      const Preset(
+                        id: '',
+                        name: '',
+                        emoji: '',
+                        systemPrompt: '',
+                      ))
+                  .copyWith(
+                    name: name.text,
+                    emoji: emoji.text,
+                    systemPrompt: prompt.text.trim(),
+                    temperature: temperature,
+                    clearTemperature: temperature == null,
+                    thinking: thinking,
+                    clearThinking: thinking == null,
+                    webMode: webMode,
+                    clearWebMode: webMode == null,
+                  ),
             ),
             child: Text(context.l10n.save),
           ),

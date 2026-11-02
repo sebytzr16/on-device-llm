@@ -103,6 +103,25 @@ void main() {
       InstantAnswers.parseForecast('garbage', requested: 'Toronto'),
       isNull,
     );
+    // The whole place is compared, not its first word (P2-48).
+    expect(InstantAnswers.samePlace('London UK', 'London, Canada'), isFalse);
+    expect(
+      InstantAnswers.samePlace('London UK', 'London, United Kingdom'),
+      isTrue,
+    );
+    expect(InstantAnswers.samePlace('London', 'London, Canada'), isTrue);
+    expect(
+      InstantAnswers.samePlace('New York', 'Newark, United States'),
+      isFalse,
+    );
+    expect(
+      InstantAnswers.samePlace('New York, USA', 'New York, United States'),
+      isTrue,
+    );
+    expect(
+      InstantAnswers.samePlace('Toronto, Canada', 'Toronto, Canada'),
+      isTrue,
+    );
   });
 
   test(

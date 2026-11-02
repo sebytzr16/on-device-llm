@@ -36,6 +36,29 @@ Future<TuneReport> _run(_Runner runner) => ModelTuner(runner).run(
 );
 
 void main() {
+  test(
+    'estimateFits uses the native admission budget including total RAM reserve',
+    () {
+      const settings = InferenceSettings();
+      expect(
+        TuneBenchmarkRun.estimateFits({
+          'ramNeedMb': 15000,
+          'ramAvailableMb': 18000,
+          'ramBudgetMb': 14000,
+        }, settings),
+        isFalse,
+      );
+      expect(
+        TuneBenchmarkRun.estimateFits({
+          'ramNeedMb': 4000,
+          'ramAvailableMb': 18000,
+          'ramBudgetMb': 14000,
+          'ramPagedMb': 20000,
+        }, settings),
+        isTrue,
+      );
+    },
+  );
   setUp(() => SharedPreferences.setMockInitialValues({}));
   test('optimization measures threads and batch without changing MTP Auto', () {
     final candidates = modelTuneCandidates(const InferenceSettings());

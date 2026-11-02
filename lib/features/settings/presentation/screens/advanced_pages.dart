@@ -16,14 +16,12 @@ import '../../../chat/presentation/providers/chat_provider.dart';
 import '../../../chat/presentation/providers/search_misses.dart';
 import '../../../zim/zim_tile.dart';
 import '../../domain/entities/inference_settings.dart';
-import '../../domain/setting_specs.dart';
-import '../../domain/settings_scope.dart';
-import '../providers/effective_settings_provider.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/settings_labels.dart';
 import '../widgets/settings_widgets.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/design/app_dialog.dart';
+import '../../../../core/platform/form_factor.dart';
 
 /// Layer 3 (North Star 6.6): each advanced group is its own pushed page so
 /// the main settings screen stays short.
@@ -69,7 +67,9 @@ class ContextBatchPage extends ConsumerWidget {
           children: [
             SettingChoice<int>(
               label: context.l10n.uiAdvancedPagesContextSize,
-              hint: context.l10n.uiAdvancedPagesTokensTheModelCanSeeAt,
+              hint: (context.isDesktop
+                  ? context.l10n.uiAdvancedPagesTokensTheModelCanSeeAtPc
+                  : context.l10n.uiAdvancedPagesTokensTheModelCanSeeAt),
               value: s.contextSize,
               options: contextPresets,
               labelOf: tokenCount,
@@ -126,8 +126,13 @@ class ContextBatchPage extends ConsumerWidget {
               ),
             SettingChoice<int>(
               label: context.l10n.uiAdvancedPagesBatchSize,
-              hint:
-                  context.l10n.uiAdvancedPagesPromptTokensSubmittedPerStepAuto,
+              hint: (context.isDesktop
+                  ? context
+                        .l10n
+                        .uiAdvancedPagesPromptTokensSubmittedPerStepAutoPc
+                  : context
+                        .l10n
+                        .uiAdvancedPagesPromptTokensSubmittedPerStepAuto),
               value: s.batchSize,
               options: batchPresets,
               labelOf: (v) => v == 0 ? 'Auto' : '$v',
@@ -251,141 +256,6 @@ class HardwarePage extends ConsumerWidget {
   }
 }
 
-class SamplingPage extends ConsumerWidget {
-  const SamplingPage({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final s = ref.watch(settingsProvider);
-    final n = ref.read(settingsProvider.notifier);
-    // Request 2026-10-04: a key the user never set shows what the
-    // loaded model's makers recommend, which is what the sampler uses.
-    final r = ref.watch(effectiveSettingsProvider);
-    final layer = r.layers
-        .where((l) => l.id == SettingsLayer.idRecommended)
-        .firstOrNull;
-    final rec = layer?.values ?? const <String, dynamic>{};
-    final saved = s.toJson(), device = n.defaults.toJson();
-    bool own(String k) => '${saved[k]}' != '${device[k]}';
-    final v = InferenceSettings.fromJson({
-      ...saved,
-      for (final e in rec.entries)
-        if (!own(e.key)) e.key: e.value,
-    });
-    final mine = [
-      for (final k in rec.keys)
-        if (own(k)) k,
-    ];
-    return _AdvancedScaffold(
-      title: context.l10n.uiAdvancedPagesSampling,
-      children: [
-        if (rec.isNotEmpty)
-          SettingsNote(
-            mine.isEmpty
-                ? '${layer!.label}: ${rec.entries.map((e) => '${SettingSpec.byKey(e.key)?.label ?? e.key} ${SettingSpec.byKey(e.key)?.display(e.value) ?? e.value}').join(', ')}. Moving a slider sets your own value for every model.'
-                : 'Your values for ${mine.map((k) => SettingSpec.byKey(k)?.label ?? k).join(', ')} replace what this model recommends.',
-            icon: Icons.auto_awesome_outlined,
-          ),
-        if (mine.isNotEmpty)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              key: const Key('use-recommended-sampling'),
-              icon: const Icon(Icons.restart_alt, size: 18),
-              label: const Text("Use the model's recommended values"),
-              onPressed: () => n.update(
-                InferenceSettings.fromJson({
-                  ...saved,
-                  for (final k in mine) k: device[k],
-                }).copyWith(remoteApiKeys: s.remoteApiKeys),
-              ),
-            ),
-          ),
-        SettingsGroup(
-          children: [
-            SettingSlider(
-              label: context.l10n.uiAdvancedPagesTemperature,
-              hint: context
-                  .l10n
-                  .uiAdvancedPagesRandomnessLowerIsMoreFocusedHigher,
-              value: v.temperature,
-              min: 0,
-              max: 2,
-              divisions: 40,
-              display: v.temperature.toStringAsFixed(2),
-              onChanged: (v) => n.update(s.copyWith(temperature: v)),
-            ),
-            SettingSlider(
-              label: context.l10n.uiAdvancedPagesTopP,
-              hint: context.l10n.uiAdvancedPagesSampleFromTheSmallestSetOf,
-              value: v.topP,
-              min: 0,
-              max: 1,
-              divisions: 100,
-              display: v.topP.toStringAsFixed(2),
-              onChanged: (v) => n.update(s.copyWith(topP: v)),
-            ),
-            SettingSlider(
-              label: context.l10n.uiAdvancedPagesMinP,
-              hint: context.l10n.uiAdvancedPagesDropTokensLessLikelyThanThis,
-              value: v.minP,
-              min: 0,
-              max: 1,
-              divisions: 100,
-              display: v.minP.toStringAsFixed(2),
-              onChanged: (v) => n.update(s.copyWith(minP: v)),
-            ),
-            SettingSlider(
-              label: context.l10n.uiAdvancedPagesTopK,
-              hint: context.l10n.uiAdvancedPagesOnlyTheKMostLikelyTokens,
-              value: v.topK.toDouble(),
-              min: 0,
-              max: 200,
-              divisions: 200,
-              display: '${v.topK}',
-              onChanged: (v) => n.update(s.copyWith(topK: v.round())),
-            ),
-            SettingSlider(
-              label: context.l10n.uiAdvancedPagesRepetitionPenalty,
-              hint: context
-                  .l10n
-                  .uiAdvancedPagesDiscouragesRepeatingRecentTokens100,
-              value: v.repetitionPenalty,
-              min: 1.0,
-              max: 2.0,
-              divisions: 20,
-              display: v.repetitionPenalty.toStringAsFixed(2),
-              onChanged: (v) => n.update(s.copyWith(repetitionPenalty: v)),
-            ),
-            SettingChoice<int>(
-              label: context.l10n.uiAdvancedPagesMaxTokens,
-              hint:
-                  context.l10n.uiAdvancedPagesUpperBoundOnOneResponseReasoning,
-              value: s.maxTokens,
-              options: responsePresets,
-              labelOf: tokenCount,
-              onChanged: (v) => n.update(s.copyWith(maxTokens: v)),
-              onCustom: () async {
-                final v = await askInteger(
-                  context,
-                  title: context.l10n.uiAdvancedPagesMaxTokensPerResponse,
-                  current: s.maxTokens,
-                  min: InferenceSettings.minResponseTokens,
-                  max: InferenceSettings.maxResponseTokens,
-                );
-                if (v != null) await n.update(s.copyWith(maxTokens: v));
-              },
-            ),
-          ],
-        ),
-        const SettingsNote(
-          'Sampling changes take effect on the next response.',
-        ),
-      ],
-    );
-  }
-}
-
 class ReasoningSearchPage extends ConsumerWidget {
   const ReasoningSearchPage({super.key});
 
@@ -444,14 +314,17 @@ class ReasoningSearchPage extends ConsumerWidget {
               icon: Icons.language_rounded,
               key: const Key('search-region'),
               label: context.l10n.uiAdvancedPagesSearchAndNewsRegion,
-              hint: context.l10n.searchRegionHint(
-                _regionName(
-                  DuckDuckGoScraper.regionFor(
-                    s.localeCode,
-                    localeName: Platform.localeName,
+              hint:
+                  (context.isDesktop
+                  ? context.l10n.searchRegionHintPc
+                  : context.l10n.searchRegionHint)(
+                    _regionName(
+                      DuckDuckGoScraper.regionFor(
+                        s.localeCode,
+                        localeName: Platform.localeName,
+                      ),
+                    ),
                   ),
-                ),
-              ),
               value: s.searchRegion,
               items: ['', ...InferenceSettings.searchRegions],
               labelOf: (v) => v.isEmpty
@@ -497,7 +370,9 @@ class ReasoningSearchPage extends ConsumerWidget {
               leading: const Icon(Icons.travel_explore),
               title: Text(context.l10n.searchMissesTitle),
               subtitle: Text(
-                context.l10n.searchMissesHint(
+                (context.isDesktop
+                    ? context.l10n.searchMissesHintPc
+                    : context.l10n.searchMissesHint)(
                   ref.watch(searchMissesProvider).length,
                 ),
               ),
@@ -670,6 +545,7 @@ String _regionName(String region) => switch (region) {
   'it-it' => 'Italia',
   'es-es' => 'España',
   'mx-es' => 'México',
+  'ue-es' => 'Estados Unidos (español)',
   'br-pt' => 'Brasil',
   'jp-jp' => 'Japan',
   'wt-wt' => 'No region',

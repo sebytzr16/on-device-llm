@@ -1,3 +1,4 @@
+import '../../../shortcuts/presentation/slash_command_composer.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,7 +16,6 @@ import '../../../models/presentation/widgets/model_picker_sheet.dart';
 import '../../../presets/presentation/preset_sheet.dart';
 import '../../../presets/presentation/providers/presets_provider.dart';
 import '../../../shortcuts/domain/prompt_shortcut.dart';
-import '../../../shortcuts/presentation/shortcuts_page.dart';
 import '../../../shortcuts/prompt_shortcuts_provider.dart';
 import '../../../voice/voice_service.dart';
 import '../../../settings/domain/entities/inference_settings.dart';
@@ -416,19 +416,24 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                   ),
                 ),
                 Expanded(
-                  child: TextField(
-                    key: const Key('message-input'),
+                  child: SlashCommandComposer(
                     controller: widget.controller,
-                    focusNode: widget.focusNode,
-                    minLines: 1,
-                    maxLines: 6,
-                    textInputAction: TextInputAction.newline,
-                    style: context.text.body,
-                    decoration: InputDecoration(
-                      hintMaxLines: 1,
-                      hintText: voice.listening
-                          ? context.l10n.listening
-                          : context.l10n.messageHint,
+                    onSubmit: widget.onSend,
+                    enabled: !busy && !widget.textOnly,
+                    child: TextField(
+                      key: const Key('message-input'),
+                      controller: widget.controller,
+                      focusNode: widget.focusNode,
+                      minLines: 1,
+                      maxLines: 6,
+                      textInputAction: TextInputAction.newline,
+                      style: context.text.body,
+                      decoration: InputDecoration(
+                        hintMaxLines: 1,
+                        hintText: voice.listening
+                            ? context.l10n.listening
+                            : context.l10n.messageHint,
+                      ),
                     ),
                   ),
                 ),
@@ -584,52 +589,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
         ),
       );
     }
-    if (busy || matches.isEmpty) return null;
-    return Padding(
-      key: const ValueKey('shortcuts'),
-      padding: const EdgeInsets.only(top: AppDesign.sm),
-      child: SizedBox(
-        height: 32,
-        child: ListView(
-          key: const Key('shortcut-suggestions'),
-          scrollDirection: Axis.horizontal,
-          physics: const ClampingScrollPhysics(),
-          children: [
-            for (final (i, s) in matches.indexed)
-              _Cascade(
-                index: i,
-                child: Tooltip(
-                  message: s.description,
-                  child: ActionChip(
-                    key: Key('shortcut-${s.name}'),
-                    visualDensity: VisualDensity.compact,
-                    label: Text('/${s.name}'),
-                    labelStyle: context.text.mono.copyWith(color: c.accent),
-                    onPressed: () {
-                      widget.controller.value = TextEditingValue(
-                        text: '/${s.name} ',
-                        selection: TextSelection.collapsed(
-                          offset: s.name.length + 2,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ActionChip(
-              key: const Key('shortcut-manage'),
-              visualDensity: VisualDensity.compact,
-              avatar: const Icon(Icons.tune, size: 14),
-              label: Text(context.l10n.composerManageShortcuts),
-              labelStyle: context.text.mono.copyWith(color: c.textMuted),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const ShortcutsPage()),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    return null;
   }
 }
 

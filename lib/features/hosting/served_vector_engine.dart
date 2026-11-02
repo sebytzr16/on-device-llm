@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'dart:math' as math;
+
+import '../../core/platform/device_info.dart';
 
 import '../../inference/engine/llama_engine.dart';
 import 'device_model_server.dart';
@@ -6,7 +9,10 @@ import 'device_model_server.dart';
 /// Keeps embedding work on its own worker and loaded model.
 class LocalServedVectorEngine extends ServedVectorEngine {
   final String? Function(String id) modelPath;
-  final LlamaEngine _engine = LlamaEngine();
+  final LlamaEngine _engine = LlamaEngine(
+    owner: NativeOwner.id,
+    onLibrary: (library) => unawaited(NativeOwner.report(library)),
+  );
   bool _busy = false;
 
   final Map<String, String> Function()? availableModels;

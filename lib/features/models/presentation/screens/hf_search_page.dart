@@ -1,3 +1,6 @@
+import '../widgets/model_capabilities.dart';
+import '../widgets/hf_model_card.dart';
+import '../widgets/model_brand.dart';
 import '../../../../core/l10n/l10n.dart';
 import 'dart:async';
 
@@ -169,17 +172,27 @@ class _HfSearchPageState extends ConsumerState<HfSearchPage> {
                         );
                         return ListTile(
                           key: Key('hf-repo-$i'),
+                          leading: ModelBrandIcon(r.id),
                           title: Text(
                             r.id,
                             style: context.text.mono.copyWith(color: c.text),
                           ),
-                          subtitle: Text(
-                            '${context.l10n.hfRepoStats(_count(r.downloads), r.likes)}'
-                            '${r.lastModified != null ? ' · ${r.lastModified!.toIso8601String().substring(0, 10)}' : ''}'
-                            '${have ? ' · ${context.l10n.hfInLibrary}' : ''}',
-                            style: context.text.mono.copyWith(
-                              color: c.textFaint,
-                            ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ModelCapabilityBadges(
+                                tags: r.tags,
+                                showFit: false,
+                              ),
+                              Text(
+                                '${context.l10n.hfRepoStats(_count(r.downloads), r.likes)}'
+                                '${r.lastModified != null ? ' · ${r.lastModified!.toIso8601String().substring(0, 10)}' : ''}'
+                                '${have ? ' · ${context.l10n.hfInLibrary}' : ''}',
+                                style: context.text.mono.copyWith(
+                                  color: c.textFaint,
+                                ),
+                              ),
+                            ],
                           ),
                           trailing: Icon(
                             Icons.chevron_right,
@@ -233,6 +246,13 @@ class _FilesSheet extends StatelessWidget {
                   slivers: [
                     SliverList.list(
                       children: [
+                        ModelBrandIcon(files.repo),
+                        ModelCapabilityBadges(
+                          tags: files.tags,
+                          contextLength: files.contextLength,
+                          showFit: false,
+                        ),
+                        HfModelCard(files: files),
                         if (usable.isEmpty)
                           Text(
                             context
@@ -255,11 +275,25 @@ class _FilesSheet extends StatelessWidget {
                             f.displayName,
                             style: context.text.mono.copyWith(color: c.text),
                           ),
-                          subtitle: Text(
-                            '${ModelQuantization.tagOf(f.name) ?? f.quantization.name.toUpperCase()} · ${(files.totalSize(f) / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB',
-                            style: context.text.mono.copyWith(
-                              color: c.textFaint,
-                            ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ModelCapabilityBadges(
+                                model: HuggingFace.modelFor(
+                                  files,
+                                  f,
+                                  HuggingFace.guessFamily(files.repo),
+                                ),
+                                tags: files.tags,
+                                contextLength: files.contextLength,
+                              ),
+                              Text(
+                                '${ModelQuantization.tagOf(f.name) ?? f.quantization.name.toUpperCase()} · ${(files.totalSize(f) / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB',
+                                style: context.text.mono.copyWith(
+                                  color: c.textFaint,
+                                ),
+                              ),
+                            ],
                           ),
                           trailing: const Icon(
                             Icons.add_circle_outline,

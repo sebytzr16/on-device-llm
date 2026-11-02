@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 
 import 'package:dio/dio.dart';
+import 'package:logging/logging.dart';
 
 import '../../core/errors/exceptions.dart';
 import '../../features/settings/domain/entities/inference_settings.dart';
@@ -11,6 +13,7 @@ import '../../features/tools/domain/tool_spec.dart';
 import '../engine/text_engine.dart';
 import 'remote_provider.dart';
 import 'remote_usage.dart';
+import '../../core/l10n/l10n.dart';
 
 /// A model the remote provider offers.
 class RemoteModel {
@@ -64,6 +67,8 @@ class RemoteServerReport {
 /// (`reasoning_content`/`reasoning` on OpenAI-style servers, `thinking`
 /// blocks on Anthropic, `thought` parts on Gemini) is re-emitted inside
 /// `<think>` tags so the rest of the app treats it like on-device thinking.
+final _log = Logger('remote');
+
 class RemoteEngine implements TextEngine {
   final Dio _dio;
   final RemoteUsageLog usage;
@@ -74,6 +79,7 @@ class RemoteEngine implements TextEngine {
   /// Gemini attaches a thought signature to function calls that must be
   /// echoed with the call on the next request; kept by call id.
   final _geminiSignatures = <String, String>{};
+  final _anthropicThinking = <String, List<Map<String, Object>>>{};
 
   /// Gemini models that rejected `thinkingConfig` this session, and the
   /// thinking levels each model rejected.
@@ -244,42 +250,49 @@ class RemoteEngine implements TextEngine {
 
   static InferenceException _explain(Object e, Uri base) {
     if (e is RemoteLimitReached) return InferenceException(e.message);
+    final t = appStrings;
+    final address =
+        '${base.host}${base.hasPort ? ':${base.port}' : ''}${base.path}';
     if (e is DioException) {
       final status = e.response?.statusCode;
       final body = e.response?.data;
       final detail = _errorMessage(body);
+      // The provider's own message, else this app's hint.
+      String explained(String what, [String hint = '']) => detail.isNotEmpty
+          ? '$what: $detail'
+          : hint.isEmpty
+          ? '$what.'
+          : '$what. $hint';
       if (_terminalQuota.hasMatch(detail)) return InferenceException(detail);
       if (status == 401 || status == 403) {
-        return InferenceException(
-          'The server rejected the API key (HTTP $status)${detail.isEmpty ? '.' : ': $detail'}',
-        );
+        return InferenceException(explained(t.remoteKeyRejected('$status')));
       }
       if (status == 404) {
         return InferenceException(
-          'No API at ${base.host}${base.hasPort ? ':${base.port}' : ''}${base.path} (HTTP 404)${detail.isEmpty ? '. Check the URL, the model ID and that the server is started.' : ': $detail'}',
+          explained(t.remoteNoApi(address), t.remoteNoApiHint),
         );
       }
       if (status == 429) {
         return InferenceException(
-          'The provider is rate-limiting this key (HTTP 429)${detail.isEmpty ? '. Wait a moment or set a request cap in the connection settings.' : ': $detail'}',
+          explained(t.remoteRateLimited, t.remoteRateLimitedHint),
         );
       }
       if (status != null) {
-        return InferenceException(
-          'Server error HTTP $status${detail.isEmpty ? '' : ': $detail'}',
-        );
+        return InferenceException(explained(t.remoteServerError('$status')));
       }
       if (e.type == DioExceptionType.connectionTimeout ||
           e.type == DioExceptionType.connectionError) {
         return InferenceException(
-          'Cannot reach ${base.host}${base.hasPort ? ':${base.port}' : ''}. Is the server running and the VPN/LAN connected?',
+          t.remoteUnreachable(
+            '${base.host}${base.hasPort ? ':${base.port}' : ''}',
+          ),
         );
       }
       if (e.type == DioExceptionType.cancel) {
         return const InferenceException('Cancelled');
       }
     }
-    return InferenceException('Remote server: $e');
+    return InferenceException(t.remoteFailed('$e'));
   }
 
   // Exhausted daily/credit quotas cannot be repaired by dropping sampling or
@@ -548,6 +561,11 @@ class RemoteEngine implements TextEngine {
     return hosted ? max(settings.contextSize, 32768) : settings.contextSize;
   }
 
+  /// Reads and encodes a photo off the UI isolate: a large one would
+  /// otherwise hitch the send (P3-26).
+  static Future<String> _base64File(String path) =>
+      Isolate.run(() => base64Encode(File(path).readAsBytesSync()));
+
   static String _mediaType(String path) {
     final ext = path.toLowerCase().split('.').last;
     return switch (ext) {
@@ -606,12 +624,10 @@ class RemoteEngine implements TextEngine {
       }
       final parts = <Map<String, Object>>[];
       for (final path in images) {
-        final bytes = await File(path).readAsBytes();
+        final data = await _base64File(path);
         parts.add({
           'type': 'image_url',
-          'image_url': {
-            'url': 'data:${_mediaType(path)};base64,${base64Encode(bytes)}',
-          },
+          'image_url': {'url': 'data:${_mediaType(path)};base64,$data'},
         });
       }
       if (text.isNotEmpty) parts.add({'type': 'text', 'text': text});
@@ -636,7 +652,10 @@ class RemoteEngine implements TextEngine {
   /// blocks on the following user turn. Consecutive same-role turns are
   /// merged, which is what the API expects for several results at once.
   static Future<({String system, List<Map<String, Object>> messages})>
-  anthropicMessages(List<Map<String, Object>> messages) async {
+  anthropicMessages(
+    List<Map<String, Object>> messages, {
+    Map<String, List<Map<String, Object>>> thinking = const {},
+  }) async {
     final system = StringBuffer();
     final out = <Map<String, Object>>[];
     void add(String role, List<Map<String, Object>> blocks) {
@@ -658,7 +677,10 @@ class RemoteEngine implements TextEngine {
         continue;
       }
       if (m['tool_calls'] is List) {
+        final firstCall = (m['tool_calls'] as List).firstOrNull;
+        final id = firstCall is Map ? '${firstCall['id'] ?? ''}' : '';
         add('assistant', [
+          ...thinking[id] ?? const [],
           if (text.isNotEmpty) {'type': 'text', 'text': text},
           for (final c in m['tool_calls'] as List)
             if (c is Map)
@@ -688,7 +710,7 @@ class RemoteEngine implements TextEngine {
           'source': {
             'type': 'base64',
             'media_type': _mediaType(path),
-            'data': base64Encode(await File(path).readAsBytes()),
+            'data': await _base64File(path),
           },
         });
       }
@@ -765,7 +787,7 @@ class RemoteEngine implements TextEngine {
         parts.add({
           'inlineData': {
             'mimeType': _mediaType(path),
-            'data': base64Encode(await File(path).readAsBytes()),
+            'data': await _base64File(path),
           },
         });
       }
@@ -804,6 +826,9 @@ class RemoteEngine implements TextEngine {
     _cancel = cancel;
     final controller = StreamController<String>(onCancel: cancel.cancel);
     final started = DateTime.now();
+    _log.info(
+      '${provider.name} request to ${base.host}, model ${profile.model}',
+    );
     DateTime? first, last, answered;
     var tokens = 0;
     int? promptTokens, completionTokens;
@@ -883,13 +908,6 @@ class RemoteEngine implements TextEngine {
 
     Future<void> run() async {
       try {
-        await usage.charge(
-          profile.id,
-          profile.model,
-          profile.limit,
-          label:
-              '${profile.model.trim().isEmpty ? 'the default model' : profile.model.trim()} on ${profile.label}',
-        );
         final Uri uri;
         final Map<String, Object?> body;
         switch (provider.protocol) {
@@ -909,6 +927,7 @@ class RemoteEngine implements TextEngine {
               settings,
               assistantPrefix,
               tools,
+              toolChoice,
             );
           case RemoteProtocol.gemini:
             final model = settings.remoteModel.trim().isEmpty
@@ -943,7 +962,19 @@ class RemoteEngine implements TextEngine {
         var refusals = 0;
         var busy = 0;
         while (true) {
+          int? charged;
           try {
+            charged = await usage.charge(
+              profile.id,
+              profile.model,
+              profile.limit,
+              label:
+                  '${profile.model.trim().isEmpty ? 'the default model' : profile.model.trim()} on ${profile.label}',
+            );
+            if (cancel.isCancelled) {
+              unawaited(usage.refund(profile.id, profile.model, charged));
+              return;
+            }
             waitingSince = DateTime.now();
             try {
               res = await post(body);
@@ -954,6 +985,13 @@ class RemoteEngine implements TextEngine {
             break;
           } on DioException catch (e) {
             final status = e.response?.statusCode;
+            // A request that never reached the provider is not counted
+            // against its caps (P3-25).
+            if (charged != null &&
+                e.response == null &&
+                e.type == DioExceptionType.connectionError) {
+              unawaited(usage.refund(profile.id, profile.model, charged));
+            }
             await _withBody(e);
             final detail = _errorMessage(e.response?.data);
             if (_terminalQuota.hasMatch(detail)) rethrow;
@@ -999,6 +1037,9 @@ class RemoteEngine implements TextEngine {
         // Anthropic block index → kind, so deltas know where they belong.
         final blockKinds = <int, String>{};
         final blockSlots = <int, int>{};
+        final inputDeltas = <int>{};
+        final thinkingBlocks = <int, Map<String, Object>>{};
+        var terminal = false;
         var pending = '';
         await for (final text in res.data!.stream.cast<List<int>>().transform(
           const Utf8Decoder(allowMalformed: true),
@@ -1006,14 +1047,23 @@ class RemoteEngine implements TextEngine {
           // Utf8Decoder is stateful across transport chunks, so a multibyte
           // character split by TCP is not replaced with U+FFFD.
           pending += text;
+          // Lines are cut by index and the rest is kept once per chunk: a
+          // large buffered chunk is not copied once per line (P3-24).
+          var start = 0;
           while (true) {
-            final nl = pending.indexOf('\n');
-            if (nl < 0) break;
-            final line = pending.substring(0, nl).trim();
-            pending = pending.substring(nl + 1);
+            final nl = pending.indexOf('\n', start);
+            if (nl < 0) {
+              pending = pending.substring(start);
+              break;
+            }
+            final line = pending.substring(start, nl).trim();
+            start = nl + 1;
             if (!line.startsWith('data:')) continue;
             final payload = line.substring(5).trim();
-            if (payload == '[DONE]') continue;
+            if (payload == '[DONE]') {
+              terminal = true;
+              continue;
+            }
             final Map<String, dynamic> json;
             try {
               json = jsonDecode(payload) as Map<String, dynamic>;
@@ -1022,6 +1072,9 @@ class RemoteEngine implements TextEngine {
             }
             switch (provider.protocol) {
               case RemoteProtocol.openai:
+                if (json['error'] != null) {
+                  throw InferenceException(_errorMessage(json));
+                }
                 final u = json['usage'];
                 if (u is Map) {
                   promptTokens = (u['prompt_tokens'] as num?)?.toInt();
@@ -1032,6 +1085,7 @@ class RemoteEngine implements TextEngine {
                 final choice = choices.first as Map;
                 if (choice['finish_reason'] is String) {
                   finish = choice['finish_reason'] as String;
+                  terminal = true;
                 }
                 final delta = choice['delta'];
                 if (delta is! Map) continue;
@@ -1075,6 +1129,8 @@ class RemoteEngine implements TextEngine {
                     throw InferenceException(
                       'Anthropic: ${err is Map ? err['message'] ?? err : err}',
                     );
+                  case 'message_stop':
+                    terminal = true;
                   case 'message_start':
                     final u = (json['message'] as Map?)?['usage'];
                     if (u is Map) {
@@ -1086,13 +1142,16 @@ class RemoteEngine implements TextEngine {
                     if (block is! Map) continue;
                     final kind = '${block['type']}';
                     blockKinds[index] = kind;
+                    if (kind == 'thinking' || kind == 'redacted_thinking') {
+                      thinkingBlocks[index] = Map<String, Object>.from(block);
+                    }
                     if (kind == 'tool_use') {
                       final slot = calls.length;
                       blockSlots[index] = slot;
                       calls[slot] = {
                         'id': '${block['id'] ?? ''}',
                         'name': '${block['name'] ?? ''}',
-                        'arguments': '',
+                        'arguments': jsonEncode(block['input'] ?? const {}),
                       };
                     }
                   case 'content_block_delta':
@@ -1103,12 +1162,26 @@ class RemoteEngine implements TextEngine {
                       case 'text_delta':
                         emitContent('${delta['text'] ?? ''}');
                         tick();
+                      case 'signature_delta':
+                        final block = thinkingBlocks[index];
+                        if (block != null) {
+                          block['signature'] =
+                              '${block['signature'] ?? ''}${delta['signature'] ?? ''}';
+                        }
                       case 'thinking_delta':
+                        final block = thinkingBlocks[index];
+                        if (block != null) {
+                          block['thinking'] =
+                              '${block['thinking'] ?? ''}${delta['thinking'] ?? ''}';
+                        }
                         emitThink('${delta['thinking'] ?? ''}');
                         tick();
                       case 'input_json_delta':
                         final slot = blockSlots[index];
                         if (slot != null) {
+                          if (inputDeltas.add(index)) {
+                            calls[slot]!['arguments'] = '';
+                          }
                           calls[slot]!['arguments'] =
                               '${calls[slot]!['arguments'] ?? ''}${delta['partial_json'] ?? ''}';
                         }
@@ -1148,7 +1221,9 @@ class RemoteEngine implements TextEngine {
                   final feedback = json['promptFeedback'];
                   if (feedback is Map && feedback['blockReason'] != null) {
                     throw InferenceException(
-                      'Gemini blocked the prompt (${feedback['blockReason']}).',
+                      appStrings.remoteGeminiBlocked(
+                        '${feedback['blockReason']}',
+                      ),
                     );
                   }
                   continue;
@@ -1189,6 +1264,30 @@ class RemoteEngine implements TextEngine {
             }
           }
         }
+        if (provider.protocol == RemoteProtocol.openai && !terminal) {
+          throw InferenceException(appStrings.remoteStreamEnded);
+        }
+        if (calls.isNotEmpty &&
+            const {'length', 'max_tokens', 'MAX_TOKENS'}.contains(finish)) {
+          throw const InferenceException('Remote tool call was cut off.');
+        }
+        for (final call in calls.values) {
+          // A call without parameters may arrive with no arguments at all.
+          final raw = call['arguments']?.trim() ?? '';
+          final args = jsonDecode(raw.isEmpty ? '{}' : raw);
+          if (args is! Map) {
+            throw const InferenceException('Invalid tool-call arguments.');
+          }
+        }
+        if (thinkingBlocks.isNotEmpty) {
+          final blocks = [
+            for (final i in thinkingBlocks.keys.toList()..sort())
+              thinkingBlocks[i]!,
+          ];
+          for (final call in calls.values) {
+            _anthropicThinking[call['id'] ?? ''] = blocks;
+          }
+        }
         if (inThink) controller.add('</think>');
         if (calls.isNotEmpty &&
             finish != 'tool_calls' &&
@@ -1196,12 +1295,19 @@ class RemoteEngine implements TextEngine {
           finish = 'tool_calls';
         }
         done();
-      } catch (e) {
+        _log.info(
+          '${provider.name} answered: ${metrics['tokens']} tokens, '
+          'first token ${metrics['firstTokenMs']} ms, finish ${metrics['finishReason']}',
+        );
+      } catch (e, stack) {
+        calls.clear();
         done();
         if (!cancel.isCancelled) {
-          controller.addError(
-            e is InferenceException ? e : _explain(await _withBody(e), base),
-          );
+          final error = e is InferenceException
+              ? e
+              : _explain(await _withBody(e), base);
+          _log.warning('${provider.name} request failed', error, stack);
+          controller.addError(error);
         }
       } finally {
         await controller.close();
@@ -1438,8 +1544,7 @@ class RemoteEngine implements TextEngine {
         settings.grammar.trim().isNotEmpty)
       'grammar': settings.grammar,
     if (tools.isNotEmpty) 'tools': [for (final t in tools) t.toOpenAi()],
-    if (tools.isNotEmpty)
-      'tool_choice': toolChoice == 'required' ? 'required' : 'auto',
+    if (tools.isNotEmpty) 'tool_choice': toolChoice,
     // llama-server / LM Studio honour this for Qwen3-style models.
     if (!settings.thinkingModeEnabled)
       'chat_template_kwargs': {'enable_thinking': false},
@@ -1512,18 +1617,19 @@ class RemoteEngine implements TextEngine {
   /// models reject `temperature`/`top_p`/`top_k`. Thinking mode maps to
   /// adaptive thinking with a readable summary and the level to the effort
   /// setting; off leaves the model's default (its reasoning is then simply
-  /// not shown). Forced tool choice stays `auto` because the newest models
-  /// reject `any`.
+  /// not shown). Required tool choice disables thinking, which Anthropic
+  /// does not support with forced tool use.
   Future<Map<String, Object?>> _anthropicBody(
     List<Map<String, Object>> messages,
     InferenceSettings settings,
     String assistantPrefix,
     List<ToolSpec> tools,
+    String toolChoice,
   ) async {
     final converted = await anthropicMessages([
       ...messages,
       if (assistantPrefix.isNotEmpty) _continueTurn(assistantPrefix),
-    ]);
+    ], thinking: _anthropicThinking);
     final schema = settings.responseFormat == ResponseFormat.jsonSchema
         ? _schemaOrNull(settings.jsonSchema)
         : null;
@@ -1531,8 +1637,19 @@ class RemoteEngine implements TextEngine {
         ? 'claude-opus-5'
         : settings.remoteModel.trim();
     final key = model.toLowerCase();
-    final fixed =
-        settings.thinkingModeEnabled && _anthropicNoAdaptive.contains(key);
+    // A tool round sent without thinking (a forced first round) cannot be
+    // continued with it: Anthropic expects the open tool_use turn to start
+    // with its signed thinking block.
+    final open = messages.lastIndexWhere((m) => m['role'] == 'assistant');
+    final calls = open < 0 ? null : messages[open]['tool_calls'];
+    final unsigned =
+        calls is List &&
+        calls.firstOrNull is Map &&
+        messages.skip(open + 1).every((m) => m['role'] == 'tool') &&
+        !_anthropicThinking.containsKey('${(calls.first as Map)['id']}');
+    final think =
+        settings.thinkingModeEnabled && toolChoice != 'required' && !unsigned;
+    final fixed = think && _anthropicNoAdaptive.contains(key);
     final effort = _anthropicNoEffort.contains(key)
         ? null
         : _anthropicEffortOf(settings.thinkingLevel);
@@ -1549,7 +1666,7 @@ class RemoteEngine implements TextEngine {
       'messages': converted.messages,
       if (settings.stopSequences.isNotEmpty)
         'stop_sequences': settings.stopSequences,
-      if (settings.thinkingModeEnabled)
+      if (think)
         'thinking': fixed
             ? {'type': 'enabled', 'budget_tokens': _anthropicBudget(settings)}
             : {'type': 'adaptive', 'display': 'summarized'},
@@ -1568,7 +1685,8 @@ class RemoteEngine implements TextEngine {
               'input_schema': t.parameters,
             },
         ],
-      if (tools.isNotEmpty) 'tool_choice': {'type': 'auto'},
+      if (tools.isNotEmpty)
+        'tool_choice': {'type': toolChoice == 'required' ? 'any' : toolChoice},
     };
   }
 
@@ -1670,7 +1788,11 @@ class RemoteEngine implements TextEngine {
       if (tools.isNotEmpty)
         'toolConfig': {
           'functionCallingConfig': {
-            'mode': toolChoice == 'required' ? 'ANY' : 'AUTO',
+            'mode': switch (toolChoice) {
+              'required' => 'ANY',
+              'none' => 'NONE',
+              _ => 'AUTO',
+            },
           },
         },
     };

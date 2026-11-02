@@ -27,6 +27,12 @@ Dart and Flutter packages keep their own licences. The app's licence page
 | Parakeet TDT 0.6B v3 (int8, sherpa-onnx export) | Optional listening | CC-BY-4.0 | `csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8` |
 | Silero VAD | Speech detection | MIT | https://github.com/snakers4/silero-vad |
 | Kokoro 82M v1.0 (multi-language) | Speaking | Apache-2.0 | `k2-fsa/sherpa-onnx` tts-models release (hexgrad/Kokoro-82M) |
+| Supertonic 2 (multilingual int8) | Optional speaking, EN/FR/ES | OpenRAIL-M weights; MIT code | [Official sherpa-onnx pack](https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-tts-int8-2026-03-06.tar.bz2), Supertone |
+
+Supertonic 2 weights retain the [OpenRAIL-M licence and use restrictions](https://huggingface.co/Supertone/supertonic-2/blob/main/LICENSE).
+The [Supertonic code](https://github.com/supertone-inc/supertonic) is MIT licensed;
+that does not change the weights licence. The app downloads the unchanged
+sherpa-onnx export only on request and preserves the archive's licence file.
 
 ### Attribution: Parakeet TDT 0.6B v3
 

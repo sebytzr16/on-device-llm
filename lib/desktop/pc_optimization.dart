@@ -29,8 +29,8 @@ Map<String, List<Object>> modelTuneCandidates(InferenceSettings s) => {
   'cpuThreads': {s.effectiveThreads, 4}.toList(),
 };
 
-/// The setups Optimize measures, all with the F16 KV cache of [best] (or the
-/// q8_0 fallback when F16 cannot fit), so none trades accuracy for speed.
+/// The setups Optimize measures, all with the KV cache of [best]: F16, or
+/// q8_0 when only q8_0 puts every layer on the card or F16 cannot fit.
 /// With an MTP head, drafting is tried off and at 3 tokens besides Auto's 2:
 /// on Gemma 4 26B A4B with experts in RAM, 2 won (20 tok/s), 3 lost (18).
 List<InferenceSettings> pcOptimizationSetups(
@@ -72,22 +72,27 @@ Future<InferenceSettings> pcOptimizationDefaults({
   final info = await estimate(settings);
   final layers = (info['layers'] as num?)?.toInt();
   if (layers == null || layers <= 0) throw StateError('Missing layer estimate');
+  InferenceSettings keep(InferenceSettings s) => s.copyWith(
+    explicitOverrides: current.explicitOverrides.difference(pcOptimizationKeys),
+  );
+  // Every layer on the card first, with either cache: a q8_0 cache with all
+  // of Gemma 4 E4B's 43 layers decoded at 101 tok/s on an 8 GB card, F16
+  // with 33 layers at 16. Asking for every layer also lets the engine move
+  // the vision projector (projectorDevice auto) or MoE experts to RAM, which
+  // beats any partial layer count: Gemma 4 26B A4B decodes at 18-20 tok/s
+  // that way, like LM Studio.
+  if (settings.backend != GpuBackend.cpu) {
+    for (final kv in [KvCacheType.fp16, KvCacheType.q8_0]) {
+      final all = settings.copyWith(kvCacheType: kv, nGpuLayers: 999);
+      final fit = await estimate(all);
+      final placed = (fit['gpuLayers'] as num?)?.toInt() ?? 0;
+      final whole = fit['gpuExpertsOnCpu'] == true || placed >= layers;
+      if (whole && TuneBenchmarkRun.estimateFits(fit, all)) return keep(all);
+    }
+  }
   for (final kv in [KvCacheType.fp16, KvCacheType.q8_0]) {
     var low = 0, high = settings.backend == GpuBackend.cpu ? 0 : layers;
     settings = settings.copyWith(kvCacheType: kv);
-    // Every layer asked for lets the engine's fit move MoE experts to RAM,
-    // which beats any partial layer count: Gemma 4 26B A4B on an 8 GB card
-    // decodes at 18-20 tok/s that way, like LM Studio.
-    final all = settings.copyWith(nGpuLayers: 999);
-    final fit = await estimate(all);
-    if (fit['gpuExpertsOnCpu'] == true &&
-        TuneBenchmarkRun.estimateFits(fit, all)) {
-      return all.copyWith(
-        explicitOverrides: current.explicitOverrides.difference(
-          pcOptimizationKeys,
-        ),
-      );
-    }
     while (low < high) {
       final middle = (low + high + 1) ~/ 2;
       final candidate = settings.copyWith(nGpuLayers: middle);
@@ -100,11 +105,7 @@ Future<InferenceSettings> pcOptimizationDefaults({
     final candidate = settings.copyWith(nGpuLayers: low);
     if (TuneBenchmarkRun.estimateFits(await estimate(candidate), candidate)) {
       // An empty draft id is MTP Auto: the matching sidecar is found at load.
-      return candidate.copyWith(
-        explicitOverrides: current.explicitOverrides.difference(
-          pcOptimizationKeys,
-        ),
-      );
+      return keep(candidate);
     }
   }
   throw StateError('No safe load settings');

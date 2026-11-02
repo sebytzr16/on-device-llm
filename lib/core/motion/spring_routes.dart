@@ -16,8 +16,9 @@ class SpringCurve extends Curve {
   const SpringCurve(this.spring, {this.seconds = 0.6});
 
   @override
-  double transformInternal(double t) =>
-      SpringSimulation(spring, 0, 1, 0).x(t * seconds);
+  double transformInternal(double t) => identical(spring, AppMotion.calm)
+      ? AppMotion.ease.transform(t)
+      : SpringSimulation(spring, 0, 1, 0).x(t * seconds);
 }
 
 /// Pages slide in on a calm spring while the page below sinks back a little
@@ -65,9 +66,14 @@ class _SpringPage extends StatefulWidget {
 }
 
 class _SpringPageState extends State<_SpringPage> {
-  late CurvedAnimation _enter, _below;
+  late CurvedAnimation _enter, _below, _subtle;
 
   void _curve() {
+    _subtle = CurvedAnimation(
+      parent: widget.animation,
+      curve: const Interval(0, 120 / 560, curve: Curves.easeOut),
+      reverseCurve: const Interval(1 - 120 / 320, 1, curve: Curves.easeOut),
+    );
     _enter = CurvedAnimation(
       parent: widget.animation,
       curve: SpringCurve(SpringPageTransitionsBuilder.page),
@@ -91,6 +97,7 @@ class _SpringPageState extends State<_SpringPage> {
     super.didUpdateWidget(old);
     if (old.animation != widget.animation ||
         old.secondary != widget.secondary) {
+      _subtle.dispose();
       _enter.dispose();
       _below.dispose();
       _curve();
@@ -99,6 +106,7 @@ class _SpringPageState extends State<_SpringPage> {
 
   @override
   void dispose() {
+    _subtle.dispose();
     _enter.dispose();
     _below.dispose();
     super.dispose();
@@ -107,7 +115,20 @@ class _SpringPageState extends State<_SpringPage> {
   @override
   Widget build(BuildContext context) {
     final child = widget.child;
-    if (!context.motion.animates) return child;
+    final motion = context.motion;
+    if (!motion.animates) return child;
+    if (!motion.full) {
+      return FadeTransition(
+        opacity: _subtle,
+        child: SlideTransition(
+          position: Tween(
+            begin: const Offset(0.02, 0),
+            end: Offset.zero,
+          ).animate(_subtle),
+          child: child,
+        ),
+      );
+    }
     final enter = _enter, below = _below;
     return AnimatedBuilder(
       animation: Listenable.merge([enter, below]),
@@ -250,15 +271,15 @@ class _MorphSheetRoute<T> extends PopupRoute<T> {
     final c = context.colors;
     final media = MediaQuery.of(context);
     if (DesktopHost.active) return _desktopDialog(context, animation, child);
-    return _MorphSheetFrame(
-      animation: motion.animates
+    final frame = _MorphSheetFrame(
+      animation: motion.full
           ? _curved ??= CurvedAnimation(
               parent: animation,
               curve: SpringCurve(motion.spring),
               reverseCurve: Curves.easeInCubic,
             )
           : const AlwaysStoppedAnimation(1),
-      source: source,
+      source: motion.full ? source : null,
       color: c.surfaceRaised,
       border: c.hairline,
       handle: c.hairlineStrong,
@@ -269,6 +290,17 @@ class _MorphSheetRoute<T> extends PopupRoute<T> {
       draggable: draggable && dismissible,
       onDismiss: () => Navigator.of(context).maybePop(),
       child: child,
+    );
+    if (!motion.animates || motion.full) return frame;
+    return FadeTransition(
+      opacity: animation,
+      child: SlideTransition(
+        position: Tween(
+          begin: const Offset(0, 0.02),
+          end: Offset.zero,
+        ).animate(animation),
+        child: frame,
+      ),
     );
   }
 
@@ -282,7 +314,7 @@ class _MorphSheetRoute<T> extends PopupRoute<T> {
     final c = context.colors;
     final motion = context.motion;
     final size = MediaQuery.sizeOf(context);
-    final curve = motion.animates
+    final curve = motion.full
         ? _curved ??= CurvedAnimation(
             parent: animation,
             curve: SpringCurve(motion.spring),
@@ -290,7 +322,7 @@ class _MorphSheetRoute<T> extends PopupRoute<T> {
           )
         : const AlwaysStoppedAnimation(1.0);
     return FadeTransition(
-      opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+      opacity: motion.animates ? animation : const AlwaysStoppedAnimation(1.0),
       child: ScaleTransition(
         scale: Tween(begin: 0.96, end: 1.0).animate(curve),
         child: Center(

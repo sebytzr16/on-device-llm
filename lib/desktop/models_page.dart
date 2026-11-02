@@ -1,3 +1,10 @@
+import '../features/models/domain/entities/model_suggestions.dart';
+import '../features/models/presentation/widgets/download_center.dart';
+import '../features/models/presentation/widgets/model_categories.dart';
+import '../features/models/presentation/screens/model_details_page.dart';
+import '../features/models/presentation/widgets/model_capabilities.dart';
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,7 +17,9 @@ import '../core/motion/pressable.dart';
 import '../core/motion/spring_entrance.dart';
 import '../data/storage/download_manager.dart';
 import '../data/storage/gguf_metadata.dart';
+import '../data/storage/model_storage.dart';
 import '../features/chat/presentation/providers/chat_provider.dart';
+import '../features/helper/helper_runner.dart';
 import '../features/hosting/presentation/device_hosting_provider.dart';
 import '../features/models/domain/entities/model_catalog.dart';
 import '../features/models/domain/entities/model_info.dart';
@@ -36,6 +45,8 @@ class DesktopModelsPage extends StatefulWidget {
 
 class _DesktopModelsPageState extends State<DesktopModelsPage> {
   bool _discover = false;
+  bool _allFiles = false;
+  ModelCategory? _category;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -68,17 +79,65 @@ class _DesktopModelsPageState extends State<DesktopModelsPage> {
                   setState(() => _discover = value.single),
             ),
             const Spacer(),
-            if (!_discover) const _ImportButton(),
+            const DownloadsButton(labelled: true),
+            if (!_discover) ...[
+              const SizedBox(width: 8),
+              const _ImportButton(),
+            ],
           ],
         ),
         const SizedBox(height: 6),
         Text(context.l10n.desktopModelsExplanation, style: context.text.small),
+        if (!_discover) ...[
+          const SizedBox(height: 12),
+          ModelCategoryFilters(
+            selected: _category,
+            onChanged: (value) => setState(() => _category = value),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              FilterChip(
+                label: Text(context.l10n.desktopModelsAllFiles),
+                selected: _allFiles,
+                onSelected: (value) => setState(() => _allFiles = value),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  try {
+                    final folder = await ModelStorage.modelsDir();
+                    await Process.start('explorer.exe', [folder.path]);
+                  } catch (_) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            context.l10n.desktopModelsFolderOpenError,
+                          ),
+                        ),
+                      );
+                    }
+                  }
+                },
+                icon: const Icon(Icons.folder_open_outlined, size: 16),
+                label: Text(context.l10n.desktopModelsFolderOpen),
+              ),
+              const SizedBox(width: 8),
+            ],
+          ),
+        ],
         const SizedBox(height: 20),
         Expanded(
           child: IndexedStack(
             index: _discover ? 1 : 0,
             children: [
-              const _LocalModelsPage(),
+              _allFiles || _category != null && _category != ModelCategory.llm
+                  ? _AllModelFiles(category: _category)
+                  : const _LocalModelsPage(),
               DesktopHfDiscover(active: _discover),
             ],
           ),
@@ -133,7 +192,7 @@ class _LocalModelsPage extends ConsumerWidget {
       (m) => desktopModelVisible(m, advanced: advanced),
     );
     final local = visible.where((m) => m.isDownloaded).toList();
-    final available = visible.where((m) => !m.isDownloaded).toList();
+    final available = availableLibraryModels(models.catalog, desktop: true);
     return ListView(
       padding: const EdgeInsets.only(bottom: 32),
       children: [
@@ -157,7 +216,10 @@ class _LocalModelsPage extends ConsumerWidget {
               for (final (i, m) in local.indexed)
                 _Cascade(
                   index: i,
-                  child: _ModelRow(model: m),
+                  child: _ModelRow(
+                    key: ValueKey('model-row-${m.id}'),
+                    model: m,
+                  ),
                 ),
             ],
           ),
@@ -168,7 +230,7 @@ class _LocalModelsPage extends ConsumerWidget {
             for (final (i, m) in available.indexed)
               _Cascade(
                 index: local.length + i,
-                child: _ModelRow(model: m),
+                child: _ModelRow(key: ValueKey('model-row-${m.id}'), model: m),
               ),
           ],
         ),
@@ -357,7 +419,7 @@ class _ArchBadge extends StatelessWidget {
 
 class _ModelRow extends ConsumerStatefulWidget {
   final ModelInfo model;
-  const _ModelRow({required this.model});
+  const _ModelRow({super.key, required this.model});
 
   @override
   ConsumerState<_ModelRow> createState() => _ModelRowState();
@@ -414,6 +476,9 @@ class _ModelRowState extends ConsumerState<_ModelRow> {
     final models = ref.watch(modelManagerProvider);
     final busy = ref.watch(chatProvider.select((s) => s.isGenerating));
     final loaded = models.loadedModelId == m.id;
+    final helperStreams = ref.watch(helperStreamsProvider(m.id));
+    final helperLoaded =
+        ref.watch(helperLoadedModelsProvider).value?.contains(m.id) ?? false;
     final serving = ref.watch(
       deviceHostingProvider.select(
         (h) =>
@@ -480,67 +545,73 @@ class _ModelRowState extends ConsumerState<_ModelRow> {
             const SizedBox(width: 14),
             Expanded(
               flex: 5,
-              child: Tooltip(
-                message: m.fileName,
-                waitDuration: const Duration(milliseconds: 600),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            m.displayName,
-                            overflow: TextOverflow.ellipsis,
-                            style: context.text.body.copyWith(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
+              child: InkWell(
+                onTap: m.isDownloaded
+                    ? () => openModelDetails(context, m)
+                    : null,
+                child: Tooltip(
+                  message: m.fileName,
+                  waitDuration: const Duration(milliseconds: 600),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              m.displayName,
+                              overflow: TextOverflow.ellipsis,
+                              style: context.text.body.copyWith(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
-                        ),
-                        if (vision) ...[
-                          const SizedBox(width: 8),
-                          Icon(
-                            Icons.visibility_outlined,
-                            size: 14,
-                            color: c.textMuted,
-                          ),
-                        ],
-                        if (serving) ...[
-                          const SizedBox(width: 8),
-                          Tooltip(
-                            message: l10n.desktopModelServingHint,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 1,
-                              ),
-                              decoration: BoxDecoration(
-                                color: c.accent.fade(0.12),
-                                borderRadius: AppDesign.radius(4),
-                              ),
-                              child: Text(
-                                l10n.desktopModelServing,
-                                style: context.text.mono.copyWith(
-                                  fontSize: 10.5,
-                                  color: c.accent,
+                          if (vision) ...[
+                            const SizedBox(width: 8),
+                            Icon(
+                              Icons.visibility_outlined,
+                              size: 14,
+                              color: c.textMuted,
+                            ),
+                          ],
+                          if (serving) ...[
+                            const SizedBox(width: 8),
+                            Tooltip(
+                              message: l10n.desktopModelServingHint,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: c.accent.fade(0.12),
+                                  borderRadius: AppDesign.radius(4),
+                                ),
+                                child: Text(
+                                  l10n.desktopModelServing,
+                                  style: context.text.mono.copyWith(
+                                    fontSize: 10.5,
+                                    color: c.accent,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
+                          ],
                         ],
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      line,
-                      overflow: TextOverflow.ellipsis,
-                      style: context.text.mono.copyWith(
-                        fontSize: 11,
-                        color: c.textFaint,
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 2),
+                      Text(
+                        line,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.text.mono.copyWith(
+                          fontSize: 11,
+                          color: c.textFaint,
+                        ),
+                      ),
+                      ModelCapabilityBadges(model: m),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -620,9 +691,11 @@ class _ModelRowState extends ConsumerState<_ModelRow> {
                           child: Text(failed ? l10n.retry : l10n.download),
                         ),
                       ),
-                    ] else if (loaded) ...[
+                    ] else if (loaded || helperLoaded) ...[
                       Text(
-                        l10n.desktopLoaded,
+                        loaded
+                            ? '${l10n.desktopLoaded}${helperStreams > 0 ? ' \u00b7 ${l10n.helperStreams(helperStreams)}' : ''}'
+                            : l10n.helperLoadedBadge,
                         style: context.text.small.copyWith(color: c.accent),
                       ),
                       const SizedBox(width: 10),
@@ -630,9 +703,13 @@ class _ModelRowState extends ConsumerState<_ModelRow> {
                         child: OutlinedButton(
                           onPressed: busy
                               ? null
-                              : () => ref
-                                    .read(modelManagerProvider.notifier)
-                                    .unloadModel(),
+                              : () => loaded
+                                    ? ref
+                                          .read(modelManagerProvider.notifier)
+                                          .unloadModel()
+                                    : ref
+                                          .read(helperRunnerProvider)
+                                          .unloadModel(m.id),
                           child: Text(l10n.desktopEject),
                         ),
                       ),
@@ -657,7 +734,8 @@ class _ModelRowState extends ConsumerState<_ModelRow> {
                       ),
                       IconButton(
                         tooltip: l10n.delete,
-                        onPressed: loaded || busy || models.isImporting
+                        onPressed:
+                            loaded || helperLoaded || busy || models.isImporting
                             ? null
                             : _delete,
                         icon: const Icon(Icons.delete_outline, size: 17),
@@ -672,4 +750,15 @@ class _ModelRowState extends ConsumerState<_ModelRow> {
       ),
     );
   }
+}
+
+/// Disk inventory includes sidecars and draft files excluded from the catalog.
+final desktopModelFilesProvider = modelInventoryFilesProvider;
+
+class _AllModelFiles extends StatelessWidget {
+  final ModelCategory? category;
+  const _AllModelFiles({this.category});
+  @override
+  Widget build(BuildContext context) =>
+      SingleChildScrollView(child: ModelInventoryList(category: category));
 }

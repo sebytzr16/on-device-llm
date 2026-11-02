@@ -42,6 +42,11 @@ class DocumentDraftService {
           'uncertainties, and recommended next steps only if supported.',
   };
 
+  /// Whether [generate] works from only the end of [source]: the caller says
+  /// so rather than trimming it silently (P2-43).
+  static bool truncates(ChatDocument source) =>
+      source.markdown.length > maxInputChars;
+
   static Future<String> generate({
     required TextEngine engine,
     required InferenceSettings settings,

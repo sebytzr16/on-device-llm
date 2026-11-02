@@ -1,3 +1,6 @@
+import '../../data/storage/model_file_leases.dart';
+import '../../data/storage/gguf_split.dart';
+import 'package:path/path.dart' as p;
 import 'dart:async';
 import '../../core/utils/inference_admission.dart';
 import 'dart:convert';
@@ -7,14 +10,96 @@ import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
+import 'package:logging/logging.dart';
 import '../../core/errors/exceptions.dart';
 import '../../core/platform/desktop_host.dart';
 import '../../features/settings/domain/entities/inference_settings.dart';
 import '../../features/tools/domain/tool_spec.dart';
 import '../ffi/llama_bindings.dart';
 import 'text_engine.dart';
+import '../../core/l10n/l10n.dart';
+
+part 'llama_side.dart';
+
+final _log = Logger('engine');
 
 class LlamaEngine implements TextEngine {
+  _SideClient? _side;
+  Future<void>? _sideOpening;
+  int? _nativeAddress;
+  int _sideEpoch = 0;
+  final Map<String, Map<String, dynamic>> sideMetrics = {};
+  int get helperStreams => _side?.count ?? 0;
+
+  Future<void> openSide({int sequences = 3, int contextSize = 4096}) async {
+    if (_side != null) return;
+    if (_sideOpening != null) return _sideOpening;
+    final epoch = _sideEpoch;
+    final address = _nativeAddress;
+    final library = _library;
+    if (!isLoaded || address == null || library == null) {
+      throw StateError('chat model changed');
+    }
+    final future = () async {
+      final side = await _SideClient.open(
+        address,
+        library,
+        sideMetrics,
+        sequences,
+        contextSize,
+      );
+      if (epoch != _sideEpoch) {
+        await side.close();
+        throw StateError('chat model changed');
+      }
+      _side = side;
+    }();
+    _sideOpening = future;
+    try {
+      await future;
+    } finally {
+      _sideOpening = null;
+    }
+  }
+
+  Stream<String> generateSide({
+    required String jobId,
+    required List<Map<String, Object>> messages,
+    required String fallbackTemplate,
+    required InferenceSettings settings,
+    void Function()? onStarted,
+  }) async* {
+    await openSide(
+      sequences: settings.agentMaxConcurrent,
+      contextSize: settings.contextSize,
+    );
+    yield* _side!.generate(
+      jobId,
+      jsonEncode({
+        'messages': messages,
+        'fallbackTemplate': fallbackTemplate,
+        'settings': settings.toJson(),
+      }),
+      onStarted,
+    );
+  }
+
+  void cancelSide(String jobId) => _side?.cancel(jobId);
+
+  Future<void> closeSide() async {
+    _sideEpoch++;
+    final opening = _sideOpening;
+    if (opening != null) {
+      try {
+        await opening;
+      } catch (_) {}
+    }
+    final side = _side;
+    _side = null;
+    await side?.close();
+    sideMetrics.clear();
+  }
+
   /// Resolves the app's cache directory for compiled GPU kernels. Null keeps
   /// the backend's kernel cache off (every load recompiles).
   final Future<String?> Function()? cacheDirectory;
@@ -170,6 +255,8 @@ class LlamaEngine implements TextEngine {
   @override
   Map<String, dynamic> metrics = {};
 
+  bool reportLiveMetrics = false;
+
   /// Share of the prompt already read (0…1) while the model reads it, before
   /// it writes; null otherwise. Drives the send button's ring.
   double? get prefillProgress => _prefill;
@@ -179,7 +266,7 @@ class LlamaEngine implements TextEngine {
   void _setPrefill(double? value) {
     if (value == _prefill) return;
     _prefill = value;
-    _prefillChanges.add(value);
+    if (!_prefillChanges.isClosed) _prefillChanges.add(value);
   }
 
   /// Share loaded by the bridge (0..1); null when idle or unsupported.
@@ -193,7 +280,7 @@ class LlamaEngine implements TextEngine {
   void _setLoadProgress(double? value) {
     if (value == _loadProgress) return;
     _loadProgress = value;
-    _loadProgressChanges.add(value);
+    if (!_loadProgressChanges.isClosed) _loadProgressChanges.add(value);
   }
 
   void _pollLoadProgress() {
@@ -218,14 +305,55 @@ class LlamaEngine implements TextEngine {
     _setLoadProgress(null);
   }
 
+  List<ModelFileLease> _fileLeases = [];
+
+  void _releaseFiles() {
+    for (final lease in _fileLeases) {
+      lease.release();
+    }
+    _fileLeases.clear();
+  }
+
   Future<void> _load(String path, String config) async {
+    await closeSide();
+    final data = jsonDecode(config) as Map;
+    final files = <String>[
+      path,
+      if (data['mmproj'] case final String path when path.isNotEmpty) path,
+      if (data['draftModel'] case final String path when path.isNotEmpty) path,
+      for (final adapter in (data['loraAdapters'] as List?) ?? [])
+        adapter['path'] as String,
+    ];
+    final leases = _fileLeases;
+    final previous = List<ModelFileLease>.of(leases);
+    leases.add(
+      ModelFileLeases.instance.acquire([
+        for (final file in files)
+          for (final name
+              in GgufSplit.parse(p.basename(file))?.names ?? [p.basename(file)])
+            p.join(p.dirname(file), name),
+      ], owner: 'llama.cpp'),
+    );
     final op = Completer<void>();
     _operation = op;
     _loading = true;
     _send({'type': 'load', 'path': path, 'settings': config});
+    if (loadStop?.call() ?? false) cancel();
     try {
       await op.future;
+      for (final lease in previous) {
+        lease.release();
+        leases.remove(lease);
+      }
     } catch (e) {
+      // A failed load may retain partially mapped weights. Wait for native
+      // unload before making either the old or new files mutable again.
+      try {
+        await unload();
+      } catch (_) {
+        /* The exit handler retains ownership. */
+      }
+      if (loadStop?.call() ?? false) throw const ModelLoadStopped();
       throw ModelLoadException(modelLoadErrorMessage(e));
     } finally {
       _stopLoadProgress();
@@ -253,18 +381,29 @@ class LlamaEngine implements TextEngine {
   String? get loadedPath => _loadedPath;
   Future<void> _start() => _starting ??= _spawn();
   Future<void> _spawn() async {
+    final leases = _fileLeases = <ModelFileLease>[];
     final ready = Completer<void>();
-    _events = ReceivePort();
-    _events!.listen((dynamic event) {
+    final events = _events = ReceivePort();
+    events.listen((dynamic event) {
+      if (!identical(_events, events)) return;
       if (event is SendPort) {
         _commands = event;
         ready.complete();
         return;
       }
       if (event == null || event is List) {
+        events.close();
+        _events = null;
+        _commands = null;
+        _sessionId = null;
+        // The dead worker's session and numbers must not outlive it (P3-01).
+        _control = null;
+        metrics = const {};
+        _stopLoadProgress();
         final error = StateError(
           'Native worker exited unexpectedly${event is List ? ': ${event.first}' : ''}',
         );
+        _log.severe(error.message);
         if (!ready.isCompleted) ready.completeError(error);
         _preview?.completeError(error);
         _preview = null;
@@ -289,6 +428,7 @@ class LlamaEngine implements TextEngine {
       final e = event as Map;
       if (e['type'] == 'session') {
         _sessionId = e['id'] as int?;
+        _nativeAddress = e['address'] as int?;
         final library = e['library'] as String?;
         if (library != null && library != _library) {
           _library = library;
@@ -323,6 +463,7 @@ class LlamaEngine implements TextEngine {
           _operation?.complete();
           _operation = null;
         case 'unloaded':
+          _log.info('Unloaded ${p.basename(_loadedPath ?? 'model')}');
           metrics = const {};
           _operation?.complete();
           _operation = null;
@@ -351,6 +492,11 @@ class LlamaEngine implements TextEngine {
           final total = (info['promptTokens'] as num?)?.toInt() ?? 0;
           final cached = (info['cachedPromptTokens'] as num?)?.toInt() ?? 0;
           _setPrefill(total > cached ? cached / total : null);
+        case 'liveMetrics':
+          metrics = {
+            ...metrics,
+            ...Map<String, dynamic>.from(e['metrics'] as Map),
+          };
         case 'prefill':
           final total = e['total'] as int;
           _setPrefill(total > 0 ? (e['read'] as int) / total : null);
@@ -360,10 +506,17 @@ class LlamaEngine implements TextEngine {
         case 'done':
           _setPrefill(null);
           metrics = Map<String, dynamic>.from(e['metrics'] as Map);
+          _log.info(
+            'Generated ${metrics['tokens']} tokens at '
+            '${(metrics['tokensPerSecond'] as num?)?.toStringAsFixed(1)} tok/s '
+            '(prompt ${metrics['promptTokens']}, cached ${metrics['cachedPromptTokens']}, '
+            'first token ${metrics['firstTokenMs']} ms, stop ${metrics['stopReason']})',
+          );
           unawaited(_output?.close());
           _output = null;
           _busy = false;
         case 'error':
+          _log.warning('Native error: ${e['message']}');
           final error = e['load'] == true
               ? ModelLoadException(modelLoadErrorMessage(e['message']))
               : InferenceException(e['message'] as String);
@@ -397,12 +550,33 @@ class LlamaEngine implements TextEngine {
     } catch (_) {
       ownerId = 0;
     }
-    await Isolate.spawn(
-      _worker,
-      [_events!.sendPort, cacheDir, ownerId],
-      onError: _events!.sendPort,
-      onExit: _events!.sendPort,
-    );
+    final exited = ReceivePort();
+    exited.listen((_) {
+      for (final lease in leases) {
+        lease.release();
+      }
+      leases.clear();
+      exited.close();
+      if (identical(_fileLeases, leases)) _events?.sendPort.send(null);
+    });
+    try {
+      await Isolate.spawn(
+        _worker,
+        [events.sendPort, cacheDir, ownerId],
+        onError: events.sendPort,
+        onExit: exited.sendPort,
+      );
+    } catch (_) {
+      // A failed spawn must not stay memoized: the next call tries again
+      // (P3-02), and neither port outlives it.
+      exited.close();
+      events.close();
+      if (identical(_events, events)) {
+        _events = null;
+        _starting = null;
+      }
+      rethrow;
+    }
     await ready.future;
   }
 
@@ -418,10 +592,9 @@ class LlamaEngine implements TextEngine {
     // A header read (probe, adapter info) finishes on its own: wait for it
     // rather than refusing the load.
     if (_priming != null) await _stopPriming();
+    _checkLoadStop();
     if (_working) {
-      throw const ModelLoadException(
-        'Wait for the current operation to finish.',
-      );
+      throw ModelLoadException(appStrings.engineBusy);
     }
     final config = loadConfig(
       settings: settings,
@@ -434,11 +607,46 @@ class LlamaEngine implements TextEngine {
     while (_occupied) {
       await _waitIdle();
     }
+    _checkLoadStop();
     _loadedPath = null;
-    await _load(modelPath, config);
+    final name = p.basename(modelPath);
+    _log.info(
+      'Loading $name: ${settings.backend.name}, ${settings.nGpuLayers} GPU layers asked, '
+      'context ${settings.contextSize}, KV ${settings.kvCacheType.name}',
+    );
+    final clock = Stopwatch()..start();
+    try {
+      await _load(modelPath, config);
+    } catch (error, stack) {
+      _log.warning(
+        'Loading $name failed after ${clock.elapsedMilliseconds} ms',
+        error,
+        stack,
+      );
+      rethrow;
+    }
+    _log.info(
+      'Loaded $name in ${clock.elapsedMilliseconds} ms on $_library: '
+      '${metrics['backend']}, ${(metrics['effectiveSettings'] as Map?)?['gpuLayers']}/${(metrics['effectiveSettings'] as Map?)?['layers']} layers on the GPU, '
+      'context ${metrics['contextSize'] ?? settings.contextSize}',
+    );
     _loadedPath = modelPath;
     _loadSettings = config;
   }
+
+  /// Set by the model manager for the load it runs: true once the user
+  /// stopped it. Checked between steps, and after the load command is sent
+  /// (that send clears an earlier cancel), so a Stop at any moment holds
+  /// (audit P1-19, OR-02).
+  bool Function()? loadStop;
+
+  void _checkLoadStop() {
+    if (loadStop?.call() ?? false) throw const ModelLoadStopped();
+  }
+
+  /// Whether [modelPath] is loaded with exactly [config].
+  bool holdsLoad(String modelPath, String config) =>
+      _loadedPath == modelPath && _loadSettings == config;
 
   /// The settings JSON od_load and od_estimate read.
   static String loadConfig({
@@ -506,9 +714,7 @@ class LlamaEngine implements TextEngine {
   }) async {
     if (_priming != null) await _stopPriming();
     if (_occupied) {
-      throw const ModelLoadException(
-        'Wait for the current operation to finish.',
-      );
+      throw ModelLoadException(appStrings.engineBusy);
     }
     final config = jsonEncode({
       'embedding': true,
@@ -544,9 +750,7 @@ class LlamaEngine implements TextEngine {
   Future<List<Float32List>> embed(List<Object> texts, {int dims = 0}) async {
     if (_priming != null) await _stopPriming();
     if (!isLoaded || _occupied) {
-      throw const InferenceException(
-        'Load an embedding model and wait for the current operation.',
-      );
+      throw InferenceException(appStrings.engineNeedsEmbedding);
     }
     if (texts.isEmpty) return const [];
     final op = Completer<Map<String, dynamic>>();
@@ -575,9 +779,7 @@ class LlamaEngine implements TextEngine {
   ) async {
     if (_priming != null) await _stopPriming();
     if (!isLoaded || _occupied) {
-      throw const InferenceException(
-        'Load an embedding model and wait for the current operation.',
-      );
+      throw InferenceException(appStrings.engineNeedsEmbedding);
     }
     final op = Completer<Map<String, dynamic>>();
     _embed = op;
@@ -601,9 +803,7 @@ class LlamaEngine implements TextEngine {
   }) async {
     if (_priming != null) await _stopPriming();
     if (!isLoaded || _occupied) {
-      throw const InferenceException(
-        'Load a reranker and wait for the current operation.',
-      );
+      throw InferenceException(appStrings.engineNeedsReranker);
     }
     if (pairs.isEmpty) return const [];
     final op = Completer<Map<String, dynamic>>();
@@ -682,9 +882,7 @@ class LlamaEngine implements TextEngine {
   }) async {
     if (_priming != null && !_primeIssuing) await _stopPriming();
     if (!isLoaded || _occupied) {
-      throw const InferenceException(
-        'Load a model and wait for the current operation.',
-      );
+      throw InferenceException(appStrings.engineNeedsModel);
     }
     final op = Completer<Map<String, dynamic>>();
     _preview = op;
@@ -702,7 +900,7 @@ class LlamaEngine implements TextEngine {
   }
 
   /// The settings as the bridge reads them, with the response budget
-  /// capped at half the loaded context ([InferenceSettings.responseReserve]).
+  /// capped at a quarter of the loaded context ([InferenceSettings.responseReserve]).
   Map<String, dynamic> _native(InferenceSettings settings) {
     final context = metrics['contextSize'];
     final window = context is int && context > 0
@@ -740,9 +938,7 @@ class LlamaEngine implements TextEngine {
       })();
     }
     if (!isLoaded || _occupied) {
-      throw const InferenceException(
-        'Load a model and wait for the current operation.',
-      );
+      throw InferenceException(appStrings.engineNeedsModel);
     }
     _busy = true;
     _replyAdmission = InferenceAdmission.shared.hold();
@@ -752,6 +948,7 @@ class LlamaEngine implements TextEngine {
     _normalizer = normalizer;
     _send({
       'type': 'generate',
+      'liveMetrics': reportLiveMetrics,
       'request': jsonEncode({
         'messages': messages,
         'fallbackTemplate': fallbackTemplate,
@@ -782,15 +979,17 @@ class LlamaEngine implements TextEngine {
   /// Frees the model and context but keeps the worker alive, so the next
   /// load is a plain reload (model residency, roadmap §5.2).
   Future<void> unload() async {
+    await closeSide();
     if (_priming != null) await _stopPriming();
-    if (!isLoaded || _commands == null) return;
+    if (_commands == null) return;
     if (_occupied) {
-      throw const InferenceException('Wait for the current operation.');
+      throw InferenceException(appStrings.engineBusy);
     }
     final op = Completer<void>();
     _operation = op;
     _send({'type': 'unload'});
     await op.future;
+    _releaseFiles();
     _loadedPath = null;
     _loadSettings = null;
   }
@@ -816,9 +1015,12 @@ class LlamaEngine implements TextEngine {
   }
 
   void dispose() {
+    final commands = _commands;
+    unawaited(
+      closeSide().whenComplete(() => commands?.send({'type': 'dispose'})),
+    );
     _stopLoadProgress();
     cancel();
-    _commands?.send({'type': 'dispose'});
     _preview?.completeError(StateError('Engine disposed.'));
     _preview = null;
     _probe?.completeError(StateError('Engine disposed.'));
@@ -835,11 +1037,14 @@ class LlamaEngine implements TextEngine {
     _events?.close();
     _events = null;
     _commands = null;
+    _fileLeases = []; // The exiting worker retains its leases until onExit.
     _starting = null;
     _sessionId = null;
     _loadedPath = null;
     _loadSettings = null;
     _notifyIdle();
+    unawaited(_prefillChanges.close());
+    unawaited(_loadProgressChanges.close());
   }
 }
 
@@ -1029,6 +1234,7 @@ void _worker(List<Object?> args) {
       events.send({
         'type': 'session',
         'id': api!.sessionId?.call(handle),
+        'address': handle.address,
         'library': api!.library,
       });
       if (m['type'] == 'load') {
@@ -1091,6 +1297,7 @@ void _worker(List<Object?> args) {
               ((begun['effectiveSettings'] as Map?)?['batchSize'] as num?)
                   ?.toInt() ??
               512;
+          final liveMetrics = Stopwatch()..start();
           while (!cancelled) {
             final status = api!.step(handle, bytes, 65536, length);
             if (status < 0) throw StateError(api!.error(handle).toDartString());
@@ -1104,6 +1311,12 @@ void _worker(List<Object?> args) {
                 'type': 'bytes',
                 'data': Uint8List.fromList(bytes.asTypedList(length.value)),
               });
+            }
+            // Match live UI cadence without inspecting native state per token (owner, 2026-11-02).
+            if (m['liveMetrics'] == true &&
+                liveMetrics.elapsedMilliseconds >= 33) {
+              send({'type': 'liveMetrics', 'metrics': info()});
+              liveMetrics.reset();
             }
             await Future<void>.delayed(Duration.zero);
           }
@@ -1197,9 +1410,12 @@ class ThinkingTagNormalizer extends StreamTransformerBase<String, String> {
             sink.add(text.substring(0, at) + _replacements[tag]!);
             text = text.substring(at + tag.length);
           }
-          if (text.length > _hold) {
-            sink.add(text.substring(0, text.length - _hold));
-            text = text.substring(text.length - _hold);
+          var cut = text.length - _hold;
+          // Never split an emoji's surrogate pair across two pieces (P3-04).
+          if (cut > 0 && (text.codeUnitAt(cut - 1) & 0xFC00) == 0xD800) cut--;
+          if (cut > 0) {
+            sink.add(text.substring(0, cut));
+            text = text.substring(cut);
           }
           buffer.write(text);
         },

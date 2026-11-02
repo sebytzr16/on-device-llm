@@ -1,3 +1,6 @@
+import '../../../../core/platform/desktop_host.dart';
+import '../../../helper/helper_runner.dart';
+import '../../../../core/platform/form_factor.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../domain/schema_validation.dart';
 
@@ -9,6 +12,7 @@ import '../../../../core/design/app_design.dart';
 import '../../../adapters/adapter_store.dart';
 import '../../../chat/presentation/providers/chat_provider.dart';
 import '../../../models/presentation/providers/model_manager_provider.dart';
+import '../../../models/presentation/widgets/model_categories.dart';
 import '../../domain/entities/inference_settings.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/settings_labels.dart';
@@ -16,8 +20,8 @@ import '../widgets/settings_widgets.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/design/app_dialog.dart';
+import '../../../tools/presentation/tools_quick_panel.dart';
 
-part 'advanced_sampling_page.dart';
 part 'advanced_memory_rope_page.dart';
 part 'advanced_structured_output_page.dart';
 part 'advanced_tools_page.dart';

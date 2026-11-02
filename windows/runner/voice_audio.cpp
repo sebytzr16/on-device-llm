@@ -12,6 +12,8 @@ namespace {
 constexpr UINT_PTR kWavTimer = 0x564f4943;
 constexpr int kRate = 16000;
 constexpr int kFrame = 512;
+// Closes an idle output device shortly after the last sentence.
+constexpr UINT_PTR kOutputIdleTimer = 0x564f4f55;
 
 bool MicrophoneDenied() {
   constexpr const wchar_t* keys[] = {
@@ -171,55 +173,76 @@ void VoiceAudio::EmitFrame(const char* bytes) {
 }
 
 void VoiceAudio::PlayNext() {
-  if (playing_ || pending_.empty()) return;
-  playing_ = std::make_unique<Chunk>(std::move(pending_.front()));
-  pending_.pop_front();
-  WAVEFORMATEX format{WAVE_FORMAT_PCM, 1,
-                      static_cast<DWORD>(playing_->rate),
-                      static_cast<DWORD>(playing_->rate * 2), 2, 16, 0};
-  if (waveOutOpen(&output_, WAVE_MAPPER, &format,
-                  reinterpret_cast<DWORD_PTR>(window_), 0, CALLBACK_WINDOW) !=
-      MMSYSERR_NOERROR) {
-    output_ = nullptr;
-    FinishPlayback(false);
-    return;
+  // At most two sentences on the device: the playing one and the next.
+  while (!pending_.empty() && playing_.size() < 2) {
+    const int rate = pending_.front().rate;
+    if (output_ && output_rate_ != rate) {
+      if (!playing_.empty()) return;  // Reopen once the old rate drains.
+      CloseOutput();
+    }
+    if (!output_) {
+      WAVEFORMATEX format{WAVE_FORMAT_PCM, 1, static_cast<DWORD>(rate),
+                          static_cast<DWORD>(rate * 2), 2, 16, 0};
+      if (waveOutOpen(&output_, WAVE_MAPPER, &format,
+                      reinterpret_cast<DWORD_PTR>(window_), 0,
+                      CALLBACK_WINDOW) != MMSYSERR_NOERROR) {
+        output_ = nullptr;
+        pending_.front().result->Success(Value(false));
+        pending_.pop_front();
+        continue;
+      }
+      output_rate_ = rate;
+    }
+    KillTimer(window_, kOutputIdleTimer);
+    auto chunk = std::make_unique<Chunk>(std::move(pending_.front()));
+    pending_.pop_front();
+    chunk->header.lpData = reinterpret_cast<LPSTR>(chunk->pcm.data());
+    chunk->header.dwBufferLength = static_cast<DWORD>(chunk->pcm.size());
+    if (waveOutPrepareHeader(output_, &chunk->header, sizeof(WAVEHDR)) !=
+        MMSYSERR_NOERROR) {
+      chunk->result->Success(Value(false));
+      continue;
+    }
+    if (waveOutWrite(output_, &chunk->header, sizeof(WAVEHDR)) !=
+        MMSYSERR_NOERROR) {
+      waveOutUnprepareHeader(output_, &chunk->header, sizeof(WAVEHDR));
+      chunk->result->Success(Value(false));
+      continue;
+    }
+    playing_.push_back(std::move(chunk));
   }
-  output_header_ = {};
-  output_header_.lpData = reinterpret_cast<LPSTR>(playing_->pcm.data());
-  output_header_.dwBufferLength = static_cast<DWORD>(playing_->pcm.size());
-  if (waveOutPrepareHeader(output_, &output_header_, sizeof(output_header_)) !=
-      MMSYSERR_NOERROR) {
-    FinishPlayback(false);
-    return;
-  }
-  output_prepared_ = true;
-  if (waveOutWrite(output_, &output_header_, sizeof(output_header_)) !=
-      MMSYSERR_NOERROR) FinishPlayback(false);
+  if (playing_.empty() && pending_.empty() && output_)
+    SetTimer(window_, kOutputIdleTimer, 400, nullptr);
 }
 
+// The oldest sentence finished playing.
 void VoiceAudio::FinishPlayback(bool heard) {
-  if (output_) {
-    if (output_prepared_)
-      waveOutUnprepareHeader(output_, &output_header_, sizeof(output_header_));
-    waveOutClose(output_);
-    output_ = nullptr;
-  }
-  output_prepared_ = false;
-  if (playing_) {
-    playing_->result->Success(Value(heard && !interrupted_));
-    playing_.reset();
-  }
-  interrupted_ = false;
+  if (playing_.empty()) return;
+  auto chunk = std::move(playing_.front());
+  playing_.pop_front();
+  if (output_) waveOutUnprepareHeader(output_, &chunk->header, sizeof(WAVEHDR));
+  chunk->result->Success(Value(heard));
   PlayNext();
+}
+
+void VoiceAudio::CloseOutput() {
+  KillTimer(window_, kOutputIdleTimer);
+  if (!output_) return;
+  waveOutReset(output_);
+  for (auto& chunk : playing_) {
+    waveOutUnprepareHeader(output_, &chunk->header, sizeof(WAVEHDR));
+    chunk->result->Success(Value(false));
+  }
+  playing_.clear();
+  waveOutClose(output_);
+  output_ = nullptr;
+  output_rate_ = 0;
 }
 
 void VoiceAudio::StopPlayback() {
   for (auto& chunk : pending_) chunk.result->Success(Value(false));
   pending_.clear();
-  if (!playing_) return;
-  interrupted_ = true;
-  if (output_) waveOutReset(output_);
-  FinishPlayback(false);
+  CloseOutput();
 }
 
 bool VoiceAudio::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
@@ -248,8 +271,14 @@ bool VoiceAudio::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
   }
   if (message == MM_WOM_DONE) {
     if (output_ && reinterpret_cast<HWAVEOUT>(wparam) == output_ &&
-        reinterpret_cast<WAVEHDR*>(lparam) == &output_header_)
+        !playing_.empty() &&
+        reinterpret_cast<WAVEHDR*>(lparam) == &playing_.front()->header)
       FinishPlayback(true);
+    return true;
+  }
+  if (message == WM_TIMER && wparam == kOutputIdleTimer) {
+    KillTimer(window_, kOutputIdleTimer);
+    if (playing_.empty() && pending_.empty()) CloseOutput();
     return true;
   }
   return false;

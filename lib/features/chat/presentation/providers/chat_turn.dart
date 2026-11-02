@@ -65,6 +65,10 @@ class _Turn {
   /// The remote model plans this turn's research itself.
   var remoteBrain = false;
 
+  /// The Tools switch as the user set it, before remote research turned
+  /// the web tools on.
+  var userTools = true;
+
   // Where the answer is saved.
   String? chatId, modelId, answerParent;
 
@@ -81,6 +85,7 @@ class _Turn {
 
   // The answer as it streams in.
   final answer = StringBuffer(), thinking = StringBuffer();
+  bool hasReasoningTokens = false;
   int answerRevision = 0;
   final tail = AnswerTail();
   ThinkingStreamParser? parser;
@@ -109,7 +114,11 @@ class _Turn {
       answer.write(piece);
       tail.add(piece);
     });
-    thinkSub = next.thinkingStream.listen(thinking.write);
+    thinkSub = next.thinkingStream.listen((piece) {
+      // Tool traces share this buffer but are not reasoning tokens (owner, 2026-11-02).
+      if (piece.trim().isNotEmpty) hasReasoningTokens = true;
+      thinking.write(piece);
+    });
     parser = next;
   }
 

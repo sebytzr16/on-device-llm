@@ -45,7 +45,7 @@ class EffectiveSettingsPage extends ConsumerWidget {
             SettingsNote(
               overridden.isEmpty
                   ? 'Nothing is overridden: your settings apply as saved.'
-                  : '${overridden.length} setting${overridden.length == 1 ? '' : 's'} come from a model profile, preset or chat. Tap a row to see what each layer asked for.',
+                  : '${overridden.length} setting${overridden.length == 1 ? '' : 's'} come from a model profile, preset or chat. Select a row to see what each layer asked for.',
               icon: Icons.layers_outlined,
             ),
             SettingsSection(

@@ -1,3 +1,7 @@
+import '../../../helper/helper_runner.dart';
+import '../../domain/entities/model_suggestions.dart';
+import '../widgets/download_center.dart';
+import '../widgets/model_categories.dart';
 import 'dart:async';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -12,8 +16,7 @@ import '../../../../data/network/hugging_face.dart';
 import '../../domain/entities/model_catalog.dart';
 import '../../domain/entities/model_info.dart';
 import '../../../settings/presentation/providers/model_profiles_provider.dart';
-import '../../../settings/presentation/providers/settings_provider.dart';
-import '../../../settings/presentation/screens/overrides_page.dart';
+import '../../../settings/presentation/screens/model_profile_page.dart';
 import '../providers/model_manager_provider.dart';
 import '../widgets/config_card_flow.dart';
 import '../widgets/model_card.dart';
@@ -24,8 +27,14 @@ import '../../../../core/island/status_island.dart';
 import '../../../../core/motion/motion.dart';
 import '../../../../core/design/app_dialog.dart';
 
-class ModelsScreen extends ConsumerWidget {
+class ModelsScreen extends ConsumerStatefulWidget {
   const ModelsScreen({super.key});
+  @override
+  ConsumerState<ModelsScreen> createState() => _ModelsScreenState();
+}
+
+class _ModelsScreenState extends ConsumerState<ModelsScreen> {
+  ModelCategory? _category;
   Future<void> _attempt(
     BuildContext context,
     Future<void> Function() action,
@@ -210,6 +219,9 @@ class ModelsScreen extends ConsumerWidget {
     required bool busy,
   }) {
     final manager = ref.read(modelManagerProvider.notifier);
+    final helperLoaded =
+        ref.watch(helperLoadedModelsProvider).value?.contains(model.id) ??
+        false;
     // Cards rise in when the page opens or a model is added.
     return SpringEntrance(
       key: ValueKey('card-${model.id}'),
@@ -218,12 +230,19 @@ class ModelsScreen extends ConsumerWidget {
         progress: state.downloads[model.id],
         memory: memory,
         active: state.loadedModelId == model.id,
+        helperActive: helperLoaded,
+        helperStreams: ref.watch(helperStreamsProvider(model.id)),
         busy: busy,
         preparing: state.preparing.contains(model.id),
         onDownload: () => _download(context, ref, model),
         onPause: () => manager.pauseDownload(model.id),
         onLoad: () => _attempt(context, () => manager.loadModel(model)),
-        onUnload: () => _attempt(context, manager.unloadModel),
+        onUnload: () => _attempt(
+          context,
+          () => state.loadedModelId == model.id
+              ? manager.unloadModel()
+              : ref.read(helperRunnerProvider).unloadModel(model.id),
+        ),
         onDelete: () => _delete(context, ref, model),
         visionReady:
             (model.projector != null ||
@@ -246,7 +265,7 @@ class ModelsScreen extends ConsumerWidget {
             ? () => Navigator.push(
                 context,
                 MaterialPageRoute<void>(
-                  builder: (_) => _ModelProfilePage(model: model),
+                  builder: (_) => ModelProfilePage(model: model),
                 ),
               )
             : null,
@@ -264,16 +283,17 @@ class ModelsScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final c = context.colors;
     final state = ref.watch(modelManagerProvider);
     final memory = ref.watch(deviceMemoryProvider).value;
     final busy = ref.watch(sessionBusyProvider) || state.isLoadingModel;
     final onDevice = state.catalog.where((m) => m.isDownloaded).toList();
-    final available = state.catalog.where((m) => !m.isDownloaded).toList();
+    final available = availableLibraryModels(state.catalog, desktop: false);
     return Scaffold(
       appBar: AppBar(
         actions: [
+          const DownloadsButton(),
           IconButton(
             tooltip: context.l10n.uiModelsScreenModelReadiness,
             icon: const Icon(Icons.insights_outlined),
@@ -416,6 +436,10 @@ class ModelsScreen extends ConsumerWidget {
                           ),
                         ],
                       ),
+                      ModelCategoryFilters(
+                        selected: _category,
+                        onChanged: (value) => setState(() => _category = value),
+                      ),
                       if (state.isImporting)
                         _StatusLine(context.l10n.checkingCopying),
                       if (state.isLoadingModel)
@@ -424,7 +448,11 @@ class ModelsScreen extends ConsumerWidget {
                       const SizedBox(height: AppDesign.xxl),
                     ],
                   ),
-                  if (state.catalog.isEmpty)
+                  if (_category != null && _category != ModelCategory.llm)
+                    SliverToBoxAdapter(
+                      child: ModelInventoryList(category: _category),
+                    )
+                  else if (state.catalog.isEmpty)
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
@@ -611,63 +639,6 @@ class _ErrorCard extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// The override editor for one model, inheriting from the user's settings
-/// (the layers below a model profile).
-class _ModelProfilePage extends ConsumerWidget {
-  final ModelInfo model;
-  const _ModelProfilePage({required this.model});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final profiles = ref.watch(modelProfilesProvider);
-    return OverridesPage(
-      title: context.l10n.modelProfileTitle(model.displayName),
-      scopeLabel: context.l10n.modelProfileScope,
-      overrides: profiles[model.id] ?? const {},
-      inherited: ref.watch(settingsProvider),
-      onChanged: (o) =>
-          ref.read(modelProfilesProvider.notifier).set(model.id, o),
-      actions: [
-        PopupMenuButton<String>(
-          key: const Key('config-menu'),
-          tooltip: context.l10n.uiModelsScreenShareOrImportAConfiguration,
-          icon: const Icon(Icons.ios_share),
-          onSelected: (v) => switch (v) {
-            'share' => shareConfigCard(context, ref, model),
-            'copy' => copyConfigCard(context, ref, model),
-            'paste' => importConfigCard(
-              context,
-              ref,
-              fromFile: false,
-              into: model,
-            ),
-            _ => importConfigCard(context, ref, fromFile: true, into: model),
-          },
-          itemBuilder: (_) => [
-            PopupMenuItem(
-              value: 'share',
-              child: Text(context.l10n.uiModelsScreenShareConfiguration),
-            ),
-            PopupMenuItem(
-              value: 'copy',
-              child: Text(context.l10n.uiModelsScreenCopyAsText),
-            ),
-            const PopupMenuDivider(),
-            PopupMenuItem(
-              value: 'paste',
-              child: Text(context.l10n.uiModelsScreenImportFromClipboard),
-            ),
-            PopupMenuItem(
-              value: 'file',
-              child: Text(context.l10n.uiModelsScreenImportFromAFile),
-            ),
-          ],
-        ),
-      ],
     );
   }
 }

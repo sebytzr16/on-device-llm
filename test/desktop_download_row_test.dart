@@ -78,14 +78,21 @@ void main() {
     );
     await tester.pumpAndSettle();
     final models = container.read(modelManagerProvider.notifier) as _Models;
-    expect(find.text('Download'), findsOneWidget);
+    final row = find.byKey(const ValueKey('model-row-big'));
+    expect(
+      find.descendant(of: row, matching: find.text('Download')),
+      findsOneWidget,
+    );
 
     // Hashing the finished file: the bar names it, no Download button.
     models.show(status: DownloadStatus.verifying, preparing: true);
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(find.textContaining('SHA-256'), findsOneWidget);
-    expect(find.text('Download'), findsNothing);
+    expect(
+      find.descendant(of: row, matching: find.text('Download')),
+      findsNothing,
+    );
 
     // Saved and being read for its settings.
     models.show(status: DownloadStatus.completed, preparing: true, done: true);

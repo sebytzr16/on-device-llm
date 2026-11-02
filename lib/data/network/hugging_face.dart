@@ -11,11 +11,13 @@ class HfRepo {
   final String id;
   final int downloads, likes;
   final DateTime? lastModified;
+  final List<String> tags;
   const HfRepo({
     required this.id,
     required this.downloads,
     required this.likes,
     this.lastModified,
+    this.tags = const [],
   });
 }
 
@@ -37,11 +39,17 @@ class HfFile {
 class HfRepoFiles {
   final String repo, revision, license;
   final List<HfFile> files;
+  final List<String> tags;
+  final int? contextLength;
+  final num? parameterCount;
   const HfRepoFiles({
     required this.repo,
     required this.revision,
     required this.license,
     required this.files,
+    this.tags = const [],
+    this.contextLength,
+    this.parameterCount,
   });
 
   /// One choice per complete set. Incomplete sets cannot be loaded.
@@ -96,6 +104,9 @@ class HuggingFace {
           if (m is Map && m['id'] is String && m['private'] != true)
             HfRepo(
               id: m['id'] as String,
+              tags: (m['tags'] as List? ?? const [])
+                  .whereType<String>()
+                  .toList(),
               downloads: (m['downloads'] as num?)?.toInt() ?? 0,
               likes: (m['likes'] as num?)?.toInt() ?? 0,
               lastModified: DateTime.tryParse(
@@ -114,11 +125,20 @@ class HuggingFace {
 
   /// Hub `siblings` contains every file, including nested repository paths.
   /// Gated repositories fail with a clear message.
-  static Future<HfRepoFiles> files(String repo, {Dio? client}) async {
+  /// [revision] (a branch, tag or commit) reads that version instead of
+  /// the default branch.
+  static Future<HfRepoFiles> files(
+    String repo, {
+    String? revision,
+    Dio? client,
+  }) async {
     final dio = client ?? _dio();
     try {
+      final at = revision == null || revision == 'main'
+          ? ''
+          : '/revision/${Uri.encodeComponent(revision)}';
       final res = await dio.get<Map<String, dynamic>>(
-        'https://huggingface.co/api/models/$repo',
+        'https://huggingface.co/api/models/$repo$at',
         queryParameters: {'blobs': true},
       );
       final data = res.data!;
@@ -144,10 +164,52 @@ class HuggingFace {
         license:
             '${(data['cardData'] as Map?)?['license'] ?? 'See publisher model card'}',
         files: files,
+        tags: (data['tags'] as List? ?? const []).whereType<String>().toList(),
+        contextLength:
+            ((data['config'] as Map?)?['max_position_embeddings'] as num?)
+                ?.toInt(),
+        parameterCount: ((data['safetensors'] as Map?)?['total'] as num?),
       );
     } on DioException catch (e) {
       throw FormatException(
         'Cannot read this repository (${e.response?.statusCode ?? 'network error'}).',
+      );
+    } finally {
+      if (client == null) dio.close();
+    }
+  }
+
+  static String stripFrontMatter(String text) {
+    final normalized = text.replaceFirst('\uFEFF', '').replaceAll('\r\n', '\n');
+    if (!normalized.startsWith('---\n')) return normalized;
+    final end = RegExp(
+      r'^---\s*$',
+      multiLine: true,
+    ).firstMatch(normalized.substring(4));
+    return end == null
+        ? normalized
+        : normalized.substring(4 + end.end).trimLeft();
+  }
+
+  /// Only the selected repository's pinned card, through the download client.
+  static Future<String> readme(
+    String repo,
+    String revision, {
+    Dio? client,
+  }) async {
+    final dio = client ?? _dio();
+    try {
+      final response = await dio.get<String>(
+        Uri(
+          scheme: 'https',
+          host: 'huggingface.co',
+          pathSegments: [...repo.split('/'), 'resolve', revision, 'README.md'],
+        ).toString(),
+        options: Options(responseType: ResponseType.plain),
+      );
+      final text = response.data ?? '';
+      return stripFrontMatter(
+        text.length > 500000 ? text.substring(0, 500000) : text,
       );
     } finally {
       if (client == null) dio.close();
@@ -220,9 +282,33 @@ class HuggingFace {
     return ModelFamily.other;
   }
 
-  /// Prefer half precision projectors, then the smallest verified single file.
-  static HfFile? selectProjector(Iterable<HfFile> files) {
+  /// Prefer the projector that belongs to [model] (same folder, most shared
+  /// name words) when a repository holds several (audit P2-42), then half
+  /// precision, then the smallest verified single file.
+  static HfFile? selectProjector(Iterable<HfFile> files, {HfFile? model}) {
     final candidates = files.where((f) => f.isProjector && !f.isSplit).toList();
+    String folder(HfFile f) => f.name.contains('/')
+        ? f.name.substring(0, f.name.lastIndexOf('/'))
+        : '';
+    Set<String> words(HfFile f) => f.name
+        .split('/')
+        .last
+        .toLowerCase()
+        .replaceAll(RegExp(r'\.gguf$'), '')
+        .split(RegExp(r'[-_.\s]+'))
+        .where(
+          (w) =>
+              w.isNotEmpty &&
+              w != 'mmproj' &&
+              w != 'model' &&
+              !RegExp(r'^(i?q\d\w*|b?f\d+|fp\d+|[ksml]|xs|xxs)$').hasMatch(w),
+        )
+        .toSet();
+    final modelWords = model == null ? const <String>{} : words(model);
+    int fit(HfFile f) => model == null
+        ? 0
+        : (folder(f) == folder(model) ? 1000 : 0) +
+              words(f).intersection(modelWords).length;
     int rank(HfFile f) {
       final name = f.name.toUpperCase();
       if (RegExp(r'(^|[^A-Z0-9])(F16|FP16)([^A-Z0-9]|$)').hasMatch(name)) {
@@ -233,6 +319,8 @@ class HuggingFace {
     }
 
     candidates.sort((a, b) {
+      final match = fit(b).compareTo(fit(a));
+      if (match != 0) return match;
       final order = rank(a).compareTo(rank(b));
       return order == 0 ? a.size.compareTo(b.size) : order;
     });
@@ -264,7 +352,7 @@ class HuggingFace {
       ],
     ).toString();
     final projectorFile = includeProjector && !file.isProjector
-        ? selectProjector(repo.files)
+        ? selectProjector(repo.files, model: file)
         : null;
     final projector = projectorFile == null
         ? null
@@ -302,7 +390,13 @@ class HuggingFace {
   }
 
   /// A pasted file link (Files and versions → a .gguf) as a catalog entry.
-  static Future<ModelInfo> resolve(String input, ModelFamily family) async {
+  /// The link's revision is kept: a `/resolve/v2/…` link no longer loads
+  /// `main` (audit P2-41).
+  static Future<ModelInfo> resolve(
+    String input,
+    ModelFamily family, {
+    Dio? client,
+  }) async {
     final uri = Uri.tryParse(input.trim());
     if (uri == null ||
         uri.scheme != 'https' ||
@@ -318,7 +412,11 @@ class HuggingFace {
         'Open a GGUF file under Files and versions, then paste its link.',
       );
     }
-    final repo = await files('${parts[0]}/${parts[1]}');
+    final repo = await files(
+      '${parts[0]}/${parts[1]}',
+      revision: parts[3],
+      client: client,
+    );
     final name = parts.skip(4).join('/');
     final file = repo.files.where((f) => f.name == name).firstOrNull;
     if (file == null) {

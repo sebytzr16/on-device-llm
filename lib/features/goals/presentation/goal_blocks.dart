@@ -262,12 +262,15 @@ List<Widget> _reportBlocks(
             icon: const Icon(Icons.save_alt_outlined, size: 18),
             label: Text(t.goalSaveReport),
           ),
-          OutlinedButton.icon(
-            key: const Key('goal-watch'),
-            onPressed: () => unawaited(_GoalsPageState._watch(context, goal)),
-            icon: const Icon(Icons.update, size: 18),
-            label: Text(t.goalWatch),
-          ),
+          if (ScheduleStore.supported)
+            OutlinedButton.icon(
+              key: const Key('goal-watch'),
+              onPressed: ScheduleStore.supported
+                  ? () => unawaited(_GoalsPageState._watch(context, goal))
+                  : null,
+              icon: const Icon(Icons.update, size: 18),
+              label: Text(t.goalWatch),
+            ),
         ],
       ),
     ],

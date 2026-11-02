@@ -18,6 +18,7 @@ import '../../../hosting/presentation/nearby_hosts_page.dart';
 import '../../../../core/motion/motion.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/design/app_dialog.dart';
+import '../../../../core/platform/form_factor.dart';
 
 /// Settings > Remote: saved connections to servers the user runs (LM Studio,
 /// Ollama, llama-server…) or to hosted APIs (OpenAI, Anthropic, Gemini,
@@ -166,7 +167,12 @@ class RemoteServerPage extends ConsumerWidget {
   }) async {
     final pairing = RemoteProfile.fromPairing(text, id: const Uuid().v4());
     if (pairing == null) {
-      showIslandToast(context, context.l10n.remotePasteNone);
+      showIslandToast(
+        context,
+        (context.isDesktop
+            ? context.l10n.remotePasteNonePc
+            : context.l10n.remotePasteNone),
+      );
       return;
     }
     var (profile, key) = pairing;
@@ -274,7 +280,9 @@ class RemoteServerPage extends ConsumerWidget {
                               : context.l10n.remoteNeedsUrl
                         : DesktopHost.active
                         ? context.l10n.desktopRemoteOff
-                        : context.l10n.remoteRowOff,
+                        : (context.isDesktop
+                              ? context.l10n.remoteRowOffPc
+                              : context.l10n.remoteRowOff),
                   ),
                   value: s.remoteEnabled,
                   onChanged: (v) => n.update(s.copyWith(remoteEnabled: v)),
@@ -360,20 +368,25 @@ class RemoteServerPage extends ConsumerWidget {
                       const SizedBox(height: AppDesign.sm),
                       Row(
                         children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              key: const Key('remote-scan'),
-                              onPressed: full
-                                  ? null
-                                  : () => _scan(context, ref),
-                              icon: const Icon(Icons.qr_code_scanner, size: 18),
-                              label: Text(
-                                context.l10n.remoteScanShort,
-                                overflow: TextOverflow.ellipsis,
+                          if (!DesktopHost.active)
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                key: const Key('remote-scan'),
+                                onPressed: full
+                                    ? null
+                                    : () => _scan(context, ref),
+                                icon: const Icon(
+                                  Icons.qr_code_scanner,
+                                  size: 18,
+                                ),
+                                label: Text(
+                                  context.l10n.remoteScanShort,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: AppDesign.sm),
+                          if (!DesktopHost.active)
+                            const SizedBox(width: AppDesign.sm),
                           Expanded(
                             child: OutlinedButton.icon(
                               key: const Key('remote-paste'),
@@ -441,7 +454,11 @@ class RemoteServerPage extends ConsumerWidget {
                     secondary: const Icon(Icons.settings_suggest_outlined),
                     key: const Key('remote-server-settings'),
                     title: Text(context.l10n.remoteServerSettings),
-                    subtitle: Text(context.l10n.remoteServerSettingsHint),
+                    subtitle: Text(
+                      (context.isDesktop
+                          ? context.l10n.remoteServerSettingsHintPc
+                          : context.l10n.remoteServerSettingsHint),
+                    ),
                     value: active.serverSettings,
                     onChanged: (v) => n.update(
                       s.copyWith(

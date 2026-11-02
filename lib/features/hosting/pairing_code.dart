@@ -78,3 +78,32 @@ abstract final class PairingCode {
     }
   }
 }
+
+/// One short-lived pairing window. Reservations bound concurrent guesses.
+class PairingSession {
+  final DateTime expiresAt;
+  final DateTime Function() now;
+  int _failures = 0;
+  bool _used = false;
+  PairingSession({
+    DateTime Function()? now,
+    Duration lifetime = const Duration(minutes: 10),
+  }) : now = now ?? DateTime.now,
+       expiresAt = (now ?? DateTime.now)().add(lifetime);
+
+  bool get expired => !now().isBefore(expiresAt);
+  bool get locked => _failures >= PairingCode.maxFailures;
+  bool get available => !_used && !expired && !locked;
+  bool reserve() {
+    if (!available) return false;
+    _failures++;
+    return true;
+  }
+
+  bool accept() {
+    if (_used || expired) return false;
+    _used = true;
+    _failures--;
+    return true;
+  }
+}

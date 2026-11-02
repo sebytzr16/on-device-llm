@@ -56,6 +56,9 @@ class _System implements SystemDownloads {
   }
 
   @override
+  Future<void> pause(String id) => cancel(id);
+
+  @override
   Future<void> cancel(String id) async {
     cancelled.add(id);
   }

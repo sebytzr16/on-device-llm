@@ -33,7 +33,6 @@ class ToolsQuickPanel extends ConsumerWidget {
 
     final c = context.colors;
     final on = s.toolsEnabled;
-    final webOff = !s.webSearchEnabled;
     final noCollection = s.knowledgeCollection.isEmpty;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -75,15 +74,14 @@ class ToolsQuickPanel extends ConsumerWidget {
             value: s.toolCalculator,
             onChanged: (v) => update(s.copyWith(toolCalculator: v)),
           ),
+          // One switch for the web: this row and the globe button agree.
           _ToolRow(
             keyName: 'quick-tool-web',
             label: context.l10n.uiToolsQuickPanelSearchWebReadUrlFindIn,
-            hint: webOff
-                ? 'Web research is off (the globe pill): not offered.'
-                : 'DuckDuckGo and public pages.',
-            warn: webOff,
-            value: s.toolWeb,
-            onChanged: (v) => update(s.copyWith(toolWeb: v)),
+            hint: context.l10n.toolWebGlobeHint,
+            value: s.webSearchEnabled && s.toolWeb,
+            onChanged: (v) =>
+                update(s.copyWith(webMode: webModeFor(s, v), toolWeb: true)),
           ),
           _ToolRow(
             keyName: 'quick-tool-documents',
@@ -95,6 +93,35 @@ class ToolsQuickPanel extends ConsumerWidget {
             value: s.toolDocuments,
             onChanged: (v) => update(s.copyWith(toolDocuments: v)),
           ),
+          // Recall is only offered with Memory on (Settings > Tools says so).
+          if (s.memoryEnabled)
+            _ToolRow(
+              keyName: 'quick-tool-recall',
+              label: context.l10n.toolRecallLabel,
+              hint: context.l10n.toolRecallHint,
+              value: s.toolMemory,
+              onChanged: (v) => update(s.copyWith(toolMemory: v)),
+            ),
+          if (!DesktopHost.active)
+            _ToolRow(
+              keyName: 'quick-tool-actions',
+              label: context.l10n.toolActionsLabel,
+              hint: context.l10n.toolActionsHint,
+              value: s.toolActions,
+              onChanged: (v) => update(s.copyWith(toolActions: v)),
+            ),
+          // The helper model, switchable per chat (owner, 2026-11-02); the
+          // model itself is picked in Settings > Tools.
+          _ToolRow(
+            keyName: 'quick-tool-helper',
+            label: context.l10n.toolHelperLabel,
+            hint: s.helperModelId.isEmpty
+                ? context.l10n.toolHelperPick
+                : context.l10n.toolHelperHint,
+            warn: s.toolHelper && s.helperModelId.isEmpty,
+            value: s.toolHelper,
+            onChanged: (v) => update(s.copyWith(toolHelper: v)),
+          ),
           if (DesktopHost.active && Platform.isWindows) _McpQuickTools(),
           ListTile(
             key: const Key('quick-tool-choice'),
@@ -104,6 +131,8 @@ class ToolsQuickPanel extends ConsumerWidget {
               s.toolChoice == ToolChoice.required
                   ? 'Required: a tool is called before the first answer.'
                   : 'Auto: the model decides whether a tool is needed.',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
             trailing: SegmentedButton<ToolChoice>(
               key: const Key('quick-tool-choice-segments'),
@@ -134,6 +163,13 @@ class ToolsQuickPanel extends ConsumerWidget {
   }
 }
 
+/// The web switch in a tools list: on keeps Always if it was chosen.
+WebMode webModeFor(InferenceSettings s, bool on) => !on
+    ? WebMode.off
+    : s.webMode == WebMode.off
+    ? WebMode.auto
+    : s.webMode;
+
 class _ToolRow extends StatelessWidget {
   final String keyName, label, hint;
   final bool value, warn;
@@ -154,8 +190,11 @@ class _ToolRow extends StatelessWidget {
       key: Key(keyName),
       dense: true,
       title: Text(label, style: context.text.mono),
+      // One line each so the + sheet still fits without scrolling.
       subtitle: Text(
         hint,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(color: warn ? c.warning : c.textMuted),
       ),
       value: value,

@@ -18,6 +18,7 @@ abstract class SystemDownloads {
   Future<({String status, int received, String? error})> query(String id);
   Future<void> stage(String id);
   Future<void> cancel(String id);
+  Future<void> pause(String id);
 }
 
 class AndroidSystemDownloads implements SystemDownloads {
@@ -59,6 +60,10 @@ class AndroidSystemDownloads implements SystemDownloads {
   @override
   Future<void> stage(String id) =>
       channel.invokeMethod<void>('stage', {'id': id});
+
+  @override
+  Future<void> pause(String id) =>
+      channel.invokeMethod<void>('pause', {'id': id});
 
   @override
   Future<void> cancel(String id) =>

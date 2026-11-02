@@ -97,10 +97,23 @@ class ModelSamplingVariantsNotifier
           ],
         },
     });
-    _writes = _writes.then((_) async {
-      _prefs ??= await SharedPreferences.getInstance();
-      await _prefs!.setString(_key, raw);
-    });
+    _writes = _writes
+        .then((_) async {
+          _prefs ??= await SharedPreferences.getInstance();
+          if (!await _prefs!.setString(_key, raw)) {
+            throw StateError('Could not save model sampling variants');
+          }
+        })
+        .catchError((Object error, StackTrace stack) {
+          FlutterError.reportError(
+            FlutterErrorDetails(
+              exception: error,
+              stack: stack,
+              library: 'model sampling variants',
+              context: ErrorDescription('while saving model sampling variants'),
+            ),
+          );
+        });
     await _writes;
   }
 

@@ -104,4 +104,17 @@ void main() {
       expect(SettingSpec.byKey(key)!.reloadRequired, isTrue, reason: key);
     }
   });
+
+  test('an imported batch below 32 loads as 32 (P1-29)', () {
+    for (final batch in [1, 16, 31]) {
+      final s = InferenceSettings.fromJson({
+        'batchSize': batch,
+        'microBatchSize': 8,
+      });
+      expect(s.effectiveBatchSize, 32, reason: '$batch');
+      expect(s.effectiveMicroBatchSize, 32, reason: '$batch');
+      final config = jsonDecode(LlamaEngine.loadConfig(settings: s)) as Map;
+      expect(config['effectiveBatchSize'], 32);
+    }
+  });
 }

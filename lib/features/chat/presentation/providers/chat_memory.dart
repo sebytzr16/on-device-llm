@@ -6,6 +6,7 @@ mixin _ChatMemory on _ChatBase {
     final model = ref.read(modelManagerProvider).loadedModel;
     return settings.memoryEnabled &&
         settings.toolsEnabled &&
+        settings.toolMemory &&
         !settings.structuredOutput &&
         (settings.usesRemote
             ? settings.activeRemoteProfile?.shareMemory == true
@@ -153,6 +154,25 @@ mixin _ChatMemory on _ChatBase {
 
   /// Asks the model for new facts about the user in this exchange and
   /// stores them. Returns the stored rows, or null when nothing was learned.
+  /// Whether the remote connection [settings] used may still read and
+  /// learn memory notes, read live: the user may have turned sharing off
+  /// while the answer streamed (audit P2-15).
+  bool _remoteMemoryAllowed(InferenceSettings settings) =>
+      _remoteMemoryShared(settings) &&
+      ref.read(settingsProvider).activeRemoteProfile!.learnMemory;
+
+  /// Whether the remote connection [settings] used may still see memory
+  /// notes, read live.
+  bool _remoteMemoryShared(InferenceSettings settings) {
+    final live = ref.read(settingsProvider);
+    final profile = live.activeRemoteProfile;
+    return live.memoryEnabled &&
+        live.usesRemote &&
+        profile != null &&
+        profile.id == settings.activeRemoteProfile?.id &&
+        profile.shareMemory;
+  }
+
   /// Remote memory extraction after the turn has ended, on a client of its
   /// own; what it learns is shown when it arrives if the chat is still open.
   Future<void> _learnLater(
@@ -177,6 +197,7 @@ mixin _ChatMemory on _ChatBase {
         remainingFacts: remainingFacts,
         chatId: chatId,
         sourceMessageId: sourceMessageId,
+        allowed: () => _remoteMemoryAllowed(settings),
       ).timeout(const Duration(seconds: 45), onTimeout: () => null);
       if (learned != null &&
           learned.isNotEmpty &&
@@ -203,9 +224,11 @@ mixin _ChatMemory on _ChatBase {
     int remainingFacts = UserMemory.maxFactsPerTurn,
     String? chatId,
     String? sourceMessageId,
+    bool Function()? allowed,
   }) async {
     try {
       final known = await _activeMemoryFacts();
+      if (allowed != null && !allowed()) return null;
       final raw = await engine
           .generate(
             messages: UserMemory.extractionMessages(
@@ -287,6 +310,13 @@ mixin _ChatMemory on _ChatBase {
     required bool title,
     _MemoryJob? memory,
   }) async {
+    // The notes are read first and the switches checked after: turning
+    // sharing off during that read must still keep them home.
+    var notes = const <String>[];
+    if (memory != null && title && chatId != null) {
+      notes = await _activeMemoryFacts();
+    }
+    if (memory != null && !_remoteMemoryAllowed(settings)) memory = null;
     if (memory == null || !title || chatId == null) {
       if (title && chatId != null) {
         await _nameChatLater(
@@ -320,7 +350,7 @@ mixin _ChatMemory on _ChatBase {
             messages: ChatTitles.titleAndNotesMessages(
               question,
               answer,
-              notes: await _activeMemoryFacts(),
+              notes: notes,
             ),
             fallbackTemplate: model.family.fallbackTemplate,
             settings: settings.copyWith(

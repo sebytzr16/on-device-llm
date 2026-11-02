@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
 
+import 'motion.dart';
+
 /// One line of text that, when it does not fit, slides slowly to the left
 /// so the whole line can be read, waits at the end, then comes back
 /// (request 2026-10-08: "Report ready · …" and "Group chats with
@@ -7,7 +9,8 @@ import 'package:flutter/widgets.dart';
 ///
 /// It plays a few passes and then rests at the start, so it does not keep
 /// the screen busy (and widget tests can settle). With animations turned off
-/// in the system it wraps onto more lines instead.
+/// in the system or the app's Motion set to Off it wraps onto more lines
+/// instead (P2-54).
 class MarqueeText extends StatefulWidget {
   final String text;
   final TextStyle? style;
@@ -97,7 +100,8 @@ class _MarqueeTextState extends State<MarqueeText>
   @override
   Widget build(BuildContext context) {
     final style = DefaultTextStyle.of(context).style.merge(widget.style);
-    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+    if (!context.motion.animates) {
+      _c.stop();
       return Text(widget.text, style: style, maxLines: 3);
     }
     return LayoutBuilder(

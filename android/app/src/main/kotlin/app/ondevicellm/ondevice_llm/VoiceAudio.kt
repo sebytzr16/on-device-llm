@@ -22,6 +22,7 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
 /**
@@ -65,7 +66,10 @@ class VoiceAudio(private val activity: Activity, messenger: BinaryMessenger) {
     /** Conversation playback on the call path (echo-cancelled, narrowband). */
     private var callPath = false
 
-    private class Chunk(val pcm: ShortArray, val rate: Int, val generation: Int, val done: (Boolean) -> Unit)
+    private class Chunk(val pcm: ShortArray, val rate: Int, val generation: Int, private val result: (Boolean) -> Unit) {
+        private val settled = AtomicBoolean(false)
+        fun done(ok: Boolean) { if (settled.compareAndSet(false, true)) result(ok) }
+    }
     private data class Settle(val end: Long, val deadline: Long, val chunk: Chunk)
     /** Ends the player thread (after [close]). */
     private val poison = Chunk(ShortArray(0), 0, -1) {}
@@ -96,8 +100,11 @@ class VoiceAudio(private val activity: Activity, messenger: BinaryMessenger) {
                     for (i in pcm.indices) {
                         pcm[i] = ((bytes[2 * i].toInt() and 0xff) or (bytes[2 * i + 1].toInt() shl 8)).toShort()
                     }
-                    ensurePlayer()
-                    queue.put(Chunk(pcm, rate, generation) { ok -> main.post { result.success(ok) } })
+                    synchronized(this) {
+                        if (closed) { result.success(false); return@setMethodCallHandler }
+                        queue.put(Chunk(pcm, rate, generation) { ok -> main.post { result.success(ok) } })
+                        ensurePlayer()
+                    }
                 }
                 "stopPlayback" -> { stopPlayback(); result.success(null) }
                 "conversation" -> {
@@ -116,6 +123,7 @@ class VoiceAudio(private val activity: Activity, messenger: BinaryMessenger) {
     }
 
     private fun startMic(): Boolean {
+        if (closed) return false
         if (recording) return true
         val min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (min <= 0) return false
@@ -163,6 +171,9 @@ class VoiceAudio(private val activity: Activity, messenger: BinaryMessenger) {
     }
 
     private fun stopMic() {
+        val pending = pendingStart
+        pendingStart = null
+        pending?.success(false)
         recording = false
         recorder?.join(500)
         recorder = null
@@ -173,6 +184,7 @@ class VoiceAudio(private val activity: Activity, messenger: BinaryMessenger) {
         player = thread(name = "voice-play", isDaemon = true) {
             // Written but not yet heard: where each chunk ends on the track.
             val settling = ArrayDeque<Settle>()
+            var active: Chunk? = null
             try {
                 while (true) {
                     // Gapless (audit C4): the next chunk is written while the
@@ -182,6 +194,7 @@ class VoiceAudio(private val activity: Activity, messenger: BinaryMessenger) {
                         else queue.poll(15, TimeUnit.MILLISECONDS)
                     if (chunk === poison) break
                     if (chunk != null) {
+                        active = chunk
                         if (chunk.generation != generation) chunk.done(false)
                         else {
                             val end = write(chunk, settling)
@@ -193,14 +206,24 @@ class VoiceAudio(private val activity: Activity, messenger: BinaryMessenger) {
                             }
                         }
                     }
+                    active = null
                     settle(settling)
                 }
             } catch (_: InterruptedException) {
             } catch (e: Exception) {
                 Log.w("VoiceAudio", "player stopped", e)
             } finally {
+                active?.done(false)
                 settling.forEach { it.chunk.done(false) }
                 settling.clear()
+                synchronized(this) {
+                    val pending = mutableListOf<Chunk>()
+                    queue.drainTo(pending)
+                    pending.forEach { if (it !== poison) it.done(false) }
+                    try { track?.release() } catch (_: Exception) {}
+                    track = null
+                    player = null
+                }
             }
         }
     }
@@ -339,6 +362,7 @@ class VoiceAudio(private val activity: Activity, messenger: BinaryMessenger) {
     fun pause() {
         stopMic()
         stopPlayback()
+        conversation(false)
     }
 
     fun close() {

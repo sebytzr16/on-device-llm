@@ -110,8 +110,9 @@ class ModelConfigCard {
     this.dropped = const [],
   });
 
-  /// What [model] runs with here: the user's changes from the app defaults
-  /// with the model's own profile on top, in shareable groups only.
+  /// What [model] runs with here: the user's explicit choices and changes
+  /// from the app defaults, with the model's own profile on top, in
+  /// shareable groups only.
   factory ModelConfigCard.from({
     required ModelInfo model,
     required InferenceSettings global,
@@ -121,7 +122,9 @@ class ModelConfigCard {
     final defaults = const InferenceSettings().toJson();
     final changed = {
       for (final e in global.toJson().entries)
-        if (jsonEncode(defaults[e.key]) != jsonEncode(e.value)) e.key: e.value,
+        if (global.explicitOverrides.contains(e.key) ||
+            jsonEncode(defaults[e.key]) != jsonEncode(e.value))
+          e.key: e.value,
     };
     final (settings, _) = _shareable({
       ...SettingsResolver.sanitize(changed),

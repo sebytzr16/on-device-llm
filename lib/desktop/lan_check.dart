@@ -99,7 +99,9 @@ class LanCheck {
     );
   }
 
-  /// Removes inbound block rules for this app and allows it on private and
+  /// Removes inbound block rules for this app (each renamed to a GUID
+  /// first: Windows names its TCP and UDP rules alike, and removing by a
+  /// shared name may drop the wrong one, P3-34) and allows it on private and
   /// domain networks, and on public ones when [public] (the network in use
   /// is one). Windows asks the user to approve (UAC).
   static Future<void> allowInFirewall({bool public = false}) async {
@@ -107,7 +109,7 @@ class LanCheck {
     final fix =
         '''
 \$fw = New-Object -ComObject HNetCfg.FwPolicy2
-@(\$fw.Rules | Where-Object { \$_.ApplicationName -ieq '$exe' -and \$_.Direction -eq 1 -and \$_.Action -eq 0 }) | ForEach-Object { \$fw.Rules.Remove(\$_.Name) }
+@(\$fw.Rules | Where-Object { \$_.ApplicationName -ieq '$exe' -and \$_.Direction -eq 1 -and \$_.Action -eq 0 }) | ForEach-Object { \$id = [guid]::NewGuid().ToString(); \$_.Name = \$id; \$fw.Rules.Remove(\$id) }
 New-NetFirewallRule -DisplayName 'OnDevice LLM local server' -Direction Inbound -Action Allow -Program '$exe' -Profile Private,Domain${public ? ',Public' : ''} | Out-Null
 ''';
     await Process.run('powershell', [

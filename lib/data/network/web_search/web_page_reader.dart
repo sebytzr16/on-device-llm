@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -393,7 +394,10 @@ class WebPageReader {
             text = bounded(NewsFeedParser.asText(feed));
           } else {
             final plain = mime == 'text/plain';
-            final extracted = extractPage(body, plainText: plain);
+            final extracted = await extractPageInBackground(
+              body,
+              plainText: plain,
+            );
             title = extracted.title;
             text = extracted.text;
             published = extracted.publishedAt;
@@ -620,6 +624,11 @@ class WebPageReader {
     r'(^|[\s_-])(comments?|sidebar|side-bar|footer|nav|navbar|navigation|menu|share|sharing|social|related|recommend(?:ed|ations)?|promo|advert(?:isement)?|ads?|banner|cookie|consent|popup|modal|newsletter|subscribe|breadcrumbs?|pagination|toolbar|sponsor|disclaimer|skip-link|masthead|toc|table-of-contents)([\s_-]|$)',
     caseSensitive: false,
   );
+
+  static Future<ExtractedPage> extractPageInBackground(
+    String body, {
+    bool plainText = false,
+  }) => Isolate.run(() => extractPage(body, plainText: plainText));
 
   static (String, String) extract(String body, {bool plainText = false}) {
     final page = extractPage(body, plainText: plainText);

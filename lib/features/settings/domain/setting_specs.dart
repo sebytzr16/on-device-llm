@@ -39,10 +39,16 @@ class SettingSpec {
       }.contains(key);
   bool get available => DesktopHost.active || !desktopOnly;
 
+  /// Sampling and answer length belong to each model (owner 2026-11-01):
+  /// the app-wide layer no longer sets them, so a model starts from its
+  /// own recommended values.
+  bool get perModel => group == groupGeneration;
+
   static const groupGeneration = 'Generation';
   static const groupReasoning = 'Reasoning';
   static const groupWeb = 'Web research';
   static const groupTools = 'Tools';
+  static const groupAgents = 'Agents';
   static const groupOutput = 'Structured output';
   static const groupContext = 'Context';
   static const groupHardware = 'Hardware';
@@ -77,6 +83,12 @@ class SettingSpec {
       group: groupHardware,
       kind: SettingKind.choice,
       options: ['auto', 'gpu', 'cpu'],
+    ),
+    SettingSpec(
+      key: 'visionEnabled',
+      label: 'Vision (photos)',
+      group: groupHardware,
+      kind: SettingKind.boolean,
     ),
     SettingSpec(
       key: 'useMmap',
@@ -542,6 +554,130 @@ class SettingSpec {
       label: 'Document tools',
       group: groupTools,
       kind: SettingKind.boolean,
+    ),
+    SettingSpec(
+      key: 'toolMemory',
+      label: 'Memory recall',
+      group: groupTools,
+      kind: SettingKind.boolean,
+    ),
+    SettingSpec(
+      key: 'toolActions',
+      label: 'Phone actions',
+      group: groupTools,
+      kind: SettingKind.boolean,
+    ),
+    SettingSpec(
+      key: 'toolHelper',
+      label: 'Helper model',
+      group: groupTools,
+      kind: SettingKind.boolean,
+    ),
+    SettingSpec(
+      key: 'helperModelId',
+      label: 'Helper model id',
+      group: groupTools,
+      kind: SettingKind.text,
+    ),
+
+    SettingSpec(
+      key: 'agentMaxTokens',
+      label: 'Max answer tokens',
+      group: groupAgents,
+      kind: SettingKind.integer,
+      min: 64,
+      max: 4096,
+    ),
+    SettingSpec(
+      key: 'agentTemperature',
+      label: 'Temperature',
+      group: groupAgents,
+      kind: SettingKind.number,
+      min: 0,
+      max: 2,
+    ),
+    SettingSpec(
+      key: 'agentTopP',
+      label: 'Top p (-1 = model)',
+      group: groupAgents,
+      kind: SettingKind.number,
+      min: -1,
+      max: 1,
+    ),
+    SettingSpec(
+      key: 'agentMinP',
+      label: 'Min p (-1 = model)',
+      group: groupAgents,
+      kind: SettingKind.number,
+      min: -1,
+      max: 1,
+    ),
+    SettingSpec(
+      key: 'agentTopK',
+      label: 'Top k (-1 = model)',
+      group: groupAgents,
+      kind: SettingKind.integer,
+      min: -1,
+      max: 1000,
+    ),
+    SettingSpec(
+      key: 'agentRepeatPenalty',
+      label: 'Repeat penalty (-1 = model)',
+      group: groupAgents,
+      kind: SettingKind.number,
+      min: -1,
+      max: 2,
+    ),
+    SettingSpec(
+      key: 'agentContextSize',
+      label: 'Context size',
+      group: groupAgents,
+      kind: SettingKind.integer,
+      min: 512,
+      max: 65536,
+    ),
+    SettingSpec(
+      key: 'agentMaxConcurrent',
+      label: 'Max agents at once',
+      group: groupAgents,
+      kind: SettingKind.integer,
+      min: 1,
+      max: 4,
+    ),
+    SettingSpec(
+      key: 'agentThinking',
+      label: 'Thinking',
+      group: groupAgents,
+      kind: SettingKind.boolean,
+    ),
+    SettingSpec(
+      key: 'agentToolRounds',
+      label: 'Tool rounds',
+      group: groupAgents,
+      kind: SettingKind.integer,
+      min: 1,
+      max: 8,
+    ),
+    SettingSpec(
+      key: 'agentWebAccess',
+      label: 'Agent web access',
+      group: groupAgents,
+      kind: SettingKind.choice,
+      options: ['askOnce', 'alwaysAllow', 'never'],
+    ),
+    SettingSpec(
+      key: 'agentInstructions',
+      label: 'Custom agent instructions',
+      group: groupAgents,
+      kind: SettingKind.text,
+    ),
+    SettingSpec(
+      key: 'agentInputBudget',
+      label: 'Input budget',
+      group: groupAgents,
+      kind: SettingKind.integer,
+      min: 256,
+      max: 65536,
     ),
     SettingSpec(
       key: 'toolMaxRounds',

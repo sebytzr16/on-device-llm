@@ -1,9 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+
+import 'local_backup_service_test.dart' show BackupPaths;
 import 'package:ondevice_llm/core/providers/shared_providers.dart';
 import 'package:ondevice_llm/data/local/database/app_database.dart';
 import 'package:ondevice_llm/features/chat/domain/entities/chat_message.dart';
@@ -28,8 +32,19 @@ class KnowledgeSettings extends TestSettings {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late AppDatabase db;
-  setUp(() => db = AppDatabase.forTesting(NativeDatabase.memory()));
-  tearDown(() => db.close());
+  late Directory files;
+  late PathProviderPlatform previousPaths;
+  setUp(() async {
+    files = await Directory.systemTemp.createTemp('knowledge-originals-');
+    previousPaths = PathProviderPlatform.instance;
+    PathProviderPlatform.instance = BackupPaths(files.path, files.path);
+    db = AppDatabase.forTesting(NativeDatabase.memory());
+  });
+  tearDown(() async {
+    await db.close();
+    PathProviderPlatform.instance = previousPaths;
+    await files.delete(recursive: true);
+  });
 
   test(
     'imports split into passages and retrieval ranks the right document',

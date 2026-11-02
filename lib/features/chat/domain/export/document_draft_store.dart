@@ -1,5 +1,9 @@
 import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
+
 import '../chat_draft_store.dart';
+import 'chat_document.dart';
 
 class DocumentRevision {
   final String content;
@@ -8,16 +12,32 @@ class DocumentRevision {
 }
 
 /// Saved revisions share the atomic, ordered local draft storage.
+///
+/// With [persist] off (temporary or unsaved chats) revisions live only in
+/// this object and nothing reaches the disk or backups (P1-21).
 class DocumentDraftStore {
   final ChatDraftStore drafts;
+  final bool persist;
+  final _memory = <String, String>{};
   Future<void> _saving = Future.value();
-  DocumentDraftStore({ChatDraftStore? drafts})
+  DocumentDraftStore({ChatDraftStore? drafts, this.persist = true})
     : drafts = drafts ?? ChatDraftStore();
+
+  /// The revision key for [source] as selected and redacted: another message
+  /// selection or redaction gets its own revisions, so Restore can never
+  /// bring back text the new choice left out (P2-37).
+  static String sourceKey(String chat, ChatDocument source) =>
+      '$chat:${sha256.convert(utf8.encode(source.markdown)).toString().substring(0, 16)}';
+
   String _key(String chat, String template) => 'document:$chat:$template';
+
+  Future<String> _readText(String key) async =>
+      persist ? (await drafts.read(key)).text : _memory[key] ?? '';
+
   Future<List<DocumentRevision>> read(String chat, String template) async {
-    final draft = await drafts.read(_key(chat, template));
-    if (draft.text.isEmpty) return const [];
-    final raw = jsonDecode(draft.text);
+    final text = await _readText(_key(chat, template));
+    if (text.isEmpty) return const [];
+    final raw = jsonDecode(text);
     if (raw is! List) throw const FormatException('Invalid document draft.');
     return [
       for (final row in raw)
@@ -43,17 +63,17 @@ class DocumentDraftStore {
       DocumentRevision(content, DateTime.now()),
       ...versions,
     ].take(8);
-    await drafts.save(
-      _key(chat, template),
-      ChatDraft(
-        text: jsonEncode([
-          for (final row in next)
-            {
-              'content': row.content,
-              'savedAt': row.savedAt.toUtc().toIso8601String(),
-            },
-        ]),
-      ),
-    );
+    final text = jsonEncode([
+      for (final row in next)
+        {
+          'content': row.content,
+          'savedAt': row.savedAt.toUtc().toIso8601String(),
+        },
+    ]);
+    if (!persist) {
+      _memory[_key(chat, template)] = text;
+      return;
+    }
+    await drafts.save(_key(chat, template), ChatDraft(text: text));
   }
 }

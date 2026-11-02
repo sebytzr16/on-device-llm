@@ -145,8 +145,10 @@ class McpRegistry extends ChangeNotifier {
     final config = servers[name]!.config;
     final enabled = serverEnabled(name);
     final prefix = mcpToolName(name, '');
-    final disabled = _disabledTools.where((t) => t.startsWith(prefix)).toSet();
-    final allowed = _allowed.where((t) => t.startsWith(prefix)).toSet();
+    bool belongs(String t) =>
+        _aliases[t]?.server == name || t.startsWith(prefix);
+    final disabled = _disabledTools.where(belongs).toSet();
+    final allowed = _allowed.where(belongs).toSet();
     String encode(Iterable<McpServerConfig> configs) =>
         const JsonEncoder.withIndent('  ').convert({
           'mcpServers': {for (final c in configs) c.name: c.toJson()},
@@ -165,7 +167,7 @@ class McpRegistry extends ChangeNotifier {
         throw const McpException(McpProblem.config);
       }
       enabled ? _disabledServers.remove(name) : _disabledServers.add(name);
-      _disabledTools.removeWhere((t) => t.startsWith(prefix));
+      _disabledTools.removeWhere(belongs);
       _disabledTools.addAll(disabled);
       _allowed.addAll(allowed);
       await _saveConfig(
@@ -260,6 +262,15 @@ class McpRegistry extends ChangeNotifier {
       if (tools.any((t) => !names.add(t['name'] as String))) {
         throw const McpException(McpProblem.protocol);
       }
+      for (final tool in tools) {
+        final original = tool['name'] as String;
+        final alias = mcpToolName(name, original);
+        final existing = _aliases[alias];
+        if (existing != null && existing != (server: name, tool: original)) {
+          throw const McpException(McpProblem.protocol, 'Tool alias collision');
+        }
+        _aliases[alias] = (server: name, tool: original);
+      }
       state.tools = tools;
       state.status = McpStatus.ready;
       _changed();
@@ -275,6 +286,7 @@ class McpRegistry extends ChangeNotifier {
   }
 
   final _starts = <String, Object>{};
+  final _aliases = <String, ({String server, String tool})>{};
 
   List<ToolSpec> get specs => [
     for (final s in servers.values)
@@ -299,13 +311,10 @@ class McpRegistry extends ChangeNotifier {
     try {
       McpServerState? server;
       String? original;
-      for (final s in servers.values) {
-        for (final tool in s.tools) {
-          if (mcpToolName(s.config.name, tool['name'] as String) == call.name) {
-            server = s;
-            original = tool['name'] as String;
-          }
-        }
+      final target = _aliases[call.name];
+      if (target != null) {
+        server = servers[target.server];
+        original = target.tool;
       }
       if (server == null ||
           !specs.any((t) => t.name == call.name) ||
@@ -348,7 +357,17 @@ class McpRegistry extends ChangeNotifier {
           !specs.any((s) => s.name == call.name)) {
         throw const McpException(McpProblem.unavailable);
       }
-      final result = await client.callTool(original!, call.args);
+      final cancelWatch = permitted == null
+          ? null
+          : Timer.periodic(const Duration(milliseconds: 50), (_) {
+              if (!permitted()) client.cancelPending();
+            });
+      final Map<String, dynamic> result;
+      try {
+        result = await client.callTool(original!, call.args);
+      } finally {
+        cancelWatch?.cancel();
+      }
       final content = result['content'];
       final output = <String>[];
       if (content is List) {

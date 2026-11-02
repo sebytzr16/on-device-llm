@@ -29,6 +29,10 @@ class SharedPayload {
   /// home-screen widget: 'voice' starts a voice conversation, 'chat' a new
   /// chat.
   final String? launch;
+
+  /// The launch came from the app's own tile or widget: voice may listen
+  /// at once. The assistant gesture or another app's intent waits for a tap.
+  final bool launchTrusted;
   const SharedPayload({
     this.text = '',
     this.subject = '',
@@ -39,6 +43,7 @@ class SharedPayload {
     this.scheduled,
     this.selection = false,
     this.launch,
+    this.launchTrusted = false,
   });
 
   bool get isEmpty =>
@@ -64,6 +69,7 @@ class SharedPayload {
     scheduled: m['scheduled'] as String?,
     selection: m['selection'] == true,
     launch: m['launch'] as String?,
+    launchTrusted: m['trusted'] == true,
   );
 
   /// The message the new chat starts with. A shared link alone gets the

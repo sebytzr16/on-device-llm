@@ -80,7 +80,7 @@ try {
   if ($Cuda) { Write-Output 'Plan: powershell -File scripts/build-windows-native.ps1 -Cuda'; Write-Output 'Plan: powershell -File scripts/build-windows-native.ps1 -Cuda12' }
   if ($Vulkan) { Write-Output 'Plan: powershell -File scripts/build-windows-native.ps1 -Vulkan' }
   if (-not $Vulkan) { Write-Output 'Plan: exclude any stale Vulkan bridge' }
-  Write-Output 'Plan: flutter build windows --release'
+  Write-Output 'Plan: flutter build windows --release with ODLLM_VERSION/SOURCE/NATIVE defines'
   Write-Output "Plan: collect $releaseDir in a fresh build/windows-packaging bundle"
   Write-Output 'Plan: bundle the x64 Visual C++ runtime and tester README'
   if (-not $Cuda) { Write-Output 'Plan: exclude any CUDA bridge and runtime DLLs left by earlier builds' }
@@ -117,12 +117,21 @@ try {
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows-native.ps1 -Vulkan
     if ($LASTEXITCODE -ne 0) { throw 'Vulkan native build failed.' }
   }
-  & flutter build windows --release
+  # Same identity defines as the Android build, so About and logs name the
+  # real version and source instead of the development defaults (P2-25).
+  $identity = & "$PSScriptRoot/write-build-manifest.ps1" -IdentityOnly
+  & flutter build windows --release "--dart-define=ODLLM_VERSION=$($identity.version)" "--dart-define=ODLLM_SOURCE=$($identity.sourceId)" "--dart-define=ODLLM_NATIVE=$($identity.nativeRevision)"
   if ($LASTEXITCODE -ne 0) { throw 'Flutter Windows release build failed.' }
   foreach ($required in @('ondevice_llm.exe', 'ondevice_llm.dll', 'ondevice_llm_compat.dll', 'ondevice_llm_avx512.dll', 'flutter_windows.dll', 'data')) {
     if (-not (Test-Path -LiteralPath (Join-Path $releaseDir $required))) {
       throw "Release bundle is missing $required."
     }
+  }
+  # Every bridge variant must come from the same source: a stale CPU DLL
+  # without helper batches made every CPU agent fail (owner, 2026-11-02).
+  foreach ($bridge in Get-ChildItem -LiteralPath $releaseDir -Filter 'ondevice_llm*.dll') {
+    $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($bridge.FullName))
+    if (-not $text.Contains('od_side_open')) { throw "$($bridge.Name) is stale: it has no helper batches. Rebuild every native variant." }
   }
 
   # Never reuse a bundle: Release may contain stale CUDA files after a CPU build.

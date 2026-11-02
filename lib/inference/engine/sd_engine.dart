@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
+import '../../data/storage/model_file_leases.dart';
 import '../ffi/sd_bindings.dart';
 
 /// Frames from a generation: one for a picture, several for a video, each
@@ -13,12 +14,17 @@ import '../ffi/sd_bindings.dart';
 class SdResult {
   final Uint8List rgba;
   final int width, height, frames, fps;
+
+  /// Names the video the worker still holds natively, so [SdEngine.saveVideo]
+  /// sends no frames back (P3-15); 0 when none.
+  final int videoId;
   const SdResult(
     this.rgba,
     this.width,
     this.height, {
     this.frames = 1,
     this.fps = 0,
+    this.videoId = 0,
   });
 
   int get frameBytes => width * height * 4;
@@ -40,11 +46,21 @@ class SdResult {
   }
 }
 
+/// A load or job ended by [SdEngine.cancel] before it returned.
+class SdOperationStopped implements Exception {
+  const SdOperationStopped();
+}
+
 /// Image and video generation with ondevice_sd.dll. Loading and generating
 /// take minutes, so they run on a worker isolate; progress arrives through a
 /// listener callback owned by this isolate, and [cancel] sets the bridge's
 /// atomic flag from here while the worker is busy.
 class SdEngine {
+  /// The injected transport lets tests hold a load at each async boundary.
+  SdEngine({this.invoke});
+  final Future<Object?> Function(String, List<Object?>)? invoke;
+  int _epoch = 0;
+  final _fileLeases = <ModelFileLease>[];
   Isolate? _isolate;
   SendPort? _worker;
   ReceivePort? _replies;
@@ -57,13 +73,22 @@ class SdEngine {
   bool get isLoaded => _loadedKey != null;
   String? get loadedKey => _loadedKey;
 
-  Future<void> _start() async {
+  Future<void>? _starting;
+
+  Future<void> _start() =>
+      _starting ??= _startWorker().whenComplete(() => _starting = null);
+
+  Future<void> _startWorker() async {
     if (_worker != null) return;
     final replies = ReceivePort();
     final ready = Completer<SendPort>();
     replies.listen((message) {
       if (message is SendPort) {
         ready.complete(message);
+        return;
+      }
+      if (message is List && message.firstOrNull == 'context') {
+        _ctx = message[1] as int;
         return;
       }
       // A String is the worker failing to open the DLL; null is its exit
@@ -104,13 +129,37 @@ class SdEngine {
     _pending.clear();
   }
 
-  Future<Object?> _call(String op, List<Object?> args) async {
-    await _start();
-    final id = _nextId++;
-    final c = Completer<Object?>();
-    _pending[id] = c;
-    _worker!.send([id, op, ...args]);
-    return c.future;
+  Future<void> _tail = Future.value();
+
+  Future<Object?> _call(String op, List<Object?> args) {
+    final epoch = _epoch;
+    final next = _tail.then((_) => _dispatch(op, args, epoch));
+    _tail = next.then((_) {}, onError: (Object _, StackTrace _) {});
+    return next;
+  }
+
+  Future<Object?> _dispatch(String op, List<Object?> args, int epoch) async {
+    if (epoch != _epoch) throw const SdOperationStopped();
+    Object? result;
+    final transport = invoke;
+    if (transport != null) {
+      result = await transport(op, args);
+    } else {
+      await _start();
+      if (epoch != _epoch) throw const SdOperationStopped();
+      if (_ctx != 0) {
+        (_cancelBindings ??= SdBindings()).resetCancel(
+          Pointer<Void>.fromAddress(_ctx),
+        );
+      }
+      final id = _nextId++;
+      final c = Completer<Object?>();
+      _pending[id] = c;
+      _worker!.send([id, op, ...args]);
+      result = await c.future;
+    }
+    if (epoch != _epoch) throw const SdOperationStopped();
+    return result;
   }
 
   /// Loads a model. [key] names what is loaded, so loading the same model
@@ -123,9 +172,30 @@ class SdEngine {
   }) async {
     if (_loadedKey == key) return;
     _loadedKey = null;
-    _ctx =
-        await _call('load', [modelPath, vaePath, jsonEncode(settings)]) as int;
-    _loadedKey = key;
+    final paths = [
+      modelPath,
+      vaePath,
+      for (final entry in settings.entries)
+        if (entry.key.endsWith('Path') && entry.value is String)
+          entry.value as String,
+    ].where((path) => path.isNotEmpty);
+    final previous = List<ModelFileLease>.of(_fileLeases);
+    _fileLeases.add(
+      ModelFileLeases.instance.acquire(paths, owner: 'Image/video engine'),
+    );
+    try {
+      _ctx =
+          await _call('load', [modelPath, vaePath, jsonEncode(settings)])
+              as int;
+      _loadedKey = key;
+      for (final lease in previous) {
+        lease.release();
+        _fileLeases.remove(lease);
+      }
+    } catch (_) {
+      await dispose();
+      rethrow;
+    }
   }
 
   /// A picture, or a video when [video] is true. [request] is the bridge's
@@ -161,6 +231,7 @@ class SdEngine {
         h as int,
         n as int,
         fps as int,
+        ...,
       ] = reply;
       return SdResult(
         data.materialize().asUint8List(),
@@ -168,6 +239,7 @@ class SdEngine {
         h,
         frames: n,
         fps: fps,
+        videoId: reply.length > 5 ? reply[5] as int : 0,
       );
     } finally {
       progress?.close();
@@ -176,6 +248,18 @@ class SdEngine {
 
   /// Writes a video's frames to an MJPG .avi at [path].
   Future<void> saveVideo(String path, SdResult video) async {
+    if (video.videoId != 0) {
+      final saved = await _call('save', [
+        path,
+        null,
+        video.width,
+        video.height,
+        video.frames,
+        video.fps,
+        video.videoId,
+      ]);
+      if (saved == true) return;
+    }
     await _call('save', [
       path,
       TransferableTypedData.fromList([video.rgba]),
@@ -193,26 +277,36 @@ class SdEngine {
     SdResult picture, {
     int factor = 2,
   }) async {
-    final [data as TransferableTypedData, w as int, h as int] =
-        await _call('upscale', [
-              modelPath,
-              TransferableTypedData.fromList([picture.frame(0)]),
-              picture.width,
-              picture.height,
-              factor,
-            ])
-            as List<Object?>;
-    return SdResult(data.materialize().asUint8List(), w, h);
+    final lease = ModelFileLeases.instance.acquire([
+      modelPath,
+    ], owner: 'Upscaler');
+    try {
+      final [data as TransferableTypedData, w as int, h as int] =
+          await _call('upscale', [
+                modelPath,
+                TransferableTypedData.fromList([picture.frame(0)]),
+                picture.width,
+                picture.height,
+                factor,
+              ])
+              as List<Object?>;
+      return SdResult(data.materialize().asUint8List(), w, h);
+    } finally {
+      lease.release();
+    }
   }
 
   /// Stops the running generation; it then fails with "Generation cancelled".
   void cancel() {
-    if (_ctx == 0) return;
+    _epoch++;
+    if (_ctx == 0 || invoke != null) return;
     (_cancelBindings ??= SdBindings()).cancel(Pointer<Void>.fromAddress(_ctx));
   }
 
   /// Frees the model and stops the worker. Call [cancel] first if busy.
   Future<void> dispose() async {
+    cancel();
+    await _tail;
     if (_worker != null) {
       try {
         await _call('destroy', const []);
@@ -228,6 +322,10 @@ class SdEngine {
     _worker = null;
     _ctx = 0;
     _loadedKey = null;
+    for (final lease in _fileLeases) {
+      lease.release();
+    }
+    _fileLeases.clear();
   }
 }
 
@@ -246,8 +344,16 @@ void _main(SendPort replies) {
     return;
   }
   final requests = ReceivePort();
+  final opts = '{}'.toNativeUtf8();
+  var ctx = b.create(opts);
+  malloc.free(opts);
+  if (ctx == nullptr) {
+    replies.send('Could not create the image engine');
+    requests.close();
+    return;
+  }
+  replies.send(['context', ctx.address]);
   replies.send(requests.sendPort);
-  var ctx = nullptr.cast<Void>();
 
   String lastError(String fallback) {
     final msg = ctx == nullptr ? '' : b.error(ctx).toDartString();
@@ -270,6 +376,16 @@ void _main(SendPort replies) {
   });
 }
 
+// Worker isolate only: the last video's native frames, kept until the next
+// generation, load or destroy so saving it copies nothing (P3-15).
+Pointer<Uint8> _lastVideo = nullptr;
+int _lastVideoId = 0;
+
+void _dropLastVideo(SdBindings b) {
+  if (_lastVideo != nullptr) b.freeImage(_lastVideo);
+  _lastVideo = nullptr;
+}
+
 Object? _run(
   SdBindings b,
   Pointer<Void> Function() ctx,
@@ -289,6 +405,7 @@ Object? _run(
 
   switch (m[1]) {
     case 'load':
+      _dropLastVideo(b);
       ensureCtx();
       return using((arena) {
         final ok = b.load(
@@ -303,6 +420,7 @@ Object? _run(
       });
     case 'image' || 'video':
       final video = m[1] == 'video';
+      _dropLastVideo(b);
       return using((arena) {
         final request = (m[2] as String).toNativeUtf8(allocator: arena);
         final cb = Pointer<NativeFunction<SdProgressFn>>.fromAddress(
@@ -333,21 +451,46 @@ Object? _run(
         if (pixels == nullptr) {
           throw StateError(lastError('Generation failed'));
         }
+        var keep = false;
         try {
           final frames = video ? out[2] : 1;
           final bytes = out[0] * out[1] * 4 * frames;
-          return [
+          final reply = [
             TransferableTypedData.fromList([pixels.asTypedList(bytes)]),
             out[0],
             out[1],
             frames,
             video ? out[3] : 0,
+            if (video) ++_lastVideoId,
           ];
+          keep = video;
+          return reply;
         } finally {
-          b.freeImage(pixels);
+          if (keep) {
+            _lastVideo = pixels;
+          } else {
+            b.freeImage(pixels);
+          }
         }
       });
     case 'save':
+      if (m[3] == null) {
+        // The held video, or false when it was replaced: the caller sends
+        // its frames instead.
+        if (_lastVideo == nullptr || m[8] != _lastVideoId) return false;
+        return using((arena) {
+          final ok = b.saveVideo(
+            (m[2] as String).toNativeUtf8(allocator: arena),
+            _lastVideo,
+            m[4] as int,
+            m[5] as int,
+            m[6] as int,
+            m[7] as int,
+          );
+          if (ok == 0) throw StateError('Could not save the video');
+          return true;
+        });
+      }
       return using((arena) {
         final bytes = (m[3] as TransferableTypedData)
             .materialize()
@@ -400,6 +543,7 @@ Object? _run(
         }
       });
     case 'destroy':
+      _dropLastVideo(b);
       if (ctx() != nullptr) b.destroy(ctx());
       setCtx(nullptr);
       return null;

@@ -42,6 +42,63 @@ void main() {
     );
   });
 
+  test('the projector matches the base model (P2-42)', () {
+    const small = HfFile(
+      name: 'mmproj-Qwen3-VL-2B-F16.gguf',
+      size: 1,
+      sha256: 'a',
+    );
+    const big = HfFile(
+      name: 'mmproj-Qwen3-VL-8B-F16.gguf',
+      size: 2,
+      sha256: 'b',
+    );
+    const model = HfFile(name: 'Qwen3-VL-8B-Q4_K_M.gguf', size: 9, sha256: 'c');
+    expect(HuggingFace.selectProjector([small, big], model: model), same(big));
+    const a = HfFile(name: 'A/mmproj-F16.gguf', size: 1, sha256: 'd');
+    const b = HfFile(name: 'B/mmproj-F16.gguf', size: 2, sha256: 'e');
+    const inB = HfFile(name: 'B/model-Q8_0.gguf', size: 9, sha256: 'f');
+    expect(HuggingFace.selectProjector([a, b], model: inB), same(b));
+    // One projector per repo: still chosen by precision.
+    const bf = HfFile(name: 'mmproj-BF16.gguf', size: 1, sha256: 'g');
+    const f16 = HfFile(name: 'mmproj-F16.gguf', size: 2, sha256: 'h');
+    expect(HuggingFace.selectProjector([bf, f16], model: model), same(f16));
+  });
+
+  test('a pasted link keeps its revision (P2-41)', () async {
+    final dio = Dio();
+    addTearDown(dio.close);
+    String? asked;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          asked = options.path;
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              data: {
+                'sha': 'abc123',
+                'siblings': [
+                  {
+                    'rfilename': 'm-Q4_K_M.gguf',
+                    'lfs': {'sha256': 'a' * 64, 'size': 10},
+                  },
+                ],
+              },
+            ),
+          );
+        },
+      ),
+    );
+    final m = await HuggingFace.resolve(
+      'https://huggingface.co/pub/model/resolve/v2/m-Q4_K_M.gguf',
+      ModelFamily.qwen,
+      client: dio,
+    );
+    expect(asked, endsWith('/api/models/pub/model/revision/v2'));
+    expect(m.downloadUrl, contains('/resolve/abc123/'));
+  });
+
   test('Hub siblings include nested splits, grouped in loader order', () async {
     final dio = Dio();
     addTearDown(dio.close);

@@ -1,29 +1,27 @@
 import 'dart:async';
-import '../../core/utils/inference_admission.dart';
 
 import 'package:flutter/foundation.dart'
     show ValueChanged, TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/services.dart';
-import '../../core/l10n/l10n.dart';
-import '../../core/platform/desktop_host.dart';
-
-import '../settings/presentation/providers/settings_provider.dart';
-import 'offline_dictation.dart';
-import 'desktop_voice_policy.dart';
-import 'sherpa_voice.dart';
-import 'voice_models.dart';
-import 'voice_models_provider.dart';
-import 'voice_pipeline.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
+import '../../core/l10n/l10n.dart';
+import '../../core/platform/desktop_host.dart';
+import '../../core/utils/inference_admission.dart';
+import '../settings/presentation/providers/settings_provider.dart';
+import 'desktop_voice_policy.dart';
+import 'offline_dictation.dart';
+import 'sherpa_voice.dart';
+import 'voice_models.dart';
+import 'voice_models_provider.dart';
+import 'voice_pipeline.dart';
+
 /// Dictation and read-aloud (FX-01). With the on-device voice installed
 /// (2026-10-07) Whisper listens and Kokoro speaks, all on the phone; else
-/// the platform's own engines: the Android speech recognizer (on-device when
-/// the setting says so) and the system text-to-speech. Android strict mode
-/// uses a dedicated recognizer; network-enabled dictation and TTS follow the
-/// system engine's behavior.
+/// verified offline platform voices. Android dictation always uses the
+/// dedicated on-device recognizer; unverified system voices fail closed.
 class VoiceState {
   final bool listening, speaking, available, paused;
   final String partial;
@@ -64,6 +62,11 @@ class VoiceState {
 class VoiceNotifier extends Notifier<VoiceState> {
   SpeechToText? _stt;
   FlutterTts? _tts;
+
+  /// True while a system-voice speak() is pending. flutter_tts on Windows
+  /// answers the pending speak() inside stop() without a null check, so a
+  /// stop() with nothing playing crashed the PC app (owner, 2026-11-01).
+  bool _ttsBusy = false;
   bool _sttReady = false, _alive = true, _usingOffline = false;
   OfflineDictation? _offline;
   String _spokenText = '';
@@ -72,7 +75,10 @@ class VoiceNotifier extends Notifier<VoiceState> {
   KokoroSpeaker? _kokoro;
   WhisperListener? _whisper;
   Timer? _whisperIdle;
-  bool _usingWhisper = false;
+
+  /// Ends the Whisper dictation with everything heard (set while it runs).
+  void Function()? _whisperDone;
+  int _listenEpoch = 0;
 
   /// Kokoro read-out: the sentences and the one playing, for pause/resume.
   List<String> _sentences = const [];
@@ -108,6 +114,12 @@ class VoiceNotifier extends Notifier<VoiceState> {
 
   @override
   VoiceState build() {
+    // Queued sentences carry the old engine's speaker/language IDs. Stop them
+    // before a newly selected engine can receive them (owner, 2026-11-02).
+    ref.listen(
+      settingsProvider.select((s) => s.readingVoice),
+      (_, _) => unawaited(stopSpeaking()),
+    );
     ref.onDispose(() {
       _alive = false;
       _whisperIdle?.cancel();
@@ -115,7 +127,7 @@ class VoiceNotifier extends Notifier<VoiceState> {
       unawaited(_kokoro?.stop());
       unawaited(_offline?.dispose());
       _stt?.cancel();
-      _tts?.stop();
+      unawaited(_stopTts());
     });
     return const VoiceState();
   }
@@ -211,6 +223,7 @@ class VoiceNotifier extends Notifier<VoiceState> {
     String? localeId,
   }) async {
     if (state.listening) return stop();
+    final epoch = ++_listenEpoch;
     if (_naturalListening()) {
       try {
         if (await _listenWhisper(onText, onFinal)) return;
@@ -227,9 +240,8 @@ class VoiceNotifier extends Notifier<VoiceState> {
         rethrow;
       }
     }
-    if (onDeviceOnly &&
-        !kIsWeb &&
-        defaultTargetPlatform == TargetPlatform.android) {
+    if (!_alive || epoch != _listenEpoch) return;
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       _usingOffline = true;
       _offline ??= OfflineDictation();
       state = state.copyWith(
@@ -242,7 +254,7 @@ class VoiceNotifier extends Notifier<VoiceState> {
         await _offline!.listen(
           localeId: localeId,
           onResult: (text, isFinal) {
-            if (!_alive) return;
+            if (!_alive || epoch != _listenEpoch) return;
             state = state.copyWith(partial: text, listening: !isFinal);
             onText(text);
             if (isFinal) onFinal?.call(text);
@@ -274,6 +286,7 @@ class VoiceNotifier extends Notifier<VoiceState> {
       }
       return;
     }
+    if (!_alive || epoch != _listenEpoch) return;
     _usingOffline = false;
     if (DesktopHost.active && await VoiceAudioChannel.micPrivacyDenied()) {
       state = state.copyWith(
@@ -284,7 +297,7 @@ class VoiceNotifier extends Notifier<VoiceState> {
       );
       return;
     }
-    if (!await _initStt() || !_alive) return;
+    if (!await _initStt() || !_alive || epoch != _listenEpoch) return;
     state = state.copyWith(listening: true, partial: '', clearError: true);
     try {
       await _stt!.listen(
@@ -298,7 +311,7 @@ class VoiceNotifier extends Notifier<VoiceState> {
           }
         },
         listenOptions: SpeechListenOptions(
-          onDevice: onDeviceOnly,
+          onDevice: true,
           partialResults: true,
           cancelOnError: true,
           listenFor: const Duration(seconds: 60),
@@ -318,20 +331,32 @@ class VoiceNotifier extends Notifier<VoiceState> {
 
   bool _naturalSpeaking() => offlineVoiceReady(
     enabled: ref.read(settingsProvider).naturalVoice,
-    installed: ref.read(voiceModelsProvider).canSpeak,
+    installed: ref
+        .read(voiceModelsProvider)
+        .canSpeakWith(ref.read(settingsProvider).readingVoice),
   );
 
   /// The voice for the app language and the chosen speaker.
   KokoroVoice kokoroVoice() {
     final s = ref.read(settingsProvider);
+    if (s.readingVoice == VoiceModels.supertonic.id) {
+      return KokoroVoice(
+        s.supertonicSid,
+        voiceLanguage(s.localeCode),
+        'Supertonic 2',
+      );
+    }
     return KokoroVoice.forLanguage(
       voiceLanguage(s.localeCode),
       sid: s.kokoroSid < 0 ? null : s.kokoroSid,
     );
   }
 
-  /// One utterance through Whisper: captions while speaking, the text when
-  /// the user pauses. False when the microphone could not start.
+  /// Dictation through Whisper: captions while speaking, each sentence
+  /// added when the user pauses, and listening goes on across pauses until
+  /// the user stops (or 20 s of silence). One pause used to end it, so a
+  /// long prompt kept only its first sentences. False when the microphone
+  /// could not start.
   Future<bool> _listenWhisper(
     ValueChanged<String> onText,
     ValueChanged<String>? onFinal,
@@ -339,24 +364,46 @@ class VoiceNotifier extends Notifier<VoiceState> {
     final voice = ref.read(sherpaVoiceProvider);
     _whisper?.dispose();
     var heard = false;
-    final listener = _whisper = WhisperListener(
+    final said = <String>[];
+    String withSaid(String text) =>
+        [...said, if (text.isNotEmpty) text].join(' ');
+    void idle(Duration after) {
+      _whisperIdle?.cancel();
+      _whisperIdle = Timer(after, () {
+        if (_alive && state.listening) unawaited(stop());
+      });
+    }
+
+    late final WhisperListener listener;
+    listener = _whisper = WhisperListener(
       voice: voice,
       language: voiceLanguage(ref.read(settingsProvider).localeCode),
-      onSpeechStart: () => heard = true,
+      endSilence: 1.0,
+      captionAll: true,
+      onSpeechStart: () {
+        heard = true;
+        _whisperIdle?.cancel();
+      },
       onPartial: (text) {
         if (!_alive) return;
-        state = state.copyWith(partial: text);
-        onText(text);
+        final all = withSaid(text);
+        state = state.copyWith(partial: all);
+        onText(all);
       },
       onFinal: (text) {
         if (!_alive) return;
-        _whisperIdle?.cancel();
-        state = state.copyWith(partial: text, listening: false);
-        onText(text);
-        onFinal?.call(text);
-        unawaited(_stopWhisper());
+        said.add(text);
+        final all = withSaid('');
+        state = state.copyWith(partial: all);
+        onText(all);
+        if (identical(_whisper, listener)) idle(const Duration(seconds: 20));
       },
     );
+    _whisperDone = () {
+      final all = withSaid('');
+      if (all.isNotEmpty) onText(all);
+      onFinal?.call(all);
+    };
     state = state.copyWith(
       listening: true,
       available: true,
@@ -369,7 +416,10 @@ class VoiceNotifier extends Notifier<VoiceState> {
       if (_alive) state = state.copyWith(listening: false);
       return false;
     }
-    _usingWhisper = true;
+    if (!_alive || !identical(_whisper, listener)) {
+      await listener.stop();
+      return true;
+    }
     // Nothing said within 8 s ends the session like the system recognizer.
     _whisperIdle?.cancel();
     _whisperIdle = Timer(const Duration(seconds: 8), () {
@@ -379,23 +429,28 @@ class VoiceNotifier extends Notifier<VoiceState> {
           listening: false,
           error: _explain('error_speech_timeout'),
         );
-        onFinal?.call('');
       }
     });
     return true;
   }
 
+  /// Stops the Whisper dictation; the sentence being said is still
+  /// transcribed and kept.
   Future<void> _stopWhisper() async {
     _whisperIdle?.cancel();
-    _usingWhisper = false;
     final w = _whisper;
+    final done = _whisperDone;
     _whisper = null;
-    await w?.stop();
+    _whisperDone = null;
+    if (_alive && w != null) state = state.copyWith(listening: false);
+    await w?.finish();
     w?.dispose();
+    if (_alive) done?.call();
   }
 
   Future<void> stop() async {
-    if (_usingWhisper) {
+    _listenEpoch++;
+    if (_whisper != null) {
       await _stopWhisper();
       if (_alive) state = state.copyWith(listening: false);
       return;
@@ -435,7 +490,7 @@ class VoiceNotifier extends Notifier<VoiceState> {
   }
 
   /// Reads [markdown] aloud; tapping the same message again stops it.
-  Future<void> speak(String markdown, {String? id, double rate = 0.5}) async {
+  Future<void> speak(String markdown, {String? id, double? rate}) async {
     await _initTts();
     if (state.speaking && (id == null || id == state.speakingId)) {
       return pauseSpeaking();
@@ -444,9 +499,9 @@ class VoiceNotifier extends Notifier<VoiceState> {
     final text = speakable(markdown);
     if (text.isEmpty) return;
     _speechEpoch++;
-    await _tts!.stop();
+    await _stopTts();
     await _kokoro?.stop();
-    _rate = rate;
+    _rate = rate ?? 0.5 * ref.read(settingsProvider).readingSpeed;
     if (_naturalSpeaking()) {
       _spokenText = text;
       _sentences = KokoroSpeaker.sentences(text);
@@ -462,7 +517,7 @@ class VoiceNotifier extends Notifier<VoiceState> {
     }
     _spokenText = text;
     _position = 0;
-    _rate = rate;
+    _rate = rate ?? 0.5 * ref.read(settingsProvider).readingSpeed;
     state = state.copyWith(
       speaking: true,
       paused: false,
@@ -472,15 +527,56 @@ class VoiceNotifier extends Notifier<VoiceState> {
     await _read();
   }
 
+  /// Android voices may stream from the network: pick one flutter_tts
+  /// reports as local ("0"). Windows voices (SAPI/OneCore) are all local.
+  Future<bool> _selectOfflineVoice() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return true;
+    final voices = await _tts!.getVoices;
+    if (voices is! List) return false;
+    final lang = voiceLanguage(ref.read(settingsProvider).localeCode);
+    for (final voice in voices) {
+      if (voice is! Map ||
+          !(voice['network_required'] == '0' ||
+              voice['network_required'] == false) ||
+          voice['name'] is! String ||
+          voice['locale'] is! String) {
+        continue;
+      }
+      final locale = voice['locale'] as String;
+      if (locale.split(RegExp('[-_]')).first != lang) continue;
+      await _tts!.setVoice({'name': voice['name'] as String, 'locale': locale});
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _read() async {
     final epoch = ++_speechEpoch;
     final release = InferenceAdmission.shared.hold();
     try {
+      if (!await _selectOfflineVoice()) {
+        if (_alive && epoch == _speechEpoch) {
+          state = state.copyWith(
+            speaking: false,
+            clearSpeakingId: true,
+            error: stringsFor(
+              ref.read(settingsProvider).localeCode,
+            ).voiceOfflineUnavailable,
+          );
+        }
+        return;
+      }
+      if (!_alive || epoch != _speechEpoch) return;
       await _tts!.setSpeechRate(_rate);
       for (final chunk in chunks(_spokenText.substring(_position))) {
         if (!_alive || epoch != _speechEpoch) return;
         _chunkStart = _position;
-        await _tts!.speak(chunk);
+        _ttsBusy = true;
+        try {
+          await _tts!.speak(chunk);
+        } finally {
+          _ttsBusy = false;
+        }
         if (!_alive || epoch != _speechEpoch) return;
         _position = _chunkStart + chunk.length;
       }
@@ -541,10 +637,16 @@ class VoiceNotifier extends Notifier<VoiceState> {
     speaker.add(_sentences.skip(_sentence).join('\n'));
   }
 
+  Future<void> _stopTts() async {
+    if (!_ttsBusy) return;
+    _ttsBusy = false;
+    await _tts?.stop();
+  }
+
   Future<void> pauseSpeaking() async {
     _speechEpoch++;
     state = state.copyWith(speaking: false, paused: true);
-    await _tts?.stop();
+    await _stopTts();
     await _kokoro?.stop();
   }
 
@@ -564,7 +666,7 @@ class VoiceNotifier extends Notifier<VoiceState> {
     _spokenText = '';
     _position = 0;
     _sentences = const [];
-    await _tts?.stop();
+    await _stopTts();
     await _kokoro?.stop();
     if (_alive) {
       state = state.copyWith(
@@ -594,10 +696,15 @@ final sherpaVoiceProvider = Provider<SherpaVoice>((ref) {
       // Gone, or Parakeet just arrived: the listener picks again.
       if ((was && !isReady) ||
           (!was && isReady && pack.id == VoiceModels.parakeet.id)) {
-        voice.releasePack(speaking: pack.id == VoiceModels.speaking.id);
+        voice.releasePack(speaking: pack.unpackTo != null);
       }
     }
   });
+  voice.readingVoice = ref.read(settingsProvider).readingVoice;
+  ref.listen(
+    settingsProvider.select((s) => s.readingVoice),
+    (_, id) => voice.readingVoice = id,
+  );
   voice.listeningModel = ref.read(settingsProvider).listeningModel;
   ref.listen(
     settingsProvider.select((s) => s.listeningModel),

@@ -101,6 +101,8 @@ abstract class ServedVectorEngine {
 
 /// Optional capability: consumes the prompt verbatim without a chat template.
 /// The current llama bridge's od_begin exposes only chat generation.
+/// Engines without this capability return 501 from /v1/completions; use
+/// /v1/chat/completions instead.
 abstract interface class RawCompletionEngine {
   Stream<String> generateRaw({
     required String prompt,
@@ -127,7 +129,11 @@ class DeviceModelServer {
   /// Traded for [accessToken] at [pairPath] by a device that found this
   /// server nearby; null turns pairing off.
   final String? pairCode;
-  int _pairFailures = 0;
+  final PairingSession _pairing = PairingSession();
+
+  /// When [pairCode] stops being accepted.
+  DateTime get pairExpiresAt => _pairing.expiresAt;
+  final void Function(bool locked)? onPairingUnavailable;
   final bool Function()? isAvailable;
 
   /// Answers requests for models other than [modelId]; null serves only it.
@@ -154,6 +160,7 @@ class DeviceModelServer {
     required this.fallbackTemplate,
     required this.accessToken,
     this.pairCode,
+    this.onPairingUnavailable,
     this.isAvailable,
     this.router,
     this.vectors,
@@ -342,7 +349,10 @@ class DeviceModelServer {
     return base64Encode(bytes.buffer.asUint8List());
   }
 
-  static InferenceSettings _sampling(Map body, InferenceSettings current) {
+  static InferenceSettings samplingForRequest(
+    Map body,
+    InferenceSettings current,
+  ) {
     double? number(String key, double low, double high) {
       if (!body.containsKey(key)) return null;
       final value = body[key];
@@ -404,6 +414,12 @@ class DeviceModelServer {
     if (n != null && n != 1) {
       throw const FormatException('n other than 1 is unsupported.');
     }
+    final repetition = number('repeat_penalty', 0, 2);
+    if (repetition == 0) {
+      throw const FormatException(
+        'repeat_penalty must be greater than 0 and at most 2.',
+      );
+    }
     return current.copyWith(
       temperature: number('temperature', 0, 2),
       topP: number('top_p', 0, 1),
@@ -413,7 +429,7 @@ class DeviceModelServer {
       stopSequences: stop,
       presencePenalty: number('presence_penalty', -2, 2),
       frequencyPenalty: number('frequency_penalty', -2, 2),
-      repetitionPenalty: number('repeat_penalty', 0, double.maxFinite),
+      repetitionPenalty: repetition,
       maxTokens: maxCompletion ?? maxTokens,
     );
   }
@@ -484,8 +500,26 @@ class DeviceModelServer {
       throw const FormatException('messages must be an array.');
     }
     final messages = <Map<String, Object?>>[];
-    if (body['system'] is String) {
-      messages.add({'role': 'system', 'content': body['system']});
+    String textBlocks(Object? value) {
+      if (value == null) return '';
+      if (value is String) return value;
+      if (value is List) {
+        return value
+            .map((block) {
+              if (block is! Map ||
+                  block['type'] != 'text' ||
+                  block['text'] is! String) {
+                throw const FormatException('Expected text blocks.');
+              }
+              return block['text'] as String;
+            })
+            .join('\n');
+      }
+      throw const FormatException('Expected text or text blocks.');
+    }
+
+    if (body['system'] != null) {
+      messages.add({'role': 'system', 'content': textBlocks(body['system'])});
     }
     for (final item in source) {
       if (item is! Map || !const {'user', 'assistant'}.contains(item['role'])) {
@@ -497,6 +531,7 @@ class DeviceModelServer {
       } else if (content is List) {
         final text = StringBuffer();
         final calls = <Map<String, Object>>[];
+        final images = <Map<String, Object>>[];
         for (final block in content) {
           if (block is! Map) {
             throw const FormatException('Invalid content block.');
@@ -507,6 +542,24 @@ class DeviceModelServer {
                 throw const FormatException('Invalid text block.');
               }
               text.write(block['text']);
+            case 'thinking':
+            case 'redacted_thinking':
+              break;
+            case 'image':
+              final source = block['source'];
+              if (source is! Map ||
+                  source['type'] != 'base64' ||
+                  source['media_type'] is! String ||
+                  source['data'] is! String) {
+                throw const FormatException('Invalid image block.');
+              }
+              images.add({
+                'type': 'image_url',
+                'image_url': {
+                  'url':
+                      'data:${source['media_type']};base64,${source['data']}',
+                },
+              });
             case 'tool_use':
               if (item['role'] != 'assistant' ||
                   block['id'] is! String ||
@@ -523,24 +576,28 @@ class DeviceModelServer {
                 },
               });
             case 'tool_result':
-              if (item['role'] != 'user' ||
-                  block['tool_use_id'] is! String ||
-                  block['content'] is! String) {
+              if (item['role'] != 'user' || block['tool_use_id'] is! String) {
                 throw const FormatException('Invalid tool_result block.');
               }
               messages.add({
                 'role': 'tool',
                 'tool_call_id': block['tool_use_id'],
-                'content': block['content'],
+                'content': textBlocks(block['content']),
               });
             default:
               throw const FormatException('Unsupported content block.');
           }
         }
-        if (text.isNotEmpty || calls.isNotEmpty) {
+        if (text.isNotEmpty || calls.isNotEmpty || images.isNotEmpty) {
           messages.add({
             'role': item['role'],
-            'content': text.toString(),
+            'content': images.isEmpty
+                ? text.toString()
+                : [
+                    if (text.isNotEmpty)
+                      {'type': 'text', 'text': text.toString()},
+                    ...images,
+                  ],
             if (calls.isNotEmpty) 'tool_calls': calls,
           });
         }
@@ -616,7 +673,8 @@ class DeviceModelServer {
     if (name is! String ||
         !RegExp(r'^[a-zA-Z0-9_-]{1,64}$').hasMatch(name) ||
         !names.add(name) ||
-        function['description'] is! String ||
+        (function['description'] != null &&
+            function['description'] is! String) ||
         parameters is! Map ||
         parameters['type'] != 'object') {
       throw const FormatException(
@@ -625,7 +683,7 @@ class DeviceModelServer {
     }
     return ToolSpec(
       name: name,
-      description: function['description'] as String,
+      description: function['description'] as String? ?? '',
       parameters: Map<String, dynamic>.from(parameters),
     );
   }
@@ -770,6 +828,18 @@ class DeviceModelServer {
     final response = request.response;
     IOSink output = response;
     Socket? socket;
+    final abandoned = Completer<void>();
+    var headersSent = false;
+    void writeHeaders(int code, String type) {
+      if (headersSent || socket == null) return;
+      headersSent = true;
+      socket.write(
+        'HTTP/1.1 $code ${code == 200 ? "OK" : "Error"}\r\n'
+        'Content-Type: $type\r\nConnection: close\r\n'
+        'Cache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\n\r\n',
+      );
+    }
+
     // Key authentication, no cookie credentials: explicitly allow browser clients.
     response.headers.set('Access-Control-Allow-Origin', '*');
     response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -785,6 +855,11 @@ class DeviceModelServer {
     // Whether this request holds an engine (released in the outer finally).
     var claimed = false;
     TextEngine? active;
+    void disconnected() {
+      if (!abandoned.isCompleted) abandoned.complete();
+      if (claimed) active?.cancel();
+    }
+
     // The routed model this request holds, when not the primary one.
     String? routed;
     String? queueKey;
@@ -806,7 +881,7 @@ class DeviceModelServer {
     void refuse(int code, String message) {
       status = code;
       error = message;
-      _json(response, code, {
+      final body = <String, Object>{
         'error': {
           'message': message,
           'type': code == HttpStatus.badRequest
@@ -817,7 +892,13 @@ class DeviceModelServer {
               : null,
           'code': null,
         },
-      });
+      };
+      if (socket == null) {
+        _json(response, code, body);
+      } else {
+        writeHeaders(code, 'application/json; charset=utf-8');
+        output.write(jsonEncode(body));
+      }
     }
 
     try {
@@ -910,7 +991,7 @@ class DeviceModelServer {
       recent.add(now);
       // Slow request bodies cannot monopolize the model. Claim only after
       // the bounded read, and recheck availability after that await.
-      final bodyText = await _body(request, bodyTimeout);
+      final bodyText = await readBody(request, bodyTimeout);
       final decoded = jsonDecode(bodyText);
       final body = decoded is Map
           ? anthropic
@@ -936,8 +1017,24 @@ class DeviceModelServer {
         throw const FormatException('model must be a string.');
       }
       requested = model;
-      await queue.acquire(model);
+      // Detach before queuing so both queued and non-streaming peers can
+      // abandon work. Headers wait until the status is known.
+      response.headers.chunkedTransferEncoding = false;
+      response.persistentConnection = false;
+      final detached = await response.detachSocket(writeHeaders: false);
+      socket = detached;
+      output = detached;
+      detached.listen(
+        (_) {},
+        onDone: disconnected,
+        onError: (Object _) => disconnected(),
+        cancelOnError: true,
+      );
+      await queue.acquire(model, abandoned: abandoned.future);
       queueKey = model;
+      if (abandoned.isCompleted) {
+        throw const RouteRefusal(499, 'Client disconnected.');
+      }
       if (_server == null) throw const RouteRefusal(503, 'The server stopped.');
       if (model == modelId) {
         if (_busy || isAvailable?.call() == false) {
@@ -985,13 +1082,19 @@ class DeviceModelServer {
       final template = routed == null
           ? fallbackTemplate
           : router!.templateFor(model);
-      final effective = _sampling(body, _responseFormat(body, current));
+      final effective = samplingForRequest(
+        body,
+        _responseFormat(body, current),
+      );
       if (raw && engine is! RawCompletionEngine) {
         throw const RouteRefusal(
-          503,
-          'Raw completions unavailable: od_begin always renders a chat template. '
-          'The native engine needs a raw-prompt API.',
+          501,
+          'Raw completions are unsupported by this engine. '
+          'Use /v1/chat/completions instead.',
         );
+      }
+      if (abandoned.isCompleted) {
+        throw const RouteRefusal(499, 'Client disconnected.');
       }
       completion = true;
       var generating = true;
@@ -1000,25 +1103,8 @@ class DeviceModelServer {
       }
 
       onSessionChange?.call(client);
-      response.statusCode = HttpStatus.ok;
-      response.headers.contentType = wantsStream
-          ? ContentType('text', 'event-stream', charset: 'utf-8')
-          : ContentType.json;
-      response.headers.set(HttpHeaders.cacheControlHeader, 'no-cache');
       if (wantsStream) {
-        // HttpResponse hides peer disconnects until it closes. Listen directly
-        // to the socket, and delimit the SSE body by closing the connection.
-        response.headers.chunkedTransferEncoding = false;
-        response.persistentConnection = false;
-        final detached = await response.detachSocket(writeHeaders: true);
-        socket = detached;
-        output = detached;
-        detached.listen(
-          (_) {},
-          onDone: cancelIfGenerating,
-          onError: (Object _) => cancelIfGenerating(),
-          cancelOnError: true,
-        );
+        writeHeaders(HttpStatus.ok, 'text/event-stream; charset=utf-8');
       }
       unawaited(
         output.done.then<void>(
@@ -1117,6 +1203,9 @@ class DeviceModelServer {
           if (timedOut) throw TimeoutException('Generation deadline reached.');
         } finally {
           timer.cancel();
+        }
+        if (!wantsStream) {
+          writeHeaders(HttpStatus.ok, 'application/json; charset=utf-8');
         }
         usage = _Usage.from(engine.metrics);
         final calls = TextEngine.toolCallsOf(engine.metrics);
@@ -1361,7 +1450,7 @@ class DeviceModelServer {
     final queue = _queue;
     var acquired = false;
     try {
-      final body = jsonDecode(await _body(request, bodyTimeout));
+      final body = jsonDecode(await readBody(request, bodyTimeout));
       await queue.acquire('__vectors');
       acquired = true;
       if (body is! Map || body['model'] is! String) {
@@ -1418,6 +1507,11 @@ class DeviceModelServer {
         final rows = await vectors!.embed(model, texts, dims);
         if (rows.length != texts.length) {
           throw StateError('Embedding count mismatch.');
+        }
+        if (dims > 0 && rows.any((row) => row.length != dims)) {
+          throw const FormatException(
+            'dimensions exceeds the model embedding width.',
+          );
         }
         _json(response, HttpStatus.ok, {
           'object': 'list',
@@ -1478,7 +1572,10 @@ class DeviceModelServer {
     }
   }
 
-  static Future<String> _body(HttpRequest request, Duration timeout) async {
+  static Future<String> readBody(
+    Stream<List<int>> request,
+    Duration timeout,
+  ) async {
     // Room for a few photos as base64 data URLs.
     const maxBytes = 24 * 1024 * 1024;
     final bytes = BytesBuilder(copy: false);
@@ -1493,7 +1590,7 @@ class DeviceModelServer {
         if (!await iterator.moveNext().timeout(left)) break;
         bytes.add(iterator.current);
         if (bytes.length > maxBytes) {
-          throw const FormatException('Request is larger than 1 MB.');
+          throw const FormatException('Request is larger than 24 MB.');
         }
       }
     } finally {
@@ -1512,7 +1609,8 @@ class DeviceModelServer {
       refuse(HttpStatus.notFound, 'Endpoint not found.');
       return;
     }
-    if (_pairFailures >= PairingCode.maxFailures) {
+    if (!_pairing.available) {
+      onPairingUnavailable?.call(_pairing.locked);
       refuse(
         HttpStatus.tooManyRequests,
         'Too many wrong pairing codes. Restart the server for a new code.',
@@ -1522,14 +1620,19 @@ class DeviceModelServer {
     // Counted as a failure before the body arrives, so requests sent at
     // once cannot all pass the check above; only the right code takes it
     // back.
-    _pairFailures++;
-    final body = jsonDecode(await _body(request, bodyTimeout));
+    _pairing.reserve();
+    final body = jsonDecode(await readBody(request, bodyTimeout));
     final given = body is Map ? PairingCode.normalize('${body['code']}') : '';
     if (!_sameToken(given, code)) {
+      if (_pairing.locked) onPairingUnavailable?.call(true);
       refuse(HttpStatus.unauthorized, 'Wrong pairing code.');
       return;
     }
-    _pairFailures--;
+    if (!_pairing.accept()) {
+      refuse(HttpStatus.unauthorized, 'Pairing code expired or already used.');
+      return;
+    }
+    onPairingUnavailable?.call(false);
     _json(response, HttpStatus.ok, {'key': accessToken, 'model': modelId});
   }
 

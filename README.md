@@ -1,7 +1,9 @@
 # OnDevice LLM: private, offline AI assistant for Android and Windows
 
-**Run open AI models (Gemma 4, Qwen) on your own phone or PC.** Chat, ask
-about photos and documents, talk out loud, research the web with cited
+**Run open AI models (Gemma 4, Qwen) on your own phone or PC, and let them
+work as a team.** Your chat model can hand parts of a task to local agents
+that run side by side, then write one answer from all of their work. Chat,
+ask about photos and documents, talk out loud, research the web with cited
 sources and generate images, with no account, no subscription and no cloud.
 With web search off, nothing leaves your device.
 
@@ -18,22 +20,23 @@ private alternative to cloud chatbots such as ChatGPT or Gemini.
 
 **[Download for Android (APK)](https://github.com/sebytzr16/on-device-llm/releases/latest)
 · [Download for Windows (installer or ZIP)](https://github.com/sebytzr16/on-device-llm/releases/latest)
-· [What it does](#what-it-does) · [Support the project](#support-the-project)**
+· [Local agents](#local-agents) · [What it does](#what-it-does) · [Support the project](#support-the-project)**
 
 <p align="center">
-  <img src="docs/screenshots/desktop-chat.png" width="96%" alt="OnDevice LLM for Windows: chatting with Qwen3.6 35B A3B running locally on an NVIDIA laptop GPU">
+  <img src="docs/screenshots/desktop-agents.png" width="96%" alt="OnDevice LLM for Windows: four local agents planned a Kyoto trip side by side on one laptop GPU, then the chat model merged their work into one answer">
 </p>
 
 <p align="center">
+  <img src="docs/screenshots/agents.png" width="23%" alt="Android: two agents running on the phone, shown in a small strip above the composer">
   <img src="docs/screenshots/chat.png" width="23%" alt="Android: chat with a cited web answer">
   <img src="docs/screenshots/photo.png" width="23%" alt="Android: asking about a photo">
   <img src="docs/screenshots/conversation.png" width="23%" alt="Android: hands-free voice Conversation screen">
-  <img src="docs/screenshots/models.png" width="23%" alt="Android: model catalog">
 </p>
 
 ## Contents
 
 - [Why OnDevice LLM](#why-ondevice-llm)
+- [Local agents](#local-agents)
 - [Two apps, one project](#two-apps-one-project)
 - [Screenshots](#screenshots)
 - [What it does](#what-it-does)
@@ -65,6 +68,65 @@ OnDevice LLM shows how far your own hardware can go:
   free to use.
 - **Your hardware, your choice.** Use the phone's own model, a bigger model
   on your own PC, or a hosted API with your own key, from the same app.
+- **A team, not just a chatbot.** Local agents split a big request into
+  parallel jobs on your own GPU or CPU, and you can watch every one of them
+  work.
+
+## Local agents
+
+New in 1.2.0. Ask for something with several parts ("plan the itinerary,
+the packing list and the budget") or simply say "use three agents", and the
+chat model becomes a coordinator:
+
+1. **It splits the task.** The chat model writes a short brief for each
+   agent and starts them all in the same round.
+2. **The agents work side by side.** On Windows, every agent runs in its own
+   sequence on **one shared copy of the agent model**, batched together on
+   the GPU, so four agents cost little more memory than one. On an RTX 3070
+   Laptop GPU, four LFM3 1.7B agents ran at 55 to 120 tokens/s each.
+3. **You watch them live.** On Windows, each agent gets a small card in a
+   side column with its task, streamed reply, tokens, speed and time. On the
+   phone, a slim strip above the composer shows every agent and opens into
+   details.
+4. **The chat model writes one answer.** Every agent reply goes back to the
+   chat model, which checks and merges them. The answer keeps a record of
+   each job ("Asked the helper 4 times"), so you can reopen any brief and
+   reply later.
+
+<p align="center">
+  <img src="docs/screenshots/desktop-agent-web-approval.png" width="96%" alt="Windows: four agents running in the side column while the app asks whether agents may use the web in this chat">
+</p>
+
+**What you control** (Settings > Tools > Agents):
+
+- **Which model the agents use:** the chat model itself (it shares the
+  weights already on the GPU) or a smaller second model. The model you pick
+  is always the one that runs.
+- **How many at once:** up to 4 agents in parallel; extra jobs wait their
+  turn.
+- **Web access:** agents can search DuckDuckGo and read public pages. By
+  default the app asks **once per chat**, and your answer covers every agent
+  for the rest of that chat. You can also choose Always allow or Never.
+- **Answer length, sampling, context size, thinking, tool rounds, an input
+  budget and your own instructions** for every agent.
+
+**Placement that adapts to your hardware.** Models and agents fill the
+graphics card's VRAM first and only spill into system RAM when the card is
+full, using the memory that is actually free at that moment. A card with
+more VRAM simply keeps more layers on the GPU, with no setting to change.
+
+**Everything is logged.** The Logs page (Ctrl+Shift+L) shows each step as it
+happens: where every agent was placed and how many layers went to the GPU,
+each tool call and its result, web searches, downloads, model loads and each
+turn's timing.
+
+| Agent settings | Logs |
+| --- | --- |
+| ![Agent settings](docs/screenshots/desktop-agent-settings.png) | ![Logs page](docs/screenshots/desktop-logs.png) |
+
+| Phone: agents at work | Phone: agent details |
+| --- | --- |
+| ![Agents on the phone](docs/screenshots/agents.png) | ![Agent details on the phone](docs/screenshots/agents-expanded.png) |
 
 ## Two apps, one project
 
@@ -74,6 +136,7 @@ OnDevice LLM shows how far your own hardware can go:
 | Runs on | Android 9+ phones with a 64-bit Arm CPU | Windows 10 and 11 (64-bit) |
 | Acceleration | CPU, optional OpenCL on Adreno GPUs | NVIDIA CUDA 13 and 12, Vulkan (AMD, Intel, NVIDIA), AVX-512 and AVX2 CPU |
 | Model sizes | 0.8B to 4B parameters | Up to 35B mixture-of-experts models (experts kept in system RAM) |
+| Agents | Run on the phone's CPU next to the chat model, shown in a strip above the composer | Up to 4 batched on one GPU copy of the agent model, each with a live card |
 | Extras | Voice Conversation screen, phone actions, Goals | Image and video generation, model comparison, OpenAI- and Anthropic-compatible local server, one-click tuning |
 | Works together | Uses the PC as a remote model over your Wi-Fi | Serves its model to your phone with a pairing code |
 
@@ -86,6 +149,10 @@ your own computer and use it from your phone too.
 
 **Windows**
 
+| Local agents | Agent web approval |
+| --- | --- |
+| ![Windows agents](docs/screenshots/desktop-agents.png) | ![Agent web approval](docs/screenshots/desktop-agent-web-approval.png) |
+
 | Chat | Discover models on Hugging Face |
 | --- | --- |
 | ![Windows chat](docs/screenshots/desktop-chat.png) | ![Discover GGUF models](docs/screenshots/desktop-discover.png) |
@@ -94,15 +161,23 @@ your own computer and use it from your phone too.
 | --- | --- |
 | ![Model settings](docs/screenshots/desktop-model-settings.png) | ![Local server](docs/screenshots/desktop-server.png) |
 
+| Agent settings | Logs |
+| --- | --- |
+| ![Agent settings](docs/screenshots/desktop-agent-settings.png) | ![Logs](docs/screenshots/desktop-logs.png) |
+
 **Android**
 
-| Chat | Sources | Photo | Conversation |
+| Agents | Chat | Sources | Photo |
 | --- | --- | --- | --- |
-| ![Chat](docs/screenshots/chat.png) | ![Sources](docs/screenshots/sources.png) | ![Photo](docs/screenshots/photo.png) | ![Conversation](docs/screenshots/conversation.png) |
+| ![Agents](docs/screenshots/agents.png) | ![Chat](docs/screenshots/chat.png) | ![Sources](docs/screenshots/sources.png) | ![Photo](docs/screenshots/photo.png) |
 
-| Models | Goals | Phone actions | Settings |
+| Agent details | Conversation | Models | Goals |
 | --- | --- | --- | --- |
-| ![Models](docs/screenshots/models.png) | ![Goals](docs/screenshots/goals.png) | ![Phone actions](docs/screenshots/actions.png) | ![Settings](docs/screenshots/settings.png) |
+| ![Agent details](docs/screenshots/agents-expanded.png) | ![Conversation](docs/screenshots/conversation.png) | ![Models](docs/screenshots/models.png) | ![Goals](docs/screenshots/goals.png) |
+
+| Phone actions | Settings | | |
+| --- | --- | --- | --- |
+| ![Phone actions](docs/screenshots/actions.png) | ![Settings](docs/screenshots/settings.png) | | |
 
 ## What it does
 
@@ -116,12 +191,23 @@ your own computer and use it from your phone too.
   never saved.
 - Optional memory of facts you state yourself ("I'm vegetarian", "my sister
   is Marta"). You can see, edit and delete every note.
-- Presets, `/` prompt shortcuts and per-chat or per-model settings. Each
-  model's recommended sampling settings are used by default.
+- Presets and per-chat or per-model settings. Each model starts from its own
+  recommended sampling settings, edited from its own page.
+- Type `/` for a command palette; `/compact` summarises older turns (after
+  you approve the summary) so long chats keep fitting in the context.
+
+**Local agents (Android and Windows)**
+- The chat model can hand side jobs to up to 4 agents that run in parallel,
+  then merge their replies into one answer. See [Local agents](#local-agents).
+- Agents can use the same tools as the chat model, including web search
+  after you allow it once for the chat.
+- Live progress for every agent: task, streamed reply, tokens/s, timings and
+  where it runs.
 
 **Photos and documents**
 - Ask about a photo with a vision model (Gemma 4, or Qwen3.5 with its
-  projector). Text in photos is also read on the device (OCR).
+  projector). Vision is a per-model switch: the projector loads only with
+  the first photo. Text in photos is also read on the device (OCR).
 - Attach PDF, Word, Excel, PowerPoint, OpenDocument, EPUB, RTF, HTML, CSV or
   plain-text files. Long files are cut to the passages that match the
   question.
@@ -139,7 +225,8 @@ your own computer and use it from your phone too.
   questions with web search off.
 
 **Voice**
-- Dictation and read-aloud.
+- Dictation that keeps listening across pauses, and read-aloud with Kokoro
+  or the optional Supertonic 2 voice (English, French and Spanish).
 - A hands-free Conversation screen: on-device speech-to-text (Whisper or
   Parakeet TDT 0.6B v3), a local model and Kokoro text-to-speech.
 
@@ -152,12 +239,16 @@ your own computer and use it from your phone too.
   35B A3B keep their experts in system RAM and the rest on the GPU.
   Multi-token prediction (MTP) and draft models speed up writing.
 - **Discover:** search Hugging Face for GGUF models and pick a quantization.
+  Each model has its own page with the model card, capabilities read from
+  the GGUF, files and load settings. A downloads center shows active
+  transfers and their history.
 - **Create:** text-to-image, short video and upscaling on your GPU.
 - **Compare:** run the same prompt on two models side by side.
 - **Local server:** an OpenAI- and Anthropic-compatible API on
   `127.0.0.1`, protected by a token, for other apps on your PC. Share it on
   your network to pair your phone with a code.
-- MCP tools, a tray icon, keyboard shortcuts and live logs.
+- MCP tools, a tray icon, keyboard shortcuts and a Logs page that shows
+  every model load, agent, tool call, search and download as it happens.
 
 **Android only**
 - **Goals:** multi-step research. You give a goal, the model asks a few
@@ -177,7 +268,8 @@ your own computer and use it from your phone too.
 
 **Everywhere**
 - English, French and Spanish.
-- Dark and light themes, accent colours, text scaling and a motion setting.
+- Dark and warm-grey light themes, accent colours, text scaling and a motion
+  setting.
 
 ## Privacy
 
@@ -420,6 +512,8 @@ OnDevice LLM is free and built in spare time. If it is useful to you:
 
 The app is MIT licensed ([LICENSE](LICENSE)). llama.cpp, sherpa-onnx, fonts,
 packages and model files keep their own licences.
+Supertonic 2 is an optional reading voice: OpenRAIL-M weights (with use
+restrictions), MIT code. Kokoro remains the default (Apache-2.0 weights).
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists every runtime and
 every model the app offers, with its licence. The app also shows these under
 Settings > About > Open-source licences. Model licences are shown before
@@ -429,7 +523,8 @@ yourself.
 ---
 
 **Keywords:** local LLM, offline AI assistant, on-device AI, private
-ChatGPT alternative, llama.cpp GUI for Windows, GGUF runner, Gemma 4, Qwen
+ChatGPT alternative, local AI agents, multi-agent, parallel agents,
+llama.cpp GUI for Windows, GGUF runner, Gemma 4, Qwen
 3.5, Qwen 3.6, Android AI app, Windows AI app, CUDA, Vulkan, mixture of
 experts, speculative decoding, MTP, local RAG, speech-to-text, text-to-speech,
 Flutter, open source.

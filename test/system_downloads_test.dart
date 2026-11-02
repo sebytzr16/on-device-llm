@@ -2,9 +2,12 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/data/storage/download_manager.dart';
 import 'package:ondevice_llm/data/storage/system_downloads.dart';
+
+import 'download_test.dart' show Adapter;
 
 class FakeSystem implements SystemDownloads {
   final Directory directory;
@@ -36,6 +39,16 @@ class FakeSystem implements SystemDownloads {
   @override
   Future<void> stage(String id) async {
     await File('${directory.path}/test.gguf.part').writeAsBytes(bytes);
+  }
+
+  @override
+  Future<void> pause(String id) async {
+    cancels++;
+    if (received > 0) {
+      await File(
+        '${directory.path}/test.gguf.part',
+      ).writeAsBytes(bytes.take(received).toList());
+    }
   }
 
   @override
@@ -115,18 +128,54 @@ void main() {
       expect(await File('${directory.path}/test.gguf').readAsBytes(), bytes);
     },
   );
+  test('explicit pause preserves OS bytes without promoting them', () async {
+    final system = FakeSystem(directory, bytes)
+      ..complete = false
+      ..received = 32;
+    final m = manager(system);
+    addTearDown(m.dispose);
+    final expectation = expectLater(download(m), throwsException);
+    await system.started.future;
+    await m.pause('test');
+    await expectation;
+    expect(system.cancels, greaterThanOrEqualTo(1));
+    expect(
+      await File('${directory.path}/test.gguf.part').readAsBytes(),
+      bytes.take(32).toList(),
+    );
+    expect(await File('${directory.path}/test.gguf').exists(), false);
+  });
   test(
-    'explicit pause removes OS transfer without promoting staged bytes',
+    'Android paused bytes resume with Range and pass verification',
     () async {
-      final system = FakeSystem(directory, bytes)..complete = false;
-      final m = manager(system);
+      final system = FakeSystem(directory, bytes)
+        ..complete = false
+        ..received = 32;
+      final dio = Dio()
+        ..httpClientAdapter = Adapter((options) {
+          expect(options.headers['Range'], 'bytes=32-');
+          return ResponseBody.fromBytes(
+            bytes.skip(32).toList(),
+            206,
+            headers: {
+              'content-range': ['bytes 32-${bytes.length - 1}/${bytes.length}'],
+            },
+          );
+        });
+      final m = DownloadManager(
+        dio: dio,
+        system: system,
+        resolve: (name) async => File('${directory.path}/$name'),
+        pollInterval: const Duration(milliseconds: 1),
+      );
       addTearDown(m.dispose);
-      final expectation = expectLater(download(m), throwsException);
+      final paused = expectLater(download(m), throwsException);
       await system.started.future;
       await m.pause('test');
-      await expectation;
-      expect(system.cancels, greaterThanOrEqualTo(1));
-      expect(await File('${directory.path}/test.gguf').exists(), false);
+      await paused;
+      await download(m);
+      expect(system.enqueues, 1);
+      expect(await File('${directory.path}/test.gguf').readAsBytes(), bytes);
     },
   );
   test('pause completes cancellation before an immediate resume', () async {

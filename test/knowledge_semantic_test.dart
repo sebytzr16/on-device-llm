@@ -1,10 +1,14 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+
+import 'local_backup_service_test.dart' show BackupPaths;
 import 'package:ondevice_llm/data/local/database/app_database.dart';
 import 'package:ondevice_llm/features/knowledge/knowledge_embedder.dart';
 import 'package:ondevice_llm/features/knowledge/knowledge_store.dart';
@@ -75,8 +79,19 @@ const dishwasherText =
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late AppDatabase db;
-  setUp(() => db = AppDatabase.forTesting(NativeDatabase.memory()));
-  tearDown(() => db.close());
+  late Directory files;
+  late PathProviderPlatform previousPaths;
+  setUp(() async {
+    files = await Directory.systemTemp.createTemp('knowledge-semantic-');
+    previousPaths = PathProviderPlatform.instance;
+    PathProviderPlatform.instance = BackupPaths(files.path, files.path);
+    db = AppDatabase.forTesting(NativeDatabase.memory());
+  });
+  tearDown(() async {
+    await db.close();
+    PathProviderPlatform.instance = previousPaths;
+    await files.delete(recursive: true);
+  });
 
   ProviderContainer container(FakeEmbedder embedder) {
     final c = ProviderContainer(

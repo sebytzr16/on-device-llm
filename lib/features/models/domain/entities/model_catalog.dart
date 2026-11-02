@@ -18,6 +18,13 @@ class CatalogMeta {
 
 // F16 projectors, checked 2026-09-16 via the Hub API (LFS SHA-256).
 const visionProjectors = <String, VisionProjector>{
+  'qwen36-35b-a3b-q4km': VisionProjector(
+    fileName: 'Qwen3.6-35B-A3B-mmproj-F16.gguf',
+    downloadUrl:
+        'https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/a483e9e6cbd595906af30beda3187c2663a1118c/mmproj-F16.gguf',
+    sha256: '8971ee4f331ff0a4c609374f32984b3d4e6dc086c0aa35f1d637fad1829e887f',
+    sizeBytes: 899283680,
+  ),
   'qwen35-0.8b-iq4nl': VisionProjector(
     fileName: 'Qwen3.5-0.8B-mmproj-F16.gguf',
     downloadUrl:
@@ -171,6 +178,18 @@ const supportCheckModel = VisionProjector(
 );
 
 const catalogMeta = <String, CatalogMeta>{
+  'lfm3-1.7b-q8': CatalogMeta(
+    parameterCountB: 1.7,
+    reasoning: false,
+    minRamGb: 4,
+    blurb: '',
+  ),
+  'qwen36-35b-a3b-q4km': CatalogMeta(
+    parameterCountB: 35,
+    reasoning: true,
+    minRamGb: 32,
+    blurb: '',
+  ),
   'diffusiongemma-26b-a4b-q4km': CatalogMeta(
     parameterCountB: 26,
     reasoning: false,
@@ -289,7 +308,36 @@ const gemma4E4b = ModelInfo(
 // retired; a phone that still holds those files keeps them. Since
 // 2026-09-24 the 0.8B is Q8_0 again: the tester's everyday model, with
 // Gemma 4 E2B as the advanced one.
+const lfm3 = ModelInfo(
+  id: 'lfm3-1.7b-q8',
+  displayName: 'LFM3 1.7B',
+  fileName: 'LFM3-1.7B-Q8_0.gguf',
+  downloadUrl:
+      'https://huggingface.co/LiquidAI/LFM3-1.7B-GGUF/resolve/bad5729bba61d076fff20d2548e62526665af215/LFM3-1.7B-Q8_0.gguf',
+  sha256: '8f6b24182258205e9e01e21f1f24a1f208c1e8115578825d202ce39976af20b6',
+  sizeBytes: 1846238496,
+  parameterCountB: 2,
+  license: 'LFM Open License',
+  family: ModelFamily.other,
+  quantization: ModelQuantization.q8_0,
+);
+
+const qwen36_35b = ModelInfo(
+  id: 'qwen36-35b-a3b-q4km',
+  displayName: 'Qwen3.6 35B A3B',
+  fileName: 'Qwen3.6-35B-A3B-UD-Q4_K_M.gguf',
+  downloadUrl:
+      'https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/a483e9e6cbd595906af30beda3187c2663a1118c/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf',
+  sha256: 'ac0e2c1189e055faa36eff361580e79c5bd6f8e76bffb4ce547f167d53e31a61',
+  sizeBytes: 22134528992,
+  parameterCountB: 35,
+  license: 'Apache-2.0',
+  family: ModelFamily.qwen,
+  quantization: ModelQuantization.q4_k_m,
+);
+
 const bundledCatalog = <ModelInfo>[
+  lfm3,
   ModelInfo(
     id: 'qwen35-2b-iq4nl',
     displayName: 'Qwen3.5 2B',
@@ -391,6 +439,8 @@ const retiredCatalogIds = {
 // a mixture of experts: the bridge's fit keeps the experts that do not fit
 // the card in RAM.
 const desktopCatalog = <ModelInfo>[
+  lfm3,
+  qwen36_35b,
   ModelInfo(
     id: 'diffusiongemma-26b-a4b-q4km',
     displayName: 'DiffusionGemma 26B A4B',

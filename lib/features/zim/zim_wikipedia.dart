@@ -25,9 +25,15 @@ class ZimWikipedia {
   static String fileIn(String supportDir) =>
       p.join(supportDir, 'zim', 'wikipedia.zim');
 
-  Future<ZimArchive> _open() {
+  Future<ZimArchive> _open() async {
     if (_closed) return Future.error(StateError('Offline Wikipedia is closed'));
-    return _opening ??= ZimArchive.open(path);
+    final opening = _opening ??= ZimArchive.open(path);
+    try {
+      return await opening;
+    } catch (_) {
+      if (identical(_opening, opening)) _opening = null;
+      rethrow;
+    }
   }
 
   Future<String?> archiveMetadata(String key) async =>

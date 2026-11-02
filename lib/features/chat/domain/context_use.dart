@@ -4,6 +4,28 @@ import 'entities/chat_message.dart';
 /// A bounded, local audit of context selection. Excerpts are for inspection;
 /// they are never automatically substituted for the original conversation.
 class ContextUse {
+  /// Counts each removed exchange once instead of rendering the shrinking
+  /// conversation after every removal. The caller verifies the final prompt:
+  /// template boundaries can make these isolated counts slightly different.
+  static Future<int> omitToFit(
+    List<Map<String, Object>> messages, {
+    required int deficit,
+    required int keep,
+    required Future<int> Function(List<Map<String, Object>>) count,
+    required bool Function() cancelled,
+  }) async {
+    var omitted = 0;
+    while (deficit > 0 && !cancelled()) {
+      final before = List<Map<String, Object>>.of(messages);
+      final removed = omitOldestExchange(messages, keep: keep);
+      if (removed == 0) break;
+      final start = before.first['role'] == 'system' ? 1 : 0;
+      deficit -= await count(before.sublist(start, start + removed));
+      omitted += removed;
+    }
+    return omitted;
+  }
+
   static Map<String, dynamic> capture({
     required List<ChatMessage> available,
     required List<ChatMessage> requested,

@@ -21,25 +21,35 @@ import 'effective_settings_page.dart';
 import 'inference_contract_page.dart';
 import 'knowledge_page.dart';
 import 'memory_page.dart';
+import 'model_profile_page.dart';
 import 'settings_search_page.dart';
 import 'remote_server_page.dart';
 import '../../../hosting/presentation/device_hosting_page.dart';
 import '../../../schedule/schedule_page.dart';
+import '../../../schedule/scheduled_prompt.dart';
 import '../../../shortcuts/presentation/shortcuts_page.dart';
 import '../../../backup/backup_page.dart';
 import '../../../voice/voice_settings.dart';
 import '../../../../core/motion/motion.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/design/app_dialog.dart';
+import '../../../../core/platform/form_factor.dart';
 
 // Keep in sync with pubspec.yaml; no package_info dependency by design.
 const _appVersion = BuildIdentity.version;
 const _llamaCppUrl = 'https://github.com/ggml-org/llama.cpp';
 
+/// One part of the settings screen, shown alone as a desktop category.
+enum SettingsPart { assistant, voice, data, advanced, about }
+
 /// Layer 2 (North Star 6.6): the short screen. Everything numeric lives one
-/// tap deeper under ADVANCED.
+/// tap deeper under ADVANCED. With [only], just that part is drawn, as the
+/// desktop settings panel shows each part as its own category.
 class SettingsScreen extends ConsumerWidget {
-  const SettingsScreen({super.key});
+  final SettingsPart? only;
+  const SettingsScreen({super.key, this.only});
+
+  bool _show(SettingsPart part) => only == null || only == part;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -47,32 +57,43 @@ class SettingsScreen extends ConsumerWidget {
     final n = ref.read(settingsProvider.notifier);
     final error = ref.watch(settingsErrorProvider);
     final c = context.colors;
+    final pc = context.isDesktop;
+    final whole = only == null;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(context.l10n.settings),
+        title: Text(switch (only) {
+          null => context.l10n.settings,
+          SettingsPart.assistant => context.l10n.sectionAssistant,
+          SettingsPart.voice => context.l10n.sectionVoice,
+          SettingsPart.data => context.l10n.sectionData,
+          SettingsPart.advanced => context.l10n.sectionAdvanced,
+          SettingsPart.about => context.l10n.sectionAbout,
+        }),
         actions: [
           const SavedIndicator(),
-          IconButton(
-            tooltip: context.l10n.settingsSearch,
-            icon: const Icon(Icons.search),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(
-                builder: (_) => const SettingsSearchPage(),
+          if (whole) ...[
+            IconButton(
+              tooltip: context.l10n.settingsSearch,
+              icon: const Icon(Icons.search),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const SettingsSearchPage(),
+                ),
               ),
             ),
-          ),
-          PopupMenuButton<String>(
-            tooltip: context.l10n.more,
-            onSelected: (_) => _confirmReset(context, n),
-            itemBuilder: (_) => [
-              PopupMenuItem(
-                value: 'reset',
-                child: Text(context.l10n.resetToDefaults),
-              ),
-            ],
-          ),
+            PopupMenuButton<String>(
+              tooltip: context.l10n.more,
+              onSelected: (_) => _confirmReset(context, n),
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  value: 'reset',
+                  child: Text(context.l10n.resetToDefaults),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
       body: SafeArea(
@@ -84,432 +105,465 @@ class SettingsScreen extends ConsumerWidget {
             AppDesign.xxl,
           ),
           children: [
-            const _PrivacyCard(),
+            if (_show(SettingsPart.about)) const _PrivacyCard(),
             if (error != null) ...[
               const SizedBox(height: AppDesign.md),
               DangerCard(error),
             ],
-            SettingsSection(
-              label: context.l10n.sectionAssistant,
-              icon: Icons.auto_awesome_outlined,
-              children: [
-                SettingsRow(
-                  key: const Key('thinking-row'),
-                  leading: const Icon(Icons.lightbulb_outline),
-                  title: Text(context.l10n.thinkingMode),
-                  subtitle: Text(
-                    '${thinkingLevelLabel(s.thinkingLevel, context.l10n)} · '
-                    '${thinkingLevelHint(s.thinkingLevel, context.l10n)}',
-                  ),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () => _pickThinking(context, s, n),
-                ),
-                SettingsRow(
-                  leading: const Icon(Icons.travel_explore),
-                  title: Text(context.l10n.webResearch),
-                  subtitle: Text(webModeLabel(s.webMode, context.l10n)),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () => _pickWebMode(context, s, n),
-                ),
-                SettingsRow(
-                  key: const Key('knowledge-row'),
-                  leading: const Icon(Icons.menu_book_outlined),
-                  title: Text(context.l10n.knowledgeLibrary),
-                  subtitle: Text(
-                    s.knowledgeCollection.isEmpty
-                        ? context.l10n.knowledgeOff
-                        : context.l10n.knowledgeOn(s.knowledgeCollection),
-                  ),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => const KnowledgePage(),
-                    ),
-                  ),
-                ),
-                SettingsRow(
-                  key: const Key('memory-row'),
-                  leading: const Icon(Icons.psychology_outlined),
-                  title: Text(context.l10n.memory),
-                  subtitle: Text(
-                    s.memoryEnabled
-                        ? context.l10n.memoryOnHint
-                        : context.l10n.memoryOffHint,
-                  ),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(builder: (_) => const MemoryPage()),
-                  ),
-                ),
-                SettingsRow(
-                  leading: const Icon(Icons.edit_note),
-                  title: Text(context.l10n.customInstructions),
-                  subtitle: Text(
-                    s.systemPrompt.isEmpty
-                        ? context.l10n.customInstructionsHint
-                        : s.systemPrompt,
-                  ),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () => _editSystemPrompt(context, s, n),
-                ),
-              ],
-            ),
-            SettingsSection(
-              label: context.l10n.sectionVoice,
-              icon: Icons.record_voice_over_outlined,
-              children: [
-                SettingsSwitchRow(
-                  key: const Key('read-aloud'),
-                  secondary: const Icon(Icons.volume_up_outlined),
-                  title: Text(context.l10n.readAloudSetting),
-                  subtitle: Text(context.l10n.readAloudHint),
-                  value: s.readAloud,
-                  onChanged: (v) => n.update(s.copyWith(readAloud: v)),
-                ),
-                SettingsSwitchRow(
-                  key: const Key('voice-on-device'),
-                  secondary: const Icon(Icons.mic_none),
-                  title: Text(context.l10n.dictationOnDevice),
-                  // Three lines: what "off" allows is the privacy point.
-                  subtitle: Text(context.l10n.dictationOnDeviceHint),
-                  value: s.voiceOnDeviceOnly,
-                  onChanged: (v) => n.update(s.copyWith(voiceOnDeviceOnly: v)),
-                ),
-                const NaturalVoiceSettings(),
-              ],
-            ),
-            SettingsSection(
-              label: context.l10n.sectionAutomation,
-              icon: Icons.bolt_outlined,
-              children: [
-                SettingsRow(
-                  key: const Key('shortcuts-row'),
-                  leading: const Icon(Icons.short_text),
-                  title: Text(context.l10n.shortcutsTitle),
-                  subtitle: Text(context.l10n.shortcutsRowHint),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => const ShortcutsPage(),
-                    ),
-                  ),
-                ),
-                SettingsRow(
-                  key: const Key('schedule-row'),
-                  leading: const Icon(Icons.alarm),
-                  title: Text(context.l10n.scheduleTitle),
-                  subtitle: Text(context.l10n.scheduleRowHint),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => const SchedulePage(),
-                    ),
-                  ),
-                ),
-                SettingsSwitchRow(
-                  key: const Key('auto-titles'),
-                  secondary: const Icon(Icons.title),
-                  title: Text(context.l10n.autoTitlesSetting),
-                  subtitle: Text(context.l10n.autoTitlesHint),
-                  value: s.autoTitles,
-                  onChanged: (v) => n.update(s.copyWith(autoTitles: v)),
-                ),
-                SettingsSwitchRow(
-                  key: const Key('battery-saver'),
-                  secondary: const Icon(Icons.battery_saver_outlined),
-                  title: Text(context.l10n.batterySaver),
-                  subtitle: Text(
-                    s.batterySaver
-                        ? context.l10n.batterySaverOn(s.batterySaverLevel)
-                        : context.l10n.batterySaverOff,
-                  ),
-                  value: s.batterySaver,
-                  onChanged: (v) => n.update(s.copyWith(batterySaver: v)),
-                ),
-                if (s.batterySaver)
+            if (_show(SettingsPart.assistant))
+              SettingsSection(
+                label: context.l10n.sectionAssistant,
+                icon: Icons.auto_awesome_outlined,
+                children: [
                   SettingsRow(
-                    key: const Key('battery-saver-level'),
-                    leading: const SizedBox(width: AppDesign.xl),
-                    title: Text(context.l10n.batterySaverLevel),
-                    trailing: DropdownButtonHideUnderline(
-                      child: DropdownButton<int>(
-                        value:
-                            const [
-                              10,
-                              15,
-                              20,
-                              30,
-                              50,
-                            ].contains(s.batterySaverLevel)
-                            ? s.batterySaverLevel
-                            : 20,
-                        items: [
-                          for (final v in const [10, 15, 20, 30, 50])
-                            DropdownMenuItem(value: v, child: Text('$v%')),
-                        ],
-                        onChanged: (v) => v == null
-                            ? null
-                            : n.update(s.copyWith(batterySaverLevel: v)),
+                    key: const Key('thinking-row'),
+                    leading: const Icon(Icons.lightbulb_outline),
+                    title: Text(context.l10n.thinkingMode),
+                    subtitle: Text(
+                      '${thinkingLevelLabel(s.thinkingLevel, context.l10n)} · '
+                      '${thinkingLevelHint(s.thinkingLevel, context.l10n)}',
+                    ),
+                    trailing: const Icon(Icons.chevron_right, size: 20),
+                    onTap: () => _pickThinking(context, s, n),
+                  ),
+                  SettingsRow(
+                    leading: const Icon(Icons.travel_explore),
+                    title: Text(context.l10n.webResearch),
+                    subtitle: Text(webModeLabel(s.webMode, context.l10n)),
+                    trailing: const Icon(Icons.chevron_right, size: 20),
+                    onTap: () => _pickWebMode(context, s, n),
+                  ),
+                  // The desktop panel gives these their own categories.
+                  if (whole) ...[
+                    SettingsRow(
+                      key: const Key('knowledge-row'),
+                      leading: const Icon(Icons.menu_book_outlined),
+                      title: Text(context.l10n.knowledgeLibrary),
+                      subtitle: Text(
+                        s.knowledgeCollection.isEmpty
+                            ? context.l10n.knowledgeOff
+                            : context.l10n.knowledgeOn(s.knowledgeCollection),
+                      ),
+                      trailing: const Icon(Icons.chevron_right, size: 20),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute<void>(
+                          builder: (_) => const KnowledgePage(),
+                        ),
+                      ),
+                    ),
+                    SettingsRow(
+                      key: const Key('memory-row'),
+                      leading: const Icon(Icons.psychology_outlined),
+                      title: Text(context.l10n.memory),
+                      subtitle: Text(
+                        s.memoryEnabled
+                            ? context.l10n.memoryOnHint
+                            : context.l10n.memoryOffHint,
+                      ),
+                      trailing: const Icon(Icons.chevron_right, size: 20),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute<void>(
+                          builder: (_) => const MemoryPage(),
+                        ),
+                      ),
+                    ),
+                  ],
+                  SettingsRow(
+                    leading: const Icon(Icons.edit_note),
+                    title: Text(context.l10n.customInstructions),
+                    subtitle: Text(
+                      s.systemPrompt.isEmpty
+                          ? context.l10n.customInstructionsHint
+                          : s.systemPrompt,
+                    ),
+                    trailing: const Icon(Icons.chevron_right, size: 20),
+                    onTap: () => _editSystemPrompt(context, s, n),
+                  ),
+                ],
+              ),
+            if (_show(SettingsPart.voice))
+              SettingsSection(
+                label: context.l10n.sectionVoice,
+                icon: Icons.record_voice_over_outlined,
+                children: [
+                  SettingsSwitchRow(
+                    key: const Key('read-aloud'),
+                    secondary: const Icon(Icons.volume_up_outlined),
+                    title: Text(context.l10n.readAloudSetting),
+                    subtitle: Text(
+                      (context.isDesktop
+                          ? context.l10n.readAloudHintPc
+                          : context.l10n.readAloudHint),
+                    ),
+                    value: s.readAloud,
+                    onChanged: (v) => n.update(s.copyWith(readAloud: v)),
+                  ),
+                  // Dictation is the phone keyboard's microphone.
+                  if (!pc)
+                    SettingsSwitchRow(
+                      key: const Key('voice-on-device'),
+                      secondary: const Icon(Icons.mic_none),
+                      title: Text(context.l10n.dictationOnDevice),
+                      // Three lines: what "off" allows is the privacy point.
+                      subtitle: Text(context.l10n.dictationOnDeviceHint),
+                      value: s.voiceOnDeviceOnly,
+                      onChanged: (v) =>
+                          n.update(s.copyWith(voiceOnDeviceOnly: v)),
+                    ),
+                  const NaturalVoiceSettings(),
+                ],
+              ),
+            if (_show(SettingsPart.assistant))
+              SettingsSection(
+                label: context.l10n.sectionAutomation,
+                icon: Icons.bolt_outlined,
+                children: [
+                  SettingsRow(
+                    key: const Key('shortcuts-row'),
+                    leading: const Icon(Icons.short_text),
+                    title: Text(context.l10n.shortcutsTitle),
+                    subtitle: Text(context.l10n.shortcutsRowHint),
+                    trailing: const Icon(Icons.chevron_right, size: 20),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ShortcutsPage(),
                       ),
                     ),
                   ),
-              ],
-            ),
-            SettingsSection(
-              label: context.l10n.sectionModelConnections,
-              icon: Icons.memory_outlined,
-              children: [
-                const _ActiveModelRow(),
-                _DrillRow(
-                  icon: Icons.dns_outlined,
-                  title: context.l10n.remoteServer,
-                  summary: s.usesRemote
-                      ? context.l10n.remoteRowOn(
-                          '${s.activeRemoteProfile!.label}${s.remoteModel.isEmpty ? '' : ' · ${s.remoteModel}'}',
-                        )
-                      : context.l10n.remoteRowOff,
-                  page: const RemoteServerPage(),
-                ),
-                _DrillRow(
-                  icon: Icons.wifi_tethering,
-                  title: context.l10n.hostTitle,
-                  summary: context.l10n.hostRowHint,
-                  page: const DeviceHostingPage(),
-                ),
-              ],
-            ),
-            SettingsSection(
-              label: context.l10n.sectionAppearanceLanguage,
-              icon: Icons.palette_outlined,
-              children: [
-                _DrillRow(
-                  icon: Icons.contrast,
-                  title: context.l10n.uiSettingsScreenAppearance,
-                  summary:
-                      '${s.themeChoice.name} · ${s.accent.name} · ${(s.textScale * 100).round()}%',
-                  page: const AppearancePage(),
-                ),
-                SettingsRow(
-                  key: const Key('language-row'),
-                  leading: const Icon(Icons.translate),
-                  title: Text(context.l10n.language),
-                  trailing: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: s.localeCode,
-                      items: [
-                        for (final code in supportedLanguageCodes)
-                          DropdownMenuItem(
-                            value: code,
-                            child: Text(switch (code) {
-                              'en' => context.l10n.languageEnglish,
-                              'fr' => context.l10n.languageFrench,
-                              'es' => context.l10n.languageSpanish,
-                              _ => context.l10n.languageSystem,
-                            }),
-                          ),
-                      ],
-                      onChanged: (v) => v == null
-                          ? null
-                          : n.update(s.copyWith(localeCode: v)),
+                  if (ScheduleStore.supported && !pc)
+                    SettingsRow(
+                      key: const Key('schedule-row'),
+                      leading: const Icon(Icons.alarm),
+                      title: Text(context.l10n.scheduleTitle),
+                      subtitle: Text(context.l10n.scheduleRowHint),
+                      trailing: const Icon(Icons.chevron_right, size: 20),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute<void>(
+                          builder: (_) => const SchedulePage(),
+                        ),
+                      ),
+                    ),
+                  SettingsSwitchRow(
+                    key: const Key('auto-titles'),
+                    secondary: const Icon(Icons.title),
+                    title: Text(context.l10n.autoTitlesSetting),
+                    subtitle: Text(context.l10n.autoTitlesHint),
+                    value: s.autoTitles,
+                    onChanged: (v) => n.update(s.copyWith(autoTitles: v)),
+                  ),
+                  if (!pc)
+                    SettingsSwitchRow(
+                      key: const Key('battery-saver'),
+                      secondary: const Icon(Icons.battery_saver_outlined),
+                      title: Text(context.l10n.batterySaver),
+                      subtitle: Text(
+                        s.batterySaver
+                            ? context.l10n.batterySaverOn(s.batterySaverLevel)
+                            : context.l10n.batterySaverOff,
+                      ),
+                      value: s.batterySaver,
+                      onChanged: (v) => n.update(s.copyWith(batterySaver: v)),
+                    ),
+                  if (s.batterySaver && !pc)
+                    SettingsRow(
+                      key: const Key('battery-saver-level'),
+                      leading: const SizedBox(width: AppDesign.xl),
+                      title: Text(context.l10n.batterySaverLevel),
+                      trailing: DropdownButtonHideUnderline(
+                        child: DropdownButton<int>(
+                          value:
+                              const [
+                                10,
+                                15,
+                                20,
+                                30,
+                                50,
+                              ].contains(s.batterySaverLevel)
+                              ? s.batterySaverLevel
+                              : 20,
+                          items: [
+                            for (final v in const [10, 15, 20, 30, 50])
+                              DropdownMenuItem(value: v, child: Text('$v%')),
+                          ],
+                          onChanged: (v) => v == null
+                              ? null
+                              : n.update(s.copyWith(batterySaverLevel: v)),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            if (whole)
+              SettingsSection(
+                label: context.l10n.sectionModelConnections,
+                icon: Icons.memory_outlined,
+                children: [
+                  if (!pc) const _ActiveModelRow(),
+                  _DrillRow(
+                    icon: Icons.dns_outlined,
+                    title: context.l10n.remoteServer,
+                    summary: s.usesRemote
+                        ? context.l10n.remoteRowOn(
+                            '${s.activeRemoteProfile!.label}${s.remoteModel.isEmpty ? '' : ' · ${s.remoteModel}'}',
+                          )
+                        : (context.isDesktop
+                              ? context.l10n.remoteRowOffPc
+                              : context.l10n.remoteRowOff),
+                    page: const RemoteServerPage(),
+                  ),
+                  if (!pc)
+                    _DrillRow(
+                      icon: Icons.wifi_tethering,
+                      title: context.l10n.hostTitle,
+                      summary: context.l10n.hostRowHint,
+                      page: const DeviceHostingPage(),
+                    ),
+                ],
+              ),
+            if (whole)
+              SettingsSection(
+                label: context.l10n.sectionAppearanceLanguage,
+                icon: Icons.palette_outlined,
+                children: [
+                  _DrillRow(
+                    icon: Icons.contrast,
+                    title: context.l10n.uiSettingsScreenAppearance,
+                    summary:
+                        '${s.themeChoice.name} · ${s.accent.name} · ${(s.textScale * 100).round()}%',
+                    page: const AppearancePage(),
+                  ),
+                  SettingsRow(
+                    key: const Key('language-row'),
+                    leading: const Icon(Icons.translate),
+                    title: Text(context.l10n.language),
+                    trailing: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: s.localeCode,
+                        items: [
+                          for (final code in supportedLanguageCodes)
+                            DropdownMenuItem(
+                              value: code,
+                              child: Text(switch (code) {
+                                'en' => context.l10n.languageEnglish,
+                                'fr' => context.l10n.languageFrench,
+                                'es' => context.l10n.languageSpanish,
+                                _ => context.byFormFactor(
+                                  context.l10n.languageSystem,
+                                  context.l10n.desktopLanguageSystem,
+                                ),
+                              }),
+                            ),
+                        ],
+                        onChanged: (v) => v == null
+                            ? null
+                            : n.update(s.copyWith(localeCode: v)),
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            SettingsSection(
-              label: context.l10n.sectionData,
-              icon: Icons.shield_outlined,
-              children: [
-                _DrillRow(
-                  icon: Icons.backup_outlined,
-                  title: context.l10n.uiSettingsScreenEncryptedBackup,
-                  summary: context.l10n.backupRowHint,
-                  page: const BackupPage(),
-                ),
-              ],
-            ),
-            SettingsSection(
-              label: context.l10n.sectionAdvanced,
-              icon: Icons.tune,
-              children: [
-                _DrillRow(
-                  icon: Icons.tune,
-                  title: context.l10n.modelSettingsAll,
-                  summary: context.l10n.modelSettingsAllHint,
-                  page: const InferenceContractPage(),
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.only(
-                left: AppDesign.xs,
-                right: AppDesign.xs,
-                bottom: AppDesign.md,
+                ],
               ),
-              child: Text(context.l10n.advancedNote, style: context.text.small),
-            ),
-            SettingsGroup(
-              children: [
-                _DrillRow(
-                  icon: Icons.data_array,
-                  mono: true,
-                  title: context.l10n.contextAndBatch,
-                  summary:
-                      '${tokenCount(s.contextSize)} ctx · ${s.batchSize == 0 ? 'auto' : s.batchSize} batch · cache ${s.promptCache ? 'on' : 'off'}',
-                  page: const ContextBatchPage(),
-                ),
-                _DrillRow(
-                  icon: Icons.developer_board,
-                  mono: true,
-                  title: context.l10n.hardware,
-                  summary:
-                      '${backendShort(s.backend)} · '
-                      '${s.nGpuLayers == 999 ? 'all' : s.nGpuLayers} layers · '
-                      '${s.cpuThreads == 0 ? 'auto' : s.cpuThreads}/${s.batchThreads == 0 ? 'auto' : s.batchThreads} thr · '
-                      '${s.kvCacheType.name} kv',
-                  page: const HardwarePage(),
-                ),
-                _DrillRow(
-                  icon: Icons.tune,
-                  mono: true,
-                  title: context.l10n.sampling,
-                  summary: () {
-                    // What the sampler uses: the model's recommended values
-                    // where the user set none (request 2026-10-04).
-                    final e = ref.watch(effectiveSettingsProvider).effective;
-                    return 'T ${e.temperature.toStringAsFixed(2)} · '
-                        'top-p ${e.topP.toStringAsFixed(2)} · '
-                        'top-k ${e.topK} · max ${tokenCount(e.maxTokens)}';
-                  }(),
-                  page: const SamplingPage(),
-                ),
-                _DrillRow(
-                  icon: Icons.manage_search,
-                  mono: true,
-                  title: context.l10n.reasoningAndSearch,
-                  summary:
-                      'think ${s.thinkingBudgetTokens == 0 ? 'unlimited' : tokenCount(s.thinkingBudgetTokens)} · '
-                      '${s.maxSearchResults} results · ${s.maxPagesRead} pages · '
-                      '${s.evidencePassages} passages · ${s.researchTimeBudgetSeconds} s',
-                  page: const ReasoningSearchPage(),
-                ),
-                _DrillRow(
-                  icon: Icons.casino_outlined,
-                  mono: true,
-                  title: context.l10n.uiSettingsScreenMoreSampling,
-                  summary:
-                      'seed ${s.seed == 0 ? 'random' : s.seed} · '
-                      '${s.stopSequences.length} stop · '
-                      'presence ${s.presencePenalty.toStringAsFixed(1)} · freq ${s.frequencyPenalty.toStringAsFixed(1)}'
-                      '${s.dryMultiplier > 0 ? ' · dry' : ''}${s.xtcProbability > 0 ? ' · xtc' : ''}',
-                  page: const SamplingExtrasPage(),
-                ),
-                _DrillRow(
-                  icon: Icons.storage_outlined,
-                  mono: true,
-                  title: context.l10n.uiSettingsScreenMemoryRoPESpeculation,
-                  summary:
-                      'K ${s.kvCacheType.name} · V ${s.vCacheType?.name ?? 'same'} · rope ${s.ropeScaling.name}'
-                      '${s.draftModelId.isEmpty ? '' : ' · draft on'}',
-                  page: const MemoryRopePage(),
-                ),
-                _DrillRow(
-                  icon: Icons.data_object,
-                  mono: true,
-                  title: context.l10n.uiSettingsScreenStructuredOutput,
-                  summary: switch (s.responseFormat) {
-                    ResponseFormat.text => 'free text',
-                    ResponseFormat.json => 'JSON',
-                    ResponseFormat.jsonSchema => 'JSON schema',
-                    ResponseFormat.gbnf => 'GBNF grammar',
-                  },
-                  page: const StructuredOutputPage(),
-                ),
-                _DrillRow(
-                  icon: Icons.handyman_outlined,
-                  mono: true,
-                  title: context.l10n.uiSettingsScreenTools,
-                  summary: s.toolsEnabled
-                      ? 'on · ${s.toolMaxRounds} rounds'
-                            '${s.toolCalculator ? ' · calc' : ''}'
-                            '${s.toolWeb && s.webSearchEnabled ? ' · web' : ''}'
-                            '${s.toolDocuments && s.knowledgeCollection.isNotEmpty ? ' · docs' : ''}'
-                      : 'off',
-                  page: const ToolsPage(),
-                ),
-                _DrillRow(
-                  icon: Icons.extension_outlined,
-                  mono: true,
-                  title: context.l10n.uiSettingsScreenLoRAAdapters,
-                  summary: () {
-                    final a = ref.watch(adaptersProvider);
-                    final attached = a.attachments.values.fold<int>(
-                      0,
-                      (n, l) => n + l.length,
-                    );
-                    return '${a.adapters.length} imported · $attached attached';
-                  }(),
-                  page: const AdaptersPage(),
-                ),
-                _DrillRow(
-                  icon: Icons.fact_check_outlined,
-                  mono: true,
-                  title: context.l10n.uiSettingsScreenEffectiveSettings,
-                  summary: () {
-                    final r = ref.watch(effectiveSettingsProvider);
-                    final n = r.overriddenKeys.length;
-                    return n == 0
-                        ? 'nothing overridden'
-                        : '$n overridden by profile, preset or chat';
-                  }(),
-                  page: const EffectiveSettingsPage(),
-                ),
-              ],
-            ),
-            SettingsSection(
-              label: context.l10n.sectionAbout,
-              icon: Icons.info_outline,
-              children: [
-                SettingsRow(
-                  leading: const Icon(Icons.verified_outlined),
-                  title: const Text(AppConstants.appName),
-                  subtitle: const MonoSummary(
-                    'v$_appVersion · ${BuildIdentity.source}',
+            if (_show(SettingsPart.data))
+              SettingsSection(
+                label: context.l10n.sectionData,
+                icon: Icons.shield_outlined,
+                children: [
+                  _DrillRow(
+                    icon: Icons.backup_outlined,
+                    title: context.l10n.uiSettingsScreenEncryptedBackup,
+                    summary: context.l10n.backupRowHint,
+                    page: const BackupPage(),
                   ),
-                  trailing: Text(
-                    context.l10n.openSourceMit,
-                    style: context.text.small.copyWith(color: c.textFaint),
+                ],
+              ),
+            if (_show(SettingsPart.advanced)) ...[
+              SettingsSection(
+                label: context.l10n.sectionAdvanced,
+                icon: Icons.tune,
+                children: [
+                  _DrillRow(
+                    icon: Icons.tune,
+                    title: context.l10n.modelSettingsAll,
+                    summary: context.l10n.modelSettingsAllHint,
+                    page: const InferenceContractPage(),
                   ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.only(
+                  left: AppDesign.xs,
+                  right: AppDesign.xs,
+                  bottom: AppDesign.md,
                 ),
-                SettingsRow(
-                  leading: const Icon(Icons.code),
-                  title: Text(context.l10n.builtOnLlama),
-                  subtitle: Text(context.l10n.builtOnLlamaHint),
-                  trailing: Icon(
-                    Icons.open_in_new,
-                    size: 18,
-                    color: c.textMuted,
+                child: Text(
+                  context.l10n.advancedNote,
+                  style: context.text.small,
+                ),
+              ),
+              SettingsGroup(
+                children: [
+                  _DrillRow(
+                    icon: Icons.data_array,
+                    mono: true,
+                    title: context.l10n.contextAndBatch,
+                    summary:
+                        '${tokenCount(s.contextSize)} ctx · ${s.batchSize == 0 ? 'auto' : s.batchSize} batch · cache ${s.promptCache ? 'on' : 'off'}',
+                    page: const ContextBatchPage(),
                   ),
-                  onTap: () => _openLink(context, _llamaCppUrl),
-                ),
-                SettingsRow(
-                  key: const Key('open-source-licences'),
-                  leading: const Icon(Icons.gavel_outlined),
-                  title: Text(context.l10n.openSourceLicences),
-                  subtitle: Text(context.l10n.openSourceLicencesHint),
-                  trailing: Icon(Icons.chevron_right, color: c.textMuted),
-                  onTap: () => showLicensePage(
-                    context: context,
-                    applicationName: AppConstants.appName,
-                    applicationVersion: 'v$_appVersion',
+                  _DrillRow(
+                    icon: Icons.developer_board,
+                    mono: true,
+                    title: context.l10n.hardware,
+                    summary:
+                        '${backendShort(s.backend)} · '
+                        '${s.nGpuLayers == 999 ? 'all' : s.nGpuLayers} layers · '
+                        '${s.cpuThreads == 0 ? 'auto' : s.cpuThreads}/${s.batchThreads == 0 ? 'auto' : s.batchThreads} thr · '
+                        '${s.kvCacheType.name} kv',
+                    page: const HardwarePage(),
                   ),
-                ),
-              ],
-            ),
+                  _DrillRow(
+                    icon: Icons.tune,
+                    mono: true,
+                    title: context.l10n.sampling,
+                    summary: () {
+                      // What the sampler uses: the model's recommended values
+                      // where the user set none (request 2026-10-04).
+                      final e = ref.watch(effectiveSettingsProvider).effective;
+                      return 'T ${e.temperature.toStringAsFixed(2)} · '
+                          'top-p ${e.topP.toStringAsFixed(2)} · '
+                          'top-k ${e.topK} · max ${tokenCount(e.maxTokens)}';
+                    }(),
+                    // Sampling is per model (owner 2026-11-01): set on the
+                    // active model's profile.
+                    onTap: () => openActiveModelProfile(context, ref),
+                  ),
+                  _DrillRow(
+                    icon: Icons.manage_search,
+                    mono: true,
+                    title: context.l10n.reasoningAndSearch,
+                    summary:
+                        'think ${s.thinkingBudgetTokens == 0 ? 'unlimited' : tokenCount(s.thinkingBudgetTokens)} · '
+                        '${s.maxSearchResults} results · ${s.maxPagesRead} pages · '
+                        '${s.evidencePassages} passages · ${s.researchTimeBudgetSeconds} s',
+                    page: const ReasoningSearchPage(),
+                  ),
+                  _DrillRow(
+                    icon: Icons.storage_outlined,
+                    mono: true,
+                    title: context.l10n.uiSettingsScreenMemoryRoPESpeculation,
+                    summary:
+                        'K ${s.kvCacheType.name} · V ${s.vCacheType?.name ?? 'same'} · rope ${s.ropeScaling.name}'
+                        '${s.draftModelId.isEmpty ? '' : ' · draft on'}',
+                    page: const MemoryRopePage(),
+                  ),
+                  _DrillRow(
+                    icon: Icons.data_object,
+                    mono: true,
+                    title: context.l10n.uiSettingsScreenStructuredOutput,
+                    summary: switch (s.responseFormat) {
+                      ResponseFormat.text => 'free text',
+                      ResponseFormat.json => 'JSON',
+                      ResponseFormat.jsonSchema => 'JSON schema',
+                      ResponseFormat.gbnf => 'GBNF grammar',
+                    },
+                    page: const StructuredOutputPage(),
+                  ),
+                  _DrillRow(
+                    icon: Icons.handyman_outlined,
+                    mono: true,
+                    title: context.l10n.uiSettingsScreenTools,
+                    summary: s.toolsEnabled
+                        ? 'on · ${s.toolMaxRounds} rounds'
+                              '${s.toolCalculator ? ' · calc' : ''}'
+                              '${s.toolWeb && s.webSearchEnabled ? ' · web' : ''}'
+                              '${s.toolDocuments && s.knowledgeCollection.isNotEmpty ? ' · docs' : ''}'
+                        : 'off',
+                    page: const ToolsPage(),
+                  ),
+                  _DrillRow(
+                    icon: Icons.extension_outlined,
+                    mono: true,
+                    title: context.l10n.uiSettingsScreenLoRAAdapters,
+                    summary: () {
+                      final a = ref.watch(adaptersProvider);
+                      final attached = a.attachments.values.fold<int>(
+                        0,
+                        (n, l) => n + l.length,
+                      );
+                      return '${a.adapters.length} imported · $attached attached';
+                    }(),
+                    page: const AdaptersPage(),
+                  ),
+                  _DrillRow(
+                    icon: Icons.fact_check_outlined,
+                    mono: true,
+                    title: context.l10n.uiSettingsScreenEffectiveSettings,
+                    summary: () {
+                      final r = ref.watch(effectiveSettingsProvider);
+                      final n = r.overriddenKeys.length;
+                      return n == 0
+                          ? 'nothing overridden'
+                          : '$n overridden by profile, preset or chat';
+                    }(),
+                    page: const EffectiveSettingsPage(),
+                  ),
+                ],
+              ),
+            ],
+            if (_show(SettingsPart.about))
+              SettingsSection(
+                label: context.l10n.sectionAbout,
+                icon: Icons.info_outline,
+                children: [
+                  SettingsRow(
+                    leading: const Icon(Icons.verified_outlined),
+                    title: const Text(AppConstants.appName),
+                    subtitle: const MonoSummary(
+                      'v$_appVersion · ${BuildIdentity.source}',
+                    ),
+                    trailing: Text(
+                      context.l10n.openSourceMit,
+                      style: context.text.small.copyWith(color: c.textFaint),
+                    ),
+                  ),
+                  SettingsRow(
+                    leading: const Icon(Icons.code),
+                    title: Text(context.l10n.builtOnLlama),
+                    subtitle: Text(context.l10n.builtOnLlamaHint),
+                    trailing: Icon(
+                      Icons.open_in_new,
+                      size: 18,
+                      color: c.textMuted,
+                    ),
+                    onTap: () => _openLink(context, _llamaCppUrl),
+                  ),
+                  SettingsRow(
+                    key: const Key('open-source-licences'),
+                    leading: const Icon(Icons.gavel_outlined),
+                    title: Text(context.l10n.openSourceLicences),
+                    subtitle: Text(context.l10n.openSourceLicencesHint),
+                    trailing: Icon(Icons.chevron_right, color: c.textMuted),
+                    onTap: () => showLicensePage(
+                      context: context,
+                      applicationName: AppConstants.appName,
+                      applicationVersion: 'v$_appVersion',
+                    ),
+                  ),
+                  // The whole screen keeps reset in its menu; a desktop page
+                  // has no menu, so it is the last About row.
+                  if (!whole)
+                    SettingsRow(
+                      key: const Key('reset-defaults-row'),
+                      leading: Icon(Icons.restart_alt_rounded, color: c.danger),
+                      title: Text(context.l10n.resetToDefaults),
+                      subtitle: Text(context.l10n.resetHint),
+                      onTap: () => _confirmReset(context, n),
+                    ),
+                ],
+              ),
           ],
         ),
       ),
@@ -585,7 +639,10 @@ class SettingsScreen extends ConsumerWidget {
               groupValue: s.webMode,
               title: Text(webModeLabel(m, context.l10n)),
               subtitle: Text(switch (m) {
-                WebMode.off => context.l10n.webOffHint,
+                WebMode.off =>
+                  (context.isDesktop
+                      ? context.l10n.webOffHintPc
+                      : context.l10n.webOffHint),
                 WebMode.auto => context.l10n.webAutoHint,
                 WebMode.always => context.l10n.webAlwaysHint,
               }),
@@ -740,7 +797,10 @@ class _ActiveModelRow extends ConsumerWidget {
 class _DrillRow extends StatelessWidget {
   final String title;
   final String summary;
-  final Widget page;
+  final Widget? page;
+
+  /// Instead of pushing [page] (the active model's profile).
+  final VoidCallback? onTap;
   final IconData? icon;
 
   /// Technical values (token counts, sampler numbers) read best in mono;
@@ -749,7 +809,8 @@ class _DrillRow extends StatelessWidget {
   const _DrillRow({
     required this.title,
     required this.summary,
-    required this.page,
+    this.page,
+    this.onTap,
     this.icon,
     this.mono = false,
   });
@@ -760,7 +821,11 @@ class _DrillRow extends StatelessWidget {
     title: Text(title),
     subtitle: mono ? MonoSummary(summary) : Text(summary),
     trailing: Icon(Icons.chevron_right, color: context.colors.textMuted),
-    onTap: () =>
-        Navigator.push(context, MaterialPageRoute<void>(builder: (_) => page)),
+    onTap:
+        onTap ??
+        () => Navigator.push(
+          context,
+          MaterialPageRoute<void>(builder: (_) => page!),
+        ),
   );
 }

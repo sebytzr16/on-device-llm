@@ -20,6 +20,72 @@ const _gaps = [
 ];
 
 void main() {
+  // P1-16: support must sit in one passage with the same negation; the
+  // wording may still differ (the tolerant check of 2026-09-28).
+  GoalCriterion checkFact(String fact, String findings) =>
+      GoalNotifier.validateCriteria(
+        {
+          'criteria': [
+            {
+              'id': 'C1',
+              'satisfied': true,
+              'facts': [fact],
+              'steps': [1],
+            },
+          ],
+        },
+        GoalProgress(
+          spec: const GoalSpec(
+            objective: 'Pick a Nikon Z30 accessory',
+            successCriteria: 'Say whether the Nikon Z30 is weather sealed',
+          ),
+          status: GoalStatus.running,
+          steps: 1,
+          startedAt: DateTime(2026),
+          tasks: [
+            GoalTask(
+              'Weather sealing?',
+              status: GoalTaskStatus.done,
+              findings: findings,
+            ),
+          ],
+        ),
+      ).single;
+
+  test('a negated finding does not back the positive fact (P1-16)', () {
+    const fact = 'The Nikon Z30 body is weather sealed against rain.';
+    expect(
+      checkFact(
+        fact,
+        'The Nikon Z30 body is not weather sealed against rain.',
+      ).satisfied,
+      isFalse,
+    );
+    expect(
+      checkFact(
+        fact,
+        'Its card door is plastic. The Z30 body is sealed against rain and '
+        'weather. It has no headphone jack.',
+      ).satisfied,
+      isTrue,
+    );
+  });
+
+  test('a figure from another passage does not back a fact (P1-16)', () {
+    const fact = 'The Nikon Z30 battery lasts 330 shots per charge.';
+    const apart =
+        'The Nikon Z30 battery lasts a full day per charge.\n\n'
+        'Other notes.\n\nThe lens weighs 330 grams.';
+    expect(checkFact(fact, apart).satisfied, isFalse);
+    expect(
+      checkFact(
+        fact,
+        'Per charge, the Z30 battery is rated for 330 shots.',
+      ).satisfied,
+      isTrue,
+    );
+  });
+
   test(
     'manufacturer criteria reject third-party and wrong-brand citations',
     () {

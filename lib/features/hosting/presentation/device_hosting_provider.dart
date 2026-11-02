@@ -8,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../../core/platform/desktop_host.dart';
+import '../../../core/l10n/l10n.dart';
+import '../../settings/presentation/providers/settings_provider.dart';
 import '../../../core/platform/device_info.dart';
 import '../../../core/providers/shared_providers.dart';
 import '../../../features/models/domain/entities/model_info.dart';
@@ -15,7 +17,6 @@ import '../../../inference/engine/llama_engine.dart';
 import '../../../data/storage/model_storage.dart';
 import '../../models/domain/entities/model_catalog.dart';
 import '../../../features/models/presentation/providers/model_manager_provider.dart';
-import '../../../features/settings/presentation/providers/settings_provider.dart';
 import '../device_model_server.dart';
 import '../served_vector_engine.dart';
 import '../server_usage.dart';
@@ -44,6 +45,9 @@ class DeviceHostingState {
 
   /// Six digits a nearby device trades for [token] (LAN servers only).
   final String? pairCode;
+
+  /// When [pairCode] expires; the code is cleared then.
+  final DateTime? pairExpiresAt;
   final String? modelId;
 
   /// Whether the served model has its own runtime (desktop, once the chat
@@ -75,6 +79,7 @@ class DeviceHostingState {
     this.endpoint,
     this.token,
     this.pairCode,
+    this.pairExpiresAt,
     this.modelId,
     this.ownEngine = false,
     this.pooled = const [],
@@ -147,6 +152,8 @@ class DeviceHostingState {
     List<PooledModel>? pooled,
     String? activeClient,
     bool clearClient = false,
+    bool clearPairCode = false,
+    String? error,
     int? liveTokens,
     List<ServedRequest>? log,
     int? answered,
@@ -162,12 +169,13 @@ class DeviceHostingState {
     starting: starting ?? this.starting,
     endpoint: endpoint,
     token: token,
-    pairCode: pairCode,
+    pairCode: clearPairCode ? null : pairCode,
+    pairExpiresAt: clearPairCode ? null : pairExpiresAt,
     modelId: modelId,
     ownEngine: ownEngine ?? this.ownEngine,
     pooled: pooled ?? this.pooled,
     activeClient: clearClient ? null : activeClient ?? this.activeClient,
-    error: error,
+    error: error ?? this.error,
     stoppedReason: stoppedReason,
     startedAt: startedAt,
     liveTokens: liveTokens ?? this.liveTokens,
@@ -195,6 +203,7 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
   // True while the served model moves to its own runtime: requests wait.
   bool _moving = false;
   Timer? _powerTimer;
+  Timer? _pairTimer;
   int _lifecycle = 0;
   bool _alive = true;
   HostingGuards guards = const HostingGuards();
@@ -205,16 +214,31 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
       _alive = false;
       _lifecycle++;
       _powerTimer?.cancel();
+      _pairTimer?.cancel();
       final server = _server;
+      _server = null;
+      final pool = _pool;
+      _pool = null;
+      unawaited(_closeRuntimes(server, pool));
       if (server != null) {
         if (HostDiscovery.canAdvertise) {
           unawaited(HostDiscovery.stop().catchError((Object _) {}));
         }
-        unawaited(server.stop());
         unawaited(DevicePower.keepScreenOn(false));
       }
     });
     return const DeviceHostingState();
+  }
+
+  static Future<void> _closeRuntimes(
+    DeviceModelServer? server,
+    ModelPool? pool,
+  ) async {
+    try {
+      await server?.stop();
+    } finally {
+      await pool?.close();
+    }
   }
 
   Future<String> readAccessToken() async {
@@ -259,14 +283,19 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
       }
       final server = DeviceModelServer(
         engine: engine,
-        // The desktop answers with the model's own settings, as it loaded.
-        settings: DesktopHost.active
-            ? () => manager.servedSettings(model)
-            : () => ref.read(settingsProvider),
+        settings: () => manager.servedSettings(model),
         modelId: model.id,
         fallbackTemplate: model.family.fallbackTemplate,
         accessToken: token,
         pairCode: pairCode,
+        onPairingUnavailable: (locked) {
+          if (!_alive || lifecycle != _lifecycle) return;
+          final t = stringsFor(ref.read(settingsProvider).localeCode);
+          state = state.copyWith(
+            clearPairCode: true,
+            error: locked ? t.hostPairLocked : t.hostPairExpired,
+          );
+        },
         router: pool,
         // LlamaEngine supports an independent CPU vector worker on Android too.
         vectors: LocalServedVectorEngine(
@@ -314,7 +343,7 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
       }
       _server = server;
       final host = lan ? await _localAddress() : '127.0.0.1';
-      if (lan && HostDiscovery.canAdvertise) {
+      if (lan && host != null && HostDiscovery.canAdvertise) {
         try {
           await HostDiscovery.advertise(server.port!, address: host);
         } catch (_) {
@@ -327,12 +356,32 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
       }
       state = DeviceHostingState(
         running: true,
-        endpoint: 'http://$host:${server.port}/v1/',
+        endpoint: endpointFor(
+          host,
+          server.port!,
+          ref.read(settingsProvider).localeCode,
+        ),
         token: token,
         pairCode: pairCode,
+        pairExpiresAt: pairCode == null ? null : server.pairExpiresAt,
         modelId: model.id,
         startedAt: DateTime.now(),
       );
+      // Expiry is otherwise only noticed at the next pairing attempt, so
+      // the page would keep showing a dead code.
+      if (pairCode != null) {
+        _pairTimer?.cancel();
+        _pairTimer = Timer(server.pairExpiresAt.difference(DateTime.now()), () {
+          if (!_alive || lifecycle != _lifecycle) return;
+          if (state.pairCode == null) return;
+          state = state.copyWith(
+            clearPairCode: true,
+            error: stringsFor(
+              ref.read(settingsProvider).localeCode,
+            ).hostPairExpired,
+          );
+        });
+      }
       // The desktop keeps both models loaded rather than refusing the
       // chat another one.
       if (DesktopHost.active) {
@@ -397,6 +446,7 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
           ref.read(modelManagerProvider.notifier).servedSettings(m),
       newEngine: ref.read(engineFactoryProvider),
       options: () => ref.read(poolOptionsProvider),
+      chatReserved: () => ref.read(sessionBusyProvider),
       chatEngineFor: (id) {
         final chat = ref.read(modelManagerProvider);
         final engine = ref.read(llamaEngineProvider);
@@ -536,6 +586,8 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
     final lifecycle = ++_lifecycle;
     _powerTimer?.cancel();
     _powerTimer = null;
+    _pairTimer?.cancel();
+    _pairTimer = null;
     final server = _server;
     _server = null;
     final pool = _pool;
@@ -552,9 +604,8 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
         /* Server stop must proceed. */
       }
     }
-    await server?.stop();
+    await _closeRuntimes(server, pool);
     if (server != null) unawaited(DevicePower.keepScreenOn(false));
-    await pool?.close();
     // The served model's own copy is only there for the server. A cancelled
     // answer keeps the engine busy for a moment, and unload refuses a busy
     // engine, so wait for it to wind down first. A server started meanwhile
@@ -585,7 +636,7 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
   /// The address another device on the same network can reach. The first
   /// interface is often mobile data (rmnet, 192.0.0.2 on the S25+), which
   /// no other device can connect to; Wi-Fi and private LAN ranges win.
-  static Future<String> _localAddress() async {
+  static Future<String?> _localAddress() async {
     final candidates = <(int, String)>[];
     for (final interface in await NetworkInterface.list(
       type: InternetAddressType.IPv4,
@@ -599,10 +650,14 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
         ));
       }
     }
-    if (candidates.isEmpty) return '<phone-ip>';
+    if (candidates.isEmpty) return null;
     candidates.sort((a, b) => b.$1.compareTo(a.$1));
     return candidates.first.$2;
   }
+
+  /// A missing address stays a display placeholder, never an mDNS input.
+  static String endpointFor(String? address, int port, String localeCode) =>
+      'http://${address ?? stringsFor(localeCode).hostAddressPlaceholder}:$port/v1/';
 
   /// Higher is better: Wi-Fi/Ethernet/hotspot interfaces, then private LAN
   /// ranges; mobile-data and carrier (192.0.0.0/24, 100.64/10) last.

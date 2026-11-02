@@ -19,15 +19,26 @@ class AppearancePage extends ConsumerWidget {
             SettingDropdown<ThemeChoice>(
               icon: Icons.dark_mode_outlined,
               label: context.l10n.uiAdvancedAppearancePageTheme,
-              hint: context
-                  .l10n
-                  .uiAdvancedAppearancePageDarkIsTheDesignedDefaultLight,
+              hint: context.isDesktop
+                  ? context.l10n.themeHintPc
+                  : context
+                        .l10n
+                        .uiAdvancedAppearancePageDarkIsTheDesignedDefaultLight,
               value: s.themeChoice,
               items: ThemeChoice.values,
               labelOf: (v) => switch (v) {
-                ThemeChoice.system => 'Follow the phone',
-                ThemeChoice.dark => 'Dark',
-                ThemeChoice.light => 'Light',
+                ThemeChoice.system => context.byFormFactor(
+                  'Follow the phone',
+                  context.l10n.desktopThemeSystem,
+                ),
+                ThemeChoice.dark => context.byFormFactor(
+                  'Dark',
+                  context.l10n.desktopThemeDark,
+                ),
+                ThemeChoice.light => context.byFormFactor(
+                  'Light',
+                  context.l10n.desktopThemeLight,
+                ),
               },
               onChanged: (v) => n.update(s.copyWith(themeChoice: v)),
             ),
@@ -35,7 +46,9 @@ class AppearancePage extends ConsumerWidget {
               icon: Icons.animation_rounded,
               key: const Key('motion-choice'),
               label: context.l10n.motionLabel,
-              hint: context.l10n.motionHint,
+              hint: (context.isDesktop
+                  ? context.l10n.motionHintPc
+                  : context.l10n.motionHint),
               value: s.motion,
               items: MotionChoice.values,
               labelOf: (v) => switch (v) {
@@ -96,8 +109,7 @@ class AppearancePage extends ConsumerWidget {
             ),
             SettingSlider(
               label: context.l10n.uiAdvancedAppearancePageTextSize,
-              hint:
-                  'Scales all text in the app on top of the phone\'s setting.',
+              hint: 'Scales all text in the app on top of the system setting.',
               value: s.textScale,
               min: .85,
               max: 1.4,

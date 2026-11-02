@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io' show HttpException;
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:logging/logging.dart';
 
 import '../../data/network/web_search/duckduckgo_scraper.dart';
 import '../../data/network/web_search/search_models.dart';
@@ -25,6 +27,8 @@ import 'phone_actions.dart';
 /// every result is cut to a bounded size, and everything a tool read is kept
 /// as a source so citations resolve later. The model never gets a raw
 /// network capability — every URL still goes through the public-web policy.
+final _log = Logger('tools');
+
 class ToolRunner {
   static const maxSearchChars = 4000;
   static const maxResultChars = 6000;
@@ -42,17 +46,29 @@ class ToolRunner {
   static const autoReadChars = 6000;
   static const callTimeout = Duration(seconds: 30);
 
+  /// The helper may first have to load its model.
+  static const helperTimeout = Duration(seconds: 120);
+  static const maxHelperInputChars = 12000;
+
   final DuckDuckGoScraper scraper;
   final WebPageReader reader;
   final KnowledgeStore? knowledge;
   final InferenceSettings settings;
   final CancelToken? cancel;
   final bool remote;
+  final bool helperOwnsDeadline;
+  final int helperMaxConcurrent;
+  int _helpersActive = 0;
+  final _helperWaiters = <Completer<void>>[];
   final ResearchRecipe? researchRecipe;
 
   /// Supplied only by the host when Memory and remote sharing allow it.
   /// The callback rechecks those switches at call time.
   final Future<String> Function(String query)? recall;
+
+  /// The helper model (Settings > Tools > Helper model): runs one side
+  /// job on a small second model. Null leaves ask_helper out.
+  final Future<String> Function(String task, String input)? helper;
 
   /// Dated news listings for search_news; null leaves the tool out.
   final NewsDesk? newsDesk;
@@ -63,6 +79,13 @@ class ToolRunner {
 
   /// Only the phone actions (the other tools are off in Settings).
   final bool actionsOnly;
+
+  /// Only the web tools and phone actions (remote research with the
+  /// user's Tools switch off).
+  final bool webOnly;
+
+  /// The user's message: links in it may be read as given.
+  final String userText;
 
   /// Desktop host tools retain their own live permission gate.
   final List<ToolSpec> externalTools;
@@ -76,6 +99,14 @@ class ToolRunner {
   final Map<String, WebPage> _pages = {};
   final Set<String> _sponsoredUrls = {};
   var _callCount = 0;
+  final _traceOrder = <ToolResult, int>{};
+
+  void _record(ToolResult result, int order) {
+    _traceOrder[result] = order;
+    trace.add(result);
+    // Parallel helpers can finish out of order; replay follows invocation order (owner, 2026-11-02).
+    trace.sort((a, b) => _traceOrder[a]!.compareTo(_traceOrder[b]!));
+  }
 
   ToolRunner({
     required this.scraper,
@@ -84,11 +115,16 @@ class ToolRunner {
     this.knowledge,
     this.cancel,
     this.remote = false,
+    this.helperOwnsDeadline = false,
+    this.helperMaxConcurrent = 3,
     this.researchRecipe,
     this.newsDesk,
     this.recall,
+    this.helper,
     this.phoneActions = false,
     this.actionsOnly = false,
+    this.webOnly = false,
+    this.userText = '',
     this.externalTools = const [],
     this.externalRun,
   });
@@ -98,7 +134,8 @@ class ToolRunner {
   /// in the answer means one source.
   void seed(List<SearchResult> existing) {
     for (final s in existing) {
-      if (s.sponsored || sources.any((x) => _key(x.url) == _key(s.url))) {
+      if (s.sponsored ||
+          sources.any((x) => sourceKey(x.url) == sourceKey(s.url))) {
         continue;
       }
       sources.add(s);
@@ -111,6 +148,7 @@ class ToolRunner {
       (!remote || settings.remoteWebResearch);
   bool get documentsAllowed =>
       settings.toolDocuments &&
+      (!remote || settings.remoteDocuments) &&
       settings.knowledgeCollection.isNotEmpty &&
       knowledge != null;
   bool get calculatorAllowed => settings.toolCalculator;
@@ -118,7 +156,22 @@ class ToolRunner {
   /// The tools the model may call this turn.
   List<ToolSpec> specs() => actionsOnly
       ? (phoneActions ? PhoneActions.specs() : const [])
+      : webOnly
+      ? [
+          for (final s in _allSpecs())
+            if (webTools.contains(s.name) ||
+                PhoneActions.kinds.contains(s.name))
+              s,
+        ]
       : _allSpecs();
+
+  /// What remote research may use when the user's Tools switch is off.
+  static const webTools = {
+    'search_web',
+    'search_news',
+    'read_url',
+    'find_in_page',
+  };
 
   List<ToolSpec> _allSpecs() => [
     ...externalTools,
@@ -133,6 +186,32 @@ class ToolRunner {
             'query': {'type': 'string'},
           },
           'required': ['query'],
+        },
+      ),
+    if (helper != null)
+      ToolSpec(
+        name: 'ask_helper',
+        description:
+            'Call the helper (sub-agent) model. When the user explicitly asks to use the helper or sub-agent, call this tool even for a short task. Otherwise hand off a side job: summarise or shorten a long text or a page you read, pull facts or a list out of it, translate it, or draft a short title or reply. Give a precise task and a short relevant excerpt (task plus input at most ${settings.agentInputBudget} characters), never whole pages. This starts a background job and returns at once. Keep working: research, outline, or start more helpers while it runs. For independent parts, start ALL ask_helper calls in your first round: they run side by side. Every reply will be added before you write your final answer. For a page you already read, pass its "url" instead of copying the text. Do not use it for the final answer, for facts it must know, or for facts requiring verification.',
+        parameters: {
+          'type': 'object',
+          'properties': {
+            'task': {
+              'type': 'string',
+              'description':
+                  'The exact instruction, e.g. "List the five main points as bullets".',
+            },
+            'input': {
+              'type': 'string',
+              'description': 'The text to work on (optional).',
+            },
+            'url': {
+              'type': 'string',
+              'description':
+                  'A page read earlier in this chat turn whose text to work on (optional).',
+            },
+          },
+          'required': ['task'],
         },
       ),
     if (webAllowed && newsDesk != null)
@@ -237,25 +316,36 @@ class ToolRunner {
     // `web_search`, `open_url`, an argument called `q`…: what the model
     // clearly meant is run (ToolAliases).
     // MCP names and argument keys must remain byte-for-byte intact.
-    if (externalTools.any((t) => t.name == call.name) && externalRun != null) {
-      ++_callCount;
+    // Web-only and actions-only turns never offered external tools: a call
+    // to one falls through to "not available" instead of running.
+    if (!webOnly &&
+        !actionsOnly &&
+        externalTools.any((t) => t.name == call.name) &&
+        externalRun != null) {
+      final order = ++_callCount;
+      _log.info('MCP tool ${call.name} ${_brief(call.arguments)}');
       final result = await externalRun!(call);
-      trace.add(result);
+      _logResult(result);
+      _record(result, order);
       return result;
     }
     call = ToolAliases.normalize(call);
     final clock = Stopwatch()..start();
-    ++_callCount;
+    final order = ++_callCount;
+    _log.info('Tool ${call.name} ${_brief(call.arguments)}');
     String output;
     var ok = true;
     try {
       if (!specs().any((s) => s.name == call.name)) {
         throw StateError('Tool "${call.name}" is not available in this chat.');
       }
-      output = await _dispatch(call).timeout(
-        callTimeout,
-        onTimeout: () => throw TimeoutException('The tool took too long.'),
-      );
+      output = helperOwnsDeadline && call.name == 'ask_helper'
+          ? await _dispatch(call)
+          : await _dispatch(call).timeout(
+              call.name == 'ask_helper' ? helperTimeout : callTimeout,
+              onTimeout: () =>
+                  throw TimeoutException('The tool took too long.'),
+            );
     } catch (e) {
       ok = false;
       output = 'Error: ${_explain(e)}';
@@ -270,17 +360,112 @@ class ToolRunner {
       ok: ok,
       elapsedMs: clock.elapsedMilliseconds,
     );
-    trace.add(result);
+    _logResult(result);
+    _record(result, order);
     return result;
   }
 
+  static String _brief(String text) {
+    return text.length > 300 ? '${text.substring(0, 300)}…' : text;
+  }
+
+  static void _logResult(ToolResult result) {
+    final head = result.output.split('\n').first;
+    final line =
+        '${result.call.name} ${result.ok ? 'returned' : 'failed'} in ${result.elapsedMs} ms, '
+        '${result.output.length} chars: ${head.length > 200 ? '${head.substring(0, 200)}…' : head}';
+    result.ok ? _log.info(line) : _log.warning(line);
+  }
+
   int get callCount => _callCount;
+
+  Future<String> _askHelper(String task, String? input, String? url) async {
+    task = task.trim();
+    if (task.isEmpty || task.length > 1000) {
+      throw const FormatException(
+        'ask_helper needs a task of 1–1000 characters.',
+      );
+    }
+    var text = input?.trim() ?? '';
+    if (url != null && url.trim().isNotEmpty) {
+      // Reusing a page never grants the agent permission for new web calls.
+      final page =
+          _pages[url.trim()] ??
+          // Also by the address it redirected to: read_url shows that one.
+          _pages.entries
+              .where(
+                (e) =>
+                    sourceKey(e.key) == sourceKey(url.trim()) ||
+                    sourceKey(e.value.finalUri.toString()) ==
+                        sourceKey(url.trim()),
+              )
+              .firstOrNull
+              ?.value;
+      if (page == null) {
+        throw StateError(
+          'That page was not read in this turn; call read_url first or pass the text as "input".',
+        );
+      }
+      text = text.isEmpty ? page.text : '$text\n\n${page.text}';
+    }
+    final inputLimit = settings.agentInputBudget.clamp(
+      maxHelperInputChars,
+      65536,
+    );
+    if (text.length > inputLimit) {
+      text = text.substring(0, inputLimit);
+    }
+    final reply = await helper!(task, text);
+    return reply.trim().isEmpty
+        ? 'The helper returned nothing.'
+        : '$helperPrefix$reply';
+  }
+
+  static const helperPrefix = 'Helper result (check it before you use it):\n';
+
+  /// What the helper said, without the note addressed to the chat model.
+  static String helperReplyText(String output) =>
+      output.startsWith(helperPrefix)
+      ? output.substring(helperPrefix.length)
+      : output;
 
   static bool _selfBudgets(String tool) =>
       tool == 'search_web' ||
       tool == 'search_news' ||
       tool == 'read_url' ||
       tool == 'find_in_page';
+
+  Future<String> _withHelperSlot(Future<String> Function() run) async {
+    if (_helpersActive >= helperMaxConcurrent.clamp(1, 4)) {
+      final waiter = Completer<void>();
+      _helperWaiters.add(waiter);
+      try {
+        await Future.any<void>([
+          waiter.future,
+          if (cancel != null) cancel!.whenCancel.then((error) => throw error),
+        ]);
+      } catch (_) {
+        if (!_helperWaiters.remove(waiter)) _releaseHelperSlot();
+        rethrow;
+      }
+    } else {
+      _helpersActive++;
+    }
+    try {
+      if (cancel?.isCancelled == true) throw cancel!.cancelError!;
+      return await run();
+    } finally {
+      _releaseHelperSlot();
+    }
+  }
+
+  void _releaseHelperSlot() {
+    if (_helperWaiters.isEmpty) {
+      _helpersActive--;
+    } else {
+      _helperWaiters.removeAt(0).complete();
+    }
+  }
 
   Future<String> _dispatch(ToolCall call) async {
     final a = call.args;
@@ -293,6 +478,14 @@ class ToolRunner {
           );
         }
         return recall!(query);
+      case 'ask_helper':
+        return _withHelperSlot(
+          () => _askHelper(
+            _string(a, 'task'),
+            _optional(a, 'input'),
+            _optional(a, 'url'),
+          ),
+        );
       case 'search_news':
         return _searchNews(_optional(a, 'topic') ?? _optional(a, 'query'));
       case 'search_web':
@@ -403,8 +596,8 @@ class ToolRunner {
     if (results.isEmpty) return 'No results for "$query".';
     final ads = results.where((r) => r.sponsored).toList();
     for (final ad in ads) {
-      _sponsoredUrls.add(_key(ad.url));
-      if (!sponsored.any((r) => _key(r.url) == _key(ad.url))) {
+      _sponsoredUrls.add(sourceKey(ad.url));
+      if (!sponsored.any((r) => sourceKey(r.url) == sourceKey(ad.url))) {
         sponsored.add(ad);
       }
     }
@@ -428,7 +621,9 @@ class ToolRunner {
     final b = StringBuffer('Results for "$query":\n');
     final listed = <SearchResult>[];
     for (final r in ordered) {
-      final existing = sources.indexWhere((s) => _key(s.url) == _key(r.url));
+      final existing = sources.indexWhere(
+        (s) => sourceKey(s.url) == sourceKey(r.url),
+      );
       final n = existing >= 0 ? existing + 1 : sources.length + 1;
       final walled = SourceQuality.unreadable(r.url);
       final row = StringBuffer(
@@ -523,11 +718,16 @@ class ToolRunner {
     if (uri == null || !uri.hasScheme) {
       throw const FormatException('Give an absolute http(s) URL.');
     }
-    if (_sponsoredUrls.contains(_key(uri.toString()))) {
+    if (_sponsoredUrls.contains(sourceKey(uri.toString()))) {
       throw StateError('Sponsored result, not evidence; it cannot be read.');
     }
     final cached = _pages[uri.toString()];
     if (cached != null) return cached;
+    if (!_mayRead(uri)) {
+      throw StateError(
+        'Only a page the user gave or a search found can be read. Search for it first.',
+      );
+    }
     final page = await reader.read(
       uri,
       cancelToken: cancel,
@@ -537,6 +737,7 @@ class ToolRunner {
       ),
     );
     _pages[uri.toString()] = page;
+    _readKeys.add(_exact(page.finalUri.toString()));
     final n = _sourceIndex(
       uri.toString(),
       () => SearchResult(
@@ -670,18 +871,86 @@ class ToolRunner {
 
   /// 1-based source number for a URL, adding the source when new.
   int _sourceIndex(String url, SearchResult Function() create) {
-    final key = _key(url);
-    final i = sources.indexWhere((s) => _key(s.url) == key);
+    final key = sourceKey(url);
+    final i = sources.indexWhere((s) => sourceKey(s.url) == key);
     if (i >= 0) return i + 1;
     final made = create();
     sources.add(made.withRank(sources.length + 1));
     return sources.length;
   }
 
-  static String _key(String url) => url
-      .replaceFirst(RegExp(r'^https?://(www\.)?'), '')
-      .replaceFirst(RegExp(r'/+$'), '')
-      .toLowerCase();
+  /// Exactly a page the user gave, a search found or a read landed on, or
+  /// the home page of a site the user named. A page read during research
+  /// must not get the model to send private context to an address of its
+  /// own, not even in the path or letter case of a known site (audit P2-01).
+  bool _mayRead(Uri uri) {
+    final key = _exact(uri.toString());
+    if (key.isEmpty) return false;
+    if (_readKeys.contains(key) || _userUrls.contains(key)) return true;
+    if (sources.any((s) => _exact(s.url) == key)) return true;
+    return (uri.path.isEmpty || uri.path == '/') &&
+        !uri.hasQuery &&
+        !uri.hasFragment &&
+        _userHosts.contains(_bareHost(uri.host));
+  }
+
+  /// Where earlier reads ended up after redirects.
+  final Set<String> _readKeys = {};
+
+  /// The links and sites the user's message names. Whole names only:
+  /// "github.com" does not make "hub.com" readable, and a full URL counts
+  /// for its own host, never for a name in its path, query or user info.
+  /// Brackets and sentence punctuation around a link are not part of it.
+  late final ({Set<String> hosts, Set<String> urls}) _userLinks = () {
+    final hosts = <String>{}, urls = <String>{};
+    void add(String link) {
+      final uri = Uri.tryParse(link);
+      if (uri == null || uri.host.isEmpty) return;
+      hosts.add(_bareHost(uri.host));
+      urls.add(_exact(link));
+    }
+
+    String trimmed(String s) => s.replaceFirst(RegExp(r'[.,;:!?]+$'), '');
+    final rest = userText.replaceAllMapped(
+      RegExp(r'''https?://[^\s<>()\[\]{}"'`]+''', caseSensitive: false),
+      (m) {
+        add(trimmed(m.group(0)!));
+        return ' ';
+      },
+    );
+    for (final m in RegExp(
+      r'''(?<![\w.@/:-])((?:[a-z0-9-]+\.)+[a-z]{2,})(/[^\s<>()\[\]{}"'`@]*)?(?![\w@-])''',
+      caseSensitive: false,
+    ).allMatches(rest)) {
+      add('https://${trimmed(m.group(0)!)}');
+    }
+    return (hosts: hosts, urls: urls);
+  }();
+
+  Set<String> get _userHosts => _userLinks.hosts;
+  Set<String> get _userUrls => _userLinks.urls;
+
+  /// [url] as an exact address: scheme and a leading "www." dropped, the
+  /// host lowercased, a trailing slash ignored, the path and query kept
+  /// as written (letter case can carry data).
+  static String _exact(String url) {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null || uri.host.isEmpty) return '';
+    final path = uri.path.replaceFirst(RegExp(r'/+$'), '');
+    return '${_bareHost(uri.host)}${uri.hasPort ? ':${uri.port}' : ''}'
+        '$path${uri.hasQuery ? '?${uri.query}' : ''}';
+  }
+
+  static String _bareHost(String host) =>
+      host.toLowerCase().replaceFirst(RegExp(r'^www\.'), '');
+
+  /// One key per source: [_exact], so `/Foo` and `/foo` stay two sources
+  /// and their excerpts are not swapped (audit P2-49).
+  @visibleForTesting
+  static String sourceKey(String url) {
+    final exact = _exact(url);
+    return exact.isEmpty ? url.trim() : exact;
+  }
 
   static String _explain(Object e) => switch (e) {
     FormatException() => e.message,
@@ -951,7 +1220,11 @@ class TextToolProtocol {
 
   /// Up to three calls, in the order written, with our tool and argument
   /// names.
-  static List<ToolCall> parse(String answer, {required int counter}) {
+  static List<ToolCall> parse(
+    String answer, {
+    required int counter,
+    int maxCalls = 3,
+  }) {
     final out = <ToolCall>[];
     for (final (_, _, name, raw) in _found(answer)) {
       final tool = ToolAliases.name(name);
@@ -966,7 +1239,7 @@ class TextToolProtocol {
               : jsonEncode(raw ?? const {}),
         ),
       );
-      if (out.length == 3) break;
+      if (out.length >= maxCalls.clamp(1, 4)) break;
     }
     return out;
   }

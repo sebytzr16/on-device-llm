@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../../../core/storage/app_directories.dart';
+import '../../../core/l10n/l10n.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:uuid/uuid.dart';
 
@@ -53,22 +54,24 @@ class AttachmentStore {
     required String name,
     String? sourcePath,
     Uint8List? bytes,
+    String localeCode = '',
     bool Function()? cancelled,
     void Function(int page, int total)? progress,
   }) async {
     if (cancelled?.call() == true) throw const ScanCancelled();
+    final t = stringsFor(localeCode);
     final scanOptions = await ScanOptions.read();
     if (bytes == null && await File(sourcePath!).length() > maxDocumentBytes) {
-      throw const FormatException('File is larger than 64 MB.');
+      throw FormatException(t.documentTooLarge);
     }
     final data = bytes ?? await File(sourcePath!).readAsBytes();
     if (data.length > maxDocumentBytes) {
-      throw const FormatException('File is larger than 64 MB.');
+      throw FormatException(t.documentTooLarge);
     }
     final id = const Uuid().v4();
     final dir = await directory();
     if (isImageName(name) || _looksLikeImage(data)) {
-      final png = await normaliseImage(data);
+      final png = await normaliseImage(data, localeCode: localeCode);
       final file = File(p.join(dir.path, '$id.png'));
       await file.writeAsBytes(png, flush: true);
       String? recognized;
@@ -80,8 +83,8 @@ class AttachmentStore {
         confidence = read.confidence;
       } catch (error) {
         ocrNotice = error is OcrUnavailable
-            ? OcrUnavailable.notice
-            : 'Text recognition failed: $error';
+            ? t.documentOcrUnavailable
+            : t.documentOcrFailed('$error');
       }
       if (cancelled?.call() == true) {
         await file.delete();
@@ -108,21 +111,23 @@ class AttachmentStore {
       text = (await DocumentText.extract(
         data,
         name,
+        localeCode: localeCode,
         pdfText: (bytes) => pdfText(
           bytes,
           options: scanOptions,
+          localeCode: localeCode,
           cancelled: cancelled,
           progress: progress,
         ),
       )).text;
-      if (text.isEmpty) error = 'No text found in this file.';
+      if (text.isEmpty) error = t.documentNoText;
     } on ScanCancelled {
       await file.delete();
       rethrow;
     } on FormatException catch (e) {
       error = e.message;
     } catch (e) {
-      error = 'Could not read this file: $e';
+      error = t.documentReadFailed('$e');
     }
     if (cancelled?.call() == true) {
       await file.delete();
@@ -153,7 +158,10 @@ class AttachmentStore {
   /// Decodes with the platform codec (JPEG, PNG, WebP, GIF, HEIC on
   /// Android 9+), downsizes to [maxImageEdge], re-encodes as PNG — the one
   /// format both llama.cpp's stb loader and every server accept.
-  static Future<Uint8List> normaliseImage(Uint8List data) async {
+  static Future<Uint8List> normaliseImage(
+    Uint8List data, {
+    String localeCode = '',
+  }) async {
     final buffer = await ui.ImmutableBuffer.fromUint8List(data);
     final descriptor = await ui.ImageDescriptor.encoded(buffer);
     final w = descriptor.width, h = descriptor.height;
@@ -168,7 +176,7 @@ class AttachmentStore {
     try {
       final png = await frame.image.toByteData(format: ui.ImageByteFormat.png);
       if (png == null) {
-        throw const FormatException('Image could not be encoded.');
+        throw FormatException(stringsFor(localeCode).documentImageEncoding);
       }
       return png.buffer.asUint8List();
     } finally {
@@ -184,6 +192,7 @@ class AttachmentStore {
   static Future<String> pdfText(
     Uint8List bytes, {
     ScanOptions? options,
+    String localeCode = '',
     bool Function()? cancelled,
     void Function(int page, int total)? progress,
   }) async {
@@ -198,6 +207,7 @@ class AttachmentStore {
         recognize: (number) => _ocrPdfPage(doc.pages[number - 1], settings),
         options: settings,
         maxCharacters: DocumentText.maxChars,
+        localeCode: localeCode,
         cancelled: cancelled,
         progress: progress,
       );
@@ -208,7 +218,7 @@ class AttachmentStore {
 
   static ({int width, int height}) pdfRasterSize(double width, double height) {
     if (!width.isFinite || !height.isFinite || width <= 0 || height <= 0) {
-      throw const FormatException('Invalid PDF page size.');
+      throw FormatException(stringsFor('').documentPdfSize);
     }
     final scale = math.min(2.0, math.min(2000 / width, 2800 / height));
     return (
@@ -267,10 +277,25 @@ class AttachmentStore {
     _ => 'text/plain',
   };
 
+  /// Only direct, non-symlink children belong to attachment storage.
+  static Future<File?> ownedFile(String path) async {
+    final dir = await directory();
+    final absolute = p.normalize(p.absolute(path));
+    if (p.dirname(absolute) != p.normalize(p.absolute(dir.path))) return null;
+    if (await FileSystemEntity.type(absolute, followLinks: false) !=
+        FileSystemEntityType.file) {
+      return null;
+    }
+    final file = File(absolute);
+    final root = await dir.resolveSymbolicLinks();
+    if (p.dirname(await file.resolveSymbolicLinks()) != root) return null;
+    return file;
+  }
+
   static Future<void> delete(Attachment a) async {
     try {
-      final f = File(a.path);
-      if (await f.exists()) await f.delete();
+      final f = await ownedFile(a.path);
+      if (f != null && await f.exists()) await f.delete();
     } catch (_) {}
   }
 }

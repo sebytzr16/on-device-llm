@@ -13,10 +13,38 @@ Widget _host(Widget child) => MaterialApp(
   home: Scaffold(body: SingleChildScrollView(child: child)),
 );
 
+// Folded, the pill drops its body entirely.
 double _sizeFactor(WidgetTester t) =>
-    t.widget<SizeTransition>(find.byType(SizeTransition)).sizeFactor.value;
+    find.byType(SizeTransition).evaluate().isEmpty
+    ? 0
+    : t.widget<SizeTransition>(find.byType(SizeTransition)).sizeFactor.value;
 
 void main() {
+  testWidgets(
+    'live tool activity uses its stage title and saved reasoning keeps its label',
+    (tester) async {
+      await tester.pumpWidget(
+        _host(
+          const ReasoningAccordion(content: 'Tool trace', liveTitle: 'Working'),
+        ),
+      );
+      expect(find.text('Working'), findsOneWidget);
+      expect(find.text('Thinking…'), findsNothing);
+      await tester.pumpWidget(
+        _host(
+          const ReasoningAccordion(
+            content: 'Tool trace',
+            liveTitle: 'Working',
+            isComplete: true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Reasoning'), findsOneWidget);
+      expect(find.text('Working'), findsNothing);
+    },
+  );
+
   testWidgets('run details sheet reports paused speculation', (tester) async {
     final run = TurnRun(
       settings: const {},
@@ -278,7 +306,8 @@ void main() {
     await tester.pumpWidget(_host(ChatBubble(message: message)));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('sources-bubble')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('sources-bubble')));
+    expect(find.text('docs.flutter.dev'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('sources-all')));
     await tester.pumpAndSettle();
     expect(find.textContaining('published 2026-09-01'), findsOneWidget);
     await tester.tap(find.byKey(const Key('source-1')));
@@ -316,7 +345,8 @@ void main() {
     );
     await tester.pumpWidget(_host(ChatBubble(message: message)));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('sources-bubble')));
+    expect(find.text('+1'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('sources-all')));
     await tester.pumpAndSettle();
     expect(find.text('1 reference · 1 sponsored'), findsOneWidget);
     expect(find.text('Sponsored (not used)'), findsOneWidget);

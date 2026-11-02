@@ -25,6 +25,10 @@ class DesktopChatExport {
     this.roleLabels = const {},
   });
 
+  Iterable<ChatMessage> get liveMessages => messages.where(
+    (message) => !message.isSuperseded && !message.isAlternative,
+  );
+
   List<Map<String, dynamic>> _sources(ChatMessage message) {
     try {
       final value = jsonDecode(message.sourcesJson);
@@ -48,7 +52,7 @@ class DesktopChatExport {
     'model': model,
     'date': date.toUtc().toIso8601String(),
     'messages': [
-      for (final message in messages)
+      for (final message in liveMessages)
         {
           'role': message.role.name,
           'content': message.content,
@@ -71,7 +75,7 @@ class DesktopChatExport {
       ..writeln()
       ..writeln('${_inline(modelLabel)}: ${_inline(model ?? "")}')
       ..writeln('${_inline(dateLabel)}: ${date.toUtc().toIso8601String()}');
-    for (final message in messages) {
+    for (final message in liveMessages) {
       out
         ..writeln()
         ..writeln(

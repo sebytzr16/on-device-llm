@@ -136,25 +136,27 @@ class AppColors extends ThemeExtension<AppColors> {
     reasoning: AppDesign.reasoning,
   );
 
-  /// The light scheme: warm paper instead of charcoal, the same accent.
+  /// The light scheme: warm grey instead of charcoal, the same accent. No
+  /// pure white surfaces (owner, 2026-11-01): cards sit one step above the
+  /// page, so nothing glares.
   static const light = AppColors(
-    ink: Color(0xFFF6F4EF),
-    surface: Color(0xFFFFFFFF),
-    surfaceRaised: Color(0xFFF0EDE6),
-    surfaceOverlay: Color(0xFFE7E3DA),
-    hairline: Color(0xFFE0DCD2),
-    hairlineStrong: Color(0xFFC9C4B8),
+    ink: Color(0xFFE8E5DF),
+    surface: Color(0xFFF1EFEA),
+    surfaceRaised: Color(0xFFDEDAD2),
+    surfaceOverlay: Color(0xFFD8D4CA),
+    hairline: Color(0xFFD0CBC1),
+    hairlineStrong: Color(0xFFB8B2A6),
     text: Color(0xFF1C1B17),
-    textMuted: Color(0xFF48463F),
-    textFaint: Color(0xFF5F5B53),
-    accent: Color(0xFF835606),
+    textMuted: Color(0xFF45433C),
+    textFaint: Color(0xFF524F48),
+    accent: Color(0xFF744C04),
     accentDeep: Color(0xFF8F6407),
     onAccent: Color(0xFFFFFFFF),
-    info: Color(0xFF2B5CBF),
-    success: Color(0xFF16713A),
-    warning: Color(0xFF835606),
-    danger: Color(0xFFB52F2F),
-    reasoning: Color(0xFF4A5E8F),
+    info: Color(0xFF244FA8),
+    success: Color(0xFF115F31),
+    warning: Color(0xFF744C04),
+    danger: Color(0xFFA12828),
+    reasoning: Color(0xFF405485),
   );
 
   bool get isDark => ink.computeLuminance() < 0.5;

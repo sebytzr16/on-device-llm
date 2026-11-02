@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart' show XZDecoder;
+import 'package:archive/archive.dart';
 
 import 'zstd.dart';
 import '../../core/utils/priority_work_queue.dart';
@@ -38,9 +38,14 @@ class ZimEntry {
 /// files), xz (older files) or stored.
 class ZimArchive {
   static const _magic = 72173914;
+  static const maxClusterBytes = 64 * 1024 * 1024;
+  static const maxCachedClusterBytes = 64 * 1024 * 1024;
 
   final RandomAccessFile _file;
   final String identity;
+  final int clusterByteLimit, cacheByteLimit;
+  int get cachedClusterBytes =>
+      _clusters.values.fold(0, (sum, item) => sum + item.$1.length);
   final int entryCount, clusterCount, mainPage;
   final int _urlPtrPos, _clusterPtrPos, _checksumPos;
   int _titlePtrPos;
@@ -53,6 +58,8 @@ class ZimArchive {
   ZimArchive._(
     this._file, {
     required this.identity,
+    required this.clusterByteLimit,
+    required this.cacheByteLimit,
     required this.entryCount,
     required this.clusterCount,
     required this.mainPage,
@@ -67,7 +74,17 @@ class ZimArchive {
        _checksumPos = checksumPos, // ignore: prefer_initializing_formals
        _mimes = mimes; // ignore: prefer_initializing_formals
 
-  static Future<ZimArchive> open(String path) async {
+  static Future<ZimArchive> open(
+    String path, {
+    int clusterByteLimit = maxClusterBytes,
+    int cacheByteLimit = maxCachedClusterBytes,
+  }) async {
+    if (clusterByteLimit < 1 ||
+        clusterByteLimit > maxClusterBytes ||
+        cacheByteLimit < 0 ||
+        cacheByteLimit > maxCachedClusterBytes) {
+      throw ArgumentError('Invalid ZIM byte limits');
+    }
     final file = await File(path).open();
     try {
       final header = await _readAt(file, 0, 80);
@@ -114,6 +131,8 @@ class ZimArchive {
       }
       final archive = ZimArchive._(
         file,
+        clusterByteLimit: clusterByteLimit,
+        cacheByteLimit: cacheByteLimit,
         identity: header
             .sublist(8, 24)
             .map((b) => b.toRadixString(16).padLeft(2, '0'))
@@ -352,17 +371,30 @@ class ZimArchive {
     final body = Uint8List.sublistView(raw, 1);
     final kind = info & 0x0f;
     // A cluster is a few MB of text: decompressed off the UI isolate.
+    final limit = clusterByteLimit;
     final data = switch (kind) {
       0 || 1 => body,
-      4 => await Isolate.run(
-        () => Uint8List.fromList(XZDecoder().decodeBytes(body)),
-      ),
-      5 => await Isolate.run(() => Zstd.decode(body)),
+      4 => await Isolate.run(() {
+        final output = _BoundedClusterOutput(limit);
+        XZDecoder(maxPreallocateSize: 0).decodeStream(
+          InputMemoryStream(body),
+          output,
+          verify: true,
+          throwOnError: true,
+        );
+        return output.getBytes();
+      }),
+      5 => await Isolate.run(() => Zstd.decode(body, maxOutputBytes: limit)),
       _ => throw FormatException('ZIM: compression $kind'),
     };
+    if (data.length > limit) {
+      throw const FormatException('ZIM: expanded cluster exceeds safety limit');
+    }
     final result = (data, info & 0x10 != 0);
     _clusters[i] = result;
-    if (_clusters.length > 4) _clusters.remove(_clusters.keys.first);
+    while (cachedClusterBytes > cacheByteLimit) {
+      _clusters.remove(_clusters.keys.first);
+    }
     return result;
   }
 
@@ -392,4 +424,38 @@ class ZimArchive {
         ? null
         : utf8.decode(await _content(resolved), allowMalformed: true);
   });
+}
+
+class _BoundedClusterOutput extends OutputMemoryStream {
+  final int limit;
+  _BoundedClusterOutput(this.limit);
+  void _check(int count) {
+    if (count < 0 || count > limit - length) {
+      throw const FormatException('ZIM: expanded cluster exceeds safety limit');
+    }
+  }
+
+  @override
+  void writeByte(int value) {
+    _check(1);
+    super.writeByte(value);
+  }
+
+  @override
+  void writeBytes(List<int> bytes, {int? length}) {
+    _check(length ?? bytes.length);
+    super.writeBytes(bytes, length: length);
+  }
+
+  @override
+  void writeStream(InputStream stream) {
+    _check(stream.length);
+    super.writeStream(stream);
+  }
+
+  @override
+  void writeBackReference(int distance, int count) {
+    _check(count);
+    super.writeBackReference(distance, count);
+  }
 }

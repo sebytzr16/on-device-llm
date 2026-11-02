@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/core/l10n/l10n.dart';
 import 'package:ondevice_llm/core/platform/desktop_host.dart';
 import 'package:ondevice_llm/data/network/web_search/search_models.dart';
+import 'package:ondevice_llm/data/local/database/app_database.dart';
 import 'package:ondevice_llm/desktop/desktop_theme.dart';
+import 'package:ondevice_llm/desktop/chat_drafts.dart';
 import 'package:ondevice_llm/desktop/inspector_panel.dart';
 import 'package:ondevice_llm/features/attachments/domain/attachment.dart';
 import 'package:ondevice_llm/features/chat/domain/entities/chat_message.dart';
@@ -63,11 +65,16 @@ class DesktopTestChat extends ChatNotifier {
     TurnBudget? budget,
     bool localOnly = false,
     bool spoken = false,
+    Object? owner,
   }) async {
     sent.add(input);
     sentAttachments.add(attachments);
     return accepts;
   }
+}
+
+class DesktopTestModels extends TestModels {
+  void show(ModelManagerState next) => state = next;
 }
 
 class _Voice extends VoiceNotifier {
@@ -88,6 +95,7 @@ Future<ProviderContainer> mountDesktopChat(
   WidgetTester tester,
   Widget child, {
   bool shell = false,
+  List<Chat> chats = const [],
 }) async {
   final previousDesktop = DesktopHost.active;
   final previousInspector = desktopInspectorOpen.value;
@@ -103,13 +111,18 @@ Future<ProviderContainer> mountDesktopChat(
   });
   final container = ProviderContainer(
     overrides: [
+      desktopChatDraftsProvider.overrideWith((ref) {
+        final drafts = DesktopChatDrafts(persist: false);
+        ref.onDispose(drafts.dispose);
+        return drafts;
+      }),
       chatProvider.overrideWith(DesktopTestChat.new),
-      modelManagerProvider.overrideWith(TestModels.new),
+      modelManagerProvider.overrideWith(DesktopTestModels.new),
       settingsProvider.overrideWith(TestSettings.new),
       voiceProvider.overrideWith(_Voice.new),
       modelRecommendationsProvider.overrideWith(_Recommendations.new),
       currentProjectProvider.overrideWithValue(null),
-      chatsProvider.overrideWith((ref) => Stream.value([])),
+      chatsProvider.overrideWith((ref) => Stream.value(chats)),
     ],
   );
   addTearDown(container.dispose);

@@ -181,8 +181,6 @@ void main() {
           ('settings', const SettingsScreen()),
           ('context', const ContextBatchPage()),
           ('hardware', const HardwarePage()),
-          ('sampling', const SamplingPage()),
-          ('sampling-extras', const SamplingExtrasPage()),
           ('rope', const MemoryRopePage()),
           ('structured', const StructuredOutputPage()),
           ('appearance', const AppearancePage()),
@@ -197,7 +195,7 @@ void main() {
           debugPrint('UI: $locale ${motion.name} $name');
           await show(page, locale, motion);
           if (motion == MotionChoice.off &&
-              ['settings', 'sampling', 'readiness'].contains(name)) {
+              ['settings', 'readiness'].contains(name)) {
             await capture('$locale-$name');
           }
           final scrolls = find.byType(Scrollable);

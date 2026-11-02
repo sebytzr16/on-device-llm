@@ -1,3 +1,5 @@
+import '../../data/storage/gguf_metadata.dart';
+import '../../data/storage/model_file_leases.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -7,6 +9,8 @@ import 'package:path/path.dart' as p;
 import '../../features/settings/domain/entities/inference_settings.dart';
 import '../../features/tools/domain/tool_spec.dart';
 import 'text_engine.dart';
+import '../../core/l10n/l10n.dart';
+import '../../core/platform/child_process_job.dart';
 
 const diffusionGemmaModelId = 'diffusiongemma-26b-a4b-q4km';
 
@@ -68,42 +72,57 @@ class DiffusionGemmaEngine implements TextEngine {
     dispose();
     // The host ships with the installer's NVIDIA GPU component only.
     if (!await File(executable).exists()) {
-      throw StateError(
-        'DiffusionGemma needs an NVIDIA GPU and the installer\'s GPU (CUDA) component.',
-      );
+      throw StateError(appStrings.dgNeedsGpu);
     }
-    // Do not map an incomplete download into llama.cpp.
-    if (await File(modelPath).length() != 16806810208) {
-      throw StateError(
-        'DiffusionGemma download is incomplete (expected 16,806,810,208 bytes).',
-      );
+    // Do not map an incomplete download into llama.cpp. Downloads finish
+    // by renaming the .part file, so a readable GGUF with no .part beside
+    // it is whole; any quantization is accepted (P3-17).
+    if (await File('$modelPath.part').exists()) {
+      throw StateError(appStrings.dgIncomplete);
+    }
+    try {
+      final meta = await GgufMetadata.inspect(modelPath);
+      if (meta.tensorCount == 0) throw const FormatException('no tensors');
+    } catch (_) {
+      throw StateError(appStrings.dgUnreadable);
     }
     final ready = _ready = Completer<void>();
     _diagnostics = '';
-    final process = await Process.start(executable, [
-      '-m',
+    final lease = ModelFileLeases.instance.acquire([
       modelPath,
-      '-ngl',
-      '999',
-      '-ot',
-      'exps=CPU',
-      '-c',
-      '4096',
-      '-b',
-      '$ubatch',
-      '-ub',
-      '$ubatch',
-      '--diffusion-eb',
-      'on',
-      '--diffusion-eb-max-steps',
-      '$denoisingSteps',
-      '--diffusion-kv-cache',
-      'on',
-      '--diffusion-gpu-sampling',
-      'on',
-      '--diffusion-gpu-sample-reduce',
-      'on',
-    ], workingDirectory: p.dirname(p.absolute(executable)));
+    ], owner: 'DiffusionGemma');
+    late Process process;
+    try {
+      process = await Process.start(executable, [
+        '-m',
+        modelPath,
+        '-ngl',
+        '999',
+        '-ot',
+        'exps=CPU',
+        '-c',
+        '4096',
+        '-b',
+        '$ubatch',
+        '-ub',
+        '$ubatch',
+        '--diffusion-eb',
+        'on',
+        '--diffusion-eb-max-steps',
+        '$denoisingSteps',
+        '--diffusion-kv-cache',
+        'on',
+        '--diffusion-gpu-sampling',
+        'on',
+        '--diffusion-gpu-sample-reduce',
+        'on',
+      ], workingDirectory: p.dirname(p.absolute(executable)));
+      ChildProcessJob.adopt(process);
+    } catch (_) {
+      lease.release();
+      rethrow;
+    }
+    unawaited(process.exitCode.whenComplete(lease.release));
     _process = process;
     _modelPath = modelPath;
     _errors = process.stderr
@@ -165,13 +184,13 @@ class DiffusionGemmaEngine implements TextEngine {
     List<ToolSpec> tools = const [],
     String toolChoice = 'auto',
   }) async* {
-    if (_process == null) throw StateError('Load DiffusionGemma first.');
+    if (_process == null) throw StateError(appStrings.dgLoadFirst);
     if (_turn != null) {
       throw StateError('A DiffusionGemma turn is already running.');
     }
     if (tools.isNotEmpty ||
         messages.any((m) => m.containsKey('images') || m['role'] == 'tool')) {
-      throw UnsupportedError('DiffusionGemma supports text chat only.');
+      throw UnsupportedError(appStrings.dgTextOnly);
     }
     final turn = _turn = StreamController<Map<String, dynamic>>();
     String committed = '';
@@ -193,17 +212,24 @@ class DiffusionGemmaEngine implements TextEngine {
             'diffusionBlock': event['block'],
             'diffusionStep': event['step'],
           };
-          _canvas.add({...event, 'committed': committed});
+          if (!_canvas.isClosed) {
+            _canvas.add({...event, 'committed': committed});
+          }
         }
         if (event['event'] == 'block' || event['done'] == true) {
           final text = event['text'] as String? ?? '';
           if (!text.startsWith(committed)) {
-            throw const FormatException('Host revised a committed block.');
+            // A host older than P3-17 hides everything once a thought
+            // channel opens after visible text; keep what was shown.
+            if (!committed.startsWith(text)) {
+              throw const FormatException('Host revised a committed block.');
+            }
+          } else {
+            if (text.length > committed.length) {
+              yield text.substring(committed.length);
+            }
+            committed = text;
           }
-          if (text.length > committed.length) {
-            yield text.substring(committed.length);
-          }
-          committed = text;
         }
         if (event['done'] == true) {
           metrics = {...metrics, ...?event['stats'] as Map<String, dynamic>?};
@@ -211,7 +237,7 @@ class DiffusionGemmaEngine implements TextEngine {
       }
     } finally {
       if (_turn == turn) cancel();
-      _canvas.add({'done': true});
+      if (!_canvas.isClosed) _canvas.add({'done': true});
     }
   }
 
@@ -223,7 +249,7 @@ class DiffusionGemmaEngine implements TextEngine {
     String assistantPrefix = '',
     List<ToolSpec> tools = const [],
   }) async {
-    if (_process == null) throw StateError('Load DiffusionGemma first.');
+    if (_process == null) throw StateError(appStrings.dgLoadFirst);
     if (_turn != null) {
       throw StateError('A DiffusionGemma request is already running.');
     }
@@ -280,5 +306,11 @@ class DiffusionGemmaEngine implements TextEngine {
     final turn = _turn;
     _turn = null;
     unawaited(turn?.close());
+  }
+
+  /// Ends the engine for good: the host and the canvas stream (P3-17).
+  void close() {
+    dispose();
+    unawaited(_canvas.close());
   }
 }

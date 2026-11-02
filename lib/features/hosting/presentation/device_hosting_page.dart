@@ -481,6 +481,13 @@ class _DeviceHostingPageState extends ConsumerState<DeviceHostingPage> {
                           key: const Key('host-pair-code'),
                           style: context.text.title.copyWith(letterSpacing: 4),
                         ),
+                        if (state.pairExpiresAt case final until?)
+                          Text(
+                            context.l10n.hostPairValidUntil(
+                              TimeOfDay.fromDateTime(until).format(context),
+                            ),
+                            style: context.text.bodyMuted,
+                          ),
                       ],
                     ],
                   ),

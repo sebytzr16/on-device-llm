@@ -94,6 +94,7 @@ class PresetsNotifier extends Notifier<PresetsState> {
       temperature: draft.temperature,
       thinking: draft.thinking,
       webMode: draft.webMode,
+      overrides: Map<String, dynamic>.of(draft.overrides),
     );
     state = state.copyWith(presets: [...state.presets, p], activeId: p.id);
     await _save();
@@ -128,6 +129,7 @@ class PresetsNotifier extends Notifier<PresetsState> {
       temperature: source.temperature,
       thinking: source.thinking,
       webMode: source.webMode,
+      overrides: source.overrides,
     ),
   );
 }

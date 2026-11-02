@@ -7,7 +7,7 @@ class RequestQueue {
   final _waiting = <String, List<Completer<void>>>{};
   bool _closed = false;
 
-  Future<void> acquire(String key) async {
+  Future<void> acquire(String key, {Future<void>? abandoned}) async {
     if (_closed) throw const RouteRefusal(503, 'The server stopped.');
     final queue = _waiting[key];
     if (queue == null) {
@@ -22,6 +22,17 @@ class RequestQueue {
     }
     final ready = Completer<void>();
     queue.add(ready);
+    if (abandoned != null) {
+      unawaited(
+        abandoned.then((_) {
+          if (!ready.isCompleted && queue.remove(ready)) {
+            ready.completeError(
+              const RouteRefusal(499, 'Client disconnected.'),
+            );
+          }
+        }),
+      );
+    }
     await ready.future;
   }
 

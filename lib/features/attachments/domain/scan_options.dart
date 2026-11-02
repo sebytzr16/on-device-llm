@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'ocr_layout.dart';
+import '../../../core/l10n/l10n.dart';
 
 class ScanCancelled implements Exception {
   const ScanCancelled();
@@ -95,9 +96,11 @@ class PdfTextScanner {
     required Future<OcrReading> Function(int page) recognize,
     required ScanOptions options,
     required int maxCharacters,
+    String localeCode = '',
     bool Function()? cancelled,
     void Function(int page, int total)? progress,
   }) async {
+    final t = stringsFor(localeCode);
     final output = StringBuffer();
     var scanned = 0, skipped = 0, unreadable = 0;
     var ocrUnavailable = false;
@@ -115,8 +118,13 @@ class PdfTextScanner {
         try {
           final read = await recognize(page);
           text = read.text.trim();
-          quality =
-              ' (OCR; ${read.confidence == null ? 'confidence unavailable' : 'recognizer confidence ${(read.confidence! * 100).round()}%'}; review for errors)';
+          quality = t.documentScanQuality(
+            read.confidence == null
+                ? t.documentScanConfidenceUnknown
+                : t.documentScanConfidence(
+                    '${(read.confidence! * 100).round()}',
+                  ),
+          );
         } on OcrUnavailable {
           ocrUnavailable = true;
           text = '';
@@ -132,26 +140,24 @@ class PdfTextScanner {
       output.writeln('--- Page $page$quality ---');
       output.writeln(text);
       if (output.length > maxCharacters) {
-        output.writeln('[Text limit reached; later pages were not processed.]');
+        output.writeln(t.documentScanTextLimit);
         break;
       }
     }
     if (output.isEmpty) {
       if (ocrUnavailable) {
-        throw const FormatException(OcrUnavailable.notice);
+        throw FormatException(t.documentOcrUnavailable);
       }
-      throw const FormatException(
-        'No readable text was found. Try a clearer scan or attach page photos.',
-      );
+      throw FormatException(t.documentScanNoText);
     }
     if (skipped > 0) {
       output.writeln(
-        '[OCR limit ${options.maxScannedPages}: $skipped scanned pages skipped. Text layers were still read.]',
+        t.documentScanOcrLimit('${options.maxScannedPages}', '$skipped'),
       );
     }
-    if (ocrUnavailable) output.writeln('[${OcrUnavailable.notice}]');
+    if (ocrUnavailable) output.writeln('[${t.documentOcrUnavailable}]');
     if (unreadable > 0) {
-      output.writeln('[$unreadable pages could not be read.]');
+      output.writeln(t.documentScanUnreadable('$unreadable'));
     }
     return output.toString();
   }

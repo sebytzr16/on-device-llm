@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/platform/device_info.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/platform/desktop_host.dart';
 import '../../../../core/platform/desktop_preferences.dart';
 import '../../../../data/network/web_search/duckduckgo_scraper.dart';
@@ -83,8 +84,9 @@ class SettingsNotifier extends Notifier<InferenceSettings> {
       if (migrateSampling) await _prefs!.setBool(_kSamplingDefaultsKey, true);
     } catch (_) {
       if (_alive) {
-        ref.read(settingsErrorProvider.notifier).state =
-            'Saved settings could not be read. Defaults are active.';
+        ref.read(settingsErrorProvider.notifier).state = stringsFor(
+          state.localeCode,
+        ).settingsReadFailed;
       }
     }
     _loaded = true;
@@ -100,8 +102,9 @@ class SettingsNotifier extends Notifier<InferenceSettings> {
       state = state.copyWith(remoteApiKeys: {...keys, ...state.remoteApiKeys});
     } catch (_) {
       if (_alive) {
-        ref.read(settingsErrorProvider.notifier).state =
-            'Saved API keys could not be read from the keystore.';
+        ref.read(settingsErrorProvider.notifier).state = stringsFor(
+          state.localeCode,
+        ).settingsKeysReadFailed;
       }
     }
   }
@@ -125,8 +128,9 @@ class SettingsNotifier extends Notifier<InferenceSettings> {
         }
       } catch (_) {
         if (_alive) {
-          ref.read(settingsErrorProvider.notifier).state =
-              'The API key is active for this session but could not be saved to the keystore.';
+          ref.read(settingsErrorProvider.notifier).state = stringsFor(
+            state.localeCode,
+          ).settingsKeySaveFailed;
         }
       }
     });
@@ -168,8 +172,9 @@ class SettingsNotifier extends Notifier<InferenceSettings> {
         }
       } catch (_) {
         if (_alive) {
-          ref.read(settingsErrorProvider.notifier).state =
-              'Settings are active for this session but could not be saved.';
+          ref.read(settingsErrorProvider.notifier).state = stringsFor(
+            state.localeCode,
+          ).settingsSaveFailed;
         }
       }
     });

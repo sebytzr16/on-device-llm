@@ -1,3 +1,5 @@
+import '../screens/model_details_page.dart';
+import 'model_capabilities.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/design/app_design.dart';
@@ -14,7 +16,8 @@ class ModelCard extends StatelessWidget {
   final ModelInfo model;
   final DownloadProgress? progress;
   final DeviceMemory? memory;
-  final bool active, busy;
+  final bool active, busy, helperActive;
+  final int helperStreams;
 
   /// Downloaded, but its file is still being checked and read.
   final bool preparing;
@@ -44,6 +47,8 @@ class ModelCard extends StatelessWidget {
     this.progress,
     this.memory,
     this.active = false,
+    this.helperActive = false,
+    this.helperStreams = 0,
     this.busy = false,
     this.preparing = false,
     this.onDownload,
@@ -96,16 +101,32 @@ class ModelCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: Text(model.displayName, style: context.text.title),
+                  child: InkWell(
+                    onTap: model.isDownloaded
+                        ? () => openModelDetails(context, model)
+                        : null,
+                    child: Text(model.displayName, style: context.text.title),
+                  ),
                 ),
-                if (active) ...[
+                if (active || helperActive) ...[
                   const SizedBox(width: AppDesign.sm),
-                  ModelTag(context.l10n.active, color: c.accent),
+                  ModelTag(
+                    active
+                        ? context.l10n.active
+                        : context.l10n.helperLoadedBadge,
+                    color: c.accent,
+                  ),
                 ],
               ],
             ),
             const SizedBox(height: AppDesign.sm + 2),
+            if (active && helperStreams > 0)
+              Text(
+                context.l10n.helperStreams(helperStreams),
+                style: context.text.small,
+              ),
             ModelTagRow(model: model, memory: memory),
+            ModelCapabilityBadges(model: model, showFit: false),
             if (meta != null) ...[
               const SizedBox(height: AppDesign.sm + 2),
               Text(meta.blurb, style: context.text.bodyMuted),
@@ -220,7 +241,7 @@ class ModelCard extends StatelessWidget {
                   // The loaded model's main action frees its memory; any
                   // other downloaded model's loads it.
                   Expanded(
-                    child: active
+                    child: active || helperActive
                         ? OutlinedButton.icon(
                             key: Key('unload-${model.id}'),
                             style: OutlinedButton.styleFrom(

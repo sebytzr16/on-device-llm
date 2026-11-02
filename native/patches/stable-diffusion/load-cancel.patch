@@ -1,0 +1,63 @@
+--- a/include/stable-diffusion.h
++++ b/include/stable-diffusion.h
+@@ -496,6 +496,10 @@
+ 
+ SD_API void sd_set_log_callback(sd_log_cb_t sd_log_cb, void* data);
+ SD_API void sd_set_progress_callback(sd_progress_cb_t cb, void* data);
++// Called between tensor reads, including parallel loader workers. Set/clear
++// only while backend operations are serialized and workers have joined.
++typedef bool (*sd_load_cancel_cb_t)(void* data);
++SD_API void sd_set_load_cancel_callback(sd_load_cancel_cb_t cb, void* data);
+ // In each sampling pass, a positive interval previews every Nth denoiser step, while a
+ // negative interval previews only completed logical step -interval. Zero previews the final
+ // completed step of the first sampling pass (base-resolution or high-noise).
+--- a/src/model_loader.cpp
++++ b/src/model_loader.cpp
+@@ -33,6 +33,22 @@
+ #include "zip.h"
+ 
+ #include "name_conversion.h"
++
++namespace {
++std::mutex load_cancel_mutex;
++sd_load_cancel_cb_t load_cancel_callback = nullptr;
++void* load_cancel_data = nullptr;
++bool load_cancelled() {
++    std::lock_guard<std::mutex> lock(load_cancel_mutex);
++    return load_cancel_callback && load_cancel_callback(load_cancel_data);
++}
++}
++
++extern "C" void sd_set_load_cancel_callback(sd_load_cancel_cb_t cb, void* data) {
++    std::lock_guard<std::mutex> lock(load_cancel_mutex);
++    load_cancel_callback = cb;
++    load_cancel_data = data;
++}
+ 
+ /*================================================= Preprocess ==================================================*/
+ 
+@@ -1065,7 +1081,7 @@
+                                bool enable_mmap,
+                                const std::set<std::string>* target_tensor_names,
+                                bool log_progress) {
+-    if (!validate_sources(target_tensor_names)) {
++    if (load_cancelled() || !validate_sources(target_tensor_names)) {
+         return false;
+     }
+     process_model_files(enable_mmap, false);
+@@ -1173,6 +1189,7 @@
+                 std::vector<uint8_t> zip_entry_buffer;
+ 
+                 while (true) {
++                    if (load_cancelled()) { failed = true; break; }
+                     int64_t t0, t1;
+                     size_t idx = tensor_idx.fetch_add(1);
+                     if (idx >= tensors_to_process.size() || failed) {
+@@ -1408,6 +1425,7 @@
+ }
+ 
+ bool ModelLoader::load_tensor(const TensorStorage& tensor_storage, ggml_tensor* dst_tensor) {
++    if (load_cancelled()) return false;
+     if (dst_tensor == nullptr || dst_tensor->data == nullptr) {
+         LOG_ERROR("load tensor failed: null destination for '%s'", tensor_storage.name.c_str());
+         return false;

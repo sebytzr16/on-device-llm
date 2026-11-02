@@ -12,6 +12,7 @@ import 'knowledge_page.dart';
 import '../../../../core/design/app_design.dart';
 import '../../../settings/presentation/widgets/settings_widgets.dart';
 import '../../../../core/design/app_dialog.dart';
+import 'model_profile_page.dart';
 
 class SettingsSearchPage extends ConsumerStatefulWidget {
   const SettingsSearchPage({super.key});
@@ -144,8 +145,12 @@ class _SettingsSearchPageState extends ConsumerState<SettingsSearchPage> {
   void _open(Widget page) =>
       Navigator.push(context, MaterialPageRoute<void>(builder: (_) => page));
   Future<void> _setting(SettingSpec spec) async {
+    if (spec.perModel) {
+      // Sampling is set per model (owner 2026-11-01).
+      openActiveModelProfile(context, ref);
+      return;
+    }
     final page = switch (spec.group) {
-      SettingSpec.groupGeneration => const SamplingPage(),
       SettingSpec.groupReasoning ||
       SettingSpec.groupWeb => const ReasoningSearchPage(),
       SettingSpec.groupTools => const ToolsPage(),

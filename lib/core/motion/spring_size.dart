@@ -32,7 +32,7 @@ class _SpringSizeState extends State<SpringSize> with TickerProviderStateMixin {
     final motion = context.motion;
     return _SpringSizeBox(
       vsync: this,
-      spring: widget.spring ?? motion.spring,
+      spring: motion.full ? widget.spring ?? motion.spring : motion.spring,
       animate: motion.animates,
       alignment: widget.alignment,
       textDirection: Directionality.maybeOf(context),

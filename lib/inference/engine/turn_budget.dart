@@ -1,4 +1,5 @@
 import 'dart:math';
+import '../../core/l10n/l10n.dart';
 
 class TurnLimitException implements Exception {
   final String reason;
@@ -51,9 +52,7 @@ class TurnBudget {
     if (remainingTokens == null) return requested;
     final room = remainingTokens! - promptTokens;
     if (room <= 0) {
-      throw const TurnLimitException(
-        'The remaining token budget cannot fit this prompt.',
-      );
+      throw TurnLimitException(appStrings.engineBudgetFull);
     }
     return min(requested, room);
   }

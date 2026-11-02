@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 
@@ -12,7 +13,8 @@ class WindowsMdns {
 
   static DynamicLibrary? _dns;
   static NativeCallable<_CompleteNative>? _complete;
-  static Pointer<_RegisterRequest>? _request;
+  static _Registration? _active;
+  static final _registrations = <int, _Registration>{};
   static final _strings = <Pointer<Utf16>>[];
 
   static DynamicLibrary get _lib => _dns ??= DynamicLibrary.open('dnsapi.dll');
@@ -75,30 +77,66 @@ class WindowsMdns {
       ..ref.context = nullptr
       ..ref.credentials = nullptr
       ..ref.unicastEnabled = 0;
+    request.ref.context = request.cast();
+    final state = _Registration(request);
+    _registrations[request.address] = state;
     final status = register(request, nullptr);
     if (status != _pending) {
-      _freeInstance(instance);
-      calloc.free(request);
+      _release(state);
       throw StateError('Windows refused the service record ($status).');
     }
-    _request = request;
+    _active = state;
   }
 
   static Future<void> stop() async {
-    final request = _request;
-    if (request == null) return;
-    _request = null;
-    try {
-      _lib.lookupFunction<_RegisterNative, _RegisterDart>(
-        'DnsServiceDeRegister',
-      )(request, nullptr);
-    } catch (_) {}
-    // The record is freed when Windows confirms (_onComplete); the small
-    // request block stays, as Windows may read it until then.
+    final state = _active;
+    if (state == null) return;
+    _active = null;
+    state.stopping = true;
+    if (!state.registering) _deregister(state);
+    await state.done.future;
   }
 
-  static void _onComplete(int status, Pointer<Void> _, Pointer<Void> instance) {
-    if (instance != nullptr) _freeInstance(instance);
+  static void _deregister(_Registration state) {
+    try {
+      final status = _lib.lookupFunction<_RegisterNative, _RegisterDart>(
+        'DnsServiceDeRegister',
+      )(state.request, nullptr);
+      if (status != _pending) _release(state);
+    } catch (_) {
+      _release(state);
+    }
+  }
+
+  static void _onComplete(
+    int status,
+    Pointer<Void> context,
+    Pointer<Void> instance,
+  ) {
+    final state = _registrations[context.address];
+    if (state == null) return;
+    final original = state.request.ref.instance;
+    if (state.registering && status == 0) {
+      // Windows returns the registered record. Keep that one for deregister,
+      // releasing the constructed input when it is a separate allocation.
+      if (instance != nullptr && instance != original) {
+        _freeInstance(original);
+        state.request.ref.instance = instance;
+      }
+      state.registering = false;
+      if (state.stopping) _deregister(state);
+      return;
+    }
+    if (instance != nullptr && instance != original) _freeInstance(instance);
+    _release(state);
+  }
+
+  static void _release(_Registration state) {
+    if (_registrations.remove(state.request.address) == null) return;
+    if (identical(_active, state)) _active = null;
+    _freeInstance(state.request.ref.instance);
+    calloc.free(state.request);
+    state.done.complete();
   }
 
   static void _freeInstance(Pointer<Void> instance) {
@@ -128,6 +166,13 @@ class WindowsMdns {
     }
     _strings.clear();
   }
+}
+
+class _Registration {
+  final Pointer<_RegisterRequest> request;
+  final done = Completer<void>();
+  bool registering = true, stopping = false;
+  _Registration(this.request);
 }
 
 final class _RegisterRequest extends Struct {

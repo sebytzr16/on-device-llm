@@ -1,3 +1,4 @@
+import '../../core/platform/desktop_host.dart';
 import '../tools/phone_actions.dart';
 import 'goal_runner.dart';
 
@@ -124,7 +125,7 @@ abstract final class GoalDeliverables {
     final rest = file == null
         ? objective
         : objective.replaceRange(file.start, file.end, ' ');
-    if (PhoneActions.wanted(rest)) {
+    if (!DesktopHost.active && PhoneActions.wanted(rest)) {
       for (final (pattern, kind) in [
         (_reminder, GoalDeliverableKind.reminder),
         (_event, GoalDeliverableKind.event),

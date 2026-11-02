@@ -1,9 +1,13 @@
 import 'package:drift/native.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ondevice_llm/core/providers/shared_providers.dart';
 import 'package:ondevice_llm/data/local/database/app_database.dart';
+import 'package:ondevice_llm/data/network/web_search/duckduckgo_scraper.dart';
+import 'package:ondevice_llm/data/network/web_search/search_models.dart';
+import 'package:ondevice_llm/data/network/web_search/web_page_reader.dart';
 import 'package:ondevice_llm/features/chat/presentation/providers/chat_provider.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
@@ -21,7 +25,12 @@ import 'package:ondevice_llm/features/chat/domain/turn_prompts.dart';
 class _Remote extends TestSettings {
   final bool serverSettings;
   final WebMode web;
-  _Remote({this.serverSettings = true, this.web = WebMode.auto});
+  final bool webResearch;
+  _Remote({
+    this.serverSettings = true,
+    this.web = WebMode.auto,
+    this.webResearch = true,
+  });
   @override
   InferenceSettings build() => super.build().copyWith(
     webMode: web,
@@ -37,8 +46,45 @@ class _Remote extends TestSettings {
       ),
     ],
     remoteProfileId: 'laptop',
+    remoteWebResearch: webResearch,
     autoTitles: false,
   );
+}
+
+/// Counts every web request the chat makes; returns nothing.
+class _NoWeb extends DuckDuckGoScraper {
+  int calls = 0;
+  @override
+  Future<List<SearchResult>> search(
+    String query, {
+    int limit = 5,
+    CancelToken? cancelToken,
+    String localeCode = '',
+    String? dateFilter,
+    String? region,
+  }) async {
+    calls++;
+    return const [];
+  }
+}
+
+class _NoPages extends WebPageReader {
+  int calls = 0;
+  @override
+  Future<WebPage> read(
+    Uri uri, {
+    CancelToken? cancelToken,
+    Duration timeout = const Duration(seconds: 12),
+    String language = 'en-US,en;q=0.9',
+  }) async {
+    calls++;
+    return WebPage(
+      title: 'Page',
+      text: 'Text',
+      finalUri: uri,
+      fetchedAt: DateTime.utc(2026),
+    );
+  }
 }
 
 class _Call {
@@ -83,7 +129,11 @@ class _Engine extends RemoteEngine {
   }
 }
 
-Future<(ProviderContainer, _Engine)> _start(_Remote settings) async {
+Future<(ProviderContainer, _Engine)> _start(
+  _Remote settings, {
+  _NoWeb? search,
+  _NoPages? reader,
+}) async {
   SharedPreferences.setMockInitialValues({});
   final db = AppDatabase.forTesting(NativeDatabase.memory());
   final engine = _Engine();
@@ -93,6 +143,8 @@ Future<(ProviderContainer, _Engine)> _start(_Remote settings) async {
       remoteEngineProvider.overrideWithValue(engine),
       settingsProvider.overrideWith(() => settings),
       modelManagerProvider.overrideWith(TestModels.new),
+      if (search != null) duckDuckGoScraperProvider.overrideWithValue(search),
+      if (reader != null) webPageReaderProvider.overrideWithValue(reader),
     ],
   );
   addTearDown(() async {
@@ -160,6 +212,32 @@ void main() {
         .read(chatProvider.notifier)
         .send('Who won the last Formula 1 race?');
     expect(engine.calls.first.toolChoice, 'required');
+  });
+
+  test('web research off reaches no web, by any path (P1-05)', () async {
+    final search = _NoWeb();
+    final reader = _NoPages();
+    final (container, engine) = await _start(
+      _Remote(webResearch: false),
+      search: search,
+      reader: reader,
+    );
+    final chat = container.read(chatProvider.notifier);
+    await chat.send("What's the weather in Toronto today?");
+    await chat.send('Summarize https://example.com/article please.');
+    await chat.send('Search the web for the latest Mars rover news.');
+    // A question no keyword flags, which a judge would answer "yes" to.
+    engine.replies
+      ..add(('yes', const <Map<String, Object>>[]))
+      ..add(('The tower is in Paris.', const <Map<String, Object>>[]));
+    await chat.send('Tell me about the Eiffel Tower.');
+    expect(container.read(chatProvider).error, isNull);
+    expect(search.calls, 0);
+    expect(reader.calls, 0);
+    for (final call in engine.calls) {
+      expect(call.tools.map((t) => t.name), isNot(contains('search_web')));
+      expect(call.tools.map((t) => t.name), isNot(contains('read_url')));
+    }
   });
 
   test('a profile can keep the phone settings', () async {

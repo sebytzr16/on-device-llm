@@ -78,7 +78,7 @@ class _SendButtonState extends ConsumerState<SendButton>
     if (!complete || !mounted) return;
     setState(() => _done = true);
     final motion = context.motion;
-    if (motion.animates) {
+    if (motion.full) {
       _pop.animateWith(SpringSimulation(motion.pop, 1, 1, 4));
     }
     _doneHold.forward(from: 0);

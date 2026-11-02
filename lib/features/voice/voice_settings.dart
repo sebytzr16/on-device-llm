@@ -10,6 +10,7 @@ import 'voice_models.dart';
 import 'voice_models_provider.dart';
 import 'voice_pipeline.dart';
 import 'voice_service.dart';
+import '../../core/platform/form_factor.dart';
 
 /// Settings › Voice: the on-device voice switch, its two downloads
 /// (Whisper listening, Kokoro speaking) and the Kokoro speaker.
@@ -26,26 +27,36 @@ class NaturalVoiceSettings extends ConsumerWidget {
       children: [
         const ConversationModelTile(),
         const _SpokenLengthTile(),
+        const _ReadingSpeedTile(),
         SettingsSwitchRow(
           key: const Key('natural-voice'),
           secondary: const Icon(Icons.graphic_eq),
           title: Text(context.l10n.naturalVoiceTitle),
-          subtitle: Text(context.l10n.naturalVoiceHint),
+          subtitle: Text(
+            (context.isDesktop
+                ? context.l10n.naturalVoiceHintPc
+                : context.l10n.naturalVoiceHint),
+          ),
           value: s.naturalVoice,
           onChanged: (v) => n.update(s.copyWith(naturalVoice: v)),
         ),
         if (s.naturalVoice) ...[
+          const _ReadingVoiceTile(),
           const _VoiceDownloadRow(),
           // Offered once the voice pack is in, or while Parakeet is.
           if (packs.of(VoiceModels.listening).status == VoicePackStatus.ready ||
               packs.of(VoiceModels.parakeet).status != VoicePackStatus.missing)
             const _ListeningModelTile(),
-          if (packs.canSpeak) const _VoicePicker(),
+          if (packs.canSpeakWith(s.readingVoice)) const _VoicePicker(),
           SettingsSwitchRow(
             key: const Key('talk-over'),
             secondary: const Icon(Icons.record_voice_over_outlined),
             title: Text(context.l10n.talkOverTitle),
-            subtitle: Text(context.l10n.talkOverHint),
+            subtitle: Text(
+              (context.isDesktop
+                  ? context.l10n.talkOverHintPc
+                  : context.l10n.talkOverHint),
+            ),
             value: s.talkOver,
             onChanged: (v) => n.update(s.copyWith(talkOver: v)),
           ),
@@ -104,6 +115,82 @@ class _SpokenLengthTile extends ConsumerWidget {
   }
 }
 
+/// How fast answers are read aloud, for Kokoro and the system voice
+/// (owner, 2026-11-01); the Try button plays it at the chosen pace.
+class _ReadingSpeedTile extends ConsumerWidget {
+  const _ReadingSpeedTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(settingsProvider);
+    final n = ref.read(settingsProvider.notifier);
+    final speed = s.readingSpeed.clamp(0.6, 1.6);
+    final label = '${speed.toStringAsFixed(1)}×';
+    return SettingsRow(
+      key: const Key('reading-speed'),
+      leading: const Icon(Icons.speed),
+      title: Text(context.l10n.readingSpeedTitle),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(context.l10n.readingSpeedHint),
+          Slider(
+            key: const Key('reading-speed-slider'),
+            value: speed,
+            min: 0.6,
+            max: 1.6,
+            divisions: 10,
+            label: label,
+            onChanged: (v) =>
+                n.update(s.copyWith(readingSpeed: (v * 10).round() / 10)),
+          ),
+        ],
+      ),
+      trailing: Text(label),
+    );
+  }
+}
+
+/// The user can select before downloading, so the
+/// existing download row offers exactly the chosen speaking pack.
+class _ReadingVoiceTile extends ConsumerWidget {
+  const _ReadingVoiceTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(settingsProvider);
+    return SettingsRow(
+      key: const Key('reading-voice'),
+      leading: const Icon(Icons.record_voice_over_outlined),
+      title: Text(context.l10n.readingVoiceTitle),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(context.l10n.readingVoiceHint),
+          Wrap(
+            spacing: AppDesign.xs,
+            runSpacing: AppDesign.xs,
+            children: [
+              for (final (id, label) in [
+                ('kokoro', 'Kokoro'),
+                ('supertonic-2', 'Supertonic 2'),
+              ])
+                ChoiceChip(
+                  key: Key('reading-$id'),
+                  label: Text(label),
+                  selected: s.readingVoice == id,
+                  onSelected: (_) => ref
+                      .read(settingsProvider.notifier)
+                      .update(s.copyWith(readingVoice: id)),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Both voice packs in one row: one download, one progress, one remove.
 class _VoiceDownloadRow extends ConsumerWidget {
   const _VoiceDownloadRow();
@@ -113,13 +200,16 @@ class _VoiceDownloadRow extends ConsumerWidget {
     final c = context.colors;
     final packs = ref.watch(voiceModelsProvider);
     final notifier = ref.read(voiceModelsProvider.notifier);
-    final states = [for (final p in VoiceModels.packs) packs.of(p)];
+    final selectedPacks = VoiceModels.packsFor(
+      ref.watch(settingsProvider).readingVoice,
+    );
+    final states = [for (final p in selectedPacks) packs.of(p)];
     final missing = [
-      for (final p in VoiceModels.packs)
+      for (final p in selectedPacks)
         if (packs.of(p).status != VoicePackStatus.ready) p,
     ];
-    final total = VoiceModels.packs.fold(0, (a, p) => a + p.sizeBytes);
-    final received = VoiceModels.packs.fold(
+    final total = selectedPacks.fold(0, (a, p) => a + p.sizeBytes);
+    final received = selectedPacks.fold(
       0,
       (a, p) =>
           a +
@@ -138,7 +228,7 @@ class _VoiceDownloadRow extends ConsumerWidget {
       action = OutlinedButton.icon(
         key: const Key('voice-pause'),
         onPressed: () async {
-          for (final p in VoiceModels.packs) {
+          for (final p in selectedPacks) {
             await notifier.pause(p);
           }
         },
@@ -149,7 +239,7 @@ class _VoiceDownloadRow extends ConsumerWidget {
       action = OutlinedButton.icon(
         key: const Key('voice-remove'),
         onPressed: () async {
-          for (final p in VoiceModels.packs) {
+          for (final p in selectedPacks) {
             await notifier.delete(p);
           }
         },
@@ -162,9 +252,7 @@ class _VoiceDownloadRow extends ConsumerWidget {
         key: const Key('voice-add'),
         onPressed: () async {
           // One after the other: Whisper first, so dictation works soonest.
-          for (final p in missing) {
-            await notifier.download(p);
-          }
+          await notifier.downloadAll(missing);
         },
         icon: Icon(
           received > 0 || error != null
@@ -183,7 +271,7 @@ class _VoiceDownloadRow extends ConsumerWidget {
       key: const Key('voice-download'),
       leading: const Icon(Icons.download_for_offline_outlined),
       title: Text(
-        '${context.l10n.voiceListeningPack} · ${context.l10n.voiceSpeakingPack}',
+        '${context.l10n.voiceListeningPack} · ${ref.watch(settingsProvider).readingVoice == VoiceModels.supertonic.id ? context.l10n.supertonicSpeakingPack : context.l10n.voiceSpeakingPack}',
       ),
       // The button sits under the title: a long label (French, large text)
       // must not squeeze the tile.
@@ -265,7 +353,11 @@ class _ListeningModelTile extends ConsumerWidget {
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(context.l10n.listeningModelHint),
+          Text(
+            (context.isDesktop
+                ? context.l10n.listeningModelHintPc
+                : context.l10n.listeningModelHint),
+          ),
           const SizedBox(height: AppDesign.xs),
           Wrap(
             spacing: AppDesign.xs,
@@ -308,11 +400,19 @@ class _VoicePicker extends ConsumerWidget {
     final s = ref.watch(settingsProvider);
     final n = ref.read(settingsProvider.notifier);
     final lang = voiceLanguage(s.localeCode);
-    final voices = KokoroVoice.byLanguage[lang]!;
-    final current = KokoroVoice.forLanguage(
-      lang,
-      sid: s.kokoroSid < 0 ? null : s.kokoroSid,
-    );
+    final supertonic = s.readingVoice == VoiceModels.supertonic.id;
+    final voices = supertonic
+        ? [
+            for (var sid = 0; sid < 10; sid++)
+              KokoroVoice(sid, lang, context.l10n.supertonicSpeaker(sid + 1)),
+          ]
+        : KokoroVoice.byLanguage[lang]!;
+    final current = supertonic
+        ? voices[s.supertonicSid.clamp(0, 9)]
+        : KokoroVoice.forLanguage(
+            lang,
+            sid: s.kokoroSid < 0 ? null : s.kokoroSid,
+          );
     return SettingsRow(
       key: const Key('kokoro-voice'),
       leading: const Icon(Icons.person_outline),
@@ -324,7 +424,11 @@ class _VoicePicker extends ConsumerWidget {
             ChoiceChip(
               label: Text(v.name),
               selected: v.sid == current.sid,
-              onSelected: (_) => n.update(s.copyWith(kokoroSid: v.sid)),
+              onSelected: (_) => n.update(
+                supertonic
+                    ? s.copyWith(supertonicSid: v.sid)
+                    : s.copyWith(kokoroSid: v.sid),
+              ),
             ),
         ],
       ),

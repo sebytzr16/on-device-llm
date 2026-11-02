@@ -61,7 +61,12 @@ class ShareInbox(private val activity: Activity, messenger: BinaryMessenger) {
 
     private fun read(intent: Intent): Map<String, Any?> {
         // A scheduled prompt's notification was tapped: its text and kind.
+        // Without our token another app sent it: its text is only a draft.
         if (intent.action == ScheduledPrompts.ACTION_RUN) {
+            val token = intent.getStringExtra(ScheduledPrompts.EXTRA_TOKEN)
+            if (token != ScheduledPrompts.token(activity)) {
+                return mapOf("text" to intent.getStringExtra(ScheduledPrompts.EXTRA_PROMPT))
+            }
             return mapOf(
                 "text" to intent.getStringExtra(ScheduledPrompts.EXTRA_PROMPT),
                 "scheduled" to (intent.getStringExtra(ScheduledPrompts.EXTRA_KIND) ?: "chat"),
@@ -74,10 +79,18 @@ class ShareInbox(private val activity: Activity, messenger: BinaryMessenger) {
                 "selection" to true,
             )
         }
-        // The assistant gesture, the quick-settings tile or the widget.
-        if (intent.action == Intent.ACTION_ASSIST) return mapOf("launch" to "voice")
+        // The assistant gesture, the quick-settings tile or the widget. Any
+        // app can send these, so only our own tile and widget (they carry
+        // the token) open the microphone at once; the rest wait for a tap.
+        if (intent.action == Intent.ACTION_ASSIST) {
+            return mapOf("launch" to "voice", "trusted" to false)
+        }
         if (intent.action == Launchers.ACTION_LAUNCH) {
-            return mapOf("launch" to (intent.getStringExtra(Launchers.EXTRA_MODE) ?: "chat"))
+            val token = intent.getStringExtra(ScheduledPrompts.EXTRA_TOKEN)
+            return mapOf(
+                "launch" to (intent.getStringExtra(Launchers.EXTRA_MODE) ?: "chat"),
+                "trusted" to (token == ScheduledPrompts.token(activity)),
+            )
         }
         val uris = mutableListOf<Uri>()
         if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
@@ -98,6 +111,15 @@ class ShareInbox(private val activity: Activity, messenger: BinaryMessenger) {
         val files = mutableListOf<Map<String, Any?>>()
         val skipped = mutableListOf<String>()
         for ((i, uri) in uris.take(8).withIndex()) {
+            // External shares must come from another content provider. Never
+            // copy our private files through file:// or one of our providers.
+            val authority = uri.authority.orEmpty().substringAfterLast('@').lowercase()
+            val ownAuthority = activity.packageName.lowercase()
+            if (uri.scheme != "content" || authority.isEmpty() ||
+                authority == ownAuthority || authority.startsWith("$ownAuthority.")) {
+                skipped.add("shared-$i")
+                continue
+            }
             val name = displayName(uri) ?: "shared-$i"
             val target = File(dir, "$i-" + name.replace(Regex("[^A-Za-z0-9._-]"), "_"))
             var copied = 0L

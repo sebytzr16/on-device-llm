@@ -7,6 +7,8 @@ void main() {
     () {
       // Owner, 2026-10-28: none of the small phone models on a laptop.
       expect(desktopCatalog.map((m) => m.id), [
+        'lfm3-1.7b-q8',
+        'qwen36-35b-a3b-q4km',
         'diffusiongemma-26b-a4b-q4km',
         'qwen35-9b-q4km',
         'gemma4-e4b-qat',
@@ -16,7 +18,7 @@ void main() {
       ]);
       for (final m in desktopCatalog) {
         expect(catalogMeta[m.id], isNotNull, reason: m.id);
-        if (m.id == 'diffusiongemma-26b-a4b-q4km') {
+        if (m.id == 'diffusiongemma-26b-a4b-q4km' || m.id == 'lfm3-1.7b-q8') {
           expect(
             visionProjectors[m.id],
             isNull,
@@ -30,7 +32,7 @@ void main() {
         expect(m.downloadUrl, contains('/resolve/'), reason: m.id);
         expect(retiredCatalogIds, isNot(contains(m.id)));
       }
-      expect(desktopCatalog.map((m) => m.fileName).toSet(), hasLength(6));
+      expect(desktopCatalog.map((m) => m.fileName).toSet(), hasLength(8));
     },
   );
 

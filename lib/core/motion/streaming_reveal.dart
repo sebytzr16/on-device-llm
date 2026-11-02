@@ -46,7 +46,11 @@ class _StreamingRevealState extends State<StreamingReveal>
   @override
   void didUpdateWidget(covariant StreamingReveal old) {
     super.didUpdateWidget(old);
-    if (widget.active && widget.revision != old.revision) _wake();
+    if (widget.active &&
+        context.motion.full &&
+        widget.revision != old.revision) {
+      _wake();
+    }
   }
 
   void _wake() {
@@ -74,7 +78,8 @@ class _StreamingRevealState extends State<StreamingReveal>
 
   @override
   Widget build(BuildContext context) {
-    final on = widget.active && context.motion.animates;
+    final on = widget.active && context.motion.full;
+    if (!on) _tickerOrNull?.stop();
     return Stack(
       children: [
         KeyedSubtree(key: _content, child: widget.child),

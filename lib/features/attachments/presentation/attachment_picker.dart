@@ -13,7 +13,6 @@ import '../domain/attachment.dart';
 import '../domain/scan_options.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/island/status_island.dart';
-import '../../../core/design/app_dialog.dart';
 
 /// Longest side a picked photo is scaled to before it reaches the model.
 const double kPhotoMaxSide = 1280;
@@ -186,46 +185,81 @@ Future<List<Attachment>> pickAttachments(
 /// are listed in a snackbar. Used by the picker and by shared files.
 Future<List<Attachment>> importAttachments(
   BuildContext context,
-  List<(String, String?, Uint8List?)> sources,
-) async {
+  List<(String, String?, Uint8List?)> sources, {
+  @visibleForTesting
+  Future<Attachment> Function({
+        required String name,
+        String? sourcePath,
+        Uint8List? bytes,
+        bool Function()? cancelled,
+        void Function(int page, int total)? progress,
+      })
+      importFile =
+      AttachmentStore.import,
+}) async {
+  final localeCode = context.l10n.localeName;
+  final importLocalized = importFile == AttachmentStore.import
+      ? ({
+          required String name,
+          String? sourcePath,
+          Uint8List? bytes,
+          bool Function()? cancelled,
+          void Function(int, int)? progress,
+        }) => AttachmentStore.import(
+          name: name,
+          sourcePath: sourcePath,
+          bytes: bytes,
+          localeCode: localeCode,
+          cancelled: cancelled,
+          progress: progress,
+        )
+      : importFile;
   final out = <Attachment>[];
   final failures = <String>[];
   var cancelled = false;
   final progress = ValueNotifier<String>(context.l10n.readingAttachments);
-  final done = showAppDialog<void>(
+  final navigator = Navigator.of(context, rootNavigator: true);
+  final route = DialogRoute<void>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => AlertDialog(
-      content: Row(
-        spacing: AppDesign.md,
-        children: [
-          const SizedBox.square(
-            dimension: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          Expanded(
-            child: ValueListenableBuilder<String>(
-              valueListenable: progress,
-              builder: (_, value, _) => Text(value),
+    builder: (_) => PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) cancelled = true;
+      },
+      child: AlertDialog(
+        content: Row(
+          spacing: AppDesign.md,
+          children: [
+            const SizedBox.square(
+              dimension: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
             ),
+            Expanded(
+              child: ValueListenableBuilder<String>(
+                valueListenable: progress,
+                builder: (_, value, _) => Text(value),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              cancelled = true;
+            },
+            child: Text(context.l10n.cancel),
           ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () {
-            cancelled = true;
-          },
-          child: Text(context.l10n.cancel),
-        ),
-      ],
     ),
   );
+  final done = navigator.push(route);
   for (final (name, path, bytes) in sources) {
     if (cancelled || !context.mounted) break;
     try {
       out.add(
-        await AttachmentStore.import(
+        await importLocalized(
           name: name,
           sourcePath: path,
           bytes: bytes,
@@ -239,13 +273,14 @@ Future<List<Attachment>> importAttachments(
       failures.add('$name: $e');
     }
   }
+  if (route.isActive) navigator.removeRoute(route);
   if (context.mounted) {
-    Navigator.of(context, rootNavigator: true).pop();
     if (failures.isNotEmpty) {
       showIslandToast(context, failures.join('\n'), tone: IslandTone.error);
     }
   }
   await done.catchError((_) {});
+  await route.completed;
   progress.dispose();
   return out;
 }

@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.2.0 (2026-11-02)
+
+Adds local agents: the chat model can work as a team.
+
+### Local agents (new, Android and Windows)
+- The chat model can split a task and hand parts of it to up to 4 agents
+  that run side by side, then write one answer from all of their replies.
+  The answer records how many times it asked the agents.
+- Agents share one copy of the agent model; on Windows their jobs are
+  batched together on the GPU.
+- Pick the agent model ("Same as chat model" or a second model), how many
+  run at once, thinking, tool rounds, instructions, input budget, context
+  size and sampling in Settings > Tools > Agents.
+- Agents can use the chat tools, including web search. Web access is asked
+  once per chat, always allowed, or never allowed.
+- Live agent cards on Windows and a small agent strip above the composer on
+  the phone, with each task, its streamed reply, tokens/s and timings.
+- The chosen agent model is always the one that runs.
+
+### Engine
+- Models and agents fill the GPU's VRAM first and only then spill into
+  system RAM, on any GPU.
+- The Logs page shows every model load (with the real GPU layer count),
+  agent job, tool call, search and download.
+
+### Chat and voice
+- `/` command palette; `/compact` summarises older turns after you approve
+  the summary.
+- Model pages with the Hugging Face card, GGUF capabilities, files, load
+  settings and the model's own sampling settings; a downloads center with
+  history.
+- Vision is a per-model switch, loaded with the first photo.
+- Optional Supertonic 2 reading voice (English, French and Spanish).
+- Dictation keeps listening across short pauses.
+- Warm-grey light theme and redesigned desktop settings.
+- Fixes for read-aloud on Windows, tool-call parsing for Qwen models and
+  many smaller issues found in a full audit.
+
 ## 1.1.0 (2026-10-29)
 
 Adds the Windows desktop app.

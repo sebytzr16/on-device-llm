@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/core/errors/exceptions.dart';
 import 'package:ondevice_llm/data/network/web_search/duckduckgo_scraper.dart';
 import 'package:ondevice_llm/features/chat/domain/retrieval_plan.dart';
+import 'package:ondevice_llm/features/retrieval/domain/news_intent.dart';
+import 'package:ondevice_llm/features/retrieval/news_desk.dart';
 
 /// Serves canned responses so the transport paths run without the network.
 class _CannedAdapter implements HttpClientAdapter {
@@ -85,7 +87,22 @@ void main() {
     expect(DuckDuckGoScraper.regionFor('', localeName: 'en_US'), 'us-en');
     expect(DuckDuckGoScraper.regionFor('', localeName: 'en-GB'), 'uk-en');
     expect(DuckDuckGoScraper.regionFor('fr', localeName: 'en_US'), 'fr-fr');
-    expect(DuckDuckGoScraper.regionFor('', localeName: 'es_US'), 'us-en');
+    // Spanish speakers get Spanish results and news (P2-46).
+    expect(DuckDuckGoScraper.regionFor('', localeName: 'es_US'), 'ue-es');
+    expect(DuckDuckGoScraper.regionFor('es', localeName: 'en_US'), 'ue-es');
+    expect(DuckDuckGoScraper.regionFor('es', localeName: 'es_MX'), 'mx-es');
+    expect(DuckDuckGoScraper.regionFor('es', localeName: 'fr_FR'), 'es-es');
+    expect(DuckDuckGoScraper.regionFor('', localeName: 'es_PE'), 'pe-es');
+    expect(DuckDuckGoScraper.regionFor('en', localeName: 'es_US'), 'us-en');
+    expect(
+      DuckDuckGoScraper.acceptLanguageFor('ue-es'),
+      'es-US,es;q=0.9,en;q=0.7',
+    );
+    expect(
+      NewsDesk.feedsFor('ue-es', const NewsIntent()).map((f) => f.url),
+      isNot(NewsDesk.feedsFor('us-en', const NewsIntent()).map((f) => f.url)),
+      reason: 'Spanish world feeds, not the English ones',
+    );
     expect(DuckDuckGoScraper.regionFor('en', localeName: 'ja_JP'), 'jp-jp');
     expect(DuckDuckGoScraper.regionFor('en', localeName: 'zh_TW'), 'tw-tzh');
     expect(DuckDuckGoScraper.regionFor('', localeName: 'en'), 'wt-wt');

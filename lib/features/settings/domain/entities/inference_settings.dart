@@ -32,6 +32,8 @@ enum ResponseFormat { text, json, jsonSchema, gbnf }
 /// the answer still comes).
 enum ToolChoice { auto, required }
 
+enum AgentWebAccess { askOnce, alwaysAllow, never }
+
 /// The Think pill's steps (review 2026-09-28): no reasoning, or
 /// reasoning up to [budget] tokens on the phone. Remote providers get their
 /// own effort setting of the same name instead of a token count.
@@ -60,6 +62,45 @@ enum ThemeChoice { system, dark, light }
 enum AccentChoice { amber, blue, green, rose, violet, teal }
 
 class InferenceSettings {
+  InferenceSettings withAgentSettings(InferenceSettings agent) =>
+      InferenceSettings.fromJson({
+        ...toJson(),
+        for (final entry in agent.toJson().entries)
+          if (entry.key.startsWith('agent')) entry.key: entry.value,
+      });
+
+  /// Agent sampling inherits the selected model unless explicitly overridden.
+  InferenceSettings forAgent({int? answerTokens}) => copyWith(
+    contextSize: agentContextSize.clamp(512, 65536),
+    maxTokens: (answerTokens ?? agentMaxTokens).clamp(
+      64,
+      min(4096, agentContextSize.clamp(512, 65536) ~/ 2),
+    ),
+    temperature: agentTemperature.clamp(0, 2),
+    topP: agentTopP < 0 ? topP : agentTopP.clamp(0, 1),
+    minP: agentMinP < 0 ? minP : agentMinP.clamp(0, 1),
+    topK: agentTopK < 0 ? topK : agentTopK.clamp(0, 1000),
+    repetitionPenalty: agentRepeatPenalty < 0
+        ? repetitionPenalty
+        : agentRepeatPenalty.clamp(0, 2),
+    thinkingModeEnabled: agentThinking,
+    thinkingBudgetTokens: agentThinking
+        ? min(512, agentContextSize.clamp(512, 65536) ~/ 8)
+        : 0,
+    promptStoreMb: 0,
+    mtp: false,
+    draftModelId: '',
+    responseFormat: ResponseFormat.text,
+    grammar: '',
+    stopSequences: const [],
+  );
+
+  InferenceSettings resetAgents() => InferenceSettings.fromJson({
+    ...toJson(),
+    for (final entry in const InferenceSettings().toJson().entries)
+      if (entry.key.startsWith('agent')) entry.key: entry.value,
+  });
+
   static Map<String, double> sanitizeLogitBias(Object? raw) => raw is Map
       ? {
           for (final e in raw.entries)
@@ -89,12 +130,16 @@ class InferenceSettings {
   static const maxToolRounds = 8;
 
   /// The response budget a prompt must leave free in a [window]-token
-  /// context: [maxTokens], but at most half the window. The engines reserve
-  /// the whole budget before the prompt is placed, so a 64K budget in an 8K
-  /// phone context would otherwise leave no room for the question at all.
+  /// context: [maxTokens], but at most a quarter of the window (2K or half
+  /// in small ones). The engines reserve the whole budget before the prompt
+  /// is placed: with half, a 64K budget in a 64K context kept 32K back plus
+  /// the thinking room, and a 27K-token document was cut to 25% (owner,
+  /// 2026-11-01). A quarter still lets one answer run to 16K tokens there.
   int responseReserve(int window) => maxTokens.clamp(
     1,
-    window < 2 * minResponseTokens ? max(1, window - 1) : window ~/ 2,
+    window < 2 * minResponseTokens
+        ? max(1, window - 1)
+        : max(window ~/ 4, min(window ~/ 2, 2048)),
   );
 
   /// Where the thinking switch and budget fall among the Think pill's
@@ -174,6 +219,10 @@ class InferenceSettings {
   /// (1 GB on desktop, off on the phone), 0 = off.
   final int promptStoreMb;
   final bool useMmap;
+
+  /// Photos for this model (owner, 2026-11-01). On: its projector loads
+  /// when a chat has a photo and stays loaded; off: never loaded.
+  final bool visionEnabled;
   final bool useMlock;
   final int mainGpu;
   final String splitMode;
@@ -294,6 +343,12 @@ class InferenceSettings {
   final bool naturalVoice;
   final int kokoroSid;
 
+  /// Keep Kokoro until the user chooses another reading voice.
+  final String readingVoice;
+
+  /// Independent speaker choice for the multilingual pack (owner, 2026-11-02).
+  final int supertonicSid;
+
   /// Conversation: the answer plays on the phone-call path, whose echo
   /// canceller lets the user talk over it (it sounds like a call). Off:
   /// full-quality sound, the microphone rests while the answer plays.
@@ -302,6 +357,10 @@ class InferenceSettings {
   /// Conversation: the most sentences a spoken answer keeps (0: all of
   /// it). Lists are never cut (tester, 2026-10-19: the length is a choice).
   final int spokenSentences;
+
+  /// How fast answers are read aloud: 1.0 is the voice's own pace
+  /// (owner, 2026-11-01). Drives Kokoro and the system voice.
+  final double readingSpeed;
 
   /// The model Conversation loads (catalog id); '' is the fastest one,
   /// Qwen3.5 0.8B (tester, 2026-10-08: any downloaded model, Qwen default).
@@ -339,6 +398,7 @@ class InferenceSettings {
     'it-it',
     'es-es',
     'mx-es',
+    'ue-es',
     'br-pt',
     'jp-jp',
     'wt-wt',
@@ -416,6 +476,34 @@ class InferenceSettings {
   final bool toolWeb;
   final bool toolDocuments;
 
+  /// Saved facts the model may recall (needs Memory on).
+  final bool toolMemory;
+
+  /// Alarms, reminders, events and messages on the phone.
+  final bool toolActions;
+
+  /// Lets the chat model hand side jobs (summaries, extraction, drafts)
+  /// to a small second model through the ask_helper tool. Off by default:
+  /// the helper takes memory beside the chat model.
+  final bool toolHelper;
+
+  /// The helper model's catalog id; empty means none picked yet.
+  final String helperModelId;
+
+  final int agentMaxTokens;
+  final double agentTemperature;
+  final double agentTopP;
+  final double agentMinP;
+  final int agentTopK;
+  final double agentRepeatPenalty;
+  final int agentContextSize;
+  final int agentMaxConcurrent;
+  final bool agentThinking;
+  final int agentToolRounds;
+  final AgentWebAccess agentWebAccess;
+  final String agentInstructions;
+  final int agentInputBudget;
+
   // ----- Speculative decoding -----
 
   /// Catalog id of a smaller model with the same vocabulary that drafts
@@ -450,6 +538,7 @@ class InferenceSettings {
     this.draftMinP = 0,
     this.promptStoreMb = -1,
     this.useMmap = true,
+    this.visionEnabled = true,
     this.useMlock = false,
     this.mainGpu = 0,
     this.splitMode = 'layer',
@@ -502,8 +591,11 @@ class InferenceSettings {
     this.readAloud = false,
     this.naturalVoice = true,
     this.kokoroSid = -1,
+    this.readingVoice = 'kokoro',
+    this.supertonicSid = 0,
     this.talkOver = false,
     this.spokenSentences = 3,
+    this.readingSpeed = 1.0,
     this.conversationModelId = '',
     this.listeningModel = '',
     this.localeCode = '',
@@ -542,6 +634,23 @@ class InferenceSettings {
     this.toolCalculator = true,
     this.toolWeb = true,
     this.toolDocuments = true,
+    this.toolMemory = true,
+    this.toolActions = true,
+    this.toolHelper = false,
+    this.helperModelId = '',
+    this.agentMaxTokens = 512,
+    this.agentTemperature = 0.3,
+    this.agentTopP = -1,
+    this.agentMinP = -1,
+    this.agentTopK = -1,
+    this.agentRepeatPenalty = -1,
+    this.agentContextSize = 4096,
+    this.agentMaxConcurrent = 3,
+    this.agentThinking = false,
+    this.agentToolRounds = 3,
+    this.agentWebAccess = AgentWebAccess.askOnce,
+    this.agentInstructions = '',
+    this.agentInputBudget = 4800,
     this.draftModelId = '',
     this.draftMaxTokens = 6,
     this.themeChoice = ThemeChoice.dark,
@@ -633,7 +742,13 @@ class InferenceSettings {
   /// Measured on the S25+ with Qwen3.5 2B: batch/micro-batch 512 prefills
   /// ~10% faster on the CPU and ~12% faster on OpenCL than 256/128, with
   /// no decode change, so auto uses 512 for both.
-  int get effectiveBatchSize => batchSize > 0 ? batchSize : 512;
+  /// A batch below 32 (an imported or hand-edited value) runs as 32, the
+  /// smallest micro-batch, instead of failing the load (audit P1-29).
+  int get effectiveBatchSize => batchSize <= 0
+      ? 512
+      : batchSize < 32
+      ? 32
+      : batchSize;
 
   int get effectiveMicroBatchSize =>
       (microBatchSize > 0 ? microBatchSize : effectiveBatchSize).clamp(
@@ -680,6 +795,7 @@ class InferenceSettings {
     'draftMinP',
     'promptStoreMb',
     'useMmap',
+    'visionEnabled',
     'useMlock',
     'mainGpu',
     'splitMode',
@@ -721,6 +837,7 @@ class InferenceSettings {
     double? draftMinP,
     int? promptStoreMb,
     bool? useMmap,
+    bool? visionEnabled,
     bool? useMlock,
     int? mainGpu,
     String? splitMode,
@@ -774,8 +891,11 @@ class InferenceSettings {
     bool? readAloud,
     bool? naturalVoice,
     int? kokoroSid,
+    String? readingVoice,
+    int? supertonicSid,
     bool? talkOver,
     int? spokenSentences,
+    double? readingSpeed,
     String? conversationModelId,
     String? listeningModel,
     String? localeCode,
@@ -814,6 +934,23 @@ class InferenceSettings {
     bool? toolCalculator,
     bool? toolWeb,
     bool? toolDocuments,
+    bool? toolMemory,
+    bool? toolActions,
+    bool? toolHelper,
+    String? helperModelId,
+    int? agentMaxTokens,
+    double? agentTemperature,
+    double? agentTopP,
+    double? agentMinP,
+    int? agentTopK,
+    double? agentRepeatPenalty,
+    int? agentContextSize,
+    int? agentMaxConcurrent,
+    bool? agentThinking,
+    int? agentToolRounds,
+    AgentWebAccess? agentWebAccess,
+    String? agentInstructions,
+    int? agentInputBudget,
     String? draftModelId,
     int? draftMaxTokens,
     ThemeChoice? themeChoice,
@@ -840,6 +977,7 @@ class InferenceSettings {
           if (draftMinP != null) 'draftMinP',
           if (promptStoreMb != null) 'promptStoreMb',
           if (useMmap != null) 'useMmap',
+          if (visionEnabled != null) 'visionEnabled',
           if (useMlock != null) 'useMlock',
           if (mainGpu != null) 'mainGpu',
           if (splitMode != null) 'splitMode',
@@ -890,8 +1028,11 @@ class InferenceSettings {
           if (readAloud != null) 'readAloud',
           if (naturalVoice != null) 'naturalVoice',
           if (kokoroSid != null) 'kokoroSid',
+          if (readingVoice != null) 'readingVoice',
+          if (supertonicSid != null) 'supertonicSid',
           if (talkOver != null) 'talkOver',
           if (spokenSentences != null) 'spokenSentences',
+          if (readingSpeed != null) 'readingSpeed',
           if (conversationModelId != null) 'conversationModelId',
           if (listeningModel != null) 'listeningModel',
           if (localeCode != null) 'localeCode',
@@ -930,6 +1071,23 @@ class InferenceSettings {
           if (toolCalculator != null) 'toolCalculator',
           if (toolWeb != null) 'toolWeb',
           if (toolDocuments != null) 'toolDocuments',
+          if (toolMemory != null) 'toolMemory',
+          if (toolActions != null) 'toolActions',
+          if (toolHelper != null) 'toolHelper',
+          if (helperModelId != null) 'helperModelId',
+          if (agentMaxTokens != null) 'agentMaxTokens',
+          if (agentTemperature != null) 'agentTemperature',
+          if (agentTopP != null) 'agentTopP',
+          if (agentMinP != null) 'agentMinP',
+          if (agentTopK != null) 'agentTopK',
+          if (agentRepeatPenalty != null) 'agentRepeatPenalty',
+          if (agentContextSize != null) 'agentContextSize',
+          if (agentMaxConcurrent != null) 'agentMaxConcurrent',
+          if (agentThinking != null) 'agentThinking',
+          if (agentToolRounds != null) 'agentToolRounds',
+          if (agentWebAccess != null) 'agentWebAccess',
+          if (agentInstructions != null) 'agentInstructions',
+          if (agentInputBudget != null) 'agentInputBudget',
           if (draftModelId != null) 'draftModelId',
           if (draftMaxTokens != null) 'draftMaxTokens',
           if (themeChoice != null) 'themeChoice',
@@ -952,6 +1110,7 @@ class InferenceSettings {
     draftMinP: draftMinP ?? this.draftMinP,
     promptStoreMb: promptStoreMb ?? this.promptStoreMb,
     useMmap: useMmap ?? this.useMmap,
+    visionEnabled: visionEnabled ?? this.visionEnabled,
     useMlock: useMlock ?? this.useMlock,
     mainGpu: mainGpu ?? this.mainGpu,
     splitMode: splitMode ?? this.splitMode,
@@ -1010,8 +1169,11 @@ class InferenceSettings {
     readAloud: readAloud ?? this.readAloud,
     naturalVoice: naturalVoice ?? this.naturalVoice,
     kokoroSid: kokoroSid ?? this.kokoroSid,
+    readingVoice: readingVoice ?? this.readingVoice,
+    supertonicSid: supertonicSid ?? this.supertonicSid,
     talkOver: talkOver ?? this.talkOver,
     spokenSentences: spokenSentences ?? this.spokenSentences,
+    readingSpeed: readingSpeed ?? this.readingSpeed,
     conversationModelId: conversationModelId ?? this.conversationModelId,
     listeningModel: listeningModel ?? this.listeningModel,
     localeCode: localeCode ?? this.localeCode,
@@ -1050,6 +1212,27 @@ class InferenceSettings {
     toolCalculator: toolCalculator ?? this.toolCalculator,
     toolWeb: toolWeb ?? this.toolWeb,
     toolDocuments: toolDocuments ?? this.toolDocuments,
+    toolMemory: toolMemory ?? this.toolMemory,
+    toolActions: toolActions ?? this.toolActions,
+    toolHelper: toolHelper ?? this.toolHelper,
+    helperModelId: helperModelId ?? this.helperModelId,
+    agentMaxTokens: agentMaxTokens?.clamp(64, 4096) ?? this.agentMaxTokens,
+    agentTemperature: agentTemperature?.clamp(0, 2) ?? this.agentTemperature,
+    agentTopP: agentTopP?.clamp(-1, 1) ?? this.agentTopP,
+    agentMinP: agentMinP?.clamp(-1, 1) ?? this.agentMinP,
+    agentTopK: agentTopK?.clamp(-1, 1000) ?? this.agentTopK,
+    agentRepeatPenalty:
+        agentRepeatPenalty?.clamp(-1, 2) ?? this.agentRepeatPenalty,
+    agentContextSize:
+        agentContextSize?.clamp(512, 65536) ?? this.agentContextSize,
+    agentMaxConcurrent:
+        agentMaxConcurrent?.clamp(1, 4) ?? this.agentMaxConcurrent,
+    agentThinking: agentThinking ?? this.agentThinking,
+    agentToolRounds: agentToolRounds?.clamp(1, 8) ?? this.agentToolRounds,
+    agentWebAccess: agentWebAccess ?? this.agentWebAccess,
+    agentInstructions: agentInstructions ?? this.agentInstructions,
+    agentInputBudget:
+        agentInputBudget?.clamp(256, 65536) ?? this.agentInputBudget,
     draftModelId: draftModelId ?? this.draftModelId,
     draftMaxTokens: draftMaxTokens ?? this.draftMaxTokens,
     themeChoice: themeChoice ?? this.themeChoice,
@@ -1077,6 +1260,7 @@ class InferenceSettings {
     'draftMinP': draftMinP,
     'promptStoreMb': promptStoreMb,
     'useMmap': useMmap,
+    'visionEnabled': visionEnabled,
     'useMlock': useMlock,
     'mainGpu': mainGpu,
     'splitMode': splitMode,
@@ -1130,8 +1314,11 @@ class InferenceSettings {
     'readAloud': readAloud,
     'naturalVoice': naturalVoice,
     'kokoroSid': kokoroSid,
+    'readingVoice': readingVoice,
+    'supertonicSid': supertonicSid,
     'talkOver': talkOver,
     'spokenSentences': spokenSentences,
+    'readingSpeed': readingSpeed,
     'conversationModelId': conversationModelId,
     'listeningModel': listeningModel,
     'localeCode': localeCode,
@@ -1176,6 +1363,23 @@ class InferenceSettings {
     'toolCalculator': toolCalculator,
     'toolWeb': toolWeb,
     'toolDocuments': toolDocuments,
+    'toolMemory': toolMemory,
+    'toolActions': toolActions,
+    'toolHelper': toolHelper,
+    'helperModelId': helperModelId,
+    'agentMaxTokens': agentMaxTokens,
+    'agentTemperature': agentTemperature,
+    'agentTopP': agentTopP,
+    'agentMinP': agentMinP,
+    'agentTopK': agentTopK,
+    'agentRepeatPenalty': agentRepeatPenalty,
+    'agentContextSize': agentContextSize,
+    'agentMaxConcurrent': agentMaxConcurrent,
+    'agentThinking': agentThinking,
+    'agentToolRounds': agentToolRounds,
+    'agentWebAccess': agentWebAccess.name,
+    'agentInstructions': agentInstructions,
+    'agentInputBudget': agentInputBudget,
     'draftModelId': draftModelId,
     'draftMaxTokens': draftMaxTokens,
     'themeChoice': themeChoice.name,
@@ -1274,6 +1478,7 @@ class InferenceSettings {
       draftMinP: number('draftMinP', 0, 0, 1),
       promptStoreMb: integer('promptStoreMb', -1, -1, 65536),
       useMmap: boolean('useMmap', true),
+      visionEnabled: boolean('visionEnabled', true),
       useMlock: boolean('useMlock', false),
       mainGpu: integer('mainGpu', 0, 0, 127),
       splitMode: ['none', 'layer', 'row'].contains(j['splitMode'])
@@ -1356,8 +1561,13 @@ class InferenceSettings {
       readAloud: boolean('readAloud', false),
       naturalVoice: boolean('naturalVoice', true),
       kokoroSid: integer('kokoroSid', -1, -1, 53),
+      supertonicSid: integer('supertonicSid', 0, 0, 9),
+      readingVoice: text('readingVoice', 32) == 'supertonic-2'
+          ? 'supertonic-2'
+          : 'kokoro',
       talkOver: boolean('talkOver', false),
       spokenSentences: integer('spokenSentences', 3, 0, 20),
+      readingSpeed: number('readingSpeed', 1.0, .6, 1.6),
       conversationModelId: text('conversationModelId', 200),
       listeningModel: text('listeningModel', 32) == 'parakeet-v3'
           ? 'parakeet-v3'
@@ -1414,6 +1624,25 @@ class InferenceSettings {
       toolCalculator: boolean('toolCalculator', true),
       toolWeb: boolean('toolWeb', true),
       toolDocuments: boolean('toolDocuments', true),
+      toolMemory: boolean('toolMemory', true),
+      toolActions: boolean('toolActions', true),
+      toolHelper: boolean('toolHelper', false),
+      helperModelId: text('helperModelId', 300),
+      agentMaxTokens: integer('agentMaxTokens', 512, 64, 4096),
+      agentTemperature: number('agentTemperature', 0.3, 0, 2),
+      agentTopP: number('agentTopP', -1, -1, 1),
+      agentMinP: number('agentMinP', -1, -1, 1),
+      agentTopK: integer('agentTopK', -1, -1, 1000),
+      agentRepeatPenalty: number('agentRepeatPenalty', -1, -1, 2),
+      agentContextSize: integer('agentContextSize', 4096, 512, 65536),
+      agentMaxConcurrent: integer('agentMaxConcurrent', 3, 1, 4),
+      agentThinking: boolean('agentThinking', false),
+      agentToolRounds: integer('agentToolRounds', 3, 1, 8),
+      agentWebAccess:
+          named(AgentWebAccess.values, 'agentWebAccess') ??
+          AgentWebAccess.askOnce,
+      agentInstructions: text('agentInstructions', 8000),
+      agentInputBudget: integer('agentInputBudget', 4800, 256, 65536),
       // An MTP head is a path (`mtp:<path>`), so room for long folders.
       draftModelId: text('draftModelId', 1024),
       draftMaxTokens: integer('draftMaxTokens', 6, 1, maxDraftTokens),

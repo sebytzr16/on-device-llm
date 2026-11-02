@@ -170,7 +170,8 @@ void main() {
     await tester.tap(find.text(t.save));
     await tester.pumpAndSettle();
     expect(container.read(modelProfilesProvider)['test']?['mtp'], isTrue);
-    expect(container.read(modelProfilesProvider)['test']?['nGpuLayers'], 24);
+    // Every layer stays "all" (999), so the engine may move the projector.
+    expect(container.read(modelProfilesProvider)['test']?['nGpuLayers'], 999);
     await open();
     expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
     await tester.tap(find.text(t.desktopLoadSettingsReset));

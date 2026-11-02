@@ -13,8 +13,25 @@ void main() {
   final menu = find.byKey(const Key('desktop-model-preset-menu'));
   final pill = find.byKey(const Key('desktop-model-preset-pill'));
 
-  Future<void> pick(WidgetTester tester, Finder control, String label) async {
+  // The inspector builds lazily: scroll back up to a control left behind.
+  Future<void> reveal(WidgetTester tester, Finder control) async {
+    if (control.evaluate().isEmpty) {
+      await tester.scrollUntilVisible(
+        control,
+        -200,
+        scrollable: find
+            .descendant(
+              of: find.byType(DesktopInspectorPanel),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+    }
     await tester.ensureVisible(control);
+  }
+
+  Future<void> pick(WidgetTester tester, Finder control, String label) async {
+    await reveal(tester, control);
     await tester.tap(control);
     await tester.pumpAndSettle();
     await tester.tap(
@@ -52,7 +69,7 @@ void main() {
     await tester.ensureVisible(temp);
     move(1.0);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(menu);
+    await reveal(tester, menu);
     expect(
       find.byKey(const Key('desktop-model-preset-modified')),
       findsOneWidget,

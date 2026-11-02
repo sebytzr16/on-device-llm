@@ -444,9 +444,9 @@ void main() {
     expect(adapter.last!.headers['X-Title'], 'OnDeviceLLM');
     final body = jsonDecode(adapter.lastBody!) as Map<String, dynamic>;
     expect(body['system'], 'Be brief.');
-    expect(body['thinking'], {'type': 'adaptive', 'display': 'summarized'});
+    expect(body.containsKey('thinking'), false);
     expect(body.containsKey('temperature'), false);
-    expect(body['tool_choice'], {'type': 'auto'});
+    expect(body['tool_choice'], {'type': 'any'});
     expect((body['tools'] as List).single['input_schema'], {'type': 'object'});
     final messages = body['messages'] as List;
     expect(messages.map((m) => m['role']), ['user', 'assistant', 'user']);
@@ -1145,5 +1145,371 @@ void main() {
     expect(again.remoteProfiles.single.id, 'legacy');
     expect(again.toJson().containsKey('remoteApiKeys'), false);
     expect(again.toJson().containsKey('remoteApiKey'), false);
+  });
+
+  for (final frame in [
+    'data: {"error":{"message":"backend failed"}}\n\n',
+    'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n',
+    sse([
+      {
+        'choices': [
+          {
+            'delta': {
+              'tool_calls': [
+                {
+                  'index': 0,
+                  'id': 'bad',
+                  'function': {'name': 'search', 'arguments': '{"q":'},
+                },
+              ],
+            },
+            'finish_reason': 'tool_calls',
+          },
+        ],
+      },
+    ]),
+  ]) {
+    test('OpenAI refuses errors and incomplete streams: $frame', () async {
+      final engine = engineWith(
+        Dio()
+          ..httpClientAdapter = _Adapter(
+            (_) => ResponseBody.fromString(frame, 200),
+          ),
+      );
+      addTearDown(engine.dispose);
+      await expectLater(
+        engine
+            .generate(
+              messages: const [
+                {'role': 'user', 'content': 'hi'},
+              ],
+              fallbackTemplate: '',
+              settings: settings,
+            )
+            .join(),
+        throwsA(isA<InferenceException>()),
+      );
+      expect(engine.metrics['toolCalls'], isEmpty);
+    });
+  }
+
+  for (final provider in ['openai', 'anthropic', 'gemini']) {
+    for (final choice in ['none', 'required']) {
+      test('$provider maps tool_choice $choice', () async {
+        final adapter = _Adapter(
+          (_) => ResponseBody.fromString(
+            provider == 'openai'
+                ? 'data: [DONE]\n'
+                : provider == 'anthropic'
+                ? 'data: {"type":"message_stop"}\n'
+                : 'data: {"candidates":[{"finishReason":"STOP"}]}\n',
+            200,
+          ),
+        );
+        final engine = engineWith(Dio()..httpClientAdapter = adapter);
+        addTearDown(engine.dispose);
+        await engine
+            .generate(
+              messages: const [
+                {'role': 'user', 'content': 'hi'},
+              ],
+              fallbackTemplate: '',
+              settings: hosted(provider),
+              tools: const [
+                ToolSpec(
+                  name: 'search',
+                  description: '',
+                  parameters: {'type': 'object'},
+                ),
+              ],
+              toolChoice: choice,
+            )
+            .join();
+        final body = jsonDecode(adapter.lastBody!) as Map;
+        if (provider == 'openai') expect(body['tool_choice'], choice);
+        if (provider == 'anthropic') {
+          expect(body['tool_choice'], {
+            'type': choice == 'required' ? 'any' : 'none',
+          });
+          if (choice == 'required') expect(body.containsKey('thinking'), false);
+        }
+        if (provider == 'gemini') {
+          expect(
+            body['toolConfig']['functionCallingConfig']['mode'],
+            choice == 'required' ? 'ANY' : 'NONE',
+          );
+        }
+      });
+    }
+  }
+
+  test(
+    'Anthropic continues a forced tool round without thinking, then thinks again',
+    () async {
+      final adapter = _Adapter(
+        (_) => ResponseBody.fromString('data: {"type":"message_stop"}\n', 200),
+      );
+      final engine = engineWith(Dio()..httpClientAdapter = adapter);
+      addTearDown(engine.dispose);
+      final settings = hosted('anthropic').copyWith(thinkingModeEnabled: true);
+      const tools = [
+        ToolSpec(
+          name: 'search',
+          description: '',
+          parameters: {'type': 'object'},
+        ),
+      ];
+      Future<Map> send(List<Map<String, Object>> messages) async {
+        await engine
+            .generate(
+              messages: messages,
+              fallbackTemplate: '',
+              settings: settings,
+              tools: tools,
+            )
+            .join();
+        return jsonDecode(adapter.lastBody!) as Map;
+      }
+
+      final open = <Map<String, Object>>[
+        {'role': 'user', 'content': 'news?'},
+        {
+          'role': 'assistant',
+          'content': '',
+          'tool_calls': [
+            {
+              'id': 'unsigned',
+              'type': 'function',
+              'function': {'name': 'search', 'arguments': '{}'},
+            },
+          ],
+        },
+        {'role': 'tool', 'tool_call_id': 'unsigned', 'content': 'result'},
+      ];
+      // The open tool turn has no signed thinking: none may be asked for.
+      expect((await send(open)).containsKey('thinking'), isFalse);
+      // A new question after it thinks again.
+      final next = await send([
+        ...open,
+        {'role': 'assistant', 'content': 'Here is the news.'},
+        {'role': 'user', 'content': 'thanks, and why?'},
+      ]);
+      expect(next.containsKey('thinking'), isTrue);
+    },
+  );
+
+  test('a tool call with no arguments at all is an empty call', () async {
+    final adapter = _Adapter(
+      (_) => ResponseBody.fromString(
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c","function":{"name":"now","arguments":""}}]}}]}\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n'
+        'data: [DONE]\n',
+        200,
+      ),
+    );
+    final engine = engineWith(Dio()..httpClientAdapter = adapter);
+    addTearDown(engine.dispose);
+    await engine
+        .generate(
+          messages: const [
+            {'role': 'user', 'content': 'time?'},
+          ],
+          fallbackTemplate: '',
+          settings: hosted('openai'),
+          tools: const [
+            ToolSpec(
+              name: 'now',
+              description: '',
+              parameters: {'type': 'object'},
+            ),
+          ],
+        )
+        .join();
+    expect(engine.metrics['toolCalls'], hasLength(1));
+  });
+
+  test(
+    'Anthropic signed and redacted thinking replay unchanged before tool use',
+    () async {
+      final blocks = [
+        {
+          'type': 'thinking',
+          'thinking': 'private thought',
+          'signature': 'signed+/=',
+        },
+        {'type': 'redacted_thinking', 'data': 'opaque+/='},
+      ];
+      final frames = [
+        {
+          'type': 'content_block_start',
+          'index': 0,
+          'content_block': {
+            'type': 'thinking',
+            'thinking': '',
+            'signature': '',
+          },
+        },
+        {
+          'type': 'content_block_delta',
+          'index': 0,
+          'delta': {'type': 'thinking_delta', 'thinking': 'private thought'},
+        },
+        {
+          'type': 'content_block_delta',
+          'index': 0,
+          'delta': {'type': 'signature_delta', 'signature': 'signed+/='},
+        },
+        {'type': 'content_block_start', 'index': 1, 'content_block': blocks[1]},
+        {
+          'type': 'content_block_start',
+          'index': 2,
+          'content_block': {
+            'type': 'tool_use',
+            'id': 'c1',
+            'name': 'search',
+            'input': {},
+          },
+        },
+        {
+          'type': 'content_block_delta',
+          'index': 2,
+          'delta': {'type': 'input_json_delta', 'partial_json': '{}'},
+        },
+        {
+          'type': 'message_delta',
+          'delta': {'stop_reason': 'tool_use'},
+        },
+        {'type': 'message_stop'},
+      ];
+      var requests = 0;
+      final adapter = _Adapter(
+        (_) => ResponseBody.fromString(
+          requests++ == 0
+              ? frames.map((e) => 'data: ${jsonEncode(e)}\n\n').join()
+              : 'data: {"type":"message_stop"}\n',
+          200,
+        ),
+      );
+      final engine = engineWith(Dio()..httpClientAdapter = adapter);
+      addTearDown(engine.dispose);
+      final history = <Map<String, Object>>[
+        {'role': 'user', 'content': 'hi'},
+      ];
+      await engine
+          .generate(
+            messages: history,
+            fallbackTemplate: '',
+            settings: hosted('anthropic'),
+          )
+          .join();
+      history.add({
+        'role': 'assistant',
+        'content': '',
+        'tool_calls': engine.metrics['toolCalls'] as List,
+      });
+      history.add({'role': 'tool', 'tool_call_id': 'c1', 'content': 'found'});
+      await engine
+          .generate(
+            messages: history,
+            fallbackTemplate: '',
+            settings: hosted('anthropic'),
+          )
+          .join();
+      final body = jsonDecode(adapter.lastBody!) as Map;
+      final replay = body['messages'][1]['content'] as List;
+      expect(replay.take(2), blocks);
+      expect(replay[2]['type'], 'tool_use');
+    },
+  );
+
+  test(
+    'usage charges each physical retry and cap prevents the next attempt',
+    () async {
+      var attempts = 0;
+      final engine = engineWith(
+        Dio()
+          ..httpClientAdapter = _Adapter((_) {
+            attempts++;
+            return ResponseBody.fromString(
+              '{"error":{"message":"Bad request"}}',
+              400,
+            );
+          }),
+      );
+      addTearDown(engine.dispose);
+      final capped = settings.copyWith(
+        remoteProfiles: [
+          settings.remoteProfiles.single.copyWith(
+            limits: {'qwen3-8b': const RemoteLimit(perDay: 1)},
+          ),
+        ],
+      );
+      await expectLater(
+        engine
+            .generate(
+              messages: const [
+                {'role': 'user', 'content': 'hi'},
+              ],
+              fallbackTemplate: '',
+              settings: capped,
+            )
+            .join(),
+        throwsA(isA<InferenceException>()),
+      );
+      expect(attempts, 1);
+      expect((await engine.usage.counts('home', 'qwen3-8b')).day, 1);
+    },
+  );
+  test('usage records both physical attempts when a retry succeeds', () async {
+    var attempts = 0;
+    final engine = engineWith(
+      Dio()
+        ..httpClientAdapter = _Adapter((_) {
+          if (attempts++ == 0) {
+            return ResponseBody.fromString(
+              '{"error":{"message":"Bad request"}}',
+              400,
+            );
+          }
+          return ResponseBody.fromString('data: [DONE]\n', 200);
+        }),
+    );
+    addTearDown(engine.dispose);
+    await engine
+        .generate(
+          messages: const [
+            {'role': 'user', 'content': 'hi'},
+          ],
+          fallbackTemplate: '',
+          settings: settings,
+        )
+        .join();
+    expect(attempts, 2);
+    expect((await engine.usage.counts('home', 'qwen3-8b')).day, 2);
+  });
+
+  test('OpenAI terminal finish_reason works without DONE', () async {
+    final engine = engineWith(
+      Dio()
+        ..httpClientAdapter = _Adapter(
+          (_) => ResponseBody.fromString(
+            'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\n',
+            200,
+          ),
+        ),
+    );
+    addTearDown(engine.dispose);
+    expect(
+      await engine
+          .generate(
+            messages: const [
+              {'role': 'user', 'content': 'hi'},
+            ],
+            fallbackTemplate: '',
+            settings: settings,
+          )
+          .join(),
+      'ok',
+    );
   });
 }

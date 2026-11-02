@@ -644,6 +644,11 @@ class MemoryStatements {
     });
   }
 
+  /// Whether [message] is a story, roleplay, example or joke rather than
+  /// something about the user.
+  static bool isFiction(String message) =>
+      _fictionRequest.hasMatch(_clean(message));
+
   static bool retracts(String fact, String message) =>
       !_fictionRequest.hasMatch(_clean(message)) &&
       _retracted(fact, clauses(message));

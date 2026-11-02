@@ -58,6 +58,40 @@ class FakeMcpTransport implements McpTransport {
   }
 }
 
+class EndlessMcpTransport extends FakeMcpTransport {
+  final int toolCount;
+  final String description;
+  final Duration delay;
+  EndlessMcpTransport({
+    this.toolCount = 0,
+    this.description = '',
+    this.delay = Duration.zero,
+  });
+  int pages = 0;
+  @override
+  Future<void> send(Map<String, dynamic> message) async {
+    if (message['method'] != 'tools/list') return super.send(message);
+    sent.add(message);
+    await Future<void>.delayed(delay);
+    if (controller.isClosed) return;
+    controller.add({
+      'jsonrpc': '2.0',
+      'id': message['id'],
+      'result': {
+        'tools': [
+          for (var i = 0; i < toolCount; i++)
+            {
+              'name': 'tool$i',
+              'description': description,
+              'inputSchema': {'type': 'object'},
+            },
+        ],
+        'nextCursor': '${++pages}',
+      },
+    });
+  }
+}
+
 String bundledDart() {
   final packages =
       jsonDecode(File('.dart_tool/package_config.json').readAsStringSync())
@@ -436,5 +470,137 @@ void main() {
     expect(resolve(r'C:\tools\server.exe'), r'C:\tools\server.exe');
     expect(resolve('missing'), 'missing');
     expect(resolve('npx', {'PATH': r'C:\other'}), 'npx');
+  });
+  test(
+    'long tool aliases are stable, bounded and dispatch through reverse map',
+    () async {
+      final name = 'server' * 20;
+      final tool = 'echo';
+      final alias = mcpToolName(name, tool);
+      expect(alias.length, lessThanOrEqualTo(64));
+      expect(alias, mcpToolName(name, tool));
+      expect(alias, isNot(mcpToolName(name, '$tool!')));
+      final dir = await Directory.systemTemp.createTemp('mcp-alias');
+      final transport = FakeMcpTransport();
+      final registry = McpRegistry(
+        directory: () async => dir,
+        connector: (_) async => transport,
+      );
+      addTearDown(() async {
+        registry.dispose();
+        await dir.delete(recursive: true);
+      });
+      await registry.saveConfig(
+        jsonEncode({
+          'mcpServers': {
+            name: {'command': 'fixture'},
+          },
+        }),
+      );
+      registry.confirm = (_, _) async => McpConsent.once;
+      expect(registry.specs.single.name, alias);
+      final result = await registry.call(
+        ToolCall(id: 'a', name: alias, arguments: '{}'),
+        explain: (e) => '$e',
+        unsupportedContent: 'unsupported',
+      );
+      expect(result.ok, true);
+      expect((transport.sent.last['params'] as Map)['name'], tool);
+    },
+  );
+
+  test(
+    'timeout and Stop send cancellation for the pending request id',
+    () async {
+      for (final stop in [false, true]) {
+        final transport = FakeMcpTransport()..silent = true;
+        final client = McpClient(
+          transport,
+          timeout: const Duration(milliseconds: 20),
+        );
+        final result = client.callTool('slow', {});
+        final check = expectLater(result, throwsA(isA<McpException>()));
+        if (stop) client.cancelPending();
+        await check;
+        expect(transport.sent.last['method'], 'notifications/cancelled');
+        expect(
+          (transport.sent.last['params'] as Map)['requestId'],
+          transport.sent.first['id'],
+        );
+        await client.close();
+      }
+    },
+  );
+
+  test('tool discovery stops at its total page budget', () async {
+    final transport = EndlessMcpTransport();
+    final client = McpClient(transport);
+    await expectLater(client.listTools(), throwsA(isA<McpException>()));
+    expect(transport.pages, 100);
+    await client.close();
+  });
+  test(
+    'registry cancels running MCP tool when turn permission is revoked',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('mcp-stop');
+      final transport = FakeMcpTransport();
+      final registry = McpRegistry(
+        directory: () async => dir,
+        connector: (_) async => transport,
+      );
+      addTearDown(() async {
+        registry.dispose();
+        await dir.delete(recursive: true);
+      });
+      await registry.saveConfig(
+        '{"mcpServers":{"fixture":{"command":"fixture"}}}',
+      );
+      registry.confirm = (_, _) async => McpConsent.once;
+      transport.silent = true;
+      var permitted = true;
+      final result = registry.call(
+        call,
+        explain: (e) => '$e',
+        unsupportedContent: 'unsupported',
+        permitted: () => permitted,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+      permitted = false;
+      expect((await result).ok, false);
+      expect(transport.sent.last['method'], 'notifications/cancelled');
+    },
+  );
+
+  for (final oversizedBytes in [false, true]) {
+    test(
+      'tool discovery bounds ${oversizedBytes ? 'bytes' : 'tool count'}',
+      () async {
+        final transport = EndlessMcpTransport(
+          toolCount: oversizedBytes ? 1 : 1001,
+          description: oversizedBytes ? 'x' * (4 * 1024 * 1024) : '',
+        );
+        final client = McpClient(transport);
+        await expectLater(client.listTools(), throwsA(isA<McpException>()));
+        expect(transport.pages, 1);
+        await client.close();
+      },
+    );
+  }
+
+  test('tool discovery has a total time budget across pages', () async {
+    final transport = EndlessMcpTransport(
+      delay: const Duration(milliseconds: 30),
+    );
+    final client = McpClient(
+      transport,
+      timeout: const Duration(milliseconds: 50),
+    );
+    await expectLater(client.listTools(), throwsA(isA<McpException>()));
+    expect(
+      transport.sent.where((m) => m['method'] == 'tools/list').length,
+      lessThanOrEqualTo(2),
+    );
+    expect(transport.sent.last['method'], 'notifications/cancelled');
+    await client.close();
   });
 }

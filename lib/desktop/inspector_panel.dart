@@ -12,7 +12,10 @@ import '../features/settings/presentation/providers/effective_settings_provider.
 import '../features/settings/presentation/providers/model_profiles_provider.dart';
 import '../features/tools/presentation/tools_quick_panel.dart';
 import 'desktop_theme.dart';
+import 'load_settings_dialog.dart';
 import 'model_preset_menu.dart';
+import '../features/models/domain/entities/model_catalog.dart';
+import '../features/settings/presentation/screens/model_profile_page.dart';
 import '../features/settings/domain/model_sampling_keys.dart';
 export '../features/settings/domain/model_sampling_keys.dart';
 
@@ -196,6 +199,51 @@ class _DesktopInspectorPanelState extends ConsumerState<DesktopInspectorPanel> {
           ),
           if (!chatScope && modelId != null)
             DesktopModelPresetMenu(modelId: modelId),
+          // The loaded model's own settings, one click away (owner,
+          // 2026-11-01): how it loads, every setting, and its photos.
+          if (model != null) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                OutlinedButton.icon(
+                  key: const Key('desktop-inspector-load-settings'),
+                  onPressed: () => showDesktopLoadSettings(context, model),
+                  icon: const Icon(Icons.memory_rounded, size: 16),
+                  label: Text(t.desktopLoadSettingsTitle),
+                ),
+                TextButton(
+                  key: const Key('desktop-inspector-all-settings'),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ModelProfilePage(model: model),
+                    ),
+                  ),
+                  child: Text(t.desktopMoreSettings),
+                ),
+              ],
+            ),
+            if ((model.projector ?? visionProjectors[model.id]) != null)
+              SwitchListTile(
+                key: const Key('desktop-inspector-vision'),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: Text(t.settingLabelVisionEnabled),
+                subtitle: Text(
+                  t.settingVisionHint,
+                  style: context.text.caption.copyWith(color: c.textMuted),
+                ),
+                value:
+                    ref.watch(
+                      modelProfilesProvider,
+                    )[model.id]?['visionEnabled'] !=
+                    false,
+                onChanged: (on) => ref
+                    .read(modelProfilesProvider.notifier)
+                    .setKey(model.id, 'visionEnabled', on ? null : false),
+              ),
+          ],
           const SizedBox(height: 8),
           Text(
             chatScope

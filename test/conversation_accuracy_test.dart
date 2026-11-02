@@ -449,6 +449,38 @@ void main() {
     );
   });
 
+  test('a story or a taken-back name is not the user\'s (P2-44)', () {
+    String? name(List<String> said) =>
+        AboutUser.spokenName("What's my name?", AboutUser.grounded(said));
+    expect(
+      name([
+        'My name is Robin.',
+        'Write a story: in this story, my name is Alice and I am a pilot.',
+      ]),
+      'Your name is Robin.',
+    );
+    expect(name(["Let's pretend my name is Alice."]), isNull);
+    expect(name(['My name is Sam.', 'My name is not Sam.']), isNull);
+    // What the user really said still counts.
+    expect(
+      name(['Hi, my name is Robin and I live in Denver.']),
+      'Your name is Robin.',
+    );
+    expect(
+      name(['My name is Sam.', 'Actually, call me Alex.']),
+      'Your name is Alex.',
+    );
+    expect(name(['Hola, me llamo Ana.']), isNotNull);
+    expect(name(["Salut, je m'appelle léa."]), isNotNull);
+    expect(
+      AboutUser.spokenNames(
+        'What are my cats called?',
+        AboutUser.grounded(['I have two cats, Milo and Luna.']),
+      ),
+      'Your cats are Milo and Luna.',
+    );
+  });
+
   test('the user\'s facts are given back as theirs', () {
     const said = [
       'Hi, my name is Robin and I live in Denver.',

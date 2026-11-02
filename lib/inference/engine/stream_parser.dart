@@ -43,10 +43,9 @@ class ThinkingStreamParser {
       _processThink();
       return;
     }
-    const keep = openTag.length - 1;
-    if (content.length <= keep) return;
-    final emit = content.substring(0, content.length - keep);
-    _answerCtrl.add(emit);
+    final keep = _partialTag(content, openTag);
+    if (content.length == keep) return;
+    _answerCtrl.add(content.substring(0, content.length - keep));
     _answerBuf
       ..clear()
       ..write(content.substring(content.length - keep));
@@ -70,13 +69,24 @@ class ThinkingStreamParser {
       _processAnswer();
       return;
     }
-    const keep = closeTag.length - 1;
-    if (content.length <= keep) return;
-    final emit = content.substring(0, content.length - keep);
-    _thinkCtrl.add(emit);
+    final keep = _partialTag(content, closeTag);
+    if (content.length == keep) return;
+    _thinkCtrl.add(content.substring(0, content.length - keep));
     _thinkBuf
       ..clear()
       ..write(content.substring(content.length - keep));
+  }
+
+  /// Length of the longest end of [content] that could still grow into
+  /// [tag]; only that much is held back, so ordinary text shows at once
+  /// (P3-05).
+  static int _partialTag(String content, String tag) {
+    for (var n = tag.length - 1; n > 0; n--) {
+      if (n <= content.length && content.endsWith(tag.substring(0, n))) {
+        return n;
+      }
+    }
+    return 0;
   }
 
   void close() {

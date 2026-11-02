@@ -165,7 +165,8 @@ class _ModelOptimizeSectionState extends ConsumerState<ModelOptimizeSection> {
         final changes = {
           for (final key in pcOptimizationKeys) key: winner.toJson()[key],
         };
-        await global.followRecommended(pcOptimizationKeys);
+        // The model's profile sits above the app-wide settings, so the
+        // winner applies without touching other models (audit P1-13).
         await profiles.set(model.id, {...profiles.of(model.id), ...changes});
         finalSettings = winner;
         widget.onTuned?.call(changes);

@@ -64,6 +64,9 @@ Future<void> exportDesktopChat(
             timestamp: row.timestamp,
             modelId: row.modelId,
             reasoning: row.reasoning,
+            status: row.status,
+            parentId: row.parentId,
+            runJson: row.runJson,
             sourcesJson: row.sourcesJson,
             attachments: Attachment.listFromJson(
               jsonDecode(row.attachmentsJson),

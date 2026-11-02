@@ -5,10 +5,13 @@ import 'dart:io' show Platform;
 import 'package:dio/dio.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
+import 'package:logging/logging.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/errors/exceptions.dart';
 import 'search_models.dart';
+
+final _log = Logger('search');
 
 class DuckDuckGoScraper {
   SearchProviderHealth health = const SearchProviderHealth(
@@ -76,15 +79,18 @@ class DuckDuckGoScraper {
         .replaceAll('-', '_')
         .split('_');
     final requested = appLanguage.trim().toLowerCase();
-    final language =
-        requested == 'fr' ||
-            (requested.isEmpty && parts.first.toLowerCase() == 'fr')
-        ? 'fr'
-        : 'en';
+    final asked = requested.isEmpty ? parts.first.toLowerCase() : requested;
+    // French and Spanish are the app's other languages: a Spanish speaker
+    // in the US got English results and news (audit P2-46).
+    final language = asked == 'fr' || asked == 'es' ? asked : 'en';
     final country = parts.length > 1 ? parts[1].toUpperCase() : '';
     final localized = _localizedRegions['$country|$language'];
     if (localized != null) return localized;
     if (language == 'fr') return 'fr-fr';
+    if (language == 'es') {
+      final home = _countryRegions[country];
+      return home != null && home.endsWith('-es') ? home : 'es-es';
+    }
     return _countryRegions[country] ?? 'wt-wt';
   }
 
@@ -93,6 +99,7 @@ class DuckDuckGoScraper {
     'CA|fr': 'ca-fr',
     'BE|fr': 'be-fr',
     'CH|fr': 'ch-fr',
+    'US|es': 'ue-es',
   };
 
   static const _countryRegions = <String, String>{
@@ -115,6 +122,8 @@ class DuckDuckGoScraper {
     'AR': 'ar-es',
     'CL': 'cl-es',
     'CO': 'co-es',
+    'PE': 'pe-es',
+    'VE': 've-es',
     'IT': 'it-it',
     'NL': 'nl-nl',
     'BR': 'br-pt',
@@ -180,6 +189,9 @@ class DuckDuckGoScraper {
       'ar-es': 'es-AR',
       'cl-es': 'es-CL',
       'co-es': 'es-CO',
+      'pe-es': 'es-PE',
+      've-es': 'es-VE',
+      'ue-es': 'es-US',
       'it-it': 'it-IT',
       'nl-nl': 'nl-NL',
       'be-nl': 'nl-BE',
@@ -275,7 +287,12 @@ class DuckDuckGoScraper {
         relevant: results.length,
         elapsedMs: healthClock.elapsedMilliseconds,
       );
+      _log.info(
+        'DuckDuckGo "$query" ($region): ${results.length} results in '
+        '${healthClock.elapsedMilliseconds} ms',
+      );
     } catch (e) {
+      _log.warning('DuckDuckGo "$query" ($region) failed: $e');
       health = SearchProviderHealth(
         'DuckDuckGo',
         e is SearchChallengeException || e is SearchCooldownException
@@ -656,51 +673,56 @@ class DuckDuckGoScraper {
     ];
     for (final anchor in anchors) {
       if (out.length >= limit) break;
-      final href = anchor.attributes['href'];
-      if (href == null) continue;
+      try {
+        final href = anchor.attributes['href'];
+        if (href == null) continue;
 
-      dom.Element? row = anchor;
-      while (row?.parent != null &&
-          row!.localName != 'tr' &&
-          !row.classes.contains('result')) {
-        row = row.parent;
-      }
-      final rawUri = Uri.parse('https://duckduckgo.com').resolve(href);
-      final providerAd = _isProvider(rawUri) && rawUri.path == '/y.js';
-      final sponsored =
-          providerAd ||
-          (row != null &&
-              (row.classes.contains('result--ad') ||
-                  row.classes.any((c) => c.startsWith('result--ad'))));
-      final url = _resolve(href);
-      final uri = Uri.tryParse(url);
-      if (uri == null ||
-          !['http', 'https'].contains(uri.scheme) ||
-          uri.host.isEmpty ||
-          (_isProvider(uri) && !sponsored)) {
+        dom.Element? row = anchor;
+        while (row?.parent != null &&
+            row!.localName != 'tr' &&
+            !row.classes.contains('result')) {
+          row = row.parent;
+        }
+        final rawUri = Uri.parse('https://duckduckgo.com').resolve(href);
+        final providerAd = _isProvider(rawUri) && rawUri.path == '/y.js';
+        final sponsored =
+            providerAd ||
+            (row != null &&
+                (row.classes.contains('result--ad') ||
+                    row.classes.any((c) => c.startsWith('result--ad'))));
+        final url = _resolve(href);
+        final uri = Uri.tryParse(url);
+        if (uri == null ||
+            !['http', 'https'].contains(uri.scheme) ||
+            uri.host.isEmpty ||
+            (_isProvider(uri) && !sponsored)) {
+          continue;
+        }
+        final snippet =
+            row?.querySelector('a.result__snippet')?.text ??
+            row?.querySelector('.result__snippet')?.text ??
+            row?.querySelector('td.result-snippet')?.text ??
+            row?.nextElementSibling?.querySelector('.result-snippet')?.text ??
+            '';
+
+        // A missing snippet is not a reason to drop a usable destination
+        // (roadmap §7.3); the page itself is what gets read.
+        if (out.any((r) => r.url == url)) continue;
+        final clean = _clean(snippet);
+        out.add(
+          SearchResult(
+            title: anchor.text.trim(),
+            url: url,
+            snippet: clean.substring(0, clean.length.clamp(0, 1200)),
+            source: Uri.tryParse(url)?.host,
+            rank: out.length + 1,
+            sponsored: sponsored,
+          ),
+        );
+      } on FormatException {
+        // One malformed provider URL must not hide the other results.
         continue;
       }
-      final snippet =
-          row?.querySelector('a.result__snippet')?.text ??
-          row?.querySelector('.result__snippet')?.text ??
-          row?.querySelector('td.result-snippet')?.text ??
-          row?.nextElementSibling?.querySelector('.result-snippet')?.text ??
-          '';
-
-      // A missing snippet is not a reason to drop a usable destination
-      // (roadmap §7.3); the page itself is what gets read.
-      if (out.any((r) => r.url == url)) continue;
-      final clean = _clean(snippet);
-      out.add(
-        SearchResult(
-          title: anchor.text.trim(),
-          url: url,
-          snippet: clean.substring(0, clean.length.clamp(0, 1200)),
-          source: Uri.tryParse(url)?.host,
-          rank: out.length + 1,
-          sponsored: sponsored,
-        ),
-      );
     }
     return out;
   }

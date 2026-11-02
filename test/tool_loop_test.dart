@@ -157,6 +157,15 @@ class _PhoneEngine extends TestEngine {
 }
 
 void main() {
+  test('tool markup inside code is kept (P2-52)', () {
+    const code =
+        'Example:\n```xml\n<tool_call>\n{"name": "x"}\n</tool_call>\n```\n'
+        'Inline `</tool_call>` too.';
+    expect(ToolMarkup.strip(code), code);
+    expect(ToolMarkup.stripOrphans(code), code);
+    expect(ToolMarkup.strip('Hi<tool_call>{"name": "x"}</tool_call>'), 'Hi');
+  });
+
   test(
     'small talk after an action keeps the cached system schema without calling tools',
     () async {

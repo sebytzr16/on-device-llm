@@ -1,3 +1,4 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/core/platform/device_info.dart';
@@ -15,12 +16,33 @@ const _phone = DeviceMemory(
 );
 final _qwen4b = bundledCatalog.singleWhere((m) => m.id == 'qwen35-4b-iq4nl');
 
-Widget _host(Widget child) => MaterialApp(
-  theme: AppTheme.dark,
-  home: Scaffold(body: SingleChildScrollView(child: child)),
+Widget _host(Widget child) => ProviderScope(
+  child: MaterialApp(
+    theme: AppTheme.dark,
+    home: Scaffold(body: SingleChildScrollView(child: child)),
+  ),
 );
 
 void main() {
+  testWidgets('helper-loaded card shows Helper and ejects instead of loading', (
+    tester,
+  ) async {
+    var ejected = false;
+    await tester.pumpWidget(
+      _host(
+        ModelCard(
+          model: _qwen4b.copyWith(isDownloaded: true),
+          helperActive: true,
+          onUnload: () => ejected = true,
+        ),
+      ),
+    );
+    expect(find.text('Helper'), findsOneWidget);
+    expect(find.text('Use model'), findsNothing);
+    await tester.tap(find.byKey(Key('unload-${_qwen4b.id}')));
+    expect(ejected, isTrue);
+  });
+
   testWidgets('idle card shows facts, fit and Download', (tester) async {
     await tester.pumpWidget(_host(ModelCard(model: _qwen4b, memory: _phone)));
     for (final t in [
@@ -28,8 +50,8 @@ void main() {
       '4B',
       'IQ4_NL',
       '2.40 GB',
-      'Reasoning',
-      'Fits this phone',
+      'Thinking',
+      'Fits this device',
       'License · Apache-2.0',
       'Download',
     ]) {

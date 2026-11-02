@@ -75,6 +75,8 @@ class _Models extends ModelManagerNotifier {
     ModelInfo info, {
     bool forChat = false,
     InferenceSettings? settings,
+    void Function()? onLoadStart,
+    bool vision = false,
   }) async {
     if (state.loadedModelId == info.id) return;
     await ref

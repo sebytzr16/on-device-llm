@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/design/app_design.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/motion/motion.dart';
 
 /// The model's thinking channel. Cool-tinted, italic and visually
@@ -8,6 +9,7 @@ import '../../../../core/motion/motion.dart';
 class ReasoningAccordion extends StatefulWidget {
   final String content;
   final bool isComplete;
+  final String? liveTitle;
 
   /// Time the model spent thinking. When null the widget measures it
   /// itself, from the first reasoning token it saw until completion.
@@ -17,6 +19,7 @@ class ReasoningAccordion extends StatefulWidget {
     super.key,
     required this.content,
     this.isComplete = false,
+    this.liveTitle,
     this.duration,
   });
 
@@ -31,6 +34,7 @@ class _ReasoningAccordionState extends State<ReasoningAccordion>
   final _started = DateTime.now();
   Duration? _measured;
   bool _open = false;
+  bool _showFull = false;
 
   @override
   void initState() {
@@ -81,82 +85,125 @@ class _ReasoningAccordionState extends State<ReasoningAccordion>
 
   void _toggle() {
     AppHaptics.tick();
-    setState(() => _open = !_open);
+    setState(() {
+      _open = !_open;
+      if (_open) _showFull = true;
+    });
     _springFold();
   }
 
+  String get _streamingTail {
+    final content = widget.content;
+    var start = (content.length - 2048).clamp(0, content.length);
+    // The tail must not begin in the middle of an emoji's surrogate pair.
+    if (start > 0 &&
+        content.codeUnitAt(start) >= 0xdc00 &&
+        content.codeUnitAt(start) <= 0xdfff &&
+        content.codeUnitAt(start - 1) >= 0xd800 &&
+        content.codeUnitAt(start - 1) <= 0xdbff) {
+      start++;
+    }
+    return content.substring(start);
+  }
+
   String get _title {
-    if (!widget.isComplete) return 'Thinking…';
+    if (!widget.isComplete) {
+      return widget.liveTitle ?? context.l10n.reasoningThinking;
+    }
     final d = _measured ?? widget.duration;
-    if (d == null) return 'Reasoning';
+    if (d == null) return context.l10n.reasoningTitle;
     final s = d.inMilliseconds / 1000;
-    return 'Reasoning · ${s < 10 ? s.toStringAsFixed(1) : s.round()} s';
+    return context.l10n.reasoningDuration(
+      '${s < 10 ? s.toStringAsFixed(1) : s.round()}',
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final tint = c.reasoning;
-    return Container(
-      margin: const EdgeInsets.only(bottom: AppDesign.md),
-      decoration: BoxDecoration(
-        color: tint.fade(0.06),
-        borderRadius: AppDesign.radius(AppDesign.rMd),
-        border: Border.all(color: tint.fade(0.18)),
-      ),
-      child: Column(
-        children: [
-          InkWell(
-            borderRadius: AppDesign.radius(AppDesign.rMd),
-            onTap: _toggle,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppDesign.md,
-                vertical: AppDesign.sm + 2,
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.psychology_outlined, size: 16, color: tint),
-                  const SizedBox(width: AppDesign.sm),
-                  Expanded(
-                    child: _Shimmer(
-                      animation: _shimmer,
-                      active: !widget.isComplete && context.motion.animates,
-                      color: tint,
-                      child: Text(
-                        _title,
-                        style: context.text.mono.copyWith(
-                          color: tint,
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                    ),
-                  ),
-                  RotationTransition(
-                    turns: Tween(begin: 0.0, end: 0.5).animate(_expand),
-                    child: Icon(
-                      Icons.expand_more,
-                      size: 16,
-                      color: tint.fade(0.7),
-                    ),
-                  ),
-                ],
+    final header = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.auto_awesome, size: 14, color: tint),
+        const SizedBox(width: AppDesign.sm),
+        Flexible(
+          child: _Shimmer(
+            animation: _shimmer,
+            active: !widget.isComplete && context.motion.animates,
+            color: tint,
+            child: Text(
+              _title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.text.small.copyWith(
+                color: tint,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          SizeTransition(
-            sizeFactor: _expand,
-            alignment: Alignment.topCenter,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppDesign.md,
-                0,
-                AppDesign.md,
-                AppDesign.md,
+        ),
+        const SizedBox(width: AppDesign.xs),
+        RotationTransition(
+          turns: Tween(begin: 0.0, end: 0.5).animate(_expand),
+          child: Icon(Icons.expand_more, size: 16, color: tint.fade(0.7)),
+        ),
+      ],
+    );
+    // The label is always a pill hugging its text (Figma mock, owner
+    // 2026-11-01); the thinking opens as a card under it. One surface that
+    // grew from pill to card flashed full width on every tap (owner's
+    // phone, 2026-11-01).
+    final body = widget.isComplete || (_showFull && _open)
+        ? SelectableText(
+            widget.content,
+            style: context.text.reasoning.copyWith(color: tint.fade(0.85)),
+          )
+        : Text(
+            _streamingTail,
+            style: context.text.reasoning.copyWith(color: tint.fade(0.85)),
+          );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppDesign.md),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Material(
+            color: tint.fade(0.08),
+            shape: StadiumBorder(side: BorderSide(color: tint.fade(0.2))),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: _toggle,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppDesign.md,
+                  vertical: AppDesign.sm,
+                ),
+                child: header,
               ),
-              child: SelectableText(
-                widget.content,
-                style: context.text.reasoning.copyWith(color: tint.fade(0.85)),
+            ),
+          ),
+          AnimatedBuilder(
+            animation: _fold,
+            builder: (context, child) => !_open && _fold.value <= 0.001
+                ? const SizedBox.shrink()
+                : child!,
+            child: SizeTransition(
+              sizeFactor: _expand,
+              alignment: Alignment.topCenter,
+              child: Padding(
+                padding: const EdgeInsets.only(top: AppDesign.sm),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(AppDesign.md),
+                  decoration: BoxDecoration(
+                    color: tint.fade(0.06),
+                    borderRadius: AppDesign.radius(AppDesign.rLg),
+                    border: Border.all(color: tint.fade(0.16)),
+                  ),
+                  child: body,
+                ),
               ),
             ),
           ),

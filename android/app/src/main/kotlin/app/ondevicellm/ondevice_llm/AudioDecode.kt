@@ -15,6 +15,9 @@ import java.nio.ByteOrder
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 /** One decode pass with bounded PCM buffers, streamed to disk. */
 class AudioDecode(messenger: BinaryMessenger) {
@@ -25,16 +28,15 @@ class AudioDecode(messenger: BinaryMessenger) {
             val input = call.argument<String>("path")
             val id = call.argument<String>("id") ?: call.argument<String>("out") ?: ""
             if (call.method == "cancel") { jobs[id]?.set(true); result.success(null); return@setMethodCallHandler }
-            if (call.method != "decode16k" && call.method != "duration") { result.notImplemented(); return@setMethodCallHandler }
+            if (call.method != "decode16k") { result.notImplemented(); return@setMethodCallHandler }
             val output = call.argument<String>("out")
             val limit = (call.argument<Int>("maxSeconds") ?: 3600).coerceIn(1, 3600)
-            if (input == null || (call.method == "decode16k" && output == null)) { result.error("audio", "Missing path.", null); return@setMethodCallHandler }
+            if (input == null || output == null) { result.error("audio", "Missing path.", null); return@setMethodCallHandler }
             val cancelled = AtomicBoolean(false)
             jobs[id] = cancelled
             thread(name = "audio-decode") {
                 try {
-                    val value = if (call.method == "duration") mapOf("seconds" to duration(File(input)))
-                        else decode(File(input).canonicalFile, File(output!!), limit, cancelled)
+                    val value = decode(File(input).canonicalFile, File(output!!), limit, cancelled)
                     main.post { result.success(value) }
                 } catch (e: Exception) {
                     if (output != null) File(output).delete()
@@ -43,17 +45,38 @@ class AudioDecode(messenger: BinaryMessenger) {
             }
         }
     }
-    private fun duration(input: File): Double {
-        val extractor = MediaExtractor()
-        try {
-            extractor.setDataSource(input.path)
-            for (i in 0 until extractor.trackCount) {
-                val f = extractor.getTrackFormat(i)
-                if (f.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true && f.containsKey(MediaFormat.KEY_DURATION))
-                    return f.getLong(MediaFormat.KEY_DURATION) / 1_000_000.0
+    /** Unity-gain, 63-tap Hamming-windowed sinc. State spans codec buffers.
+     * The 10% transition band below the target Nyquist limits aliasing before
+     * interpolation/decimation. The causal filter adds 31 source frames of delay.
+     */
+    private class LowPass(rate: Int, target: Int) {
+        private val taps = DoubleArray(63)
+        private val history = FloatArray(taps.size)
+        private var cursor = 0
+        private var initialized = false
+        init {
+            val cutoff = 0.45 * target / rate
+            for (i in taps.indices) {
+                val x = i - (taps.size - 1) / 2
+                val sinc = if (x == 0) 2 * cutoff else sin(2 * PI * cutoff * x) / (PI * x)
+                taps[i] = sinc * (0.54 - 0.46 * cos(2 * PI * i / (taps.size - 1)))
             }
-            return 0.0
-        } finally { extractor.release() }
+            val gain = taps.sum()
+            for (i in taps.indices) taps[i] /= gain
+        }
+        fun process(sample: Float): Float {
+            // Extend the first sample at the boundary, avoiding a DC startup dip.
+            if (!initialized) { history.fill(sample); initialized = true }
+            history[cursor] = sample
+            var value = 0.0
+            var index = cursor
+            for (tap in taps) {
+                value += tap * history[index]
+                if (--index < 0) index = history.lastIndex
+            }
+            cursor = (cursor + 1) % history.size
+            return value.toFloat()
+        }
     }
     private fun decode(input: File, output: File, maxSeconds: Int, cancelled: AtomicBoolean): Map<String, Any> {
         require(input.isFile) { "The recording is missing." }
@@ -74,6 +97,7 @@ class AudioDecode(messenger: BinaryMessenger) {
             val format = extractor.getTrackFormat(track)
             var rate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
             var channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+            var lowPass = if (rate > target) LowPass(rate, target) else null
             var floatPcm = false
             require(rate > 0 && channels in 1..32) { "Invalid audio format." }
             val decoder = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME)!!)
@@ -113,6 +137,7 @@ class AudioDecode(messenger: BinaryMessenger) {
                         val f = decoder.outputFormat
                         val nextRate = f.getInteger(MediaFormat.KEY_SAMPLE_RATE)
                         require(sourceCount == 0L || nextRate == rate) { "Audio sample rate changes mid-recording." }
+                        if (nextRate != rate) lowPass = if (nextRate > target) LowPass(nextRate, target) else null
                         rate = nextRate; channels = f.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
                         val encoding = if (f.containsKey(MediaFormat.KEY_PCM_ENCODING)) f.getInteger(MediaFormat.KEY_PCM_ENCODING) else AudioFormat.ENCODING_PCM_16BIT
                         require(encoding == AudioFormat.ENCODING_PCM_16BIT || encoding == AudioFormat.ENCODING_PCM_FLOAT) { "Unsupported decoded PCM encoding." }
@@ -128,7 +153,8 @@ class AudioDecode(messenger: BinaryMessenger) {
                             if (sourceCount >= maxSeconds.toLong() * rate) { truncated = true; outputDone = true; break }
                             var sum = 0f
                             for (c in 0 until channels) sum += if (floatPcm) buf.float else buf.short / 32768f
-                            val current = sum / channels
+                            val mono = sum / channels
+                            val current = lowPass?.process(mono) ?: mono
                             while (sourceCount > 0 && outCount.toDouble() * rate / target < sourceCount) {
                                 val fraction = (outCount.toDouble() * rate / target - (sourceCount - 1)).toFloat()
                                 write(previous + (current - previous) * fraction.coerceIn(0f, 1f))

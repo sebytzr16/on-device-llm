@@ -139,9 +139,12 @@ class LlamaEmbedder implements TextEmbedder {
     bool Function() cancelled,
   ) async {
     final vectors = <Float32List>[];
-    for (final t in texts) {
+    // Bound each native call so interactive work can preempt indexing
+    // between batches (owner, 2026-11-01).
+    for (var start = 0; start < texts.length; start += 8) {
+      final batch = texts.skip(start).take(8);
       final next = await _background(
-        () => _embed(['${model.documentPrefix}$t']),
+        () => _embed([for (final t in batch) '${model.documentPrefix}$t']),
         cancelled,
       );
       if (next == null) return null;

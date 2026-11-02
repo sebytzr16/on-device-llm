@@ -13,6 +13,7 @@ import '../providers/settings_provider.dart';
 import '../widgets/settings_widgets.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/design/app_dialog.dart';
+import '../../../../core/platform/form_factor.dart';
 
 /// Settings > Remote server > one connection: provider, name, URL, API key,
 /// model, request caps and extra headers. Typed fields are saved with the
@@ -30,6 +31,8 @@ class RemoteProfilePage extends ConsumerStatefulWidget {
 class _RemoteProfilePageState extends ConsumerState<RemoteProfilePage> {
   late final TextEditingController _name, _url, _key, _model, _headers;
   late final TextEditingController _perMinute, _perDay;
+  late String _limitModel;
+  final _limitDrafts = <String, RemoteLimit>{};
   List<RemoteModel>? _models;
   RemoteServerReport? _report;
   String? _probe;
@@ -52,6 +55,7 @@ class _RemoteProfilePageState extends ConsumerState<RemoteProfilePage> {
       text: ref.read(settingsProvider).remoteApiKeys[p.id] ?? '',
     );
     _model = TextEditingController(text: p.model);
+    _limitModel = p.model.trim();
     _headers = TextEditingController(
       text: RemoteProfile.formatHeaders(p.headers),
     );
@@ -61,18 +65,31 @@ class _RemoteProfilePageState extends ConsumerState<RemoteProfilePage> {
     _perDay = TextEditingController(
       text: p.limit.perDay > 0 ? '${p.limit.perDay}' : '',
     );
-    for (final c in [
-      _name,
-      _url,
-      _key,
-      _model,
-      _headers,
-      _perMinute,
-      _perDay,
-    ]) {
+    for (final c in [_name, _url, _key, _headers, _perMinute, _perDay]) {
       c.addListener(_onEdit);
     }
+    _model.addListener(_onModelEdit);
     _refreshCounts();
+  }
+
+  RemoteLimit get _typedLimit => RemoteLimit(
+    perMinute: int.tryParse(_perMinute.text.trim()) ?? 0,
+    perDay: int.tryParse(_perDay.text.trim()) ?? 0,
+  );
+
+  void _onModelEdit() {
+    final model = _model.text.trim();
+    if (model != _limitModel) {
+      _limitDrafts[_limitModel] = _typedLimit;
+      _limitModel = model;
+      final limit =
+          _limitDrafts[model] ??
+          _profile?.limitFor(model) ??
+          const RemoteLimit();
+      _perMinute.text = limit.perMinute > 0 ? '${limit.perMinute}' : '';
+      _perDay.text = limit.perDay > 0 ? '${limit.perDay}' : '';
+    }
+    _onEdit();
   }
 
   bool _lastDirty = false;
@@ -89,6 +106,11 @@ class _RemoteProfilePageState extends ConsumerState<RemoteProfilePage> {
     return _name.text.trim() != p.name ||
         _url.text.trim() != p.baseUrl ||
         _model.text.trim() != p.model ||
+        _limitDrafts.entries.any(
+          (e) =>
+              e.value.perMinute != p.limitFor(e.key).perMinute ||
+              e.value.perDay != p.limitFor(e.key).perDay,
+        ) ||
         RemoteProfile.formatHeaders(
               RemoteProfile.parseHeaders(_headers.text),
             ) !=
@@ -144,12 +166,10 @@ class _RemoteProfilePageState extends ConsumerState<RemoteProfilePage> {
       model: _model.text.trim(),
       headers: RemoteProfile.parseHeaders(_headers.text),
     );
-    next = next.withLimit(
-      RemoteLimit(
-        perMinute: int.tryParse(_perMinute.text.trim()) ?? 0,
-        perDay: int.tryParse(_perDay.text.trim()) ?? 0,
-      ),
-    );
+    _limitDrafts[_limitModel] = _typedLimit;
+    for (final e in _limitDrafts.entries) {
+      next = next.withLimit(e.value, model: e.key);
+    }
     await n.update(
       s.copyWith(
         remoteProfiles: [
@@ -236,7 +256,9 @@ class _RemoteProfilePageState extends ConsumerState<RemoteProfilePage> {
     final ok = await confirmAction(
       context,
       title: context.l10n.uiRemoteProfilePageDeleteConnection,
-      message: context.l10n.remoteDeleteHint(p.label),
+      message: (context.isDesktop
+          ? context.l10n.remoteDeleteHintPc
+          : context.l10n.remoteDeleteHint)(p.label),
       confirmLabel: context.l10n.uiRemoteProfilePageDelete,
       destructive: true,
       confirmKey: const Key('remote-delete-confirm'),
@@ -404,10 +426,14 @@ class _RemoteProfilePageState extends ConsumerState<RemoteProfilePage> {
                                 ? context.l10n.remoteApiKey
                                 : context.l10n.remoteApiKeyOptional,
                             helperText: provider.requiresKey
-                                ? context.l10n.remoteKeyHostedHelp(
+                                ? (context.isDesktop
+                                      ? context.l10n.remoteKeyHostedHelpPc
+                                      : context.l10n.remoteKeyHostedHelp)(
                                     provider.name,
                                   )
-                                : context.l10n.remoteKeySelfHelp,
+                                : (context.isDesktop
+                                      ? context.l10n.remoteKeySelfHelpPc
+                                      : context.l10n.remoteKeySelfHelp),
                             helperMaxLines: 2,
                             suffixIcon: Row(
                               mainAxisSize: MainAxisSize.min,
