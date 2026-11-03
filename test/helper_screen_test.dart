@@ -280,7 +280,14 @@ void main() {
         ),
       ),
     );
-    // Windows shows one small card per agent (owner, 2026-11-02).
+    // The column folds itself once the agent finishes, which on a slow
+    // machine can happen before this point.
+    if (!container.read(helperJobsProvider).expanded) {
+      await tester.tap(find.byKey(const Key('helper-live-toggle')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+    // Windows shows one small card per agent.
     expect(
       find.byKey(
         Key('agent-card-${container.read(helperJobsProvider).jobs.single.id}'),
@@ -288,7 +295,7 @@ void main() {
       findsOneWidget,
     );
     // A thin column left of the conversation: it never covers the messages
-    // or the composer, and folds to one row per helper (owner, 2026-11-02).
+    // or the composer, and folds to one row per helper.
     final column = tester.getRect(find.byKey(const Key('helper-side-column')));
     expect(
       column.right,

@@ -43,7 +43,9 @@ class _SpringEntranceState extends State<SpringEntrance>
   /// Decided once: rebuilding with a different [SpringEntrance.animate]
   /// must not cut an entrance short or restart one.
   late final bool _animates = widget.animate;
-  late final AnimationController _t = AnimationController.unbounded(
+  // Created on first use only, so dispose() never creates a ticker.
+  AnimationController? _controller;
+  AnimationController get _t => _controller ??= AnimationController.unbounded(
     vsync: this,
     value: _animates ? 0 : 1,
   );
@@ -79,7 +81,7 @@ class _SpringEntranceState extends State<SpringEntrance>
 
   @override
   void dispose() {
-    _t.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
