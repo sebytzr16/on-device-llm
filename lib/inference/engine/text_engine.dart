@@ -1,3 +1,5 @@
+import 'package:uuid/uuid.dart';
+
 import '../../features/settings/domain/entities/inference_settings.dart';
 import '../../features/tools/domain/tool_spec.dart';
 
@@ -40,8 +42,17 @@ abstract class TextEngine {
   static const mediaMarker = '<__media__>';
 
   /// Tool calls a turn ended with, read from its [metrics].
-  static List<ToolCall> toolCallsOf(Map<String, dynamic> metrics) => [
-    for (final c in (metrics['toolCalls'] as List?) ?? const [])
-      if (c is Map) ToolCall.fromJson(Map<String, dynamic>.from(c)),
-  ];
+  /// Some model templates emit no call ID. Assign one before the call is
+  /// exposed to clients or executed, so its result can reference the same ID.
+  static List<ToolCall> toolCallsOf(Map<String, dynamic> metrics) {
+    return [
+      for (final c in (metrics['toolCalls'] as List?) ?? const [])
+        if (c is Map)
+          ToolCall.fromJson({
+            ...Map<String, dynamic>.from(c),
+            if (c['id'] == null || (c['id'] as String).trim().isEmpty)
+              'id': 'call_${const Uuid().v4().replaceAll('-', '')}',
+          }),
+    ];
+  }
 }

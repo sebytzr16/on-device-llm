@@ -563,6 +563,74 @@ void main() {
     expect(engine.lastMessages[1]['tool_call_id'], 'old');
   });
 
+  for (final streaming in [false, true]) {
+    test(
+      'missing native tool IDs survive round trip (stream=$streaming)',
+      () async {
+        final engine = server.engine as FakeEngine;
+        engine.reportedMetrics = {
+          'toolCalls': [
+            {
+              'id': '',
+              'name': 'ask_helper',
+              'arguments': '{"task":"research"}',
+            },
+            {'name': 'ask_helper', 'arguments': '{"task":"review"}'},
+            {'id': 'existing_id', 'name': 'lookup', 'arguments': '{}'},
+          ],
+        };
+        final response = await request(
+          'POST',
+          DeviceModelServer.completionsPath,
+          auth: token,
+          body: jsonEncode({
+            'stream': streaming,
+            'messages': [
+              {'role': 'user', 'content': 'launch helpers'},
+            ],
+          }),
+        );
+        expect(response.statusCode, 200);
+        final text = await utf8.decoder.bind(response).join();
+        final List calls;
+        if (streaming) {
+          calls = [
+            for (final line in const LineSplitter().convert(text))
+              if (line.startsWith('data: {'))
+                ...?(jsonDecode(
+                      line.substring(6),
+                    )['choices'][0]['delta']['tool_calls']
+                    as List?),
+          ];
+        } else {
+          calls =
+              jsonDecode(text)['choices'][0]['message']['tool_calls'] as List;
+        }
+        expect(calls, hasLength(3));
+        final ids = calls.map((c) => c['id'] as String).toList();
+        expect(ids.every((id) => id.isNotEmpty), isTrue);
+        expect(ids.toSet(), hasLength(3));
+        expect(ids.last, 'existing_id');
+        engine.reportedMetrics = {};
+        final followup = await request(
+          'POST',
+          DeviceModelServer.completionsPath,
+          auth: token,
+          body: jsonEncode({
+            'messages': [
+              {'role': 'assistant', 'content': '', 'tool_calls': calls},
+              for (final id in ids)
+                {'role': 'tool', 'tool_call_id': id, 'content': 'done'},
+            ],
+          }),
+        );
+        expect(followup.statusCode, 200);
+        await followup.drain<void>();
+        expect(engine.lastMessages.skip(1).map((m) => m['tool_call_id']), ids);
+      },
+    );
+  }
+
   test('streams OpenAI tool call deltas', () async {
     (server.engine as FakeEngine).reportedMetrics = {
       'toolCalls': [

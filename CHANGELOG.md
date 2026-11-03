@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Generate the Windows engine manifest in minimal PowerShell environments
+  using .NET SHA-256 without requiring the Get-FileHash module.
+- Fix remote helper-agent turns failing with `Tool messages require tool_call_id`
+  when a model emits a tool call without an ID. Missing IDs are assigned before
+  calls are sent to clients or executed; existing IDs are preserved.
+
 ## 1.2.0 (2026-11-02)
 
 Adds local agents: the chat model can work as a team.
