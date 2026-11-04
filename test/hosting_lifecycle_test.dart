@@ -84,7 +84,11 @@ class _ProfileModels extends TestModels {
   InferenceSettings servedSettings(ModelInfo info) =>
       const InferenceSettings(temperature: 0.17);
   @override
-  Future<void> loadServed(ModelInfo info, LlamaEngine engine) async {}
+  Future<void> loadServed(
+    ModelInfo info,
+    LlamaEngine engine, {
+    bool vision = false,
+  }) async {}
 }
 
 class _ReadyHost extends DeviceHostingNotifier {

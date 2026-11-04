@@ -8,6 +8,7 @@ import '../tools/domain/tool_spec.dart';
 import '../settings/domain/entities/inference_settings.dart';
 import 'pairing_code.dart';
 import 'request_queue.dart';
+import 'workspace_api.dart';
 
 /// One request the device server answered (or refused), for the live
 /// dashboard on the hosting page.
@@ -139,7 +140,9 @@ class DeviceModelServer {
   /// Answers requests for models other than [modelId]; null serves only it.
   final ServedModelRouter? router;
   final ServedVectorEngine? vectors;
+  final WorkspaceApi? workspace;
   final bool Function(String model)? hasProjector;
+  final Future<void> Function(String model, TextEngine engine)? prepareMedia;
   final void Function(String? client)? onSessionChange;
 
   /// Called once per request with what happened to it.
@@ -164,7 +167,9 @@ class DeviceModelServer {
     this.isAvailable,
     this.router,
     this.vectors,
+    this.workspace,
     this.hasProjector,
+    this.prepareMedia,
     this.onSessionChange,
     this.onServed,
     this.onProgress,
@@ -227,6 +232,7 @@ class DeviceModelServer {
     final server = _server;
     _server = null;
     _queue.close();
+    await workspace?.dispose();
     await server?.close(force: true);
     if (_busy) engine.cancel();
     router?.cancelAll();
@@ -707,6 +713,12 @@ class DeviceModelServer {
     );
   }
 
+  static List<Map<String, Object>> decodeWorkspaceMessages(
+    Object? source, {
+    required bool vision,
+    required List<File> images,
+  }) => _messages(source, vision: vision, images: images);
+
   static List<Map<String, Object>> _messages(
     Object? source, {
     required bool vision,
@@ -932,6 +944,11 @@ class DeviceModelServer {
         refuse(HttpStatus.unauthorized, 'A valid access token is required.');
         return;
       }
+      if (workspace != null &&
+          request.uri.path.startsWith('${WorkspaceApi.root}/')) {
+        await workspace!.handle(request);
+        return;
+      }
       if (request.method == 'GET' && request.uri.path == modelsPath) {
         _json(response, HttpStatus.ok, {
           'object': 'list',
@@ -1071,6 +1088,9 @@ class DeviceModelServer {
               vision: hasProjector?.call(model) ?? false,
               images: images,
             );
+      if (images.isNotEmpty && engine.metrics['supportsVision'] != true) {
+        await prepareMedia?.call(model, engine);
+      }
       if (body['stream'] != null && body['stream'] is! bool) {
         throw const FormatException('stream must be a boolean.');
       }

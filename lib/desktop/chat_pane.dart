@@ -116,12 +116,23 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                   ],
                 ),
               ),
-              if (ref.watch(agentWebQuestionsProvider)[state.chatId]
-                  case final question? when !question.answer.isCompleted)
+              for (final question
+                  in ref
+                      .watch(agentWebQuestionsProvider)
+                      .entries
+                      .where(
+                        (q) =>
+                            (q.key == state.chatId ||
+                                q.key.startsWith(
+                                  '${state.chatId}:workspace:',
+                                )) &&
+                            !q.value.answer.isCompleted,
+                      ))
                 AgentWebApprovalCard(
+                  description: question.value.description,
                   onAnswer: (allow) => ref
                       .read(agentWebApprovalProvider)
-                      .answer(state.chatId!, allow),
+                      .answer(question.key, allow),
                 ),
               Expanded(
                 child: Row(

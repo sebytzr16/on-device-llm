@@ -148,6 +148,12 @@ try {
   foreach ($runtime in $vcRuntime) {
     Copy-Item -LiteralPath $runtime -Destination $bundleDir -Force
   }
+  # Release uses data/app.so. A kernel left by an earlier debug build must
+  # not travel with the AOT application (or inflate the download).
+  $debugKernel = Join-Path $bundleDir 'data/flutter_assets/kernel_blob.bin'
+  if (Test-Path -LiteralPath $debugKernel -PathType Leaf) {
+    Remove-Item -LiteralPath $debugKernel -Force
+  }
   Copy-Item -LiteralPath 'docs/windows-testers.md' -Destination (Join-Path $bundleDir 'README.md')
   foreach ($script in @('install.ps1', 'install.cmd')) {
     Copy-Item -LiteralPath (Join-Path 'windows/installer' $script) -Destination $bundleDir

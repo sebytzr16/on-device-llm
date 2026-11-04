@@ -4,6 +4,9 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../settings/presentation/providers/effective_settings_provider.dart';
+import '../../../inference/remote/workspace_client.dart';
 
 import '../../../core/design/app_design.dart';
 import '../../../core/design/app_sheet.dart';
@@ -198,6 +201,22 @@ Future<List<Attachment>> importAttachments(
       AttachmentStore.import,
 }) async {
   final localeCode = context.l10n.localeName;
+  var deferProcessing = false;
+  if (importFile == AttachmentStore.import) {
+    final settings = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(effectiveSettingsProvider).effective;
+    if (settings.usesRemote) {
+      final client = WorkspaceClient();
+      try {
+        deferProcessing = await client.supported(settings);
+      } finally {
+        client.dispose();
+      }
+      if (!context.mounted) return const [];
+    }
+  }
   final importLocalized = importFile == AttachmentStore.import
       ? ({
           required String name,
@@ -210,6 +229,7 @@ Future<List<Attachment>> importAttachments(
           sourcePath: sourcePath,
           bytes: bytes,
           localeCode: localeCode,
+          deferProcessing: deferProcessing,
           cancelled: cancelled,
           progress: progress,
         )

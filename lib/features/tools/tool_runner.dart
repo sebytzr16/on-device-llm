@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io' show HttpException;
 
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:logging/logging.dart';
 
 import '../../data/network/web_search/duckduckgo_scraper.dart';
@@ -946,7 +945,6 @@ class ToolRunner {
 
   /// One key per source: [_exact], so `/Foo` and `/foo` stay two sources
   /// and their excerpts are not swapped (audit P2-49).
-  @visibleForTesting
   static String sourceKey(String url) {
     final exact = _exact(url);
     return exact.isEmpty ? url.trim() : exact;

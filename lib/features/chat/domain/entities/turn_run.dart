@@ -108,6 +108,9 @@ class TurnRun {
     'draftSpeedup',
     'adapters',
     'warning',
+    'execution',
+    'serverToolCalls',
+    'helperCalls',
   };
 
   factory TurnRun.capture({

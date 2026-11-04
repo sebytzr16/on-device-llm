@@ -69,6 +69,7 @@ import '../../../tools/domain/tool_markup.dart';
 import '../../../tools/domain/tool_spec.dart';
 import '../../../tools/tool_runner.dart';
 import '../../../helper/helper_runner.dart';
+import '../../../../inference/remote/workspace_client.dart';
 import '../../../helper/helper_request.dart';
 import '../../../helper/helper_jobs.dart';
 import '../../../helper/helper_web_approval.dart';
@@ -104,6 +105,7 @@ part 'chat_memory.dart';
 part 'chat_export.dart';
 part 'chat_turn.dart';
 part 'chat_prime.dart';
+part 'chat_workspace.dart';
 
 final _turnLog = Logger('chat');
 
@@ -242,7 +244,7 @@ abstract class _ChatBase extends Notifier<ChatState> {
 }
 
 class ChatNotifier extends _ChatBase
-    with _ChatWeb, _ChatBranches, _ChatMemory, _ChatExport {
+    with _ChatWeb, _ChatBranches, _ChatMemory, _ChatExport, _ChatWorkspace {
   int _primeEpoch = 0, _primedLoad = -1;
 
   /// Called only for completed loads on the chat's local engine.
@@ -722,6 +724,17 @@ class ChatNotifier extends _ChatBase
     try {
       final asked = await _prepareTurn(t);
       if (asked == null) return t.accepted;
+      if (t.settings!.usesRemote && !t.localOnly) {
+        final workspace = WorkspaceClient();
+        try {
+          if (await workspace.supported(t.settings!)) {
+            await _runServerWorkspace(t, asked, workspace);
+            return t.accepted;
+          }
+        } finally {
+          workspace.dispose();
+        }
+      }
       final planned = await _planRetrieval(t, asked.user);
       if (planned == null) return t.accepted;
       final found = await _lookUp(t, asked, planned);
@@ -1614,6 +1627,7 @@ class ChatNotifier extends _ChatBase
   /// CHAT-01: the assistant row exists before the first token, so a kill
   /// mid-answer leaves an interrupted message, not a missing one. Then the
   /// timers that save and paint the answer as it streams.
+  @override
   Future<void> _startAnswer(_Turn t, _Prompt prompt) async {
     final db = t.db;
     final status = t.compareWith == null
@@ -1707,7 +1721,9 @@ class ChatNotifier extends _ChatBase
         }
         final answerText = answer.toString();
         // A call being written says so before its arguments are complete.
-        final writing = tools.isEmpty ? null : toolWriting.writing(answerText);
+        final writing = tools.isEmpty && !t.serverWorkspace
+            ? null
+            : toolWriting.writing(answerText);
         final notice = writing != null && writing != preparing
             ? (writing.isEmpty
                   ? _t.noticePreparingToolCall
@@ -1717,7 +1733,7 @@ class ChatNotifier extends _ChatBase
         state = state.copyWith(
           notice: notice ?? state.notice,
           // A tool call being written is not part of the answer.
-          partialAnswer: tools.isEmpty
+          partialAnswer: tools.isEmpty && !t.serverWorkspace
               ? answerText
               : ToolMarkup.visible(answerText),
           hasReasoningTokens: t.hasReasoningTokens,
@@ -2534,6 +2550,7 @@ class ChatNotifier extends _ChatBase
   /// figures, its sentences checked against the pages, and a changing
   /// figure dated by its newest source.
   Future<void> _checkAnswer(_Turn t) async {
+    if (t.serverWorkspace) return;
     if (t.failure != null || _cancelled || t.echoStopped) return;
     final sources = t.sources;
     if (sources.isNotEmpty &&
@@ -2709,7 +2726,9 @@ class ChatNotifier extends _ChatBase
                   },
                   sources: t.sources.length,
                   origins: t.resolved?.origin ?? const {},
-                  toolTrace: runner == null
+                  toolTrace: t.serverWorkspace
+                      ? t.serverToolTrace
+                      : runner == null
                       ? const []
                       : [for (final r in runner.trace) r.toJson()],
                 ).encode()
@@ -3063,6 +3082,7 @@ class ChatNotifier extends _ChatBase
   /// (Goals). Also the memory notes that follow it, [notes] for an ordinary
   /// turn and [researchNotes] for one that researches (pinned notes and how
   /// to answer only), and every note, for learning after the answer.
+  @override
   Future<
     ({String system, String notes, String researchNotes, List<String> facts})
   >

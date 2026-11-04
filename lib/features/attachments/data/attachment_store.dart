@@ -55,6 +55,7 @@ class AttachmentStore {
     String? sourcePath,
     Uint8List? bytes,
     String localeCode = '',
+    bool deferProcessing = false,
     bool Function()? cancelled,
     void Function(int page, int total)? progress,
   }) async {
@@ -70,6 +71,22 @@ class AttachmentStore {
     }
     final id = const Uuid().v4();
     final dir = await directory();
+    if (deferProcessing) {
+      final file = File(
+        p.join(dir.path, '$id${p.extension(name).toLowerCase()}'),
+      );
+      await file.writeAsBytes(data, flush: true);
+      return Attachment(
+        id: id,
+        kind: isImageName(name) || _looksLikeImage(data)
+            ? AttachmentKind.image
+            : AttachmentKind.document,
+        name: name,
+        mime: _mimeFor(name),
+        path: file.path,
+        sizeBytes: data.length,
+      );
+    }
     if (isImageName(name) || _looksLikeImage(data)) {
       final png = await normaliseImage(data, localeCode: localeCode);
       final file = File(p.join(dir.path, '$id.png'));

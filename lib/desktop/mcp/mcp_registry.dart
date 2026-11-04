@@ -306,6 +306,7 @@ class McpRegistry extends ChangeNotifier {
     required String Function(Object) explain,
     required String unsupportedContent,
     bool Function()? permitted,
+    McpConfirmation? confirmation,
   }) async {
     final watch = Stopwatch()..start();
     try {
@@ -324,7 +325,7 @@ class McpRegistry extends ChangeNotifier {
       final client = server.client;
       if (!_allowed.contains(call.name)) {
         final choice =
-            await (confirm?.call(server.config.name, call) ??
+            await ((confirmation ?? confirm)?.call(server.config.name, call) ??
                     Future.value(McpConsent.deny))
                 .timeout(
                   const Duration(minutes: 5),

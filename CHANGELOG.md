@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.3.0 (2026-11-03)
+
+### Remote server workspace (Android and Windows)
+
+- Connecting to an updated OnDevice LLM server moves chat model rounds,
+  agents, web searches, server tools, calculator and attachment processing
+  to the host. The phone can use this mode without a local model installed.
+- Live server activity, agent replies, timings, sources and tool approvals
+  appear on the phone. The answer retains the server tool trace.
+- Phone actions are prepared on the server and remain cards you confirm
+  on the phone; nothing is launched or scheduled without your tap.
+- Selected files upload as raw bytes for host-side document extraction,
+  OCR, passage selection and photo analysis, respecting the connection's
+  document and vision sharing controls.
+- Server jobs keep working across connection loss. Rejoining replays ordered
+  events without repeating the work; Stop explicitly cancels the server job.
+  Jobs remain available while hosting stays running; restarting the server
+  ends them. Uploads and event retention have explicit resource limits.
+- Vision remains lazy: text-only loads do not load the projector. The first
+  photo prepares it, and later photo requests reuse the loaded projector.
+- Existing OpenAI-compatible and hosted providers retain their inference API
+  behavior; full remote execution requires an updated OnDevice LLM host.
+
+### Fixes
+
+- Generate the Windows engine manifest in minimal PowerShell environments
+  using .NET SHA-256 without requiring the Get-FileHash module.
+- Fix remote helper-agent turns failing with `Tool messages require tool_call_id`
+  when a model emits a tool call without an ID. Missing IDs are assigned before
+  calls are sent to clients or executed; existing IDs are preserved.
+
 ## 1.2.0 (2026-11-02)
 
 Adds local agents: the chat model can work as a team.

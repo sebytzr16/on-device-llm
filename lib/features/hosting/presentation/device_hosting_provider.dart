@@ -24,6 +24,7 @@ import '../host_discovery.dart';
 import '../model_pool.dart';
 import '../pairing_code.dart';
 import 'pool_options_provider.dart';
+import 'hosted_workspace.dart';
 
 /// When the server stops itself to protect the phone. Off (null) by default
 /// for the battery; the thermal guard is always on at "severe".
@@ -287,6 +288,14 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
         modelId: model.id,
         fallbackTemplate: model.family.fallbackTemplate,
         accessToken: token,
+        workspace: hostedWorkspace(
+          ref: ref,
+          port: () => _server!.port!,
+          token: token,
+          primaryModel: model.id,
+          hostSettings: () => manager.servedSettings(model),
+          vision: (id) => ref.read(modelManagerProvider).vision.contains(id),
+        ),
         pairCode: pairCode,
         onPairingUnavailable: (locked) {
           if (!_alive || lifecycle != _lifecycle) return;
@@ -307,6 +316,18 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
         ),
         hasProjector: (id) =>
             ref.read(modelManagerProvider).vision.contains(id),
+        prepareMedia: (id, target) async {
+          if (target is! LlamaEngine) return;
+          final mediaModel = ref
+              .read(modelManagerProvider)
+              .catalog
+              .where((candidate) => candidate.id == id)
+              .firstOrNull;
+          if (mediaModel == null) {
+            throw StateError('The server model is no longer installed.');
+          }
+          await manager.loadServed(mediaModel, target, vision: true);
+        },
         isAvailable: () {
           final e = _server?.engine ?? engine;
           // Sharing the chat's runtime: only while it holds this model

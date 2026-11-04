@@ -4501,5 +4501,13 @@
     }
   },
   "toolHelperSameAsChat": "Same as chat model",
-  "toolHelperSameAsChatHint": "Shares the chat model on its GPU"
+  "toolHelperSameAsChatHint": "Shares the chat model on its GPU",
+  "workspaceWorking": "Working on the server",
+  "workspaceQueued": "Waiting for the server",
+  "workspaceReconnecting": "Reconnecting — the server is still working",
+  "workspaceUploading": "Uploading {file} to the server",
+  "workspaceTool": "Server: {tool}",
+  "workspaceReading": "Server: reading {file}{progress}",
+  "workspaceServer": "server",
+  "workspaceApprovalTitle": "Server tool approval"
 }

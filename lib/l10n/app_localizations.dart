@@ -13696,6 +13696,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Shares the chat model on its GPU'**
   String get toolHelperSameAsChatHint;
+
+  /// No description provided for @workspaceWorking.
+  ///
+  /// In en, this message translates to:
+  /// **'Working on the server'**
+  String get workspaceWorking;
+
+  /// No description provided for @workspaceQueued.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for the server'**
+  String get workspaceQueued;
+
+  /// No description provided for @workspaceReconnecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconnecting — the server is still working'**
+  String get workspaceReconnecting;
+
+  /// No description provided for @workspaceUploading.
+  ///
+  /// In en, this message translates to:
+  /// **'Uploading {file} to the server'**
+  String workspaceUploading(Object file);
+
+  /// No description provided for @workspaceTool.
+  ///
+  /// In en, this message translates to:
+  /// **'Server: {tool}'**
+  String workspaceTool(Object tool);
+
+  /// No description provided for @workspaceReading.
+  ///
+  /// In en, this message translates to:
+  /// **'Server: reading {file}{progress}'**
+  String workspaceReading(Object file, Object progress);
+
+  /// No description provided for @workspaceServer.
+  ///
+  /// In en, this message translates to:
+  /// **'server'**
+  String get workspaceServer;
+
+  /// No description provided for @workspaceApprovalTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Server tool approval'**
+  String get workspaceApprovalTitle;
 }
 
 class _AppLocalizationsDelegate

@@ -8045,4 +8045,35 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolHelperSameAsChatHint => 'Shares the chat model on its GPU';
+
+  @override
+  String get workspaceWorking => 'Working on the server';
+
+  @override
+  String get workspaceQueued => 'Waiting for the server';
+
+  @override
+  String get workspaceReconnecting =>
+      'Reconnecting — the server is still working';
+
+  @override
+  String workspaceUploading(Object file) {
+    return 'Uploading $file to the server';
+  }
+
+  @override
+  String workspaceTool(Object tool) {
+    return 'Server: $tool';
+  }
+
+  @override
+  String workspaceReading(Object file, Object progress) {
+    return 'Server: reading $file$progress';
+  }
+
+  @override
+  String get workspaceServer => 'server';
+
+  @override
+  String get workspaceApprovalTitle => 'Server tool approval';
 }

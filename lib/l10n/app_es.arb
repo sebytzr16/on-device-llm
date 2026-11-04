@@ -2781,5 +2781,13 @@
     }
   },
   "toolHelperSameAsChat": "Igual que el modelo del chat",
-  "toolHelperSameAsChatHint": "Comparte el modelo del chat en su GPU"
+  "toolHelperSameAsChatHint": "Comparte el modelo del chat en su GPU",
+  "workspaceWorking": "Procesando en el servidor",
+  "workspaceQueued": "Esperando al servidor",
+  "workspaceReconnecting": "Reconectando — el servidor sigue trabajando",
+  "workspaceUploading": "Enviando {file} al servidor",
+  "workspaceTool": "Servidor: {tool}",
+  "workspaceReading": "Servidor: leyendo {file}{progress}",
+  "workspaceServer": "servidor",
+  "workspaceApprovalTitle": "Autorización de herramienta del servidor"
 }

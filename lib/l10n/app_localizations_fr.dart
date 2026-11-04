@@ -8133,4 +8133,35 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get toolHelperSameAsChatHint =>
       'Partage le modèle de la discussion sur son GPU';
+
+  @override
+  String get workspaceWorking => 'Traitement sur le serveur';
+
+  @override
+  String get workspaceQueued => 'En attente du serveur';
+
+  @override
+  String get workspaceReconnecting =>
+      'Reconnexion — le serveur continue de travailler';
+
+  @override
+  String workspaceUploading(Object file) {
+    return 'Envoi de $file au serveur';
+  }
+
+  @override
+  String workspaceTool(Object tool) {
+    return 'Serveur : $tool';
+  }
+
+  @override
+  String workspaceReading(Object file, Object progress) {
+    return 'Serveur : lecture de $file$progress';
+  }
+
+  @override
+  String get workspaceServer => 'serveur';
+
+  @override
+  String get workspaceApprovalTitle => 'Autorisation d’un outil du serveur';
 }

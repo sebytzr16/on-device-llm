@@ -901,7 +901,11 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
   /// Loads [info] on the local server's own [engine] with its model
   /// profile (no chat or project layers: the server has no chat). The
   /// manager's own state stays about the chat's model.
-  Future<void> loadServed(ModelInfo info, LlamaEngine engine) async {
+  Future<void> loadServed(
+    ModelInfo info,
+    LlamaEngine engine, {
+    bool vision = false,
+  }) async {
     if (info.id == diffusionGemmaModelId) {
       throw UnsupportedError(
         'DiffusionGemma runs in desktop chat only; local server hosting is unavailable.',
@@ -913,8 +917,9 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       );
     }
     try {
-      // Requests to the server may carry photos at any time.
-      await _loadOn(engine, info, servedSettings(info), vision: true);
+      // A text-only server load leaves the projector out. The server's first
+      // photo request calls this with vision:true under its model admission.
+      await _loadOn(engine, info, servedSettings(info), vision: vision);
     } catch (e, st) {
       final memory = _memoryError(e);
       if (memory != null) Error.throwWithStackTrace(memory, st);

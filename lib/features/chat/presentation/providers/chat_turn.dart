@@ -64,6 +64,8 @@ class _Turn {
 
   /// The remote model plans this turn's research itself.
   var remoteBrain = false;
+  var serverWorkspace = false;
+  final serverToolTrace = <Map<String, dynamic>>[];
 
   /// The Tools switch as the user set it, before remote research turned
   /// the web tools on.

@@ -46,7 +46,11 @@ class _Manager extends ModelManagerNotifier {
   }
 
   @override
-  Future<void> loadServed(ModelInfo info, LlamaEngine engine) async {
+  Future<void> loadServed(
+    ModelInfo info,
+    LlamaEngine engine, {
+    bool vision = false,
+  }) async {
     (engine as _Engine).loaded = true;
   }
 
@@ -61,7 +65,11 @@ class _ChatManager extends _Manager {
 
 class _MemoryManager extends _Manager {
   @override
-  Future<void> loadServed(ModelInfo info, LlamaEngine engine) async {
+  Future<void> loadServed(
+    ModelInfo info,
+    LlamaEngine engine, {
+    bool vision = false,
+  }) async {
     throw const NotEnoughMemoryException('This model needs more memory.');
   }
 }

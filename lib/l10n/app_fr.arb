@@ -2431,5 +2431,13 @@
     }
   },
   "toolHelperSameAsChat": "Même modèle que la discussion",
-  "toolHelperSameAsChatHint": "Partage le modèle de la discussion sur son GPU"
+  "toolHelperSameAsChatHint": "Partage le modèle de la discussion sur son GPU",
+  "workspaceWorking": "Traitement sur le serveur",
+  "workspaceQueued": "En attente du serveur",
+  "workspaceReconnecting": "Reconnexion — le serveur continue de travailler",
+  "workspaceUploading": "Envoi de {file} au serveur",
+  "workspaceTool": "Serveur : {tool}",
+  "workspaceReading": "Serveur : lecture de {file}{progress}",
+  "workspaceServer": "serveur",
+  "workspaceApprovalTitle": "Autorisation d’un outil du serveur"
 }

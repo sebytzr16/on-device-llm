@@ -138,7 +138,7 @@ turn's timing.
 | Model sizes | 0.8B to 4B parameters | Up to 35B mixture-of-experts models (experts kept in system RAM) |
 | Agents | Run on the phone's CPU next to the chat model, shown in a strip above the composer | Up to 4 batched on one GPU copy of the agent model, each with a live card |
 | Extras | Voice Conversation screen, phone actions, Goals | Image and video generation, model comparison, OpenAI- and Anthropic-compatible local server, one-click tuning |
-| Works together | Uses the PC as a remote model over your Wi-Fi | Serves its model to your phone with a pairing code |
+| Works together | Uses the PC for models, agents, tools and attachment analysis, with live phone activity | Runs remote work for the phone over Wi-Fi or a private VPN |
 
 The Windows app is the same Flutter code base as the Android app, with a
 desktop layout (sidebar, keyboard shortcuts, tray icon) and a native engine
@@ -262,9 +262,23 @@ your own computer and use it from your phone too.
 - Share text, links, photos and files to the app from any Android app.
 
 **Remote connections (both)**
+- With OnDevice LLM **1.3.0 or newer on both devices**, the server runs
+  chat inference, agents, searches, its tools, document scanning and photo
+  analysis. The phone uploads selected files and shows progress, agent
+  replies, tool approvals and sources. No phone model is required.
+- A dropped connection leaves the task running on the server. Reconnecting
+  resumes the same activity stream; Stop cancels the server work. Keep hosting
+  running: jobs are retained in memory and do not survive a server restart.
+- The vision projector loads only when a photo is sent. Text-only hosting
+  does not load it. Documents and photos follow the connection's sharing
+  switches; API keys stay in secure storage and normally need entering once.
+- Over Meshnet or another private VPN, use the computer's VPN address and
+  the saved bearer token. The address displayed for home Wi-Fi may differ.
 - Use a model on your own computer (OnDevice LLM for Windows, LM Studio,
   Ollama, llama-server and similar) or a hosted API with your own key
   (OpenAI-compatible services, Anthropic, Google Gemini).
+  These other providers retain their existing inference behavior; they do
+  not gain OnDevice LLM's server workspace endpoints.
 
 **Everywhere**
 - English, French and Spanish.

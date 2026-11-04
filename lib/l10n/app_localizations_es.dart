@@ -8134,4 +8134,36 @@ class AppLocalizationsEs extends AppLocalizations {
   @override
   String get toolHelperSameAsChatHint =>
       'Comparte el modelo del chat en su GPU';
+
+  @override
+  String get workspaceWorking => 'Procesando en el servidor';
+
+  @override
+  String get workspaceQueued => 'Esperando al servidor';
+
+  @override
+  String get workspaceReconnecting =>
+      'Reconectando — el servidor sigue trabajando';
+
+  @override
+  String workspaceUploading(Object file) {
+    return 'Enviando $file al servidor';
+  }
+
+  @override
+  String workspaceTool(Object tool) {
+    return 'Servidor: $tool';
+  }
+
+  @override
+  String workspaceReading(Object file, Object progress) {
+    return 'Servidor: leyendo $file$progress';
+  }
+
+  @override
+  String get workspaceServer => 'servidor';
+
+  @override
+  String get workspaceApprovalTitle =>
+      'Autorización de herramienta del servidor';
 }

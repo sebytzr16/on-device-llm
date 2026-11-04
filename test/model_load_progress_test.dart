@@ -232,6 +232,34 @@ void main() {
     expect(engine.projector, isNull);
   });
 
+  test(
+    'server text loads leave vision out until a photo requests it',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('server-lazy-vision-');
+      final original = PathProviderPlatform.instance;
+      PathProviderPlatform.instance = BackupPaths(dir.path, dir.path);
+      addTearDown(() async {
+        PathProviderPlatform.instance = original;
+        await dir.delete(recursive: true);
+      });
+      final seeing = _model.copyWith(
+        projector: const VisionProjector(
+          fileName: 'mmproj-loading.gguf',
+          downloadUrl: '',
+          sha256: '',
+          sizeBytes: 1,
+        ),
+      );
+      final engine = _Engine()..finish.complete();
+      final container = _container(engine, seeing: true);
+      final manager = container.read(modelManagerProvider.notifier);
+      await manager.loadServed(seeing, engine);
+      expect(engine.projector, isNull);
+      await manager.loadServed(seeing, engine, vision: true);
+      expect(engine.projector, endsWith('mmproj-loading.gguf'));
+    },
+  );
+
   test('load fields survive copyWith and can be cleared', () {
     const state = ModelManagerState(
       loadingModelId: 'loading',

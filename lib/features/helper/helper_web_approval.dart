@@ -49,6 +49,8 @@ class AgentWebDecisions {
 }
 
 class AgentWebQuestion {
+  final String? description;
+  AgentWebQuestion({this.description});
   final answer = Completer<bool>();
   int waiters = 0;
   Future<bool?>? stored;
@@ -69,13 +71,17 @@ class AgentWebApproval {
     required Future<bool?> Function() read,
     required Future<void> Function(bool) save,
     CancelToken? cancel,
+    String? description,
   }) async {
     if (cancel?.isCancelled == true) throw cancel!.cancelError!;
     if (_disposed) return false;
     if (mode != AgentWebAccess.askOnce) {
       return mode == AgentWebAccess.alwaysAllow;
     }
-    final question = _pending.putIfAbsent(chatId, AgentWebQuestion.new);
+    final question = _pending.putIfAbsent(
+      chatId,
+      () => AgentWebQuestion(description: description),
+    );
     question.waiters++;
     try {
       // Read inside the shared question: a second caller joins before any I/O.

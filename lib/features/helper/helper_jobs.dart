@@ -58,6 +58,24 @@ class HelperJob {
     reply: reply,
   );
 
+  HelperJob ended(HelperPhase end, String why) => HelperJob(
+    id: id,
+    task: task,
+    inputPreview: inputPreview,
+    modelName: modelName,
+    messageId: messageId,
+    reportedTo: reportedTo,
+    reason: why,
+    phase: end,
+    output: output,
+    thinking: thinking,
+    elapsed: elapsed,
+    firstToken: firstToken,
+    prefill: prefill,
+    metrics: metrics,
+    reply: reply,
+  );
+
   bool get terminal => switch (phase) {
     HelperPhase.done ||
     HelperPhase.failed ||

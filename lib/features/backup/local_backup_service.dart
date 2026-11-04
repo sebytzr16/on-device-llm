@@ -46,6 +46,10 @@ class LocalBackupService {
 
   /// Device-local state and caches deliberately do not travel to another app.
   static const excludedPreferenceKeys = {
+    'workspace_jobs_v1':
+        'Server-owned jobs belong to this installation and connection.',
+    'workspace_capabilities_v1':
+        'Connection capability cache, rebuilt from the server.',
     'active_model_downloads_v1': 'Transfers belong to this installation.',
     'model_download_history_v1': 'Transfers belong to this installation.',
     'temporary_attachment_cleanup_v1': 'Temporary attachments are excluded.',
