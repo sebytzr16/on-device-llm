@@ -1,3 +1,4 @@
+import '../widgets/answer_tokens_control.dart';
 import '../../../../core/l10n/l10n.dart';
 import 'dart:convert';
 
@@ -163,6 +164,15 @@ class _OverridesPageState extends State<OverridesPage> {
           spec,
           current: value,
           inherited: inherited,
+          contextWindow:
+              (_overrides[spec.key == 'agentMaxTokens'
+                          ? 'agentContextSize'
+                          : 'contextSize']
+                      as num?)
+                  ?.toInt() ??
+              (spec.key == 'agentMaxTokens'
+                  ? widget.inherited.agentContextSize
+                  : widget.inherited.contextSize),
         );
         if (v == null) return;
         await _set(spec.key, v.value);
@@ -183,7 +193,46 @@ Future<SettingEdit?> editSettingValue(
   SettingSpec spec, {
   required Object? current,
   Object? inherited,
+  int contextWindow = InferenceSettings.maxContext,
 }) async {
+  if (spec.key == 'maxTokens' || spec.key == 'agentMaxTokens') {
+    var value = (current as num?)?.toInt() ?? 1024;
+    return showAppDialog<SettingEdit>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          scrollable: true,
+          title: Text(spec.labelIn(context.l10n)),
+          content: SizedBox(
+            width: 380,
+            child: AnswerTokensSetting(
+              label: spec.labelIn(context.l10n),
+              value: value,
+              contextWindow: contextWindow,
+              useLoadedContext: spec.key != 'agentMaxTokens',
+              onChanged: (v) => setState(() => value = v),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(context.l10n.uiOverridesPageCancel),
+            ),
+            if (inherited != null)
+              TextButton(
+                onPressed: () =>
+                    Navigator.pop(context, const SettingEdit(null)),
+                child: Text(context.l10n.uiOverridesPageInherit),
+              ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, SettingEdit(value)),
+              child: Text(context.l10n.save),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
   switch (spec.kind) {
     case SettingKind.boolean:
       return showAppDialog<SettingEdit>(

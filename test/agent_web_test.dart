@@ -46,6 +46,75 @@ class _Chat extends ChatNotifier {
 }
 
 void main() {
+  for (final fenced in [true, false]) {
+    test(
+      'helper executes JSON calls and receives the current date: $fenced',
+      () async {
+        final tools = FakeAgentTools();
+        final loop = HelperToolLoop(tools: tools);
+        var rounds = 0;
+        final answer = await loop.run(
+          task: 'Latest news',
+          input: 'Provided task context',
+          settings: const InferenceSettings(
+            agentWebAccess: AgentWebAccess.alwaysAllow,
+          ).forAgent(),
+          generate: (messages) async {
+            final today = DateTime.now().toIso8601String().substring(0, 10);
+            expect(messages.first['content'], contains('Today is $today'));
+            if (rounds++ > 0) return 'The result from the evidence.';
+            const call =
+                '{"name":"web_search","arguments":{"q":"latest news"}}';
+            return fenced ? '```json\n$call\n```' : call;
+          },
+        );
+        expect(tools.calls.single.name, 'search_web');
+        expect(tools.calls.single.args['query'], 'latest news');
+        expect(answer, 'The result from the evidence.');
+      },
+    );
+  }
+  test(
+    'unanswered approval expires without persisting denial or leaking a call',
+    () async {
+      Map<String, AgentWebQuestion> pending = {};
+      var saved = false;
+      final gate = AgentWebApproval(
+        timeout: const Duration(milliseconds: 10),
+        changed: (value) => pending = value,
+      );
+      final tools = FakeAgentTools();
+      final loop = HelperToolLoop(
+        tools: tools,
+        approve: () => gate.request(
+          chatId: 'chat',
+          mode: AgentWebAccess.askOnce,
+          read: () async => null,
+          save: (_) async {
+            saved = true;
+          },
+        ),
+      );
+      var rounds = 0;
+      final answer = await loop.run(
+        task: 'Summarise',
+        input: 'The supplied report says revenue rose.',
+        settings: const InferenceSettings().forAgent(),
+        generate: (_) async {
+          rounds++;
+          return '```json\n{"name":"search_web","arguments":{"query":"news"}}\n```';
+        },
+      );
+      expect(rounds, 3);
+      expect(answer, contains('revenue rose'));
+      expect(answer, isNot(contains('search_web')));
+      expect(tools.calls, isEmpty);
+      expect(saved, isFalse);
+      expect(pending, isEmpty);
+      gate.dispose();
+    },
+  );
+
   test('chat settings edits preserve the host-owned web decision', () async {
     final db = AppDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
@@ -199,7 +268,7 @@ void main() {
         },
       );
       expect(tools.calls.length, enabled ? 2 : 0);
-      expect(rounds, enabled ? 3 : 1);
+      expect(rounds, enabled ? 4 : 2);
     });
   }
 

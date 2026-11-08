@@ -61,16 +61,38 @@ class BenchmarkReceipts extends Notifier<List<BenchmarkReceipt>> {
   }
 
   Future<void> save(BenchmarkReceipt receipt) async {
+    await _update((rows) => [...rows, receipt]);
+  }
+
+  /// Removes only these receipts, scoped to one model (including duplicates).
+  Future<void> remove(String modelId, Iterable<BenchmarkReceipt> receipts) {
+    final selected = receipts.toSet();
+    return _update(
+      (rows) => rows
+          .where((r) => r.json['modelId'] != modelId || !selected.contains(r))
+          .toList(),
+    );
+  }
+
+  Future<void> clearModel(String modelId) => _update(
+    (rows) => rows.where((r) => r.json['modelId'] != modelId).toList(),
+  );
+
+  Future<void> _update(
+    List<BenchmarkReceipt> Function(List<BenchmarkReceipt>) update,
+  ) async {
     await ready;
     if (!_alive) return;
-    state = List.unmodifiable([...state, receipt]);
-    final encoded = jsonEncode(state.map((r) => r.json).toList());
     _writes = _writes.catchError((Object _) {}).then((_) async {
+      if (!_alive) return;
+      final rows = List<BenchmarkReceipt>.unmodifiable(update(state));
+      final encoded = jsonEncode(rows.map((r) => r.json).toList());
       final saved = await (await SharedPreferences.getInstance()).setString(
         storageKey,
         encoded,
       );
       if (!saved) throw StateError('receipt persistence');
+      if (_alive) state = rows;
     });
     await _writes;
   }

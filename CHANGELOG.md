@@ -1,5 +1,66 @@
 # Changelog
 
+## 1.4.0 (2026-11-08)
+
+### Agents
+
+- Four-agent requests now always end with one complete answer: helpers run
+  in parallel, the main model waits for all of them, then writes a final
+  answer from their findings. An empty reply is retried once, and if it is
+  still empty the app shows the findings it has.
+- Helpers know today's date, recover when a model only returns tool calls,
+  and fallback helpers start beside the other calls in the same round.
+- Helper roles are neutral, a failed search is no longer reported as "web
+  blocked", and identical DuckDuckGo requests are shared.
+- Show live agent writing on the phone and keep agent details updated while open.
+- Recognize requests for plain or specialized agents and start the requested
+  batch even when the coordinator only promises to call them.
+- Add an agent time limit in Settings > Tools > Agents, defaulting to Unlimited,
+  with 90-second and 5-, 15-, 30- and 60-minute options. Stop remains available.
+- Same-as-chat helpers run on the remote model when the chat is remote, and
+  remote research turns can use helpers even with Tools off.
+
+### Longer answers
+
+- Answer tokens go up to 64,000 with a slider, or any value up to 1,048,576
+  with Custom. The setting reaches settings, models, the inspector, presets
+  and agents, and engines use the real limit.
+
+### Desktop
+
+- Create and Compare keep a history you can reopen.
+- Models in "Available to download" can be removed from the list, and
+  Restore brings them back. Benchmark receipts and download history rows can
+  be deleted.
+- Compare reloads changed settings, frees the first model before loading the
+  second, and waits while a chat is busy.
+- The server request log scrolls, and the image engine is released when idle.
+
+### Security and server
+
+- Phone pairing uses a one-time QR secret, a rotating code, and pinned
+  self-signed TLS on the local network. Lockouts clear when the code expires.
+- Server limits per IPv6 /64, bounded request bodies, capped tracked clients
+  and workspace route caps.
+- Model files another runtime is using cannot be deleted or moved.
+- Repeated server activity snapshots are compacted, so long four-agent runs
+  keep their reconnect history.
+
+### Other
+
+- 243 more strings are translated (English, French, Spanish), including the
+  privacy and licence notices.
+- Gemma native tool calls are parsed, and empty workspace answers are retried.
+
+- Show live agent writing on the phone and keep agent details updated while open.
+- Recognize requests for plain or specialized agents and start the requested
+  batch even when the coordinator only promises to call them.
+- Add an agent time limit in Settings > Tools > Agents, defaulting to Unlimited,
+  with 90-second and 5-, 15-, 30- and 60-minute options. Stop remains available.
+- Compact repeated server activity snapshots so long four-agent runs do not
+  exhaust the reconnect history. Preserve approvals, results and completion
+  events for both current and older clients.
+
 ## 1.3.0 (2026-11-03)
 
 ### Remote server workspace (Android and Windows)

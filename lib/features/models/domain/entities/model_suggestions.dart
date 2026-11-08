@@ -44,9 +44,11 @@ List<ModelInfo> suggestedModels(
     );
 }
 
+/// [hidden]: ids the user removed from "Available to download".
 List<ModelInfo> availableLibraryModels(
   Iterable<ModelInfo> library, {
   required bool desktop,
+  Set<String> hidden = const {},
 }) {
   final known = {...bundledCatalog, ...desktopCatalog}.map((m) => m.id).toSet();
   return [
@@ -57,5 +59,5 @@ List<ModelInfo> availableLibraryModels(
           modelSuggestionRank(m, desktop: desktop) == null,
     ),
     ...suggestedModels(library, desktop: desktop),
-  ];
+  ].where((m) => !hidden.contains(m.id)).toList();
 }

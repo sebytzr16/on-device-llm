@@ -23,6 +23,8 @@ class RunningHost extends DeviceHostingNotifier {
         endpoint: 'http://192.168.1.5:8787/v1/',
         token: 'abcdefghijklmnopqrstuvwxyz012345',
         modelId: 'test',
+        pairingSecret: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+        hostId: 'host-test',
         startedAt: DateTime.now().subtract(const Duration(minutes: 3)),
         activeClient: '192.168.1.9',
         liveTokens: 64,
@@ -102,11 +104,15 @@ void main() {
     expect(find.text('812'), findsOneWidget);
     expect(find.text('18%'), findsOneWidget);
     expect(find.text('moderate'), findsOneWidget);
-    // The pairing code holds the token: hidden until asked for.
+    // The one-time QR stays hidden until asked for.
     expect(find.byType(QrView), findsNothing);
     await tester.tap(find.byKey(const Key('show-qr')));
     await tester.pump();
     expect(find.byType(QrView), findsOneWidget);
+    final qr = tester.widget<QrView>(find.byType(QrView)).data;
+    expect(qr, contains('"secret"'));
+    expect(qr, contains('"hostId"'));
+    expect(qr, isNot(contains('abcdefghijklmnopqrstuvwxyz012345')));
     expect(find.text('•••••••• 2345'), findsOneWidget);
     await tester.tap(find.byTooltip('Show token'));
     await tester.pump();

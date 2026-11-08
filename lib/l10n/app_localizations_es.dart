@@ -638,7 +638,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get privateByDefaultHint =>
-      'Sin cuentas, análisis ni inferencias en la nube. Las descargas y la búsqueda opcional son las únicas funciones de la red.';
+      'Sin cuentas ni análisis. Las respuestas se generan en este teléfono, salvo que agregues un servidor remoto. Las descargas y la búsqueda opcional son las únicas otras funciones de red.';
 
   @override
   String get noModelLoadedTitle => 'Ningún modelo cargado';
@@ -1821,7 +1821,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get hostPairHint =>
-      'En el otro teléfono: escanee este código con la cámara y copie el texto, o pegue la conexión copiada, luego en OnDevice LLM abra Configuración > Servidor remoto > Agregar > Pegar conexión. Cualquier aplicación compatible con OpenAI también funciona, con la URL, el modelo y el token.';
+      'Escanea este QR en OnDevice LLM o pega la conexión copiada. Caduca a los 10 minutos y solo se puede usar una vez.';
 
   @override
   String get hostRecent => 'Solicitudes recientes';
@@ -1849,7 +1849,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String remotePasted(String name) {
-    return 'Se agregó $name. Active Usar servidor remoto para chatear con él.';
+    return 'Se agregó $name. Los chats ahora se ejecutan en él.';
   }
 
   @override
@@ -5382,7 +5382,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get remotePairLocked =>
-      'Demasiados códigos incorrectos. Reinicia el servidor en el otro dispositivo para obtener un código nuevo.';
+      'Demasiados códigos incorrectos. Espera a que caduque el código e introduce el nuevo, o escanea el código QR.';
 
   @override
   String remotePairUnreachable(String name) {
@@ -7147,11 +7147,11 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get hostPairLocked =>
-      'El emparejamiento se bloqueó tras cinco códigos incorrectos. Reinicia el servidor para emparejar otro dispositivo.';
+      'El emparejamiento por código se bloqueó tras cinco códigos incorrectos. Espera a que caduque el código o usa el código QR.';
 
   @override
   String get hostPairExpired =>
-      'Este código de emparejamiento ha caducado o ya se ha usado. Reinicia el servidor para emparejar otro dispositivo.';
+      'Este código de vinculación ha caducado. Escanea el nuevo QR o introduce el nuevo código.';
 
   @override
   String get hostAddressPlaceholder => '<ip-del-dispositivo>';
@@ -7980,7 +7980,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String helperSharedResources(String backend, String layers) {
-    return 'Backend: $backend · GPU layers: $layers';
+    return 'Motor: $backend · Capas de GPU: $layers';
   }
 
   @override
@@ -8070,6 +8070,16 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get agentMaxConcurrent => 'Máximo de agentes simultáneos';
+
+  @override
+  String get agentTimeoutSeconds => 'Tiempo límite de los agentes';
+
+  @override
+  String get agentTimeoutUnlimited => 'Sin límite';
+
+  @override
+  String get agentTimeoutHint =>
+      'Tiempo activo máximo por agente. Sin límite permite terminar o esperar a que pulses Detener. La carga del modelo y la espera del permiso web no cuentan.';
 
   @override
   String get agentThinking => 'Razonamiento de agentes';
@@ -8166,4 +8176,1014 @@ class AppLocalizationsEs extends AppLocalizations {
   @override
   String get workspaceApprovalTitle =>
       'Autorización de herramienta del servidor';
+
+  @override
+  String get remotePairTrustNote =>
+      'Vincula dispositivos solo en una red de confianza.';
+
+  @override
+  String get runSpeed => 'velocidad';
+
+  @override
+  String get runPromptTokens => 'tokens del prompt';
+
+  @override
+  String get runCachedTokens => 'en caché';
+
+  @override
+  String get runGeneratedTokens => 'generados';
+
+  @override
+  String get runTrimmedTurns => 'turnos recortados';
+
+  @override
+  String get runToolOk => 'correcto';
+
+  @override
+  String get runToolError => 'error';
+
+  @override
+  String get runDraftsAccepted => 'tokens del borrador aceptados';
+
+  @override
+  String get runDraftSpeed => 'velocidad del borrador';
+
+  @override
+  String get runDrafting => 'borrador';
+
+  @override
+  String get runDraftLowAcceptance => 'aceptación inferior al 35 %';
+
+  @override
+  String get runDraftSlower => 'más lento que la decodificación simple';
+
+  @override
+  String get runEndedBy => 'finalizado por';
+
+  @override
+  String get metricsUnknownReason => 'motivo desconocido';
+
+  @override
+  String get metricsStagesHint =>
+      'Tiempo transcurrido desde el envío hasta el final, por etapa del último turno.';
+
+  @override
+  String get metricsTemplateEmbedded => 'integrada (Jinja)';
+
+  @override
+  String get metricsTemplateFamilyFallback => 'alternativa de la familia';
+
+  @override
+  String get metricsThinkingNative => 'nativo';
+
+  @override
+  String get metricsThinkingPrompted => 'mediante el prompt';
+
+  @override
+  String get metricsNoModel => 'ningún modelo cargado';
+
+  @override
+  String get metricsStageLoad => 'carga';
+
+  @override
+  String get metricsStageJudge => 'evaluación';
+
+  @override
+  String get metricsStagePlan => 'planificación';
+
+  @override
+  String get metricsStageSearch => 'búsqueda';
+
+  @override
+  String get metricsStageRead => 'lectura';
+
+  @override
+  String get metricsStageFit => 'ajuste';
+
+  @override
+  String get metricsStageAnswer => 'respuesta';
+
+  @override
+  String get ropeModelDefault => 'Valor predeterminado del modelo';
+
+  @override
+  String get ropeLinear => 'Lineal';
+
+  @override
+  String get ropeModelValue => 'Valor del modelo';
+
+  @override
+  String get draftLowAcceptance => 'aceptación inferior al 35 %';
+
+  @override
+  String get settingsNextModelLoad =>
+      'Estos ajustes se aplican en la próxima carga del modelo.';
+
+  @override
+  String get documentNoMessagesSelected =>
+      'Ningún mensaje coincide con esta selección.';
+
+  @override
+  String get documentLoadModelFirst =>
+      'Carga un modelo antes de redactar un documento.';
+
+  @override
+  String get structuredOutputLimitHint =>
+      'Las respuestas restringidas también se detienen al alcanzar el máximo de tokens: un objeto JSON truncado se indica como no válido. El formato también se aplica al servidor remoto mediante response_format.';
+
+  @override
+  String get toolNeedsKnowledgeCollection =>
+      'Se necesita una colección seleccionada en Ajustes > Conocimientos: no hay ninguna, por lo que esta herramienta no se ofrece.';
+
+  @override
+  String get toolCallPolicyNote =>
+      'Cada llamada tiene límites: una consulta o página por llamada, 30 s por llamada, resultados limitados a 6000 caracteres y lectura de páginas solo según la política de acceso a la web pública. Las llamadas y los resultados se guardan en el registro de ejecución de la respuesta.';
+
+  @override
+  String get memoryTransientNotUsed =>
+      ' · estado pasajero, no se envía al modelo';
+
+  @override
+  String get remotePhoneExplanation =>
+      'Conecta la aplicación a un servidor propio — LM Studio, Ollama o llama-server en un PC en casa, a través de tu red local o una VPN — o a una API alojada con tu propia clave. Tus mensajes y las pruebas obtenidas en la web se envían a esa conexión, que responde en lugar del teléfono.';
+
+  @override
+  String get remoteKeyStoragePrivacy =>
+      'Las claves API se guardan en el almacenamiento seguro de este dispositivo (Keystore de Android, protección de datos de Windows), nunca en el archivo de ajustes ni en las exportaciones, y solo se envían a la conexión a la que pertenecen. En Internet, usa HTTPS o una VPN.';
+
+  @override
+  String get quickToolsNoKnowledge =>
+      'No hay ninguna colección de conocimientos seleccionada: herramienta no disponible.';
+
+  @override
+  String get runFieldTemperature => 'temperatura';
+
+  @override
+  String get runFieldTopP => 'top P';
+
+  @override
+  String get runFieldMinP => 'min P';
+
+  @override
+  String get runFieldTopK => 'top K';
+
+  @override
+  String get runFieldRepetitionPenalty => 'penalización por repetición';
+
+  @override
+  String get runFieldMaxTokens => 'máximo de tokens';
+
+  @override
+  String get runFieldContextSize => 'tamaño del contexto';
+
+  @override
+  String get runFieldThinkingModeEnabled => 'modo de razonamiento activado';
+
+  @override
+  String get runFieldThinkingBudgetTokens =>
+      'presupuesto de tokens de razonamiento';
+
+  @override
+  String get runFieldWebMode => 'modo web';
+
+  @override
+  String get runFieldKnowledgeCollection => 'colección de conocimientos';
+
+  @override
+  String get runFieldMemoryEnabled => 'memoria activada';
+
+  @override
+  String get runFieldPromptCache => 'caché del prompt';
+
+  @override
+  String get runFieldBackend => 'motor';
+
+  @override
+  String get runFieldKvCacheType => 'tipo de caché K';
+
+  @override
+  String get runFieldVCacheType => 'tipo de caché V';
+
+  @override
+  String get runFieldSeed => 'semilla';
+
+  @override
+  String get runFieldPresencePenalty => 'penalización por presencia';
+
+  @override
+  String get runFieldFrequencyPenalty => 'penalización por frecuencia';
+
+  @override
+  String get runFieldResponseFormat => 'formato de respuesta';
+
+  @override
+  String get runFieldToolsEnabled => 'herramientas activadas';
+
+  @override
+  String get runFieldToolChoice => 'selección de herramienta';
+
+  @override
+  String get runFieldDraftModelId => 'identificador del modelo de borrador';
+
+  @override
+  String get runFieldThreads => 'hilos';
+
+  @override
+  String get runFieldBatchThreads => 'hilos de prellenado';
+
+  @override
+  String get runFieldBatchSize => 'tamaño del lote';
+
+  @override
+  String get runFieldMicroBatchSize => 'tamaño del microlote';
+
+  @override
+  String get runFieldRequestedGpuLayers => 'capas de GPU solicitadas';
+
+  @override
+  String get runFieldFlashAttentionPolicy => 'política de Flash Attention';
+
+  @override
+  String get runFieldMemory => 'memoria';
+
+  @override
+  String runSearchProviderCounts(
+    String status,
+    String relevant,
+    String parsed,
+  ) {
+    return '$status · $relevant relevantes / $parsed analizados';
+  }
+
+  @override
+  String runDraftSpeedValue(String speed) {
+    return '$speed× la decodificación simple';
+  }
+
+  @override
+  String runDraftPaused(num rounds, String reason) {
+    String _temp0 = intl.Intl.pluralLogic(
+      rounds,
+      locale: localeName,
+      other: 'en pausa tras $rounds rondas ($reason)',
+      one: 'en pausa tras 1 ronda ($reason)',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String metricsLastBenchmark(String decode, String prefill, String backend) {
+    return 'último: $decode tok/s · $prefill tok/s de prellenado · $backend';
+  }
+
+  @override
+  String metricsGpuUnavailable(String reason) {
+    return 'GPU no disponible: $reason';
+  }
+
+  @override
+  String metricsGpuVariantUnavailable(String reason) {
+    return 'Variante de GPU no disponible en este dispositivo: $reason';
+  }
+
+  @override
+  String metricsTokenCounts(String generated, String prompt) {
+    return '$generated generados · $prompt del prompt';
+  }
+
+  @override
+  String metricsTrimmedMessages(num count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count mensajes anteriores recortados para ajustarse al límite',
+      one: '1 mensaje anterior recortado para ajustarse al límite',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String ropeTrainedContext(int count, String tokens) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'El modelo cargado se entrenó para $tokens tokens.',
+      one: 'El modelo cargado se entrenó para 1 token.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String settingDefaultValue(String value) {
+    return '$value (predeterminado)';
+  }
+
+  @override
+  String draftLastAnswerSummary(
+    int accepted,
+    int proposed,
+    int percent,
+    String model,
+    String paused,
+  ) {
+    String _temp0 = intl.Intl.pluralLogic(
+      proposed,
+      locale: localeName,
+      other:
+          'Última respuesta: $accepted de $proposed tokens del borrador aceptados ($percent %) con $model. ${paused}Por debajo de ~60 %, el borrador suele costar más de lo que ahorra.',
+      one:
+          'Última respuesta: $accepted de 1 token del borrador aceptado ($percent %) con $model. ${paused}Por debajo de ~60 %, el borrador suele costar más de lo que ahorra.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String draftPausedExplanation(num rounds, String reason) {
+    String _temp0 = intl.Intl.pluralLogic(
+      rounds,
+      locale: localeName,
+      other:
+          'El borrador se pausó durante el resto de esa respuesta tras $rounds rondas ($reason); se vuelve a intentar en cada respuesta. ',
+      one:
+          'El borrador se pausó durante el resto de esa respuesta tras 1 ronda ($reason); se vuelve a intentar en cada respuesta. ',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String imageChatModelMemoryRecovery(String detail, String model) {
+    return '$detail\nEl modelo de chat «$model» está cargado y puede estar usando memoria de la GPU. Descarga «$model» desde el selector de modelos y vuelve a intentarlo.';
+  }
+
+  @override
+  String modelDownloadLicenseNotice(String size, String license) {
+    return '$size de Hugging Face.\n\nLicencia: $license\n\nAl continuar, reconoces haber leído la licencia del modelo del editor. El archivo se verifica con SHA-256 antes de usarse.';
+  }
+
+  @override
+  String onboardingModelLicenseNotice(String size, String license) {
+    return '$size de Hugging Face. Licencia: $license. El archivo se verifica con SHA-256 antes de usarse.';
+  }
+
+  @override
+  String onboardingModelReadyPrivacy(String model) {
+    return '$model está en este teléfono. A partir de ahora, nada sale de él.';
+  }
+
+  @override
+  String effectiveReloadNextMessage(String value) {
+    return ' · el modelo cargado usa $value, se recarga en el próximo mensaje';
+  }
+
+  @override
+  String get benchmarkPrefill => 'Procesamiento inicial';
+
+  @override
+  String get benchmarkDecode => 'Generación';
+
+  @override
+  String get benchmarkBasis => 'Base';
+
+  @override
+  String get benchmarkChatTools => 'Chat + herramientas';
+
+  @override
+  String get benchmarkThreads => 'Hilos';
+
+  @override
+  String get benchmarkThermal => 'Estado térmico';
+
+  @override
+  String get benchmarkShareSubject => 'Prueba de rendimiento de OnDevice LLM';
+
+  @override
+  String get documentTemplateTranscript => 'Transcripción de la conversación';
+
+  @override
+  String get documentTemplateReport => 'Informe de investigación';
+
+  @override
+  String get documentTemplateLetter => 'Carta';
+
+  @override
+  String get documentTemplateMeetingNotes => 'Notas de reunión';
+
+  @override
+  String get documentTemplateStudyGuide => 'Guía de estudio';
+
+  @override
+  String get documentTemplateSummary => 'Resumen ejecutivo';
+
+  @override
+  String get remoteServerModel => 'modelo del servidor';
+
+  @override
+  String get chatShareSubject => 'Conversación de OnDevice LLM';
+
+  @override
+  String get chatExportConversation => 'Exportar conversación';
+
+  @override
+  String get documentDefaultTitle => 'Documento de OnDevice LLM';
+
+  @override
+  String get codeBlockLanguageFallback => 'código';
+
+  @override
+  String get helperMeasurementYes => 'sí';
+
+  @override
+  String get helperMeasurementNo => 'no';
+
+  @override
+  String get helperMeasurementDevices => 'Dispositivos';
+
+  @override
+  String get presetScope => 'Preajuste';
+
+  @override
+  String get presetMoreOverrides => 'Más ajustes personalizados';
+
+  @override
+  String get appearanceTextScaleHint =>
+      'Ajusta el tamaño de todo el texto de la aplicación además del ajuste del sistema.';
+
+  @override
+  String get contextBatchNextLoad =>
+      'Los cambios de contexto y de lote se aplican la próxima vez que se cargue un modelo.';
+
+  @override
+  String get hardwareNextLoad =>
+      'Los cambios de hardware se aplican la próxima vez que se cargue el modelo.';
+
+  @override
+  String get searchRegionCanadaEnglish => 'Canadá (inglés)';
+
+  @override
+  String get searchRegionUnitedStates => 'Estados Unidos';
+
+  @override
+  String get searchRegionUnitedKingdom => 'Reino Unido';
+
+  @override
+  String get searchRegionAustralia => 'Australia';
+
+  @override
+  String get searchRegionNewZealand => 'Nueva Zelanda';
+
+  @override
+  String get searchRegionIreland => 'Irlanda';
+
+  @override
+  String get searchRegionIndia => 'India';
+
+  @override
+  String get searchRegionSouthAfrica => 'Sudáfrica';
+
+  @override
+  String get searchRegionFrance => 'Francia';
+
+  @override
+  String get searchRegionJapan => 'Japón';
+
+  @override
+  String get searchRegionNoregion => 'Sin región';
+
+  @override
+  String get outputFreeText => 'Texto libre';
+
+  @override
+  String get outputJsonAnyObject => 'JSON (cualquier objeto)';
+
+  @override
+  String get outputJsonSchema => 'JSON conforme a un esquema';
+
+  @override
+  String get toolNativeSupported =>
+      'La plantilla de chat del modelo cargado admite llamadas nativas a herramientas.';
+
+  @override
+  String get toolNativeFallback =>
+      'La plantilla del modelo cargado no tiene un formato de llamada a herramientas; las herramientas se describen en el prompt y el modelo responde con un bloque JSON. Los modelos pequeños lo hacen con menos fiabilidad.';
+
+  @override
+  String get toolNativeLoadToCheck =>
+      'La compatibilidad con llamadas nativas a herramientas se muestra aquí una vez cargado el modelo.';
+
+  @override
+  String get effectiveNothingOverridden =>
+      'No hay ajustes personalizados: se aplican tus ajustes guardados.';
+
+  @override
+  String get effectiveEverySetting => 'todos los ajustes';
+
+  @override
+  String get effectiveLayerEmpty => 'ninguno';
+
+  @override
+  String get effectiveLayerDefault => 'predeterminado';
+
+  @override
+  String get effectiveLayerDevice => 'este teléfono';
+
+  @override
+  String get effectiveLayerRecommended => 'recomendación del modelo';
+
+  @override
+  String get effectiveLayerGlobal => 'tus ajustes';
+
+  @override
+  String get effectiveLayerModel => 'perfil del modelo';
+
+  @override
+  String get effectiveLayerTurn => 'este turno';
+
+  @override
+  String get memoryOriginManual => 'añadido por ti';
+
+  @override
+  String get memoryOriginLearned => 'aprendido';
+
+  @override
+  String get remoteSamplingContextHint =>
+      'El muestreo, el máximo de tokens y el modo de razonamiento también se aplican a los chats remotos (Anthropic ignora el muestreo). El tamaño del contexto es el presupuesto de ajuste de la aplicación; no debe superar la ventana de contexto real del modelo seleccionado.';
+
+  @override
+  String get remoteSelfHostedHeader => 'EN TU PROPIO HARDWARE';
+
+  @override
+  String get remoteHostedHeader => 'API ALOJADAS (TU CLAVE)';
+
+  @override
+  String get settingsToolsOff => 'desactivadas';
+
+  @override
+  String get settingsNoOverrides => 'sin ajustes personalizados';
+
+  @override
+  String get backendCpuOnly => 'Solo CPU';
+
+  @override
+  String get webAutoShort => 'Web · automático';
+
+  @override
+  String get webAlwaysShort => 'Web · siempre';
+
+  @override
+  String get kvFp16Default => 'FP16 (predeterminado)';
+
+  @override
+  String get kvQ8SavesRam => 'Q8_0 (ahorra RAM)';
+
+  @override
+  String get kvQ4SavesMoreRam => 'Q4_0 (ahorra más RAM)';
+
+  @override
+  String get settingCustomOption => 'Personalizado…';
+
+  @override
+  String get quickToolsEnabledHint =>
+      'Buscar, leer páginas, buscar en tus documentos, calcular.';
+
+  @override
+  String get quickToolsDisabledHint =>
+      'Desactivadas: el modelo responde con sus conocimientos y lo que adjuntes.';
+
+  @override
+  String get quickToolsRequiredHint =>
+      'Obligatorio: se llama a una herramienta antes de la primera respuesta.';
+
+  @override
+  String get quickToolsAutoHint =>
+      'Automático: el modelo decide si necesita una herramienta.';
+
+  @override
+  String modelContextBadge(String count) {
+    return '$count de contexto';
+  }
+
+  @override
+  String benchmarkPrefillDetail(int tokens, String seconds) {
+    return '$tokens tokens en $seconds s';
+  }
+
+  @override
+  String benchmarkMedianSamples(int count) {
+    return 'mediana de $count';
+  }
+
+  @override
+  String benchmarkChatFirstToken(String seconds) {
+    return '$seconds s hasta el primer token';
+  }
+
+  @override
+  String sourceReferenceSponsoredCount(int count, int sponsored) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count referencias',
+      one: '$count referencia',
+    );
+    String _temp1 = intl.Intl.pluralLogic(
+      sponsored,
+      locale: localeName,
+      other: '$sponsored patrocinadas',
+      one: '$sponsored patrocinada',
+    );
+    return '$_temp0 · $_temp1';
+  }
+
+  @override
+  String presetOverridesTitle(String name) {
+    return '$name · ajustes personalizados';
+  }
+
+  @override
+  String presetMoreOverridesCount(int count) {
+    return 'Más ajustes personalizados · $count';
+  }
+
+  @override
+  String toolSearchCollection(String collection) {
+    return 'Busca en la colección «$collection».';
+  }
+
+  @override
+  String quickToolsCollection(String collection) {
+    return 'Busca en «$collection».';
+  }
+
+  @override
+  String effectiveOverrideSummary(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count ajustes proceden',
+      one: '$count ajuste procede',
+    );
+    return '$_temp0 de un perfil de modelo, un preajuste o un chat. Selecciona una fila para ver lo que solicitó cada capa.';
+  }
+
+  @override
+  String effectiveLayerSettingCount(int count, String keys, String ellipsis) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count ajustes',
+      one: '$count ajuste',
+    );
+    return '$_temp0: $keys$ellipsis';
+  }
+
+  @override
+  String effectiveDefaultValue(String value) {
+    return 'Predeterminado: $value';
+  }
+
+  @override
+  String effectiveLayerRequestedValue(String layer, String value) {
+    return '$layer solicitó $value';
+  }
+
+  @override
+  String knowledgeDocumentStats(int passages, String characters, String date) {
+    String _temp0 = intl.Intl.pluralLogic(
+      passages,
+      locale: localeName,
+      other: '$passages pasajes',
+      one: '$passages pasaje',
+    );
+    return '$_temp0 · ${characters}k caracteres · $date';
+  }
+
+  @override
+  String knowledgeMeaningProgress(int indexed, int total) {
+    return ' · significado $indexed/$total';
+  }
+
+  @override
+  String get remoteHeadersExample =>
+      'HTTP-Referer: https://example.app\nX-Title: Mi aplicación';
+
+  @override
+  String threadsAutoCount(int count) {
+    return 'Automático ($count)';
+  }
+
+  @override
+  String settingCustomValue(String value) {
+    return 'Personalizado · $value';
+  }
+
+  @override
+  String settingsAppearanceSummary(String theme, String accent, int percent) {
+    return '$theme · $accent · $percent%';
+  }
+
+  @override
+  String settingsContextBatchSummary(
+    String context,
+    String batch,
+    String state,
+  ) {
+    return '$context contexto · lote $batch · caché $state';
+  }
+
+  @override
+  String settingsHardwareSummary(
+    String backend,
+    String layers,
+    String decodeThreads,
+    String prefillThreads,
+    String cache,
+  ) {
+    String _temp0 = intl.Intl.selectLogic(layers, {
+      'all': 'todas las capas',
+      'one': '1 capa',
+      'other': '$layers capas',
+    });
+    return '$backend · $_temp0 · $decodeThreads/$prefillThreads hilos · $cache kv';
+  }
+
+  @override
+  String settingsSamplingSummary(
+    String temperature,
+    String topP,
+    int topK,
+    String maxTokens,
+  ) {
+    return 'T $temperature · top-p $topP · top-k $topK · máx. $maxTokens';
+  }
+
+  @override
+  String settingsReasoningSummary(
+    String budget,
+    int results,
+    int pages,
+    int passages,
+    int seconds,
+  ) {
+    String _temp0 = intl.Intl.pluralLogic(
+      results,
+      locale: localeName,
+      other: '$results resultados',
+      one: '$results resultado',
+    );
+    String _temp1 = intl.Intl.pluralLogic(
+      pages,
+      locale: localeName,
+      other: '$pages páginas',
+      one: '$pages página',
+    );
+    String _temp2 = intl.Intl.pluralLogic(
+      passages,
+      locale: localeName,
+      other: '$passages pasajes',
+      one: '$passages pasaje',
+    );
+    return 'razonamiento $budget · $_temp0 · $_temp1 · $_temp2 · $seconds s';
+  }
+
+  @override
+  String settingsRopeSummary(String k, String v, String scaling, String draft) {
+    return 'K $k · V $v · rope $scaling$draft';
+  }
+
+  @override
+  String settingsToolsSummary(
+    int rounds,
+    String calculator,
+    String web,
+    String documents,
+  ) {
+    String _temp0 = intl.Intl.pluralLogic(
+      rounds,
+      locale: localeName,
+      other: '$rounds rondas',
+      one: '$rounds ronda',
+    );
+    return 'activadas · $_temp0$calculator$web$documents';
+  }
+
+  @override
+  String settingsAdaptersSummary(int imported, int attached) {
+    String _temp0 = intl.Intl.pluralLogic(
+      imported,
+      locale: localeName,
+      other: '$imported importados',
+      one: '$imported importado',
+    );
+    String _temp1 = intl.Intl.pluralLogic(
+      attached,
+      locale: localeName,
+      other: '$attached adjuntos',
+      one: '$attached adjunto',
+    );
+    return '$_temp0 · $_temp1';
+  }
+
+  @override
+  String settingsOverrideCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count ajustes personalizados',
+      one: '$count ajuste personalizado',
+    );
+    return '$_temp0 por perfil, preajuste o chat';
+  }
+
+  @override
+  String get summaryOn => 'activado';
+
+  @override
+  String get summaryOff => 'desactivado';
+
+  @override
+  String get summarySame => 'igual';
+
+  @override
+  String get summaryDraftOn => ' · borrador activado';
+
+  @override
+  String get summaryCalculator => ' · cálculo';
+
+  @override
+  String get summaryWeb => ' · web';
+
+  @override
+  String get summaryDocuments => ' · docs';
+
+  @override
+  String get summaryAccentAmber => 'ámbar';
+
+  @override
+  String get summaryAccentBlue => 'azul';
+
+  @override
+  String get summaryAccentGreen => 'verde';
+
+  @override
+  String get summaryAccentRose => 'rosa';
+
+  @override
+  String get summaryAccentViolet => 'violeta';
+
+  @override
+  String get summaryAccentTeal => 'verde azulado';
+
+  @override
+  String get knowledgeMeaningComplete => ' · significado ✓';
+
+  @override
+  String get dateMonthJan => 'ene';
+
+  @override
+  String get dateMonthFeb => 'feb';
+
+  @override
+  String get dateMonthMar => 'mar';
+
+  @override
+  String get dateMonthApr => 'abr';
+
+  @override
+  String get dateMonthMay => 'may';
+
+  @override
+  String get dateMonthJun => 'jun';
+
+  @override
+  String get dateMonthJul => 'jul';
+
+  @override
+  String get dateMonthAug => 'ago';
+
+  @override
+  String get dateMonthSep => 'sept';
+
+  @override
+  String get dateMonthOct => 'oct';
+
+  @override
+  String get dateMonthNov => 'nov';
+
+  @override
+  String get dateMonthDec => 'dic';
+
+  @override
+  String get historyTitle => 'Historial';
+
+  @override
+  String get historyEmpty => 'Aún no hay elementos en el historial.';
+
+  @override
+  String get historyDelete => 'Eliminar';
+
+  @override
+  String get historyDeleteConfirm =>
+      '¿Eliminar este elemento del historial y sus archivos guardados?';
+
+  @override
+  String get historyClear => 'Borrar historial';
+
+  @override
+  String get historyClearConfirm =>
+      '¿Eliminar todas las comparaciones guardadas?';
+
+  @override
+  String historyStorage(String size) {
+    return 'Historial: $size · se conservan los 300 elementos más recientes';
+  }
+
+  @override
+  String historyFailed(String error) {
+    return 'No se pudo acceder al historial: $error';
+  }
+
+  @override
+  String get historyReadOnly =>
+      'Comparación guardada · pulsa Ejecutar para comparar de nuevo.';
+
+  @override
+  String get benchmarkHistory => 'Historial de pruebas de velocidad';
+
+  @override
+  String get benchmarkHistoryEmpty =>
+      'Aún no hay pruebas de velocidad guardadas';
+
+  @override
+  String get benchmarkHistoryHint =>
+      'Elimina recibos sin eliminar este modelo ni su perfil guardado.';
+
+  @override
+  String get benchmarkDeleteReceipt => 'Eliminar recibo';
+
+  @override
+  String get benchmarkDeleteReceipts => 'Eliminar recibos';
+
+  @override
+  String benchmarkDeleteSelected(int count) {
+    return 'Eliminar seleccionados ($count)';
+  }
+
+  @override
+  String benchmarkSelectReceipt(String date) {
+    return 'Seleccionar recibo del $date';
+  }
+
+  @override
+  String benchmarkDeleteReceiptsConfirm(int count) {
+    return '¿Eliminar los $count recibos de pruebas seleccionados? Se conservarán el modelo y su perfil guardado.';
+  }
+
+  @override
+  String get benchmarkClearHistory => 'Borrar historial';
+
+  @override
+  String get benchmarkClearHistoryConfirm =>
+      '¿Eliminar todos los recibos de pruebas de este modelo? Se conservarán el modelo y su perfil guardado.';
+
+  @override
+  String get downloadRemoveHistoryRow => 'Quitar del historial';
+
+  @override
+  String get downloadClearFinishedHistory =>
+      'Borrar historial de descargas finalizadas';
+
+  @override
+  String get downloadHistoryHint =>
+      'Quitar registros del historial conserva los archivos de los modelos descargados. No se cancelan las descargas en curso.';
+
+  @override
+  String downloadRemoveHistoryConfirm(String name) {
+    return '¿Quitar del historial la descarga de $name? Se conservará el archivo del modelo descargado. Esta acción no cancela la descarga.';
+  }
+
+  @override
+  String get downloadClearFinishedConfirm =>
+      '¿Quitar del historial las descargas completadas, fallidas y canceladas? Se conservarán los archivos de los modelos descargados y las descargas en curso.';
+
+  @override
+  String get historyRemoveError =>
+      'No se pudo guardar el cambio en el historial. Inténtalo de nuevo.';
+
+  @override
+  String get answerTokensInvalid =>
+      'Introduce un número entero positivo de hasta 1.048.576.';
+
+  @override
+  String answerTokensContextLimit(int context) {
+    return 'La ventana de contexto ($context tokens) limita la respuesta real. El prompt y el razonamiento también usan esta ventana. El valor solicitado se guarda.';
+  }
+
+  @override
+  String get answerTokensHint =>
+      'La respuesta más larga que puede escribir el modelo. Desliza hasta 64.000 o toca Personalizado para escribir cualquier valor. La ventana de contexto sigue limitando lo que cabe.';
+
+  @override
+  String modelRestoreRemoved(int count) {
+    return 'Restaurar quitados ($count)';
+  }
 }

@@ -787,7 +787,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           subtitle: state.temporary
               ? t.temporaryChat
               : remote != null
-              ? '${remote.$2.isEmpty ? 'server model' : remote.$2} @ ${remote.$1}'
+              ? '${remote.$2.isEmpty ? context.l10n.remoteServerModel : remote.$2} @ ${remote.$1}'
               : pinned != null
               ? t.chatPinned(pinned.displayName)
               : models.loadedModel?.displayName ?? t.noModelLoaded,

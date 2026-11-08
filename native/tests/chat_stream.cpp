@@ -35,6 +35,22 @@ static common_chat_templates_ptr fixture(const char * name) {
 }
 int main() {
     try {
+        check(answer_limit(json{{"maxTokens", 128000}, {"reservedTokens", 16384}}, 200000) == 128000, "Custom answer limit was capped");
+        check(answer_limit(json{{"maxTokens", 128000}}, 60000) == 60000, "Answer must fit remaining context");
+        check(answer_limit(json{{"maxTokens", 32000}}, 60000, 512) == 32000, "Agent answer was capped at 4096");
+        check(response_reserve(json{{"maxTokens", 65536}, {"reservedTokens", 2048}}, 8192) == 2048, "Explicit prompt reserve ignored");
+        check(response_reserve(json{{"maxTokens", 1000}}, 8192) == 1000, "Legacy maxTokens fallback changed");
+        check(response_reserve(json{{"maxTokens", 65536}}, 8192) == 8191, "Legacy reserve not clamped");
+        check(response_reserve(json{{"reservedTokens", 0}}, 8192) == 1, "Zero reserve not clamped");
+        check(response_reserve(json{{"reservedTokens", 65536}}, 8192) == 8191, "Oversized reserve not clamped");
+        {
+            Runtime r(0);
+            r.maximum = 1000; r.total_cap = 8192; r.generated = 256;
+            check(!out_of_room(&r), "Prompt reserve became generation limit");
+            r.generated = 1000;
+            check(out_of_room(&r), "Generation limit ignored");
+        }
+        std::cout << "PASS separate prompt reserve, legacy fallback and generation limit\n";
         common_chat_templates_inputs in;
         common_chat_msg user; user.role = "user"; user.content = "hi";
         in.messages = {user}; in.enable_thinking = false;

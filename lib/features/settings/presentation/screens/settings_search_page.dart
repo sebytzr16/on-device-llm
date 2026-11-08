@@ -9,6 +9,7 @@ import 'advanced_pages.dart';
 import 'advanced_pages_2.dart';
 import 'memory_page.dart';
 import 'knowledge_page.dart';
+import 'remote_server_page.dart';
 import '../../../../core/design/app_design.dart';
 import '../../../settings/presentation/widgets/settings_widgets.dart';
 import '../../../../core/design/app_dialog.dart';
@@ -122,6 +123,16 @@ class _SettingsSearchPageState extends ConsumerState<SettingsSearchPage> {
               title: Text(t.knowledgeLibrary),
               leading: const Icon(Icons.menu_book),
               onTap: () => _open(const KnowledgePage()),
+            ),
+          // The PC's "Connect a phone" steps point here (Settings > Remote server).
+          if (_query.isEmpty ||
+              '${t.remoteServer} remote server pair pc serveur distant servidor remoto'
+                  .toLowerCase()
+                  .contains(_query.toLowerCase()))
+            SettingsRow(
+              title: Text(t.remoteServer),
+              leading: const Icon(Icons.dns_outlined),
+              onTap: () => _open(const RemoteServerPage()),
             ),
           for (final e in switches)
             SwitchListTile(

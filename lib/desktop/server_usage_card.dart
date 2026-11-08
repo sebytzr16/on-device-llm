@@ -30,6 +30,19 @@ class _ServerUsageCardState extends State<ServerUsageCard> {
     super.dispose();
   }
 
+  // Raw DateTime.toString() showed microseconds; local time of day, plus the
+  // date when it was not today.
+  static String _seen(BuildContext context, DateTime at) {
+    final m = MaterialLocalizations.of(context);
+    final local = at.toLocal(), now = DateTime.now();
+    final time = m.formatTimeOfDay(TimeOfDay.fromDateTime(local));
+    final today =
+        local.year == now.year &&
+        local.month == now.month &&
+        local.day == now.day;
+    return today ? time : '${m.formatShortDate(local)} $time';
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = context.l10n, u = widget.usage;
@@ -43,7 +56,7 @@ class _ServerUsageCardState extends State<ServerUsageCard> {
               e.key,
               e.value.requests,
               e.value.tokens,
-              e.value.lastSeen!.toLocal().toString(),
+              _seen(context, e.value.lastSeen!),
             ),
             style: context.text.small,
           ),

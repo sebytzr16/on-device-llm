@@ -79,7 +79,7 @@ class CodeBlock extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    language ?? 'code',
+                    language ?? context.l10n.codeBlockLanguageFallback,
                     style: context.text.mono.copyWith(color: c.textFaint),
                   ),
                 ),

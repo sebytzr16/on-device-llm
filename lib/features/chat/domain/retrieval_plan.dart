@@ -186,6 +186,7 @@ class RetrievalPlan {
   /// explicit-search wording or a link never counts as local.
   static bool localTask(String input) {
     final t = input.trim();
+    if (_arithmeticOnly(t)) return true;
     if (_url.hasMatch(t) || _asksForWeb(t)) return false;
     if (PhoneActions.wanted(t)) return true;
     if (timeSensitive(t)) return false;
@@ -206,6 +207,8 @@ class RetrievalPlan {
     final t = input.trim();
     if (smallTalk(t) || aboutAssistant(t)) return false;
     if (_url.hasMatch(t) || timeSensitive(t) || _asksForWeb(t)) return true;
+    // Local arithmetic still benefits from the calculator tool.
+    if (_arithmeticOnly(t)) return true;
     if (localTask(t)) return false;
     return documents ||
         _arithmetic.hasMatch(t) ||
@@ -230,6 +233,50 @@ class RetrievalPlan {
     caseSensitive: false,
     unicode: true,
   );
+
+  /// Only numeric expressions, with an optional English request wrapper.
+  /// Require a binary operator so a bare year remains web-eligible.
+  static bool _arithmeticOnly(String input) {
+    final expression = input
+        .trim()
+        .replaceFirst(
+          RegExp(r'^(?:what is|calculate)\s+', caseSensitive: false),
+          '',
+        )
+        .replaceFirst(RegExp(r'\?\s*$'), '')
+        .trim();
+    final tokens = RegExp(
+      r'\d+(?:\.\d+)?|[()+*/×÷^%−-]',
+    ).allMatches(expression);
+    if (tokens.map((m) => m[0]).join() !=
+        expression.replaceAll(RegExp(r'\s+'), '')) {
+      return false;
+    }
+    var operand = true, binary = false;
+    var depth = 0;
+    for (final match in tokens) {
+      final token = match[0]!;
+      if (operand) {
+        if (token == '(') {
+          depth++;
+        } else if (token == '+' || token == '-' || token == '−') {
+          continue;
+        } else if (RegExp(r'^\d').hasMatch(token)) {
+          operand = false;
+        } else {
+          return false;
+        }
+      } else if (token == ')') {
+        if (--depth < 0) return false;
+      } else if (RegExp(r'^[+*/×÷^%−-]$').hasMatch(token)) {
+        binary = true;
+        operand = true;
+      } else {
+        return false;
+      }
+    }
+    return binary && !operand && depth == 0;
+  }
 
   // Letters then digits: a model or part number ("Z30", "ZV-E10", "RTX
   // 4090" is caught by its name). "3rd", "10am" and "4k" start with digits.
@@ -306,6 +353,7 @@ class RetrievalPlan {
   /// between weather and climate") needs a real time marker as well, and
   /// planning for today ("a workout for today") is not one.
   static bool timeSensitive(String input) {
+    if (_arithmeticOnly(input)) return false;
     final t = input.trim();
     if (_writing.hasMatch(t) && !_strongTime.hasMatch(t)) return false;
     final probe = t.replaceAll(_personalTime, ' ').replaceAll(_updateVerb, ' ');

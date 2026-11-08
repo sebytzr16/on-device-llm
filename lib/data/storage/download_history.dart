@@ -74,20 +74,37 @@ class DownloadHistory {
     );
     return rows;
   });
+
+  /// History only: never removes a model file or cancels a transfer.
+  static Future<void> remove(String attempt) => _write(
+    (rows) => rows.where((r) => r.attempt != attempt).toList(),
+    reportErrors: true,
+  );
+
+  static bool isFinished(DownloadRecord row) =>
+      const {'completed', 'failed', 'cancelled'}.contains(row.result);
+
+  static Future<void> clearFinished() => _write(
+    (rows) => rows.where((r) => !isFinished(r)).toList(),
+    reportErrors: true,
+  );
+
   static Future<void> _write(
-    List<DownloadRecord> Function(List<DownloadRecord>) update,
-  ) {
+    List<DownloadRecord> Function(List<DownloadRecord>) update, {
+    bool reportErrors = false,
+  }) {
     final next = _pending.then((_) async {
       final prefs = await SharedPreferences.getInstance();
       final rows = update(_read(prefs));
-      await prefs.setString(
+      final saved = await prefs.setString(
         key,
         jsonEncode(rows.map((r) => r.toJson()).toList()),
       );
+      if (!saved) throw StateError('download history persistence');
       changes.add(null);
     });
     // History must never change the outcome or cleanup of a file transfer.
     _pending = next.catchError((Object _) {});
-    return _pending;
+    return reportErrors ? next : _pending;
   }
 }

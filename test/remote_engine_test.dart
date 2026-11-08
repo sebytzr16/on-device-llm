@@ -58,6 +58,39 @@ String sse(List<Map<String, dynamic>> chunks) =>
     '${chunks.map((c) => 'data: ${jsonEncode(c)}').join('\n\n')}\n\ndata: [DONE]\n';
 
 void main() {
+  test('custom answer limit is sent unchanged to the remote server', () async {
+    final adapter = _Adapter(
+      (_) => ResponseBody.fromString(
+        sse([
+          {
+            'choices': [
+              {
+                'delta': {'content': 'ok'},
+                'finish_reason': 'stop',
+              },
+            ],
+          },
+        ]),
+        200,
+        headers: {
+          Headers.contentTypeHeader: ['text/event-stream'],
+        },
+      ),
+    );
+    final engine = engineWith(Dio()..httpClientAdapter = adapter);
+    await engine
+        .generate(
+          messages: const [
+            {'role': 'user', 'content': 'hi'},
+          ],
+          fallbackTemplate: '',
+          settings: settings.copyWith(maxTokens: 128000),
+        )
+        .join();
+    expect((jsonDecode(adapter.lastBody!) as Map)['max_tokens'], 128000);
+    engine.dispose();
+  });
+
   test('endpoint tolerates a trailing /v1 and slashes', () {
     expect(
       RemoteEngine.endpoint(

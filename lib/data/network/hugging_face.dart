@@ -76,6 +76,13 @@ class HfRepoFiles {
 }
 
 class HuggingFace {
+  static void _validateRepo(String repo) {
+    if (!RegExp(r'^[\w.-]+/[\w.-]+$').hasMatch(repo) ||
+        repo.split('/').any((segment) => RegExp(r'^\.+$').hasMatch(segment))) {
+      throw const FormatException('Invalid repository ID.');
+    }
+  }
+
   static Dio _dio() => Dio(
     BaseOptions(
       connectTimeout: const Duration(seconds: 20),
@@ -132,6 +139,7 @@ class HuggingFace {
     String? revision,
     Dio? client,
   }) async {
+    _validateRepo(repo);
     final dio = client ?? _dio();
     try {
       final at = revision == null || revision == 'main'
@@ -197,6 +205,7 @@ class HuggingFace {
     String revision, {
     Dio? client,
   }) async {
+    _validateRepo(repo);
     final dio = client ?? _dio();
     try {
       final response = await dio.get<String>(
@@ -224,8 +233,10 @@ class HuggingFace {
   static Future<Map<String, dynamic>?> generationConfig(
     String repo, {
     int hops = 2,
+    Dio? client,
   }) async {
-    final dio = _dio();
+    _validateRepo(repo);
+    final dio = client ?? _dio();
     try {
       var current = repo;
       final seen = <String>{};
@@ -252,16 +263,15 @@ class HuggingFace {
             : base is List && base.isNotEmpty && base.first is String
             ? base.first as String
             : null;
-        if (next == null || !RegExp(r'^[\w.-]+/[\w.-]+$').hasMatch(next)) {
-          break;
-        }
+        if (next == null) break;
+        _validateRepo(next);
         current = next;
       }
     } catch (_) {
       // Recommendations are a convenience; a failure leaves the built-in
       // table and the file's own values.
     } finally {
-      dio.close();
+      if (client == null) dio.close();
     }
     return null;
   }

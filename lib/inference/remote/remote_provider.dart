@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../../features/hosting/tls_pinning.dart';
 
 /// Wire protocol a remote provider speaks.
 enum RemoteProtocol {
@@ -396,6 +397,7 @@ class RemoteProfile {
   final String name;
   final String providerId;
   final String baseUrl;
+  final String? fingerprint;
   final String model;
 
   /// Extra request headers, e.g. `HTTP-Referer` for OpenRouter or
@@ -418,6 +420,7 @@ class RemoteProfile {
     required this.name,
     this.providerId = 'custom',
     this.baseUrl = '',
+    this.fingerprint,
     this.model = '',
     this.headers = const {},
     this.limits = const {},
@@ -449,6 +452,7 @@ class RemoteProfile {
     String? name,
     String? providerId,
     String? baseUrl,
+    String? fingerprint,
     String? model,
     Map<String, String>? headers,
     Map<String, RemoteLimit>? limits,
@@ -460,6 +464,7 @@ class RemoteProfile {
     name: name ?? this.name,
     providerId: providerId ?? this.providerId,
     baseUrl: baseUrl ?? this.baseUrl,
+    fingerprint: fingerprint ?? this.fingerprint,
     model: model ?? this.model,
     headers: headers ?? this.headers,
     limits: limits ?? this.limits,
@@ -485,6 +490,7 @@ class RemoteProfile {
     'name': name,
     'providerId': providerId,
     'baseUrl': baseUrl,
+    if (fingerprint != null) 'fingerprint': fingerprint,
     'model': model,
     'shareMemory': shareMemory,
     'learnMemory': learnMemory,
@@ -527,16 +533,27 @@ class RemoteProfile {
       return null;
     }
     if (raw is! Map || raw['ondevice_llm'] != 'connection') return null;
+    if (raw['fingerprint'] != null &&
+        (raw['fingerprint'] is! String ||
+            !validFingerprint(raw['fingerprint'] as String))) {
+      return null;
+    }
     final url = _text(raw['url'], 2000).trim().replaceFirst(RegExp(r'/+$'), '');
     final profile = RemoteProfile(
       id: id,
       name: '',
       providerId: RemoteProvider.custom.id,
       baseUrl: url,
+      fingerprint: raw['fingerprint'] as String?,
       model: _text(raw['model'], 200).trim(),
     );
     final uri = profile.uri;
-    if (uri == null) return null;
+    if (uri == null ||
+        (profile.fingerprint != null &&
+            (uri.scheme != 'https' ||
+                !validFingerprint(profile.fingerprint)))) {
+      return null;
+    }
     return (
       profile.copyWith(name: 'Phone at ${uri.host}'),
       _text(raw['key'], 512).trim(),
@@ -567,6 +584,9 @@ class RemoteProfile {
       name: _text(raw['name'], 80),
       providerId: RemoteProvider.byId(_text(raw['providerId'], 40)).id,
       baseUrl: _text(raw['baseUrl'], 2000),
+      fingerprint: raw['fingerprint'] == null
+          ? null
+          : _text(raw['fingerprint'], 128),
       model: _text(raw['model'], 200),
       headers: headers,
       limits: limits,

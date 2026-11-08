@@ -28,6 +28,7 @@ import '../features/chat/domain/retrieval_plan.dart';
 import '../features/chat/presentation/providers/chat_provider.dart';
 import '../features/chat/presentation/widgets/chat_bubble.dart';
 import '../features/helper/helper_live_panel.dart';
+import '../features/helper/helper_jobs.dart';
 import '../features/helper/helper_web_approval.dart';
 import '../features/helper/agent_web_approval_card.dart';
 import '../features/chat/presentation/widgets/composer.dart';
@@ -82,6 +83,10 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(chatProvider.select((state) => state.chatId), (previous, next) {
+      // Hide the previous chat's panel without stopping its helper execution.
+      ref.read(helperJobsProvider.notifier).dismiss();
+    });
     final state = ref.watch(chatProvider);
     final count = state.messages.length + (state.showsLiveAnswer ? 1 : 0);
     return DropTarget(

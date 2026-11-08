@@ -12,18 +12,43 @@ class WorkspaceJob {
   final String fingerprint;
   final CancelToken cancel = CancelToken();
   final _events = <Map<String, dynamic>>[];
-  final _changes = StreamController<void>.broadcast();
+  var _changed = Completer<void>();
   final _approvals = <String, Completer<bool>>{};
   final DateTime created = DateTime.now();
   bool terminal = false;
   Future<void> execution = Future.value();
   List<String> get pendingApprovals => _approvals.keys.toList();
   int _bytes = 0;
+  int _sequence = 0;
   static const maxJournalBytes = 8 * 1024 * 1024;
 
   WorkspaceJob(this.id, this.requestId, this.fingerprint);
 
-  int get sequence => _events.length;
+  int get sequence => _sequence;
+  int get retainedBytes => _bytes;
+
+  void _compactSnapshots() {
+    final seen = <String>{};
+    final retained = <Map<String, dynamic>>[];
+    for (final event in _events.reversed) {
+      final data = event['data'] as Map;
+      final key = switch (event['type']) {
+        'agent' when data['id'] is String => 'agent:${data['id']}',
+        'attachment_progress' when data['name'] is String =>
+          'attachment:${data['name']}',
+        'metrics' => 'metrics',
+        _ => null,
+      };
+      if (key == null || seen.add(key)) retained.add(event);
+    }
+    _events
+      ..clear()
+      ..addAll(retained.reversed);
+    _bytes = _events.fold(
+      0,
+      (total, event) => total + utf8.encode(jsonEncode(event)).length,
+    );
+  }
 
   void emit(String type, [Map<String, dynamic> data = const {}]) {
     if (terminal) return;
@@ -34,6 +59,14 @@ class WorkspaceJob {
       'data': data,
     };
     final size = utf8.encode(jsonEncode(event)).length;
+    if (_bytes + size > maxJournalBytes) {
+      // Include the replacement while compacting so its predecessor does not
+      // count against the budget alongside the new snapshot.
+      _events.add(event);
+      _compactSnapshots();
+      _events.removeLast();
+      _bytes -= size;
+    }
     if (_bytes + size > maxJournalBytes &&
         !const {'done', 'failed', 'cancelled'}.contains(type)) {
       stop('Job activity exceeded the retained event limit.');
@@ -41,8 +74,11 @@ class WorkspaceJob {
     }
     _bytes += size;
     _events.add(event);
+    _sequence++;
     terminal = const {'done', 'failed', 'cancelled'}.contains(type);
-    _changes.add(null);
+    final changed = _changed;
+    _changed = Completer<void>();
+    changed.complete();
     if (terminal) {
       for (final approval in _approvals.values) {
         if (!approval.isCompleted) approval.complete(false);
@@ -51,24 +87,48 @@ class WorkspaceJob {
     }
   }
 
-  /// Subscribe before taking the snapshot so no event can fall between replay
+  /// Capture the change signal before taking the snapshot so no event falls between replay
   /// and live subscription. Cursor advances only after yielding each event.
-  Stream<Map<String, dynamic>> events({int after = 0}) async* {
+  Stream<Map<String, dynamic>> events({
+    int after = 0,
+    bool compact = false,
+  }) async* {
     if (after < 0 || after > sequence) {
       throw ArgumentError.value(after, 'after', 'Invalid event cursor');
     }
-    final changes = StreamIterator<void>(_changes.stream);
     var cursor = after;
-    try {
-      while (true) {
-        while (cursor < _events.length) {
-          yield _events[cursor++];
+    while (true) {
+      final changed = _changed.future;
+      final pending = _events
+          .where((event) => (event['sequence'] as int) > cursor)
+          .toList();
+      for (final event in pending) {
+        final next = event['sequence'] as int;
+        if (next > cursor + 1 && compact) {
+          yield {
+            'jobId': id,
+            'sequence': cursor + 1,
+            'type': 'checkpoint',
+            'data': {'through': next - 1},
+          };
+          cursor = next - 1;
         }
-        if (terminal) break;
-        if (!await changes.moveNext()) break;
+        // Older clients require contiguous cursors. Empty historical updates
+        // preserve that contract without retaining superseded output in memory.
+        while (cursor + 1 < next) {
+          yield {
+            'jobId': id,
+            'sequence': ++cursor,
+            'type': 'compacted',
+            'data': <String, dynamic>{},
+          };
+        }
+        cursor = next;
+        yield event;
       }
-    } finally {
-      await changes.cancel();
+      if (cursor < sequence) continue;
+      if (terminal) break;
+      await changed;
     }
   }
 
@@ -100,7 +160,6 @@ class WorkspaceJob {
 
   Future<void> dispose() async {
     stop('The server stopped.');
-    await _changes.close();
   }
 }
 

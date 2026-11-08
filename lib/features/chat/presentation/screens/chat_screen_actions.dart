@@ -212,6 +212,7 @@ extension _ChatScreenActions on _ChatScreenState {
       final text = ref
           .read(chatProvider.notifier)
           .plainText(modelName: models.loadedModel?.displayName);
+      final subject = context.l10n.chatShareSubject;
       final dir = await getTemporaryDirectory();
       final title = chat.messages.isEmpty
           ? 'conversation'
@@ -229,7 +230,7 @@ extension _ChatScreenActions on _ChatScreenState {
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(file.path, mimeType: 'text/plain')],
-          subject: 'Conversation from OnDevice LLM',
+          subject: subject,
         ),
       );
     } catch (e) {
@@ -425,7 +426,7 @@ extension _ChatScreenActions on _ChatScreenState {
     try {
       final data = ref.read(chatProvider.notifier).export(markdown: markdown);
       await FilePicker.saveFile(
-        dialogTitle: 'Export conversation',
+        dialogTitle: context.l10n.chatExportConversation,
         fileName: 'ondevice-chat.${markdown ? 'md' : 'json'}',
         bytes: Uint8List.fromList(utf8.encode(data)),
       );
@@ -443,7 +444,7 @@ extension _ChatScreenActions on _ChatScreenState {
   Future<void> _createDocument() async {
     var format = 'docx';
     var template = DocumentTemplate.transcript;
-    var title = 'OnDevice LLM document';
+    var title = context.l10n.documentDefaultTitle;
     var answersOnly = false;
     var includeBranches = false;
     var includeReasoning = false;
@@ -475,7 +476,9 @@ extension _ChatScreenActions on _ChatScreenState {
                     for (final choice in DocumentTemplate.values)
                       DropdownMenuItem(
                         value: choice,
-                        child: Text(DocumentDraftService.label(choice)),
+                        child: Text(
+                          DocumentDraftService.label(choice, context.l10n),
+                        ),
                       ),
                   ],
                   onChanged: (value) {
@@ -620,7 +623,9 @@ extension _ChatScreenActions on _ChatScreenState {
         if (selectedIds == null || !mounted) return;
       }
       var document = ChatDocument.select(
-        title: title.trim().isEmpty ? 'OnDevice LLM document' : title.trim(),
+        title: title.trim().isEmpty
+            ? context.l10n.documentDefaultTitle
+            : title.trim(),
         messages: chat.messages,
         chatId: chat.chatId,
         selectedIds: chooseMessages
@@ -635,14 +640,14 @@ extension _ChatScreenActions on _ChatScreenState {
         includeReasoning: includeReasoning,
       ).redacted(redactTerms.split(','));
       if (document.messages.isEmpty) {
-        throw const FormatException('No messages match this selection.');
+        throw FormatException(context.l10n.documentNoMessagesSelected);
       }
       if (template != DocumentTemplate.transcript) {
         document = document.normalizedCitations();
         final settings = ref.read(settingsProvider);
         final model = ref.read(modelManagerProvider).loadedModel;
         if (!settings.usesRemote && model == null) {
-          throw StateError('Load a model before drafting a document.');
+          throw StateError(context.l10n.documentLoadModelFirst);
         }
         final TextEngine engine = settings.usesRemote
             ? ref.read(remoteEngineProvider)

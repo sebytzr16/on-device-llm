@@ -5,6 +5,11 @@ import '../tools/domain/tool_spec.dart';
 /// Explicit delegation must survive greeting and retrieval gates (owner, 2026-11-02).
 abstract final class HelperRequest {
   static const contentBudget = 4800;
+  static const mergeInstruction =
+      'Write ONE direct answer to the user\'s actual question in your own words. '
+      'Never paste a helper reply verbatim or mention agent numbers, roles, or an agents table. '
+      'Give no code, API keys, or scripts unless the user asked for code. '
+      'If helpers lack web results, use sources already found this turn; state any remaining uncertainty.';
   static const _cut = '\n[Excerpt cut to helper budget]\n';
 
   // Bound both fields at the final prompt boundary, including direct callers (owner, 2026-11-02).
@@ -57,7 +62,7 @@ abstract final class HelperRequest {
 
   static bool wanted(String input) =>
       !RegExp(
-        r"\b(don't|do not|never|without|no uses)\b|n'utilise pas",
+        r"\b(?:(?:don't|do not|never)\s+(?:use|ask|call|launch|run)|without(?:\s+using)?|no uses|n'utilise pas)\b[^.!?\n]{0,60}\b(?:helpers?|(?:sub[ -]?)?agents?|subagentes?)\b",
         caseSensitive: false,
       ).hasMatch(input) &&
       !RegExp(
@@ -65,13 +70,88 @@ abstract final class HelperRequest {
         caseSensitive: false,
       ).hasMatch(input.trim()) &&
       RegExp(
-        r'\b(use|ask|call|delegate|invoke|launch|fire|utilise|demande|appelle|usa|utiliza|delega)\b',
+        r'\b(use|using|ask|call|delegate|invoke|launch|fire|run|utilise|demande|appelle|usa|utiliza|delega)\b',
         caseSensitive: false,
       ).hasMatch(input) &&
       RegExp(
-        r'\b(helpers?|sub[ -]?agents?|assistant auxiliaire|ayudante|subagente)\b',
+        r'\b(helpers?|(?:sub[ -]?)?agents?|assistant auxiliaire|ayudantes?|subagentes?)\b',
         caseSensitive: false,
       ).hasMatch(input);
+
+  /// Explicit job count, independently of the host's parallel slot limit.
+  static int count(String input) {
+    if (!wanted(input)) return 0;
+    final match = RegExp(
+      r'\b(\d+|one|two|three|four|un|une|deux|trois|quatre|uno|una|dos|tres|cuatro)\s+(?:(?:specialized|specialised|parallel|independent|local|spécialisés?|specialises?|especializados?)\s+){0,3}(?:helpers?|(?:sub[ -]?)?agents?|ayudantes?|subagentes?)\b',
+      caseSensitive: false,
+    ).firstMatch(input);
+    const words = {
+      'one': 1,
+      'un': 1,
+      'une': 1,
+      'uno': 1,
+      'una': 1,
+      'two': 2,
+      'deux': 2,
+      'dos': 2,
+      'three': 3,
+      'trois': 3,
+      'tres': 3,
+      'four': 4,
+      'quatre': 4,
+      'cuatro': 4,
+    };
+    final value = match?.group(1)?.toLowerCase();
+    return (int.tryParse(value ?? '') ?? words[value] ?? 1).clamp(1, 4);
+  }
+
+  /// A real batch when the coordinator promises delegation or emits too few
+  /// calls. Each fallback has a distinct brief, and completed jobs never repeat.
+  static List<ToolCall> fallbackCalls(
+    String input, {
+    required bool offered,
+    required int round,
+    required bool lastRound,
+    int completed = 0,
+  }) {
+    if (!offered || round != 0 || lastRound) return const [];
+    final total = count(input);
+    if (total == 0 || completed >= total) return const [];
+    final roles = switch (total) {
+      2 => [
+        'Cover the main parts of the request and gather relevant facts',
+        'Check accuracy, gaps, and useful context',
+      ],
+      3 => [
+        'Cover the first main aspect of the request',
+        'Cover other aspects and gather supporting facts or context',
+        'Check accuracy and supply missing details',
+      ],
+      _ => [
+        'Cover the first main aspect of the request',
+        'Cover a different aspect of the request',
+        'Gather supporting facts and useful context',
+        'Check accuracy, errors, and gaps',
+      ],
+    };
+    return [
+      for (var index = completed; index < total; index++)
+        ToolCall(
+          id: 'explicit_helper_${index + 1}',
+          name: 'ask_helper',
+          arguments: total == 1
+              ? _arguments(input)
+              : jsonEncode({
+                  'task':
+                      'Agent ${index + 1} of $total: ${roles[index]}. '
+                      'Contribute this distinct part of the user task. Return findings '
+                      'to the coordinator to combine '
+                      'with the other agents; do not claim to launch other agents.',
+                  'input': input,
+                }),
+        ),
+    ];
+  }
 
   // Small models sometimes promise a call instead of emitting one (owner, 2026-11-02).
   static ToolCall? fallback(

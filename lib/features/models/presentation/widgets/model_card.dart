@@ -9,6 +9,7 @@ import '../../domain/entities/model_catalog.dart';
 import '../../domain/entities/model_info.dart';
 import 'model_tags.dart';
 import '../../../../core/l10n/l10n.dart';
+import '../../../../desktop/model_tune_section.dart';
 
 /// One model in the library, in any of its lifecycle states: idle,
 /// downloading, verifying, paused/failed, downloaded (optionally active).
@@ -214,8 +215,8 @@ class ModelCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // A link- or Hub-added entry that was never downloaded can
-                  // leave the list; bundled catalog rows always stay.
+                  // Any entry that is not downloaded can leave the list:
+                  // catalog rows are hidden (Restore brings them back).
                   if (onRemoveEntry != null) ...[
                     const SizedBox(width: AppDesign.sm),
                     Expanded(
@@ -283,6 +284,7 @@ class ModelCard extends StatelessWidget {
                       onPressed: busy ? null : onBenchmark,
                     ),
                   ),
+                  BenchmarkHistoryButton(modelId: model.id),
                   if (onProfile != null)
                     Expanded(
                       child: _QuietAction(

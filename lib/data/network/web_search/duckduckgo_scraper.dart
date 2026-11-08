@@ -225,6 +225,11 @@ class DuckDuckGoScraper {
   static const newsTtl = Duration(minutes: 10);
   static const _maxRemembered = 64;
   final _recent = <String, (DateTime, int, List<SearchResult>)>{};
+  // Parallel helpers each have their own cancel token and often send the
+  // same query at once (DuckDuckGo then asked for a bot check, 2026-11-07).
+  // One shared request runs without a token; each caller stops waiting when
+  // its own token is cancelled.
+  final _inFlight = <(String, int), Future<List<SearchResult>>>{};
 
   List<SearchResult>? _remembered(String key, int limit, Duration ttl) {
     final hit = _recent[key];
@@ -251,8 +256,37 @@ class DuckDuckGoScraper {
     String? dateFilter,
     String? region,
   }) async {
+    query = query.trim().replaceAll(RegExp(r'\s+'), ' ');
     region ??= regionFor(localeCode);
     final key = '$region|${dateFilter ?? '-'}|${query.trim().toLowerCase()}';
+    final flightKey = (key, limit);
+    final shared = _inFlight[flightKey] ??=
+        _search(
+          query,
+          key: key,
+          region: region,
+          limit: limit,
+          dateFilter: dateFilter,
+        ).whenComplete(() {
+          // Not an arrow: remove() returns this future, which would await itself.
+          _inFlight.remove(flightKey);
+        });
+    if (cancelToken == null) return shared;
+    if (cancelToken.isCancelled) throw cancelToken.cancelError!;
+    return Future.any([
+      shared,
+      cancelToken.whenCancel.then<List<SearchResult>>((e) => throw e),
+    ]);
+  }
+
+  Future<List<SearchResult>> _search(
+    String query, {
+    required String key,
+    required String region,
+    required int limit,
+    CancelToken? cancelToken,
+    String? dateFilter,
+  }) async {
     final remembered = _remembered(key, limit, resultsTtl);
     if (remembered != null) {
       health = SearchProviderHealth(

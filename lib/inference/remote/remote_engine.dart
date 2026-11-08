@@ -7,6 +7,7 @@ import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:logging/logging.dart';
 
+import '../../features/hosting/pinned_dio.dart';
 import '../../core/errors/exceptions.dart';
 import '../../features/settings/domain/entities/inference_settings.dart';
 import '../../features/tools/domain/tool_spec.dart';
@@ -71,6 +72,14 @@ final _log = Logger('remote');
 
 class RemoteEngine implements TextEngine {
   final Dio _dio;
+  final _pinnedClients = PinnedDioClients();
+
+  Dio _client(InferenceSettings s) => _pinnedClients.forEndpoint(
+    _dio,
+    s.remoteUri,
+    s.activeRemoteProfile?.fingerprint,
+  );
+
   final RemoteUsageLog usage;
   CancelToken? _cancel;
   @override
@@ -174,7 +183,7 @@ class RemoteEngine implements TextEngine {
     final model = s.remoteModel.trim();
     if (id == 'lmstudio' || id == 'custom') {
       try {
-        final res = await _dio.getUri<dynamic>(
+        final res = await _client(s).getUri<dynamic>(
           profile.provider.serverEndpoint(base, 'api/v0/models'),
           options: options,
         );
@@ -193,7 +202,7 @@ class RemoteEngine implements TextEngine {
     }
     if (id == 'llamacpp' || id == 'custom') {
       try {
-        final res = await _dio.getUri<dynamic>(
+        final res = await _client(s).getUri<dynamic>(
           profile.provider.serverEndpoint(base, 'props'),
           options: options,
         );
@@ -353,7 +362,7 @@ class RemoteEngine implements TextEngine {
     try {
       switch (provider.protocol) {
         case RemoteProtocol.openai:
-          final res = await _dio.getUri<dynamic>(
+          final res = await _client(s).getUri<dynamic>(
             provider.endpoint(base, 'models'),
             options: Options(headers: _headers(s)),
           );
@@ -381,7 +390,7 @@ class RemoteEngine implements TextEngine {
                 ),
           ];
         case RemoteProtocol.anthropic:
-          final res = await _dio.getUri<dynamic>(
+          final res = await _client(s).getUri<dynamic>(
             provider
                 .endpoint(base, 'models')
                 .replace(queryParameters: {'limit': '1000'}),
@@ -399,7 +408,7 @@ class RemoteEngine implements TextEngine {
                 ),
           ];
         case RemoteProtocol.gemini:
-          final res = await _dio.getUri<dynamic>(
+          final res = await _client(s).getUri<dynamic>(
             provider
                 .endpoint(base, 'models')
                 .replace(queryParameters: {'pageSize': '1000'}),
@@ -457,7 +466,7 @@ class RemoteEngine implements TextEngine {
     var health = 'unknown';
     final tools = <String>[];
     try {
-      final response = await _dio.getUri<dynamic>(
+      final response = await _client(s).getUri<dynamic>(
         provider.serverEndpoint(base, 'health'),
         options: Options(headers: _headers(s), validateStatus: (_) => true),
       );
@@ -476,7 +485,7 @@ class RemoteEngine implements TextEngine {
       health = 'not advertised';
     }
     try {
-      final response = await _dio.getUri<dynamic>(
+      final response = await _client(s).getUri<dynamic>(
         provider.serverEndpoint(base, 'tools'),
         options: Options(headers: _headers(s), validateStatus: (_) => true),
       );
@@ -945,7 +954,7 @@ class RemoteEngine implements TextEngine {
             );
         }
         Future<Response<ResponseBody>> post(Map<String, Object?> payload) =>
-            _dio.postUri<ResponseBody>(
+            _client(settings).postUri<ResponseBody>(
               uri,
               data: jsonEncode(payload),
               cancelToken: cancel,
@@ -1904,5 +1913,6 @@ class RemoteEngine implements TextEngine {
   void dispose() {
     cancel();
     _dio.close(force: true);
+    _pinnedClients.close();
   }
 }

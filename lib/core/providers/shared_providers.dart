@@ -132,6 +132,12 @@ final remoteMemoryEngineFactoryProvider = Provider<RemoteEngine Function()>(
       () => RemoteEngine(usage: ref.read(remoteEngineProvider).usage),
 );
 
+/// Each helper owns cancellation and metrics while sharing chat usage logging.
+final remoteHelperEngineFactoryProvider = Provider<RemoteEngine Function()>(
+  (ref) =>
+      () => RemoteEngine(usage: ref.read(remoteEngineProvider).usage),
+);
+
 final duckDuckGoScraperProvider = Provider<DuckDuckGoScraper>((ref) {
   final scraper = DuckDuckGoScraper();
   ref.onDispose(scraper.dispose);

@@ -21,6 +21,83 @@ ToolCall _call(String args) =>
     ToolCall(id: '1', name: 'ask_helper', arguments: args);
 
 void main() {
+  test('fallback briefs cover tasks without steering them into code', () {
+    for (final task in [
+      'Give me the latest news',
+      'Explain tides',
+      'Plan a birthday party',
+      'Write a short story',
+      'Fix this Dart function',
+    ]) {
+      for (final count in [1, 2, 3, 4]) {
+        final input = '$task. Use $count agents';
+        final calls = HelperRequest.fallbackCalls(
+          input,
+          offered: true,
+          round: 0,
+          lastRound: false,
+        );
+        expect(calls, hasLength(count));
+        expect(calls.map((c) => c.args['task']).toSet(), hasLength(count));
+        for (final call in calls) {
+          expect(call.args['input'], input);
+          expect(call.args['task'], isNot(contains('code')));
+          expect(call.args['task'], isNot(contains('core solution')));
+        }
+      }
+    }
+  });
+
+  test('plain and specialized agent requests retain their requested count', () {
+    for (final input in [
+      'Write for me a website for a pizzeria. use four specialized  agents to compose it',
+      'Use 4 agents. Do not use the web.',
+      'Use four agents without web access',
+      'Run this with four independent agents',
+    ]) {
+      expect(HelperRequest.wanted(input), isTrue, reason: input);
+      expect(HelperRequest.count(input), 4, reason: input);
+      final calls = HelperRequest.fallbackCalls(
+        input,
+        offered: true,
+        round: 0,
+        lastRound: false,
+      );
+      expect(calls, hasLength(4));
+      expect(calls.map((call) => call.id).toSet(), hasLength(4));
+      expect(calls.map((call) => call.args['task']).toSet(), hasLength(4));
+    }
+    expect(HelperRequest.count('Use two specialized agents'), 2);
+    expect(HelperRequest.count('Use 99 agents'), 4);
+    for (final input in [
+      "Don't use four agents",
+      'Do not use agents',
+      'Complete this without agents',
+      'How can I use four agents?',
+    ]) {
+      expect(HelperRequest.count(input), 0, reason: input);
+    }
+    expect(
+      HelperRequest.fallbackCalls(
+        'Use four agents',
+        offered: true,
+        round: 0,
+        lastRound: false,
+        completed: 1,
+      ),
+      hasLength(3),
+    );
+    expect(
+      HelperRequest.fallbackCalls(
+        'Use four agents',
+        offered: false,
+        round: 0,
+        lastRound: false,
+      ),
+      isEmpty,
+    );
+  });
+
   test(
     'explicit sub-agent requests survive greetings and have a bounded fallback',
     () {

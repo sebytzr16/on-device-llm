@@ -488,18 +488,33 @@ class SettingDropdown<T> extends StatelessWidget {
       leading: icon == null ? null : Icon(icon),
       title: Text(label),
       subtitle: Text(hint),
-      trailing: DropdownButtonHideUnderline(
-        child: DropdownButton<T>(
-          value: items.contains(value) ? value : items.first,
-          dropdownColor: c.surfaceOverlay,
-          borderRadius: AppDesign.radius(AppDesign.rMd),
-          style: context.text.bodyMuted.copyWith(color: c.text),
-          iconEnabledColor: c.textMuted,
-          items: [
-            for (final e in items)
-              DropdownMenuItem(value: e, child: Text(labelOf(e))),
-          ],
-          onChanged: (v) => v != null ? onChanged(v) : null,
+      // A long value (a provider name) used to squeeze the title and hint
+      // into one word per line on a phone: the value gets at most 40%.
+      trailing: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.sizeOf(context).width * 0.4,
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<T>(
+            isExpanded: true,
+            value: items.contains(value) ? value : items.first,
+            dropdownColor: c.surfaceOverlay,
+            borderRadius: AppDesign.radius(AppDesign.rMd),
+            style: context.text.bodyMuted.copyWith(color: c.text),
+            iconEnabledColor: c.textMuted,
+            items: [
+              for (final e in items)
+                DropdownMenuItem(
+                  value: e,
+                  child: Text(
+                    labelOf(e),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: (v) => v != null ? onChanged(v) : null,
+          ),
         ),
       ),
     );
@@ -699,7 +714,7 @@ class SettingChoice<T> extends StatelessWidget {
   final String Function(T) labelOf;
   final ValueChanged<T> onChanged;
 
-  /// When set, a trailing "Custom…" chip opens the caller's entry flow.
+  /// When set, a trailing 'Custom…' chip opens the caller's entry flow.
   final VoidCallback? onCustom;
 
   const SettingChoice({
@@ -759,7 +774,9 @@ class SettingChoice<T> extends StatelessWidget {
                 ChoiceChip(
                   key: Key('choice-$label-custom'),
                   label: Text(
-                    custom ? 'Custom · ${labelOf(value)}' : 'Custom…',
+                    custom
+                        ? context.l10n.settingCustomValue(labelOf(value))
+                        : context.l10n.settingCustomOption,
                   ),
                   labelStyle: context.text.mono.copyWith(
                     color: custom ? c.accent : c.textMuted,

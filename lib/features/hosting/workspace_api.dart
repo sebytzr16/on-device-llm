@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 
 import 'device_model_server.dart';
+import 'pairing_code.dart';
 import 'workspace_jobs.dart';
 import 'workspace_uploads.dart';
 
@@ -15,6 +16,30 @@ class WorkspaceApi {
   final Future<void> Function(WorkspaceJob, Map<String, dynamic>) run;
   final List<String> capabilities;
   final WorkspaceUploads uploads;
+  final _imageDirectories = <String, Directory>{};
+  static const _completionHeader = 'x-workspace-completion';
+  final _completionSecret = PairingCode.secret();
+  final _completionClients = <String, String>{};
+
+  /// In-memory credentials for this job's calls back to this server. Never
+  /// included in workspace responses or taken from the submitted JSON.
+  Map<String, String> completionHeaders(WorkspaceJob job) => {
+    _completionHeader: '$_completionSecret.${job.id}',
+  };
+
+  /// Only a loopback caller holding this API instance's private credential
+  /// can attribute a completion to an active job's original socket address.
+  String? completionClient(HttpRequest request) {
+    if (request.connectionInfo?.remoteAddress.isLoopback != true ||
+        request.method != 'POST' ||
+        request.uri.path != DeviceModelServer.completionsPath) {
+      return null;
+    }
+    final credentials = request.headers[_completionHeader];
+    if (credentials == null || credentials.length != 1) return null;
+    return _completionClients[credentials.single];
+  }
+
   WorkspaceApi({
     required this.run,
     required this.capabilities,
@@ -67,7 +92,34 @@ class WorkspaceApi {
         final job = jobs.submit(
           requestId: input['requestId'] as String,
           fingerprint: sha256.convert(utf8.encode(raw)).toString(),
-          run: (job) => run(job, input),
+          run: (job) async {
+            // submit calls this synchronously only for newly accepted jobs;
+            // retries and rejected submissions must not retain extra references.
+            final acquired = <String>[];
+            final credential = '$_completionSecret.${job.id}';
+            _completionClients[credential] =
+                request.connectionInfo?.remoteAddress.address ??
+                'Unknown client';
+            try {
+              if (input['uploads'] is List) {
+                for (final upload in input['uploads'] as List) {
+                  if (upload is Map && upload['uploadId'] is String) {
+                    final id = upload['uploadId'] as String;
+                    uploads.acquire(id);
+                    acquired.add(id);
+                  }
+                }
+              }
+              await run(job, input);
+            } finally {
+              _completionClients.remove(credential);
+              try {
+                await Future.wait(acquired.map(uploads.release));
+              } finally {
+                await _removeImageDirectory(job.id);
+              }
+            }
+          },
         );
         json(202, {
           'jobId': job.id,
@@ -117,7 +169,12 @@ class WorkspaceApi {
           onDone: lost,
           onError: (_) => lost(),
         );
-        final events = StreamIterator(job.events(after: cursor));
+        final events = StreamIterator(
+          job.events(
+            after: cursor,
+            compact: request.uri.queryParameters['compact'] == '1',
+          ),
+        );
         try {
           socket.write(
             'HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\n'
@@ -139,7 +196,10 @@ class WorkspaceApi {
         } on SocketException catch (_) {
           // The client can rejoin using its last received event sequence.
         } finally {
-          await events.cancel();
+          // An idle async generator can be awaiting the next job update.
+          // Request cancellation now, but release the socket and admission
+          // immediately rather than waiting for server-owned work to progress.
+          unawaited(events.cancel());
           await incoming.cancel();
           await socket.close();
         }
@@ -172,13 +232,49 @@ class WorkspaceApi {
       json(400, {'error': error.message});
     } on StateError catch (error) {
       json(409, {'error': error.message});
+    } on TimeoutException catch (_) {
+      json(408, {'error': 'Request body deadline reached.'});
+    } on HttpException catch (_) {
+      // The peer abandoned its body. Do not write to its closed response.
+    } on SocketException catch (_) {
+      // A disconnected upload does not affect server-owned jobs.
     } finally {
       if (!detached) await response.close();
     }
   }
 
+  /// Decode inline images into a private directory owned by this job's run.
+  List<Map<String, Object>> decodeMessages(
+    WorkspaceJob job,
+    Object? source, {
+    required bool vision,
+    required List<File> images,
+  }) => DeviceModelServer.decodeWorkspaceMessages(
+    source,
+    vision: vision,
+    images: images,
+    imageDirectory: _imageDirectories.putIfAbsent(
+      job.id,
+      () => Directory.systemTemp.createTempSync('desktopServe-'),
+    ),
+  );
+
+  Future<void> _removeImageDirectory(String jobId) async {
+    final directory = _imageDirectories[jobId];
+    if (directory == null) return;
+    try {
+      if (await directory.exists()) await directory.delete(recursive: true);
+      _imageDirectories.remove(jobId);
+    } on FileSystemException {
+      // Keep failed cleanup for another attempt when the server stops.
+    }
+  }
+
   Future<void> dispose() async {
     await jobs.dispose();
+    for (final id in _imageDirectories.keys.toList()) {
+      await _removeImageDirectory(id);
+    }
     await uploads.dispose();
   }
 }

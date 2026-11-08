@@ -64,6 +64,7 @@ class LocalBackupService {
     'hosting_port_v1': 'Device-local listener configuration.',
     'search_misses_v1': 'Retrieval cache.',
     'retired_model_names_v1': 'Device-local model inventory.',
+    'hidden_library_models_v1': 'Device-local model inventory.',
     'model_recommendations_v1': 'Rebuilt from installed models.',
     'thinking_off_profiles_2026_09_28': 'One-time migration marker.',
     'thinking_off_2026_09_28': 'One-time migration marker.',

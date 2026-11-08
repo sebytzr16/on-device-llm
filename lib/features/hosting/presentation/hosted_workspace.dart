@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,7 +13,6 @@ import '../../helper/helper_jobs.dart';
 import '../../helper/helper_runner.dart';
 import '../../settings/domain/entities/inference_settings.dart';
 import '../../tools/tool_runner.dart';
-import '../device_model_server.dart';
 import '../workspace_api.dart';
 import '../workspace_workflow.dart';
 import '../workspace_uploads.dart';
@@ -32,7 +32,8 @@ WorkspaceApi hostedWorkspace({
   required bool Function(String) vision,
 }) {
   final uploads = WorkspaceUploads();
-  return WorkspaceApi(
+  late final WorkspaceApi api;
+  api = WorkspaceApi(
     uploads: uploads,
     capabilities: const [
       'server_execution',
@@ -84,35 +85,61 @@ WorkspaceApi hostedWorkspace({
             providerId: 'custom',
             baseUrl: 'http://127.0.0.1:${port()}/v1/',
             model: model,
+            headers: api.completionHeaders(job),
           ),
         ],
         remoteProfileId: 'host',
         remoteApiKeys: {'host': token},
       );
       final helper = ref.read(helperRunnerProvider);
+      final pendingAgents = <String, HelperJob>{};
+      Timer? agentUpdates;
+      void emitAgent(HelperJob agent) {
+        job.emit('agent', {
+          'id': agent.id,
+          'task': agent.task,
+          'modelName': agent.modelName,
+          'phase': agent.phase.name,
+          'output': agent.output,
+          'thinking': agent.thinking,
+          'elapsedMs': agent.elapsed.inMilliseconds,
+          'firstTokenMs': agent.firstToken?.inMilliseconds,
+          'metrics': agent.metrics,
+          'reason': agent.reason,
+        });
+      }
+
+      void flushAgents() {
+        agentUpdates = null;
+        final pending = pendingAgents.values.toList();
+        pendingAgents.clear();
+        for (final agent in pending) {
+          emitAgent(agent);
+        }
+      }
+
       final jobs = ref.listen(helperJobsProvider, (previous, next) {
         for (final agent in next.jobs.where((a) => a.messageId == job.id)) {
           final old = previous?.jobs.where((a) => a.id == agent.id).firstOrNull;
           if (identical(old, agent)) continue;
-          job.emit('agent', {
-            'id': agent.id,
-            'task': agent.task,
-            'modelName': agent.modelName,
-            'phase': agent.phase.name,
-            'output': agent.output,
-            'thinking': agent.thinking,
-            'elapsedMs': agent.elapsed.inMilliseconds,
-            'firstTokenMs': agent.firstToken?.inMilliseconds,
-            'metrics': agent.metrics,
-            'reason': agent.reason,
-          });
+          if (old == null || agent.terminal || old.phase != agent.phase) {
+            pendingAgents.remove(agent.id);
+            emitAgent(agent);
+          } else {
+            pendingAgents[agent.id] = agent;
+            agentUpdates ??= Timer(
+              const Duration(milliseconds: 200),
+              flushAgents,
+            );
+          }
         }
       });
       final scraper = ref.read(duckDuckGoScraperProvider);
       final reader = ref.read(webPageReaderProvider);
       helper.beginTurn();
       try {
-        final messages = DeviceModelServer.decodeWorkspaceMessages(
+        final messages = api.decodeMessages(
+          job,
           input['messages'],
           vision: vision(model),
           images: files,
@@ -293,35 +320,42 @@ WorkspaceApi hostedWorkspace({
               : null,
         );
         await WorkspaceWorkflow(
-          engine: _WorkspaceEngine(client, localSettings),
+          engine: HostedWorkspaceEngine(client, localSettings),
           tools: tools,
           settings: settings,
         ).run(job, messages);
       } finally {
+        agentUpdates?.cancel();
+        flushAgents();
         helper.endTurn();
         jobs.close();
         client.dispose();
         for (final file in files) {
           if (await file.exists()) await file.delete();
         }
-        if (input['uploads'] is List) {
-          for (final upload in input['uploads'] as List) {
-            if (upload is Map && upload['uploadId'] is String) {
-              await uploads.release(upload['uploadId'] as String);
-            }
-          }
-        }
       }
     },
   );
+  return api;
 }
 
 /// Keep the workflow's settings local while using the existing model queue and
 /// protocol parser for model admission, cancellation and server image handling.
-class _WorkspaceEngine implements TextEngine {
-  final RemoteEngine client;
+class HostedWorkspaceEngine implements TextEngine {
+  final TextEngine client;
   final InferenceSettings connection;
-  _WorkspaceEngine(this.client, this.connection);
+  HostedWorkspaceEngine(this.client, this.connection);
+
+  /// The round's inference settings (e.g. the 512-token planning limit)
+  /// applied over the fixed connection fields, so per-round limits reach the
+  /// server while the loopback profile and its session-only API key stay.
+  InferenceSettings _round(InferenceSettings round) => round.copyWith(
+    remoteEnabled: connection.remoteEnabled,
+    remoteProfiles: connection.remoteProfiles,
+    remoteProfileId: connection.remoteProfileId,
+    remoteApiKeys: connection.remoteApiKeys,
+  );
+
   @override
   Map<String, dynamic> get metrics => client.metrics;
   @override
@@ -337,7 +371,7 @@ class _WorkspaceEngine implements TextEngine {
   }) => client.generate(
     messages: messages,
     fallbackTemplate: fallbackTemplate,
-    settings: connection,
+    settings: _round(settings),
     assistantPrefix: assistantPrefix,
     tools: tools,
     toolChoice: toolChoice,
@@ -352,7 +386,7 @@ class _WorkspaceEngine implements TextEngine {
   }) => client.previewPrompt(
     messages: messages,
     fallbackTemplate: fallbackTemplate,
-    settings: connection,
+    settings: _round(settings),
     assistantPrefix: assistantPrefix,
     tools: tools,
   );

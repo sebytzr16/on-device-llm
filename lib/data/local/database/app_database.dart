@@ -24,7 +24,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
   AppDatabase.forTesting(super.executor);
 
-  static const currentSchemaVersion = 16;
+  static const currentSchemaVersion = 17;
   @override
   int get schemaVersion => currentSchemaVersion;
 
@@ -32,6 +32,7 @@ class AppDatabase extends _$AppDatabase {
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async {
       await m.createAll();
+      await createCompareHistory();
       // North Star §6.5: unique (chatId, sequence).
       await customStatement(
         'CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_chat_seq '
@@ -90,6 +91,7 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 15) await m.addColumn(models, models.projectorJson);
       if (from < 16) await m.addColumn(models, models.partsJson);
+      if (from < 17) await createCompareHistory();
       // v14: the web page cache is gone.
       if (from < 14) await customStatement('DROP TABLE IF EXISTS web_pages;');
     },
@@ -99,6 +101,12 @@ class AppDatabase extends _$AppDatabase {
       await customStatement('PRAGMA foreign_keys=ON;');
       await _ensureFts(freshlyCreated: details.wasCreated);
     },
+  );
+
+  // JSON payloads keep the run snapshot independent of model catalog changes.
+  Future<void> createCompareHistory() => customStatement(
+    'CREATE TABLE IF NOT EXISTS compare_history ('
+    'id TEXT PRIMARY KEY, created_at INTEGER NOT NULL, payload TEXT NOT NULL)',
   );
 
   /// Whether full-text search over messages is available (FTS5 compiled

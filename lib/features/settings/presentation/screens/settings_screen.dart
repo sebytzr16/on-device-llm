@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../../../app.dart';
 import '../../../../core/constants/app_constants.dart';
@@ -332,8 +333,22 @@ class SettingsScreen extends ConsumerWidget {
                   _DrillRow(
                     icon: Icons.contrast,
                     title: context.l10n.uiSettingsScreenAppearance,
-                    summary:
-                        '${s.themeChoice.name} · ${s.accent.name} · ${(s.textScale * 100).round()}%',
+                    summary: context.l10n.settingsAppearanceSummary(
+                      switch (s.themeChoice) {
+                        ThemeChoice.system => context.l10n.desktopThemeSystem,
+                        ThemeChoice.dark => context.l10n.desktopThemeDark,
+                        ThemeChoice.light => context.l10n.desktopThemeLight,
+                      },
+                      switch (s.accent) {
+                        AccentChoice.amber => context.l10n.summaryAccentAmber,
+                        AccentChoice.blue => context.l10n.summaryAccentBlue,
+                        AccentChoice.green => context.l10n.summaryAccentGreen,
+                        AccentChoice.rose => context.l10n.summaryAccentRose,
+                        AccentChoice.violet => context.l10n.summaryAccentViolet,
+                        AccentChoice.teal => context.l10n.summaryAccentTeal,
+                      },
+                      (s.textScale * 100).round(),
+                    ),
                     page: const AppearancePage(),
                   ),
                   SettingsRow(
@@ -409,20 +424,46 @@ class SettingsScreen extends ConsumerWidget {
                     icon: Icons.data_array,
                     mono: true,
                     title: context.l10n.contextAndBatch,
-                    summary:
-                        '${tokenCount(s.contextSize)} ctx · ${s.batchSize == 0 ? 'auto' : s.batchSize} batch · cache ${s.promptCache ? 'on' : 'off'}',
+                    summary: context.l10n.settingsContextBatchSummary(
+                      tokenCount(s.contextSize),
+                      s.batchSize == 0
+                          ? context.l10n.webAuto
+                          : '${s.batchSize}',
+                      s.promptCache
+                          ? context.l10n.summaryOn
+                          : context.l10n.summaryOff,
+                    ),
                     page: const ContextBatchPage(),
                   ),
                   _DrillRow(
                     icon: Icons.developer_board,
                     mono: true,
                     title: context.l10n.hardware,
-                    summary:
-                        '${backendShort(s.backend)} · '
-                        '${s.nGpuLayers == 999 ? 'all' : s.nGpuLayers} layers · '
-                        '${s.cpuThreads == 0 ? 'auto' : s.cpuThreads}/${s.batchThreads == 0 ? 'auto' : s.batchThreads} thr · '
-                        '${s.kvCacheType.name} kv',
+                    summary: context.l10n.settingsHardwareSummary(
+                      backendShort(s.backend, context.l10n),
+                      s.nGpuLayers == 999
+                          ? 'all'
+                          : s.nGpuLayers == 1
+                          ? 'one'
+                          : '${s.nGpuLayers}',
+                      s.cpuThreads == 0
+                          ? context.l10n.webAuto
+                          : '${s.cpuThreads}',
+                      s.batchThreads == 0
+                          ? context.l10n.webAuto
+                          : '${s.batchThreads}',
+                      s.kvCacheType.name,
+                    ),
                     page: const HardwarePage(),
+                  ),
+                  _DrillRow(
+                    icon: Icons.short_text_rounded,
+                    mono: true,
+                    title: context.l10n.settingLabelMaxTokens,
+                    summary: NumberFormat.decimalPattern(
+                      Localizations.localeOf(context).toLanguageTag(),
+                    ).format(s.maxTokens),
+                    page: const AnswerTokensPage(),
                   ),
                   _DrillRow(
                     icon: Icons.tune,
@@ -432,9 +473,12 @@ class SettingsScreen extends ConsumerWidget {
                       // What the sampler uses: the model's recommended values
                       // where the user set none (request 2026-10-04).
                       final e = ref.watch(effectiveSettingsProvider).effective;
-                      return 'T ${e.temperature.toStringAsFixed(2)} · '
-                          'top-p ${e.topP.toStringAsFixed(2)} · '
-                          'top-k ${e.topK} · max ${tokenCount(e.maxTokens)}';
+                      return context.l10n.settingsSamplingSummary(
+                        e.temperature.toStringAsFixed(2),
+                        e.topP.toStringAsFixed(2),
+                        e.topK,
+                        tokenCount(e.maxTokens),
+                      );
                     }(),
                     // Sampling is per model (owner 2026-11-01): set on the
                     // active model's profile.
@@ -444,19 +488,27 @@ class SettingsScreen extends ConsumerWidget {
                     icon: Icons.manage_search,
                     mono: true,
                     title: context.l10n.reasoningAndSearch,
-                    summary:
-                        'think ${s.thinkingBudgetTokens == 0 ? 'unlimited' : tokenCount(s.thinkingBudgetTokens)} · '
-                        '${s.maxSearchResults} results · ${s.maxPagesRead} pages · '
-                        '${s.evidencePassages} passages · ${s.researchTimeBudgetSeconds} s',
+                    summary: context.l10n.settingsReasoningSummary(
+                      s.thinkingBudgetTokens == 0
+                          ? context.l10n.thinkingBudgetUnlimited
+                          : tokenCount(s.thinkingBudgetTokens),
+                      s.maxSearchResults,
+                      s.maxPagesRead,
+                      s.evidencePassages,
+                      s.researchTimeBudgetSeconds,
+                    ),
                     page: const ReasoningSearchPage(),
                   ),
                   _DrillRow(
                     icon: Icons.storage_outlined,
                     mono: true,
                     title: context.l10n.uiSettingsScreenMemoryRoPESpeculation,
-                    summary:
-                        'K ${s.kvCacheType.name} · V ${s.vCacheType?.name ?? 'same'} · rope ${s.ropeScaling.name}'
-                        '${s.draftModelId.isEmpty ? '' : ' · draft on'}',
+                    summary: context.l10n.settingsRopeSummary(
+                      s.kvCacheType.name,
+                      s.vCacheType?.name ?? context.l10n.summarySame,
+                      s.ropeScaling.name,
+                      s.draftModelId.isEmpty ? '' : context.l10n.summaryDraftOn,
+                    ),
                     page: const MemoryRopePage(),
                   ),
                   _DrillRow(
@@ -464,10 +516,12 @@ class SettingsScreen extends ConsumerWidget {
                     mono: true,
                     title: context.l10n.uiSettingsScreenStructuredOutput,
                     summary: switch (s.responseFormat) {
-                      ResponseFormat.text => 'free text',
+                      ResponseFormat.text => context.l10n.outputFreeText,
                       ResponseFormat.json => 'JSON',
-                      ResponseFormat.jsonSchema => 'JSON schema',
-                      ResponseFormat.gbnf => 'GBNF grammar',
+                      ResponseFormat.jsonSchema =>
+                        context.l10n.uiAdvancedStructuredOutputPageJSONSchema,
+                      ResponseFormat.gbnf =>
+                        context.l10n.uiAdvancedStructuredOutputPageGBNFGrammar,
                     },
                     page: const StructuredOutputPage(),
                   ),
@@ -476,11 +530,19 @@ class SettingsScreen extends ConsumerWidget {
                     mono: true,
                     title: context.l10n.uiSettingsScreenTools,
                     summary: s.toolsEnabled
-                        ? 'on · ${s.toolMaxRounds} rounds'
-                              '${s.toolCalculator ? ' · calc' : ''}'
-                              '${s.toolWeb && s.webSearchEnabled ? ' · web' : ''}'
-                              '${s.toolDocuments && s.knowledgeCollection.isNotEmpty ? ' · docs' : ''}'
-                        : 'off',
+                        ? context.l10n.settingsToolsSummary(
+                            s.toolMaxRounds,
+                            s.toolCalculator
+                                ? context.l10n.summaryCalculator
+                                : '',
+                            s.toolWeb && s.webSearchEnabled
+                                ? context.l10n.summaryWeb
+                                : '',
+                            s.toolDocuments && s.knowledgeCollection.isNotEmpty
+                                ? context.l10n.summaryDocuments
+                                : '',
+                          )
+                        : context.l10n.settingsToolsOff,
                     page: const ToolsPage(),
                   ),
                   _DrillRow(
@@ -493,7 +555,10 @@ class SettingsScreen extends ConsumerWidget {
                         0,
                         (n, l) => n + l.length,
                       );
-                      return '${a.adapters.length} imported · $attached attached';
+                      return context.l10n.settingsAdaptersSummary(
+                        a.adapters.length,
+                        attached,
+                      );
                     }(),
                     page: const AdaptersPage(),
                   ),
@@ -505,8 +570,8 @@ class SettingsScreen extends ConsumerWidget {
                       final r = ref.watch(effectiveSettingsProvider);
                       final n = r.overriddenKeys.length;
                       return n == 0
-                          ? 'nothing overridden'
-                          : '$n overridden by profile, preset or chat';
+                          ? context.l10n.settingsNoOverrides
+                          : context.l10n.settingsOverrideCount(n);
                     }(),
                     page: const EffectiveSettingsPage(),
                   ),

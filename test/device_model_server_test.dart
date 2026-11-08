@@ -49,6 +49,30 @@ class FakeEngine implements TextEngine {
   }
 }
 
+class _ImageHoldingEngine extends FakeEngine {
+  final started = Completer<String>();
+  final finish = Completer<void>();
+
+  @override
+  void cancel() {
+    if (!finish.isCompleted) finish.complete();
+  }
+
+  @override
+  Stream<String> generate({
+    required List<Map<String, Object>> messages,
+    required String fallbackTemplate,
+    required InferenceSettings settings,
+    String assistantPrefix = '',
+    List<ToolSpec> tools = const [],
+    String toolChoice = 'auto',
+  }) async* {
+    started.complete((messages.single['images'] as List).single as String);
+    await finish.future;
+    yield 'done';
+  }
+}
+
 class _SlowEngine extends FakeEngine implements RawCompletionEngine {
   final cancelled = Completer<void>();
 
@@ -774,9 +798,58 @@ void main() {
       );
       final path =
           (engine.lastMessages.single['images'] as List).single as String;
+      expect(
+        File(path).parent.path,
+        isNot(Directory.systemTemp.path),
+        reason: 'M12: images must be inside a private request directory',
+      );
       expect(File(path).existsSync(), isFalse);
+      expect(File(path).parent.existsSync(), isFalse);
     },
   );
+
+  test('M12: stop removes an active request image directory', () async {
+    await server.stop();
+    final engine = _ImageHoldingEngine();
+    server = DeviceModelServer(
+      engine: engine,
+      settings: () => const InferenceSettings(),
+      modelId: 'test-model',
+      fallbackTemplate: '',
+      accessToken: token,
+      hasProjector: (_) => true,
+    );
+    await server.start();
+    final pending =
+        request(
+          'POST',
+          DeviceModelServer.completionsPath,
+          auth: token,
+          body: jsonEncode({
+            'messages': [
+              {
+                'role': 'user',
+                'content': [
+                  {
+                    'type': 'image_url',
+                    'image_url': {'url': 'data:image/png;base64,AA=='},
+                  },
+                ],
+              },
+            ],
+          }),
+        ).then<void>((response) async {
+          await response.drain<void>();
+        }, onError: (Object _) {});
+    final path = await engine.started.future.timeout(
+      const Duration(seconds: 5),
+    );
+    expect(File(path).existsSync(), isTrue);
+    expect(File(path).parent.path, isNot(Directory.systemTemp.path));
+    await server.stop();
+    expect(File(path).parent.existsSync(), isFalse);
+    await pending;
+  });
 
   test('embeddings and rerank use the vector engine', () async {
     await server.stop();
@@ -1055,14 +1128,14 @@ void main() {
     },
   );
 
-  test('a copied connection becomes a profile and its key', () {
-    const state = DeviceHostingState(
-      running: true,
-      endpoint: 'http://192.168.1.5:8787/v1/',
-      token: token,
-      modelId: 'qwen35-2b-iq4nl',
-    );
-    final (profile, key) = RemoteProfile.fromPairing(state.pairing!, id: 'p1')!;
+  test('a legacy saved connection still becomes a profile and its key', () {
+    final legacy = jsonEncode({
+      'ondevice_llm': 'connection',
+      'url': 'http://192.168.1.5:8787/v1/',
+      'key': token,
+      'model': 'qwen35-2b-iq4nl',
+    });
+    final (profile, key) = RemoteProfile.fromPairing(legacy, id: 'p1')!;
     expect(profile.baseUrl, 'http://192.168.1.5:8787/v1');
     expect(profile.model, 'qwen35-2b-iq4nl');
     expect(profile.providerId, 'custom');

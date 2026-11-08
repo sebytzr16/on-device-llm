@@ -42,6 +42,14 @@ static void close_side_batches(Runtime * r) {
     r->sides.clear();
 }
 static SideBatch & side_of(void * h) { return **static_cast<std::shared_ptr<SideBatch> *>(h); }
+static bool side_has_running_kv(const SideBatch & side) {
+    return std::any_of(side.sequences.begin(), side.sequences.end(), [](const auto & seq) {
+        return seq->active && seq->position > 0;
+    });
+}
+static int side_required_context(const SideBatch & side, size_t prompt, int maximum) {
+    return std::min(side.context, std::max(1024, int((prompt + maximum + 255) / 256 * 256)));
+}
 
 // Allocate after rendering the round's prompts, so unused slots and history do
 // not force host KV. Grow only between batches; retain the allocation for reuse (owner, 2026-11-02).
@@ -61,6 +69,7 @@ static void resize_side(SideBatch & side, int context, int count, bool measured_
     context = std::max(context, side.allocated_context);
     count = std::max(count, side.allocated_sequences);
     if (side.ctx && context == side.allocated_context && count == side.allocated_sequences) return;
+    if (side_has_running_kv(side)) throw std::runtime_error("Cannot resize helper context while sequences hold KV");
     if (side.ctx) llama_free(side.ctx);
     side.ctx = nullptr;
     auto cp = side.params;
@@ -129,14 +138,18 @@ int32_t od_side_submit(void * h, int32_t id, const char * request) {
         if (seq.active) throw std::runtime_error("Helper sequence is busy");
         const auto req = json::parse(request), settings = req.at("settings");
         seq.formatting.reset();
-        seq.maximum = std::clamp(settings.value("maxTokens", 512), 1, 4096) +
-            (settings.value("thinkingModeEnabled", false) ? std::clamp(settings.value("thinkingBudgetTokens", 512), 0, 512) : 0);
+        const int thinking = settings.value("thinkingModeEnabled", false) ? std::clamp(settings.value("thinkingBudgetTokens", 512), 0, 512) : 0;
+        seq.maximum = answer_limit(settings, side.context, 512) + thinking;
+        const int reserve = std::min(response_reserve(settings, side.context, 512) + thinking, side.context - 1);
         const auto prompt = tokenize(llama_model_get_vocab(side.model), render(&seq.formatting, req.at("messages"), req.value("fallbackTemplate", ""), settings.value("thinkingModeEnabled", false), true));
-        if (prompt.empty() || prompt.size() + seq.maximum > size_t(side.context)) throw std::runtime_error("Helper prompt exceeds context");
-        if (side.adaptive && (id >= side.allocated_sequences || prompt.size() + seq.maximum > size_t(side.allocated_context)))
-            for (const auto & other : side.sequences) if (other->active && other->position > 0)
-                // Retry at an idle boundary without poisoning the next decode (owner, 2026-11-02).
-                return 1;
+        if (prompt.empty() || prompt.size() + reserve > size_t(side.context)) throw std::runtime_error("Helper prompt exceeds context");
+        seq.maximum = std::min(seq.maximum, side.context - (int)prompt.size());
+        // Allocate capacity for the full possible output, even when admission
+        // reserves less room. The generation limit must not shrink with it.
+        if (side.adaptive && (id >= side.allocated_sequences ||
+            side_required_context(side, prompt.size(), seq.maximum) > side.allocated_context) && side_has_running_kv(side))
+            // Dart keeps this request queued and retries after running work drains.
+            return 1;
         seq.prompt = prompt;
         if (side.ctx && id < side.allocated_sequences && !llama_memory_seq_rm(llama_get_memory(side.ctx), id, -1, -1)) throw std::runtime_error("Cannot reset helper sequence");
         build_sampler(&seq.formatting, settings, "", false, {}, {}, "", false);
@@ -162,10 +175,11 @@ const char * od_side_step(void * h) {
             for (size_t id = 0; id < side.sequences.size(); ++id) {
                 const auto & seq = *side.sequences[id];
                 if (!seq.active) continue;
-                needed = std::max(needed, std::min(side.context, int((seq.prompt.size() + seq.maximum + 255) / 256 * 256)));
+                needed = std::max(needed, side_required_context(side, seq.prompt.size(), seq.maximum));
                 count = int(id) + 1;
             }
-            if (count && (!side.ctx || needed > side.allocated_context || count > side.allocated_sequences)) {
+            if (count && !side_has_running_kv(side) &&
+                (!side.ctx || needed > side.allocated_context || count > side.allocated_sequences)) {
                 // Prefer room for three capped helpers, so a later helper joins
                 // instead of queueing; when only the running jobs fit on the GPU,
                 // size to them, since GPU KV is ~5x faster than host (owner, 2026-11-02).
@@ -186,6 +200,10 @@ const char * od_side_step(void * h) {
         for (size_t id = 0; id < side.sequences.size(); ++id) {
             auto & seq = *side.sequences[id];
             if (!seq.active) continue;
+            // A not-yet-decoded sequence can wait across steps. Never put it
+            // in the batch until an idle-boundary allocation can accommodate it.
+            if (seq.position == 0 && (int(id) >= side.allocated_sequences ||
+                side_required_context(side, seq.prompt.size(), seq.maximum) > side.allocated_context)) continue;
             const int remaining = int(seq.prompt.size()) - seq.position;
             const int count = remaining > 0 ? std::min(prefill_chunk, remaining) : 1;
             for (int i = 0; i < count; ++i) {

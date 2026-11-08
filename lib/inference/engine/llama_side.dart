@@ -162,7 +162,8 @@ void llamaSideWorker(List<Object> args) {
       // Let submissions from one tool round join the first decode (owner, 2026-11-02).
       await Future<void>.delayed(const Duration(milliseconds: 50));
       while (!closing && (pending.isNotEmpty || active.isNotEmpty)) {
-        // Native admission defers only growth; free KV slots can join live work (owner, 2026-11-02).
+        // Native admission defers growth until running KV drains; keep deferred
+        // requests pending while work fitting the current allocation can join.
         var index = 0;
         while (index < pending.length && active.length < count) {
           final request = pending[index];

@@ -63,7 +63,15 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // ScheduledIntentSecurityTest uses the platform's android.test classes.
+    // Run connected tests ONLY with smoke=true in native/build.properties:
+    // Gradle uninstalls the app under test afterwards, which would wipe the
+    // real app's chats and models.
+    useLibrary("android.test.base")
+    useLibrary("android.test.runner")
+
     defaultConfig {
+        testInstrumentationRunner = "android.test.InstrumentationTestRunner"
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = if (nativeProps.getProperty("smoke", "false") == "true") "app.ondevicellm.ondevice_llm.smoke" else "app.ondevicellm.ondevice_llm"
         // You can update the following values to match your application needs.

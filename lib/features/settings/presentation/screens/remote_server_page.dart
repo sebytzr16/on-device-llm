@@ -37,7 +37,8 @@ class RemoteServerPage extends ConsumerWidget {
       final code = await promptText(
         context,
         title: t.hostPairCode,
-        message: t.remotePairCodeMessage(host.name),
+        message:
+            '${t.remotePairCodeMessage(host.name)}\n\n${t.remotePairTrustNote}',
         confirmLabel: t.remotePairConnect,
         keyboardType: TextInputType.number,
         maxLength: 7,
@@ -48,13 +49,19 @@ class RemoteServerPage extends ConsumerWidget {
       if (code == null || !context.mounted) return;
       if (PairingCode.normalize(code).isEmpty) break;
       try {
-        final pairing = await PairingCode.redeem(host.endpoint, code);
+        final target = await PairingCode.tlsTarget(host.endpoint);
+        final pairing = await PairingCode.redeem(
+          target.$1,
+          code,
+          fingerprint: target.$2,
+        );
         if (!context.mounted) return;
         await _addPairing(context, ref, pairing, name: host.name);
         return;
       } on PairingException catch (e) {
         if (!context.mounted) return;
         showIslandToast(context, switch (e.failure) {
+          PairingFailure.expired => t.hostPairExpired,
           PairingFailure.wrongCode => t.remotePairWrong,
           PairingFailure.lockedOut => t.remotePairLocked,
           PairingFailure.unreachable => t.remotePairUnreachable(host.name),
@@ -149,9 +156,8 @@ class RemoteServerPage extends ConsumerWidget {
   Future<void> _scan(BuildContext context, WidgetRef ref) async {
     final text = await Navigator.of(context).push<String>(
       MaterialPageRoute(
-        builder: (_) => ScanConnectionPage(
-          accept: (t) => RemoteProfile.fromPairing(t, id: 'probe') != null,
-        ),
+        builder: (_) =>
+            ScanConnectionPage(accept: (t) => PairingQr.parse(t) != null),
       ),
     );
     if (text == null || !context.mounted) return;
@@ -165,6 +171,23 @@ class RemoteServerPage extends ConsumerWidget {
     bool askName = false,
     String? name,
   }) async {
+    final qr = PairingQr.parse(text);
+    if (qr != null) {
+      try {
+        text = await PairingCode.redeemQr(qr);
+      } on PairingException catch (e) {
+        if (!context.mounted) return;
+        final t = context.l10n;
+        showIslandToast(context, switch (e.failure) {
+          PairingFailure.expired => t.hostPairExpired,
+          PairingFailure.lockedOut => t.remotePairLocked,
+          PairingFailure.wrongCode => t.remotePairWrong,
+          PairingFailure.unreachable => t.remotePairUnreachable(qr.endpoint),
+        });
+        return;
+      }
+      if (!context.mounted) return;
+    }
     final pairing = RemoteProfile.fromPairing(text, id: const Uuid().v4());
     if (pairing == null) {
       showIslandToast(
@@ -193,6 +216,7 @@ class RemoteServerPage extends ConsumerWidget {
     if (existing != null) {
       profile = existing.copyWith(
         baseUrl: profile.baseUrl,
+        fingerprint: profile.fingerprint,
         model: profile.model.isEmpty ? null : profile.model,
       );
     } else if (s.remoteProfiles.length >= 32) {
@@ -258,7 +282,7 @@ class RemoteServerPage extends ConsumerWidget {
             SettingsNote(
               DesktopHost.active
                   ? context.l10n.desktopRemoteExplanation
-                  : 'Point the app at a server you run yourself — LM Studio, Ollama or llama-server on a PC at home over your LAN or a VPN — or at a hosted API with your own key. Your messages and any web evidence are sent to that connection instead of being answered on the phone.',
+                  : context.l10n.remotePhoneExplanation,
               icon: Icons.dns_outlined,
             ),
             const SizedBox(height: AppDesign.md),
@@ -525,11 +549,9 @@ class RemoteServerPage extends ConsumerWidget {
                 ),
               ],
             ),
-            const SettingsNote(
-              'Sampling, max tokens and thinking mode apply to remote chats too (Anthropic ignores sampling). Context size is the app’s fitting budget; set it no higher than the selected model’s real context window.',
-            ),
+            SettingsNote(context.l10n.remoteSamplingContextHint),
             SettingsNote(
-              "API keys are stored in this device's secure storage (Android keystore, Windows data protection), never in the settings file or exports, and are only ever sent to the connection they belong to. Over the internet use HTTPS or a VPN.",
+              context.l10n.remoteKeyStoragePrivacy,
               icon: Icons.lock_outline,
               tone: c.textMuted,
             ),
@@ -589,9 +611,9 @@ class _ProviderSheet extends StatelessWidget {
             controller: controller,
             padding: EdgeInsets.zero,
             children: [
-              header('ON YOUR OWN HARDWARE'),
+              header(context.l10n.remoteSelfHostedHeader),
               for (final p in RemoteProvider.selfHostedOnes) tile(p),
-              header('HOSTED APIS (YOUR KEY)'),
+              header(context.l10n.remoteHostedHeader),
               for (final p in hosted) tile(p),
               const SizedBox(height: AppDesign.xl),
             ],

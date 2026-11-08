@@ -42,13 +42,26 @@ class HelperLivePanel extends ConsumerStatefulWidget {
 }
 
 class _HelperLivePanelState extends ConsumerState<HelperLivePanel> {
-  // Phone agents start folded even while the desktop column opens its cards.
   bool _expanded = false;
+
+  static bool _running(HelperJobsState state) =>
+      state.jobs.any((job) => state.visible.contains(job.id) && !job.terminal);
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = _running(ref.read(helperJobsProvider));
+  }
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(helperJobsProvider.select((s) => s.expanded), (_, expanded) {
-      if (!expanded) setState(() => _expanded = false);
+    ref.listen(helperJobsProvider, (previous, next) {
+      // Open a fresh batch once; streaming updates preserve manual folding.
+      if (_running(next) && (previous == null || !_running(previous))) {
+        setState(() => _expanded = true);
+      } else if (previous?.expanded == true && !next.expanded) {
+        setState(() => _expanded = false);
+      }
     });
     final state = ref.watch(helperJobsProvider);
     final jobs = state.jobs.where((j) => state.visible.contains(j.id)).toList();
@@ -238,7 +251,7 @@ class _PhoneAgentRow extends StatelessWidget {
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 520),
                     child: SingleChildScrollView(
-                      child: HelperJobCard(job: job),
+                      child: _LiveHelperJobCard(job: job),
                     ),
                   ),
                 ),
@@ -246,6 +259,35 @@ class _PhoneAgentRow extends StatelessWidget {
             ),
           ],
         ),
+        if (_toolActivity(context, job) case final activity?)
+          Text(
+            activity,
+            style: context.text.caption,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        if ((job.reply?.text ?? job.output).isNotEmpty ||
+            job.thinking.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: SizedBox(
+              // One latest line leaves room for four agents on a phone.
+              height: 20,
+              child: SingleChildScrollView(
+                key: Key('helper-phone-output-${job.id}'),
+                reverse: true,
+                child: Text(
+                  (job.reply?.text ?? job.output).isNotEmpty
+                      ? job.reply?.text ?? job.output
+                      : job.thinking,
+                  style: context.text.small.copyWith(
+                    color: context.colors.textMuted,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+            ),
+          ),
         if (job.reason case final reason? when job.terminal)
           Padding(
             padding: const EdgeInsets.only(bottom: AppDesign.sm),
@@ -261,6 +303,22 @@ class _PhoneAgentRow extends StatelessWidget {
       ],
     ),
   );
+}
+
+// Dialogs live outside the panel's rebuilds; follow the selected job directly.
+class _LiveHelperJobCard extends ConsumerWidget {
+  final HelperJob job;
+  const _LiveHelperJobCard({required this.job});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final live = ref.watch(
+      helperJobsProvider.select(
+        (state) => state.jobs.where((item) => item.id == job.id).firstOrNull,
+      ),
+    );
+    return HelperJobCard(job: live ?? job);
+  }
 }
 
 /// Windows: a thin column left of the conversation, like a coding agent's
@@ -698,7 +756,7 @@ class HelperJobCard extends StatelessWidget {
             ExpansionTile(
               title: Text(t.helperAllMetrics, style: context.text.small),
               children: [
-                for (final (label, value) in helperMeasurementRows(metrics))
+                for (final (label, value) in helperMeasurementRows(metrics, t))
                   Padding(
                     padding: const EdgeInsets.only(bottom: AppDesign.xs),
                     child: SelectableText(
@@ -718,7 +776,10 @@ class HelperJobCard extends StatelessWidget {
 // short values and flatten the settings the engine actually used (owner, 2026-11-02).
 const _hiddenMeasurements = {'chatTemplate', 'toolContent', 'devices'};
 
-List<(String, String)> helperMeasurementRows(Map<String, Object?> metrics) {
+List<(String, String)> helperMeasurementRows(
+  Map<String, Object?> metrics, [
+  AppLocalizations? strings,
+]) {
   String label(String key) {
     final words = key
         .replaceAllMapped(RegExp(r'(?<=[a-z0-9])([A-Z])'), (m) => ' ${m[1]}')
@@ -732,7 +793,10 @@ List<(String, String)> helperMeasurementRows(Map<String, Object?> metrics) {
     null => null,
     final double d => d.toStringAsFixed(d.abs() >= 100 ? 0 : 2),
     final num n => '$n',
-    final bool b => b ? 'yes' : 'no',
+    final bool b =>
+      b
+          ? (strings ?? AppLocalizationsEn()).helperMeasurementYes
+          : (strings ?? AppLocalizationsEn()).helperMeasurementNo,
     final String s when s.isEmpty || s.length > 80 => null,
     final String s => s,
     _ => null,
@@ -758,7 +822,12 @@ List<(String, String)> helperMeasurementRows(Map<String, Object?> metrics) {
     final names = [
       for (final d in devices.whereType<Map>()) '${d['name'] ?? d['backend']}',
     ];
-    if (names.isNotEmpty) rows.add(('Devices', names.join(', ')));
+    if (names.isNotEmpty) {
+      rows.add((
+        (strings ?? AppLocalizationsEn()).helperMeasurementDevices,
+        names.join(', '),
+      ));
+    }
   }
   return rows;
 }

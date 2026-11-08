@@ -23,6 +23,7 @@ import '../features/helper/helper_runner.dart';
 import '../features/hosting/presentation/device_hosting_provider.dart';
 import '../features/models/domain/entities/model_catalog.dart';
 import '../features/models/domain/entities/model_info.dart';
+import '../features/models/presentation/providers/hidden_library_models.dart';
 import '../features/models/presentation/providers/model_manager_provider.dart';
 import '../features/models/presentation/widgets/model_tags.dart';
 import '../features/settings/presentation/providers/settings_provider.dart';
@@ -192,7 +193,12 @@ class _LocalModelsPage extends ConsumerWidget {
       (m) => desktopModelVisible(m, advanced: advanced),
     );
     final local = visible.where((m) => m.isDownloaded).toList();
-    final available = availableLibraryModels(models.catalog, desktop: true);
+    final hidden = ref.watch(hiddenLibraryModelsProvider);
+    final available = availableLibraryModels(
+      models.catalog,
+      desktop: true,
+      hidden: hidden,
+    );
     return ListView(
       padding: const EdgeInsets.only(bottom: 32),
       children: [
@@ -224,7 +230,20 @@ class _LocalModelsPage extends ConsumerWidget {
             ],
           ),
         const SizedBox(height: 28),
-        _SectionLabel(l10n.desktopCatalog),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: _SectionLabel(l10n.desktopCatalog)),
+            if (hidden.isNotEmpty)
+              TextButton.icon(
+                key: const Key('restore-removed-models'),
+                onPressed: () =>
+                    ref.read(hiddenLibraryModelsProvider.notifier).restoreAll(),
+                icon: const Icon(Icons.undo_rounded, size: 16),
+                label: Text(l10n.modelRestoreRemoved(hidden.length)),
+              ),
+          ],
+        ),
         _Table(
           children: [
             for (final (i, m) in available.indexed)
@@ -374,8 +393,9 @@ String _params(int count) {
   return '${b >= 10 ? b.round() : b.toStringAsFixed(1)}B';
 }
 
-String _context(int tokens) =>
-    tokens >= 1024 ? '${(tokens / 1024).round()}K ctx' : '$tokens ctx';
+String _context(int tokens, AppLocalizations l10n) => l10n.modelContextBadge(
+  tokens >= 1024 ? '${(tokens / 1024).round()}K' : '$tokens',
+);
 
 /// The model's initials on a tinted square: rows tell apart at a glance
 /// without a logo per maker.
@@ -518,7 +538,8 @@ class _ModelRowState extends ConsumerState<_ModelRow> {
     final line = [
       facts?.architecture ?? m.family.name,
       if (params.isNotEmpty) params,
-      if (facts?.contextLength case final ctx? when ctx > 0) _context(ctx),
+      if (facts?.contextLength case final ctx? when ctx > 0)
+        _context(ctx, context.l10n),
     ].join(' · ');
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
@@ -690,6 +711,15 @@ class _ModelRowState extends ConsumerState<_ModelRow> {
                                 ),
                           child: Text(failed ? l10n.retry : l10n.download),
                         ),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        key: ValueKey('remove-available-${m.id}'),
+                        tooltip: l10n.uiModelCardRemoveFromList,
+                        onPressed: () => ref
+                            .read(hiddenLibraryModelsProvider.notifier)
+                            .hide(m.id),
+                        icon: const Icon(Icons.close_rounded, size: 17),
                       ),
                     ] else if (loaded || helperLoaded) ...[
                       Text(

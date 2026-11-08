@@ -87,6 +87,8 @@ class _HelperEngine extends fixtures.TestEngine {
 }
 
 class _PhoneChat extends ChatNotifier {
+  void showChat(String? id) => state = ChatState(chatId: id);
+
   @override
   ChatState build() => ChatState(
     chatId: 'phone-chat',
@@ -102,6 +104,57 @@ class _PhoneChat extends ChatNotifier {
 }
 
 void main() {
+  for (final nextChat in <String?>[null, 'other-chat']) {
+    testWidgets('desktop clears helpers on navigation to $nextChat', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      tester.view.physicalSize = const Size(1440, 1100);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final container = ProviderContainer(
+        overrides: [
+          chatProvider.overrideWith(_PhoneChat.new),
+          settingsProvider.overrideWith(_Settings.new),
+          modelManagerProvider.overrideWith(() => _Models('unused')),
+          modelRecommendationsProvider.overrideWith(_Recommendations.new),
+        ],
+      );
+      addTearDown(container.dispose);
+      final focus = FocusNode();
+      addTearDown(focus.dispose);
+      final jobs = container.read(helperJobsProvider.notifier);
+      jobs.publish(
+        const HelperJob(
+          id: 'background',
+          task: 'Old chat work',
+          inputPreview: '',
+          modelName: 'Helper',
+          messageId: 'answer',
+        ),
+      );
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: AppTheme.dark,
+            home: Scaffold(body: DesktopChatPane(composerFocus: focus)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('helper-side-column')), findsOneWidget);
+      (container.read(chatProvider.notifier) as _PhoneChat).showChat(nextChat);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('helper-side-column')), findsNothing);
+      expect(container.read(helperJobsProvider).jobs.single.terminal, isFalse);
+      jobs.publish(container.read(helperJobsProvider).jobs.single);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('helper-side-column')), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
   for (final allow in [true, false]) {
     testWidgets(
       'phone strip reserves chat space and approval can ${allow ? 'allow' : 'deny'}',
@@ -155,30 +208,37 @@ void main() {
         final lastMessage = find.text(
           'The last message stays above the agents',
         );
-        final collapsed = tester.getRect(strip);
         final composerRect = tester.getRect(composer);
+        // A running agent auto-opens the strip (f5ae144e,
+        // docs/phone-agent-display-2026-11-03.md), capped at 40% of the screen.
+        final opened = tester.getRect(strip);
+        expect(opened.height, greaterThan(56));
+        expect(opened.height, lessThanOrEqualTo(844 * .4));
+        expect(opened.left, 12);
+        expect(opened.right, 390 - 12);
+        expect(opened.bottom, composerRect.top);
+        expect(tester.getRect(composer), composerRect);
+        expect(
+          tester.getRect(lastMessage).bottom,
+          lessThanOrEqualTo(opened.top),
+        );
+        // Folded, the strip is one low row pinned above the composer.
+        await tester.tap(find.byKey(const Key('helper-live-toggle')));
+        await tester.pumpAndSettle();
+        final collapsed = tester.getRect(strip);
         expect(collapsed.height, lessThanOrEqualTo(56));
         expect(collapsed.left, 12);
         expect(collapsed.right, 390 - 12);
         expect(collapsed.bottom, composerRect.top);
+        expect(tester.getRect(composer), composerRect);
         expect(
           tester.getRect(lastMessage).bottom,
           lessThanOrEqualTo(collapsed.top),
         );
+        // Unfold again: the same geometry, and the composer never moves.
         await tester.tap(find.byKey(const Key('helper-live-toggle')));
         await tester.pumpAndSettle();
-        final expanded = tester.getRect(strip);
-        expect(expanded.height, greaterThan(collapsed.height));
-        expect(expanded.height, lessThanOrEqualTo(844 * .4));
-        expect(tester.getRect(composer), composerRect);
-        expect(expanded.bottom, composerRect.top);
-        expect(
-          tester.getRect(lastMessage).bottom,
-          lessThanOrEqualTo(expanded.top),
-        );
-        await tester.tap(find.byKey(const Key('helper-live-toggle')));
-        await tester.pumpAndSettle();
-        expect(tester.getRect(strip), collapsed);
+        expect(tester.getRect(strip), opened);
         final gate = container.read(agentWebApprovalProvider);
         final answer = gate.request(
           chatId: 'phone-chat',
@@ -194,6 +254,9 @@ void main() {
         await tester.pumpAndSettle();
         expect(await answer, allow);
         expect(find.byKey(const Key('agent-web-approval')), findsNothing);
+        // Fold the auto-opened strip back to one row before tearing down.
+        await tester.tap(find.byKey(const Key('helper-live-toggle')));
+        await tester.pumpAndSettle();
         expect(tester.getSize(strip).height, lessThanOrEqualTo(56));
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
@@ -265,8 +328,11 @@ void main() {
           '${container.read(chatProvider).error} / ${container.read(chatProvider).notice}',
     );
     expect(find.byType(HelperJobCard), findsNothing);
-    await tester.tap(find.byKey(const Key('helper-live-toggle')));
-    await tester.pump(const Duration(milliseconds: 500));
+    // The strip auto-opens when the agent starts; only tap if it is folded.
+    if (find.text('Draft the design').evaluate().isEmpty) {
+      await tester.tap(find.byKey(const Key('helper-live-toggle')));
+      await tester.pump(const Duration(milliseconds: 500));
+    }
     expect(find.text('Draft the design'), findsOneWidget);
     // The separate Windows pane used to omit both widgets.
     await tester.pumpWidget(

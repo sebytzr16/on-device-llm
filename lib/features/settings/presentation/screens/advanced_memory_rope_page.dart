@@ -33,7 +33,7 @@ class MemoryRopePage extends ConsumerWidget {
               hint: context.l10n.uiAdvancedMemoryRopePagePrecisionOfCachedKeys,
               value: s.kvCacheType,
               items: KvCacheType.values,
-              labelOf: kvCacheLabel,
+              labelOf: (v) => kvCacheLabel(v, context.l10n),
               onChanged: (v) => n.update(s.copyWith(kvCacheType: v)),
             ),
             SettingDropdown<KvCacheType?>(
@@ -43,7 +43,9 @@ class MemoryRopePage extends ConsumerWidget {
                   .uiAdvancedMemoryRopePagePrecisionOfCachedValuesQuantisingV,
               value: s.vCacheType,
               items: [null, ...KvCacheType.values],
-              labelOf: (v) => v == null ? 'Same as K' : kvCacheLabel(v),
+              labelOf: (v) => v == null
+                  ? context.l10n.desktopDeepSameAsK
+                  : kvCacheLabel(v, context.l10n),
               onChanged: (v) => n.update(
                 s.copyWith(vCacheType: v, clearVCacheType: v == null),
               ),
@@ -62,16 +64,16 @@ class MemoryRopePage extends ConsumerWidget {
               value: s.ropeScaling,
               items: RopeScaling.values,
               labelOf: (v) => switch (v) {
-                RopeScaling.model => 'Model default',
-                RopeScaling.none => 'None',
-                RopeScaling.linear => 'Linear',
+                RopeScaling.model => context.l10n.ropeModelDefault,
+                RopeScaling.none => context.l10n.nativeSetSplitNone,
+                RopeScaling.linear => context.l10n.ropeLinear,
                 RopeScaling.yarn => 'YaRN',
               },
               onChanged: (v) => n.update(s.copyWith(ropeScaling: v)),
             ),
             if (trained != null && trained > 0)
               SettingsNote(
-                'The loaded model was trained for ${tokenCount(trained)} tokens.',
+                context.l10n.ropeTrainedContext(trained, tokenCount(trained)),
                 icon: Icons.info_outline,
               ),
             _NumberRow(
@@ -79,7 +81,7 @@ class MemoryRopePage extends ConsumerWidget {
               label: context.l10n.uiAdvancedMemoryRopePageRoPEFrequencyBase,
               value: s.ropeFreqBase,
               off: 0,
-              offLabel: 'Model value',
+              offLabel: context.l10n.ropeModelValue,
               hint: context.l10n.uiAdvancedMemoryRopePageEG1000000ForModelsThat,
               onChanged: (v) => n.update(s.copyWith(ropeFreqBase: v)),
             ),
@@ -88,7 +90,7 @@ class MemoryRopePage extends ConsumerWidget {
               label: context.l10n.uiAdvancedMemoryRopePageRoPEFrequencyScale,
               value: s.ropeFreqScale,
               off: 0,
-              offLabel: 'Model value',
+              offLabel: context.l10n.ropeModelValue,
               hint: context.l10n.uiAdvancedMemoryRopePage0Scale1EG0,
               onChanged: (v) => n.update(s.copyWith(ropeFreqScale: v)),
               max: 1,
@@ -99,7 +101,7 @@ class MemoryRopePage extends ConsumerWidget {
                 label: context.l10n.uiAdvancedMemoryRopePageYaRNOriginalContext,
                 value: s.yarnOrigCtx.toDouble(),
                 off: 0,
-                offLabel: 'Model value',
+                offLabel: context.l10n.ropeModelValue,
                 hint: context
                     .l10n
                     .uiAdvancedMemoryRopePageTheContextTheModelWasTrained,
@@ -112,7 +114,7 @@ class MemoryRopePage extends ConsumerWidget {
                     context.l10n.uiAdvancedMemoryRopePageYaRNExtrapolationMix,
                 value: s.yarnExtFactor,
                 off: -1,
-                offLabel: 'Model value',
+                offLabel: context.l10n.ropeModelValue,
                 hint: context
                     .l10n
                     .uiAdvancedMemoryRopePage0InterpolationOnly1FullExtrapolation,
@@ -124,7 +126,7 @@ class MemoryRopePage extends ConsumerWidget {
                 label: context.l10n.uiAdvancedMemoryRopePageYaRNAttentionFactor,
                 value: s.yarnAttnFactor,
                 off: 1,
-                offLabel: '1.0 (default)',
+                offLabel: context.l10n.settingDefaultValue('1.0'),
                 hint: context
                     .l10n
                     .uiAdvancedMemoryRopePageMagnitudeScalingUsually10,
@@ -136,7 +138,7 @@ class MemoryRopePage extends ConsumerWidget {
                 label: context.l10n.uiAdvancedMemoryRopePageYaRNBetaFast,
                 value: s.yarnBetaFast,
                 off: 32,
-                offLabel: '32 (default)',
+                offLabel: context.l10n.settingDefaultValue('32'),
                 hint:
                     context.l10n.uiAdvancedMemoryRopePageLowCorrectionDimension,
                 max: 128,
@@ -147,7 +149,7 @@ class MemoryRopePage extends ConsumerWidget {
                 label: context.l10n.uiAdvancedMemoryRopePageYaRNBetaSlow,
                 value: s.yarnBetaSlow,
                 off: 1,
-                offLabel: '1 (default)',
+                offLabel: context.l10n.settingDefaultValue('1'),
                 hint: context
                     .l10n
                     .uiAdvancedMemoryRopePageHighCorrectionDimension,
@@ -168,7 +170,7 @@ class MemoryRopePage extends ConsumerWidget {
               value: draftValue,
               items: draftIds,
               labelOf: (id) => id.isEmpty
-                  ? 'Off'
+                  ? context.l10n.thinkOff
                   : downloaded.where((m) => m.id == id).first.displayName,
               onChanged: (v) => n.update(s.copyWith(draftModelId: v)),
             ),
@@ -188,10 +190,20 @@ class MemoryRopePage extends ConsumerWidget {
               ),
             if (proposed > 0)
               SettingsNote(
-                'Last answer: $accepted of $proposed drafted tokens accepted '
-                '(${(100 * accepted / proposed).round()}%) with ${metrics['draftModel']}. '
-                '${draftPaused ? 'Drafting was paused for the rest of that answer after ${metrics['draftRounds']} rounds (${(metrics['draftAcceptRate'] as num? ?? 1) < 0.35 ? 'acceptance under 35%' : 'slower than plain decoding'}); it retries every answer. ' : ''}'
-                'Below ~60% the draft usually costs more than it saves.',
+                context.l10n.draftLastAnswerSummary(
+                  accepted,
+                  proposed,
+                  (100 * accepted / proposed).round(),
+                  '${metrics['draftModel']}',
+                  draftPaused
+                      ? context.l10n.draftPausedExplanation(
+                          metrics['draftRounds'] as num,
+                          (metrics['draftAcceptRate'] as num? ?? 1) < 0.35
+                              ? context.l10n.draftLowAcceptance
+                              : context.l10n.runDraftSlower,
+                        )
+                      : '',
+                ),
                 icon: Icons.speed_outlined,
                 tone: accepted / proposed >= .6 && !draftPaused
                     ? c.success
@@ -200,7 +212,7 @@ class MemoryRopePage extends ConsumerWidget {
           ],
         ),
         SettingsNote(
-          'These apply on the next model load.',
+          context.l10n.settingsNextModelLoad,
           tone: c.warning,
           icon: Icons.schedule_outlined,
         ),

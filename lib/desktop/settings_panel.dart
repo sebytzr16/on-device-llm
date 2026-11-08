@@ -1,3 +1,4 @@
+import '../features/settings/presentation/widgets/answer_tokens_control.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -327,6 +328,12 @@ class _GeneralSettings extends ConsumerWidget {
                 onChanged: (value) => ref
                     .read(desktopPreferencesProvider.notifier)
                     .set(leanPrompt: value),
+              ),
+              AnswerTokensSetting(
+                label: l10n.settingLabelMaxTokens,
+                value: s.maxTokens,
+                contextWindow: s.contextSize,
+                onChanged: (v) => set(s.copyWith(maxTokens: v)),
               ),
               SettingSlider(
                 label: l10n.temperature,

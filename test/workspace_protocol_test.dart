@@ -12,6 +12,7 @@ import 'package:ondevice_llm/data/network/web_search/search_models.dart';
 import 'package:ondevice_llm/features/hosting/device_model_server.dart';
 import 'package:ondevice_llm/features/hosting/workspace_api.dart';
 import 'package:ondevice_llm/features/hosting/workspace_workflow.dart';
+import 'package:ondevice_llm/features/hosting/workspace_jobs.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:ondevice_llm/features/tools/domain/tool_spec.dart';
 import 'package:ondevice_llm/features/tools/tool_runner.dart';
@@ -135,62 +136,160 @@ void main() {
     });
   }
 
+  test('shared upload survives one accepted job finishing', () async {
+    late WorkspaceApi api;
+    final gates = [Completer<void>(), Completer<void>()];
+    final started = [Completer<void>(), Completer<void>()];
+    api = WorkspaceApi(
+      capabilities: const ['server_execution'],
+      run: (job, input) async {
+        final index = int.parse(input['requestId'] as String);
+        started[index].complete();
+        await gates[index].future;
+      },
+    );
+    await start(api);
+    addTearDown(() {
+      for (final gate in gates) {
+        if (!gate.isCompleted) gate.complete();
+      }
+    });
+    final dir = await Directory.systemTemp.createTemp('workspace-shared-');
+    addTearDown(() => dir.delete(recursive: true));
+    final file = await File('${dir.path}/data.csv').writeAsString('shared');
+    final id = await client.upload(connection, file.path, 'data.csv');
+    final uploaded = api.uploads[id]!.file;
+    Future<void> run(int index) => client.run(
+      settings: connection,
+      requestId: '$index',
+      messages: [
+        {'role': 'user', 'content': 'read'},
+      ],
+      uploads: [
+        {'uploadId': id, 'message': 0},
+      ],
+      event: (_) {},
+      approve: (_, _) async => false,
+    );
+    final first = run(0);
+    await started[0].future;
+    final second = run(1);
+    await started[1].future;
+    gates[0].complete();
+    await first;
+    expect(await uploaded.exists(), isTrue);
+    expect(await api.uploads[id]!.file.readAsString(), 'shared');
+    gates[1].complete();
+    await second;
+    expect(api.uploads[id], isNull);
+    expect(await uploaded.exists(), isFalse);
+  });
+
+  for (final format in ['fenced', 'gemma', 'malformed gemma']) {
+    test(
+      'server runs calculator with $format calls without client tools',
+      () async {
+        final engine = _Rounds([
+          if (format == 'malformed gemma')
+            '<|tool_call>call:calculator","expression":"15+27"}<tool_call|>',
+          if (format == 'gemma')
+            '<|tool_call>call:calculator{expression:<|"|>15+27<|"|>}<tool_call|>'
+          else
+            '```tool\n{"name":"calculator","arguments":{"expression":"15+27"}}\n```',
+          '42',
+        ]);
+        const settings = InferenceSettings(
+          toolsEnabled: true,
+          toolCalculator: true,
+          toolMaxRounds: 3,
+        );
+        await start(
+          WorkspaceApi(
+            capabilities: const ['server_execution'],
+            run: (job, input) async {
+              final runner = ToolRunner(
+                scraper: DuckDuckGoScraper(),
+                reader: WebPageReader(),
+                settings: settings,
+                cancel: job.cancel,
+              );
+              await WorkspaceWorkflow(
+                engine: engine,
+                tools: runner,
+                settings: settings,
+              ).run(
+                job,
+                (input['messages'] as List)
+                    .map((m) => Map<String, Object>.from(m as Map))
+                    .toList(),
+              );
+            },
+          ),
+        );
+        expect(await client.supported(connection), isTrue);
+        await client.run(
+          settings: connection,
+          requestId: 'calc',
+          messages: [
+            {'role': 'user', 'content': '15+27'},
+          ],
+          event: events.add,
+          approve: (_, _) async => fail('No approval expected'),
+        );
+        expect(
+          events
+              .where((e) => e['type'] == 'tool_finished')
+              .single['data']['output'],
+          contains('42'),
+        );
+        expect(
+          events.where((e) => e['type'] == 'answer').single['data']['text'],
+          '42',
+        );
+        expect(engine.calls, format == 'malformed gemma' ? 3 : 2);
+      },
+    );
+  }
+
   test(
-    'server runs calculator and streams its result without client tools',
+    'repeated malformed Gemma calls fail explicitly without executing',
     () async {
-      final engine = _Rounds([
-        '```tool\n{"name":"calculator","arguments":{"expression":"15+27"}}\n```',
-        '42',
-      ]);
+      const malformed =
+          '<|tool_call>call:search_news","topic":"nuclear war"}<tool_call|>';
+      final engine = _Rounds([malformed, malformed]);
       const settings = InferenceSettings(
         toolsEnabled: true,
         toolCalculator: true,
-        toolMaxRounds: 3,
       );
-      await start(
-        WorkspaceApi(
-          capabilities: const ['server_execution'],
-          run: (job, input) async {
-            final runner = ToolRunner(
-              scraper: DuckDuckGoScraper(),
-              reader: WebPageReader(),
-              settings: settings,
-              cancel: job.cancel,
-            );
-            await WorkspaceWorkflow(
-              engine: engine,
-              tools: runner,
-              settings: settings,
-            ).run(
-              job,
-              (input['messages'] as List)
-                  .map((m) => Map<String, Object>.from(m as Map))
-                  .toList(),
-            );
-          },
+      final job = WorkspaceJob('invalid', 'invalid', 'invalid');
+      final runner = ToolRunner(
+        scraper: DuckDuckGoScraper(),
+        reader: WebPageReader(),
+        settings: settings,
+        cancel: job.cancel,
+      );
+      await expectLater(
+        WorkspaceWorkflow(
+          engine: engine,
+          tools: runner,
+          settings: settings,
+        ).run(job, [
+          {'role': 'user', 'content': 'Check for nuclear war news'},
+        ]),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('valid tool call'),
+          ),
         ),
       );
-      expect(await client.supported(connection), isTrue);
-      await client.run(
-        settings: connection,
-        requestId: 'calc',
-        messages: [
-          {'role': 'user', 'content': '15+27'},
-        ],
-        event: events.add,
-        approve: (_, _) async => fail('No approval expected'),
-      );
-      expect(
-        events
-            .where((e) => e['type'] == 'tool_finished')
-            .single['data']['output'],
-        contains('42'),
-      );
-      expect(
-        events.where((e) => e['type'] == 'answer').single['data']['text'],
-        '42',
-      );
       expect(engine.calls, 2);
+      expect(runner.callCount, 0);
+      expect(
+        engine.lastMessages.last['content'],
+        contains('No tool was executed'),
+      );
     },
   );
 

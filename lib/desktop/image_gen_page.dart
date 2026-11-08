@@ -11,8 +11,12 @@ import 'package:pasteboard/pasteboard.dart';
 import 'package:path/path.dart' as p;
 
 import '../core/design/app_design.dart';
+import '../core/design/app_dialog.dart';
+import 'history_store.dart';
+import 'history_video.dart';
 import '../core/l10n/l10n.dart';
 import '../features/settings/presentation/providers/settings_provider.dart';
+import '../features/models/presentation/providers/model_manager_provider.dart';
 import '../features/image_gen/domain/entities/image_gen_model.dart';
 import '../features/image_gen/image_gen_downloads.dart';
 import '../inference/engine/sd_engine.dart';
@@ -30,6 +34,7 @@ class _ImageGenState {
   final _GenStatus status;
   final String? errorMessage;
   final SdResult? result;
+  final HistoryEntry? historyEntry;
 
   /// Decoded frames of [result]: one for a picture.
   final List<ui.Image> frames;
@@ -45,6 +50,7 @@ class _ImageGenState {
     this.status = _GenStatus.idle,
     this.errorMessage,
     this.result,
+    this.historyEntry,
     this.frames = const [],
     this.progressStep = 0,
     this.progressTotal = 0,
@@ -64,6 +70,7 @@ class _ImageGenState {
     String? errorMessage,
     bool clearError = false,
     SdResult? result,
+    HistoryEntry? historyEntry,
     List<ui.Image>? frames,
     bool clearResult = false,
     int? progressStep,
@@ -76,6 +83,7 @@ class _ImageGenState {
     status: status ?? this.status,
     errorMessage: clearError ? null : errorMessage ?? this.errorMessage,
     result: clearResult ? null : result ?? this.result,
+    historyEntry: clearResult ? null : historyEntry ?? this.historyEntry,
     frames: clearResult ? const [] : frames ?? this.frames,
     progressStep: progressStep ?? this.progressStep,
     progressTotal: progressTotal ?? this.progressTotal,
@@ -113,17 +121,55 @@ class _ImageGenNotifier extends Notifier<_ImageGenState> {
   AppLocalizations get _t => stringsFor(ref.read(settingsProvider).localeCode);
   int _epoch = 0;
   bool _alive = true;
+  Timer? _idleRelease;
+  Future<void>? _releasing;
+  bool _pageVisible = false;
+
+  void pageEntered() {
+    _pageVisible = true;
+  }
+
+  void pageLeft() {
+    _pageVisible = false;
+    _releaseWhenIdle();
+  }
+
+  // Only the native engine is released. Results and decoded frames belong to
+  // the notifier and stay available when the page is opened again.
+  void _releaseWhenIdle() {
+    if (!_alive || state.busy) return;
+    // Unsaved video frames still belong to the worker. Once history is
+    // durable, exports use that file and the worker can be released.
+    if ((state.result?.videoId ?? 0) != 0 && state.historyEntry == null) return;
+    _idleRelease?.cancel();
+    _releasing ??= _engine.dispose().whenComplete(() => _releasing = null);
+    unawaited(_releasing);
+  }
+
+  void _jobFinished() {
+    if (!_alive) return;
+    if (!_pageVisible) {
+      _releaseWhenIdle();
+    } else {
+      _idleRelease?.cancel();
+      _idleRelease = Timer(const Duration(minutes: 2), _releaseWhenIdle);
+    }
+  }
+
   bool _stopped(int epoch) => !_alive || epoch != _epoch;
 
   @override
   _ImageGenState build() {
     _engine = ref.read(desktopImageEngineProvider);
+    var frames = stateOrNull?.frames ?? <ui.Image>[];
+    listenSelf((previous, next) => frames = next.frames);
     ref.onDispose(() {
+      _idleRelease?.cancel();
       _alive = false;
       _epoch++;
       _engine.cancel();
-      unawaited(_engine.dispose());
-      _disposeFrames(state.frames);
+      unawaited(_releasing ?? _engine.dispose());
+      _disposeFrames(frames);
     });
     return _ImageGenState(model: imageGenCatalog.first);
   }
@@ -133,8 +179,17 @@ class _ImageGenNotifier extends Notifier<_ImageGenState> {
     state = state.copyWith(model: model, clearError: true);
   }
 
+  String _operationError(Object error) {
+    final detail = error is StateError ? error.message : '$error';
+    final models = ref.read(modelManagerProvider);
+    final loaded = models.loadedModel?.displayName ?? models.loadedModelId;
+    if (loaded == null || error is SdOperationStopped) return detail;
+    return _t.imageChatModelMemoryRecovery(detail, loaded);
+  }
+
   Future<void> generate(ImageGenRequest r) async {
     if (state.busy) return;
+    _idleRelease?.cancel();
     final epoch = ++_epoch;
     final model = state.model;
     final previous = state.frames;
@@ -148,6 +203,8 @@ class _ImageGenNotifier extends Notifier<_ImageGenState> {
     );
     _disposeFrames(previous);
     try {
+      await _releasing;
+      if (_stopped(epoch)) return;
       final paths = await ImageGenDownloadsNotifier.paths(model);
       if (_stopped(epoch)) return;
       await _engine.load(
@@ -210,8 +267,26 @@ class _ImageGenNotifier extends Notifier<_ImageGenState> {
         _disposeFrames(frames);
         rethrow;
       }
+      final entry =
+          await _remember(result, frames.first, {
+            'prompt': r.prompt,
+            'negativePrompt': r.negativePrompt,
+            'modelId': model.id,
+            'steps': r.steps,
+            'guidance': r.cfgScale,
+            'seed': r.seed,
+            'kind': video ? 'video' : 'picture',
+          }).catchError((Object error, StackTrace stack) {
+            _disposeFrames(frames);
+            Error.throwWithStackTrace(error, stack);
+          });
+      if (_stopped(epoch)) {
+        _disposeFrames(frames);
+        return;
+      }
       state = state.copyWith(
         status: _GenStatus.done,
+        historyEntry: entry,
         result: result,
         frames: frames,
         took: DateTime.now().difference(state.startedAt!),
@@ -220,12 +295,13 @@ class _ImageGenNotifier extends Notifier<_ImageGenState> {
       if (_stopped(epoch)) return;
       state = state.copyWith(
         status: _GenStatus.error,
-        errorMessage: e is StateError ? e.message : '$e',
+        errorMessage: _operationError(e),
       );
     } finally {
       if (_alive && epoch != _epoch) {
         state = state.copyWith(status: _GenStatus.idle);
       }
+      _jobFinished();
     }
   }
 
@@ -236,6 +312,7 @@ class _ImageGenNotifier extends Notifier<_ImageGenState> {
     ImageGenModel upscaler,
   ) async {
     if (state.busy) return;
+    _idleRelease?.cancel();
     final epoch = ++_epoch;
     final previous = state.frames;
     state = state.copyWith(
@@ -247,6 +324,8 @@ class _ImageGenNotifier extends Notifier<_ImageGenState> {
     );
     _disposeFrames(previous);
     try {
+      await _releasing;
+      if (_stopped(epoch)) return;
       // The size comes from the header: a huge photo is refused before it
       // is decoded to full RGBA (P3-37).
       final (width, height) = await pictureSize(encoded);
@@ -270,8 +349,27 @@ class _ImageGenNotifier extends Notifier<_ImageGenState> {
         frame.dispose();
         return;
       }
+      final entry =
+          await _remember(result, frame, {
+            'prompt': '',
+            'negativePrompt': '',
+            'modelId': upscaler.id,
+            'steps': 0,
+            'guidance': 0.0,
+            'seed': -1,
+            'kind': 'upscale',
+            'factor': factor,
+          }).catchError((Object error, StackTrace stack) {
+            frame.dispose();
+            Error.throwWithStackTrace(error, stack);
+          });
+      if (_stopped(epoch)) {
+        frame.dispose();
+        return;
+      }
       state = state.copyWith(
         status: _GenStatus.done,
+        historyEntry: entry,
         result: result,
         frames: [frame],
         took: DateTime.now().difference(state.startedAt!),
@@ -280,12 +378,13 @@ class _ImageGenNotifier extends Notifier<_ImageGenState> {
       if (_stopped(epoch)) return;
       state = state.copyWith(
         status: _GenStatus.error,
-        errorMessage: e is StateError ? e.message : '$e',
+        errorMessage: _operationError(e),
       );
     } finally {
       if (_alive && epoch != _epoch) {
         state = state.copyWith(status: _GenStatus.idle);
       }
+      _jobFinished();
     }
   }
 
@@ -295,38 +394,135 @@ class _ImageGenNotifier extends Notifier<_ImageGenState> {
     // Keep the job busy until native work returns; a new job cannot reset its cancel.
   }
 
-  /// Saves the picture as PNG or the video as MJPG .avi; returns where.
-  Future<String?> save() async {
-    final result = state.result;
-    if (result == null || state.frames.isEmpty) return null;
-    if (result.frames > 1) {
-      // The bridge writes the .avi straight where asked: the file is never
-      // read back into memory (P3-37).
-      final saved = await FilePicker.saveFile(
-        dialogTitle: _t.imageSaveVideo,
-        fileName: 'video.avi',
-        // Required by the picker; the bridge then overwrites the empty file.
-        bytes: Uint8List(0),
-        type: FileType.custom,
-        allowedExtensions: ['avi'],
-      );
-      final path = saved?.toFilePath();
-      if (path == null) return null;
-      await _engine.saveVideo(path, result);
-      return path;
-    }
-    final png = await state.frames.first.toByteData(
+  Future<HistoryEntry> _remember(
+    SdResult result,
+    ui.Image frame,
+    Map<String, dynamic> settings,
+  ) async {
+    final store = await ref.read(creationHistoryStoreProvider.future);
+    final png = (await frame.toByteData(
       format: ui.ImageByteFormat.png,
+    ))!.buffer.asUint8List();
+    final codec = await ui.instantiateImageCodec(png, targetWidth: 160);
+    final thumb = (await codec.getNextFrame()).image;
+    codec.dispose();
+    final thumbnail = (await thumb.toByteData(
+      format: ui.ImageByteFormat.png,
+    ))!.buffer.asUint8List();
+    thumb.dispose();
+    final entry = HistoryEntry(
+      data: {
+        ...settings,
+        'width': result.width,
+        'height': result.height,
+        'frames': result.frames,
+        'fps': result.fps,
+        'durationMs': DateTime.now()
+            .difference(state.startedAt!)
+            .inMilliseconds,
+        'videoDurationMs': result.fps > 0
+            ? result.frames * 1000 ~/ result.fps
+            : 0,
+      },
     );
+    await store.save(
+      entry,
+      thumbnailPng: thumbnail,
+      writeMedia: (path) async {
+        if (settings['kind'] == 'video') {
+          await _engine.saveVideo(path, result);
+        } else {
+          await File(path).writeAsBytes(png, flush: true);
+        }
+      },
+    );
+    ref.invalidate(creationHistoryProvider);
+    return entry;
+  }
+
+  Future<void> showHistory(HistoryEntry entry) async {
+    if (state.busy) return;
+    final epoch = ++_epoch;
+    state = state.copyWith(status: _GenStatus.loading, clearError: true);
+    final store = await ref.read(creationHistoryStoreProvider.future);
+    final frames = <ui.Image>[];
+    try {
+      if (entry.data['kind'] == 'video') {
+        // Our engine writes MJPG AVI. Read compressed frame chunks one at a
+        // time, retaining only decoded preview frames, as generation does.
+        frames.addAll(await decodeHistoryVideo(store.media(entry)));
+      } else {
+        final codec = await ui.instantiateImageCodec(
+          await store.media(entry).readAsBytes(),
+        );
+        frames.add((await codec.getNextFrame()).image);
+        codec.dispose();
+      }
+      if (_stopped(epoch)) {
+        _disposeFrames(frames);
+        return;
+      }
+      final d = entry.data;
+      final model = imageGenCatalog
+          .where((m) => m.id == d['modelId'])
+          .firstOrNull;
+      final previous = state.frames;
+      state = state.copyWith(
+        model: model,
+        status: _GenStatus.done,
+        clearError: true,
+        historyEntry: entry,
+        frames: frames,
+        result: SdResult(
+          Uint8List(0),
+          d['width'] as int,
+          d['height'] as int,
+          frames: d['frames'] as int,
+          fps: d['fps'] as int,
+        ),
+        took: Duration(milliseconds: d['durationMs'] as int),
+      );
+      _disposeFrames(previous);
+      _jobFinished();
+    } catch (_) {
+      _disposeFrames(frames);
+      if (!_stopped(epoch)) state = state.copyWith(status: _GenStatus.error);
+      rethrow;
+    }
+  }
+
+  Future<void> deleteHistory(HistoryEntry item) async {
+    final store = await ref.read(creationHistoryStoreProvider.future);
+    await store.delete(item);
+    if (!_alive) return;
+    if (state.historyEntry?.id == item.id) {
+      final previous = state.frames;
+      state = state.copyWith(status: _GenStatus.idle, clearResult: true);
+      _disposeFrames(previous);
+    }
+    ref.invalidate(creationHistoryProvider);
+  }
+
+  /// Exports a copy; videos no longer depend on a live native worker.
+  Future<String?> save([HistoryEntry? item]) async {
+    final entry = item ?? state.historyEntry;
+    if (entry == null) return null;
+    final store = await ref.read(creationHistoryStoreProvider.future);
+    final video = entry.data['kind'] == 'video';
+    final source = store.media(entry);
     final saved = await FilePicker.saveFile(
-      dialogTitle: _t.imageSavePicture,
-      fileName: 'picture.png',
-      bytes: png!.buffer.asUint8List(),
-      mimeType: 'image/png',
+      dialogTitle: video ? _t.imageSaveVideo : _t.imageSavePicture,
+      fileName: video ? 'video.avi' : 'picture.png',
+      bytes: Uint8List(0),
       type: FileType.custom,
-      allowedExtensions: ['png'],
+      allowedExtensions: [video ? 'avi' : 'png'],
     );
-    return saved?.toFilePath();
+    final path = saved?.toFilePath();
+    if (path == null) return null;
+    if (!p.equals(p.normalize(path), p.normalize(source.path))) {
+      await source.copy(path);
+    }
+    return path;
   }
 
   static void _disposeFrames(List<ui.Image> frames) {
@@ -395,6 +591,16 @@ class DesktopImageGenPage extends ConsumerStatefulWidget {
 }
 
 class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
+  late final _ImageGenNotifier _notifier;
+  final _historyScroll = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _notifier = ref.read(desktopImageGenProvider.notifier);
+    _notifier.pageEntered();
+  }
+
   final _promptCtrl = TextEditingController();
   final _negCtrl = TextEditingController();
   late int _width, _height, _steps, _frames;
@@ -414,6 +620,193 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
   int _factor = 2;
   ImageGenModel _upscaler = upscalerTools.first;
   bool _dropping = false;
+
+  void _historyError(Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(context.l10n.historyFailed('$error'))),
+    );
+  }
+
+  Future<void> _restore(HistoryEntry entry) async {
+    try {
+      await _notifier.showHistory(entry);
+      if (!mounted) return;
+      final d = entry.data;
+      setState(() {
+        _defaults(ref.read(desktopImageGenProvider).model);
+        _upscaleMode = d['kind'] == 'upscale';
+        if (_upscaleMode) {
+          _upscaler =
+              upscalerTools.where((m) => m.id == d['modelId']).firstOrNull ??
+              _upscaler;
+          _factor = d['factor'] as int? ?? 2;
+        }
+        _promptCtrl.text = d['prompt'] as String;
+        _negCtrl.text = d['negativePrompt'] as String;
+        _width = d['width'] as int;
+        _height = d['height'] as int;
+        _steps = d['steps'] as int;
+        _cfg = (d['guidance'] as num).toDouble();
+        _seed = d['seed'] as int;
+        _frames = d['frames'] as int;
+        _sizeKey++;
+      });
+    } catch (e) {
+      _historyError(e);
+    }
+  }
+
+  Widget _historyPanel(_ImageGenState st) {
+    final t = context.l10n;
+    final c = context.colors;
+    final entries = ref.watch(creationHistoryProvider);
+    final store = ref.watch(creationHistoryStoreProvider).asData?.value;
+    final bytes = ref.watch(creationHistorySizeProvider).asData?.value;
+    Future<void> delete(HistoryEntry item) async {
+      if (!await confirmAction(
+        context,
+        title: t.historyDelete,
+        message: t.historyDeleteConfirm,
+        confirmLabel: t.historyDelete,
+        destructive: true,
+      )) {
+        return;
+      }
+      try {
+        await _notifier.deleteHistory(item);
+      } catch (e) {
+        _historyError(e);
+      }
+    }
+
+    Widget tile(HistoryEntry item) => Tooltip(
+      message: item.data['prompt'] as String,
+      waitDuration: const Duration(milliseconds: 500),
+      child: Container(
+        width: 112,
+        margin: const EdgeInsets.only(right: AppDesign.sm),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: c.hairline),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            Expanded(
+              child: InkWell(
+                onTap: st.busy ? null : () => _restore(item),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (store != null)
+                      Image.file(
+                        store.thumbnail(item),
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => Icon(
+                          Icons.broken_image_outlined,
+                          color: c.textFaint,
+                        ),
+                      ),
+                    if (item.data['kind'] == 'video')
+                      Align(
+                        alignment: Alignment.topRight,
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.movie_outlined,
+                            size: 16,
+                            color: c.text,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            SizedBox(
+              height: 28,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  IconButton(
+                    tooltip: t.commonSave,
+                    iconSize: 16,
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.save_alt_rounded),
+                    onPressed: st.busy
+                        ? null
+                        : () async {
+                            try {
+                              await _notifier.save(item);
+                            } catch (e) {
+                              _historyError(e);
+                            }
+                          },
+                  ),
+                  IconButton(
+                    tooltip: t.historyDelete,
+                    iconSize: 16,
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: st.busy ? null : () => delete(item),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text(t.historyTitle, style: context.text.title),
+              const SizedBox(width: AppDesign.md),
+              if (bytes != null)
+                Text(
+                  t.historyStorage(_gb(bytes)),
+                  style: context.text.small.copyWith(color: c.textMuted),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppDesign.sm),
+          entries.when(
+            loading: () => const LinearProgressIndicator(),
+            error: (e, _) =>
+                Text(t.historyFailed('$e'), style: context.text.small),
+            data: (items) => items.isEmpty
+                ? Text(
+                    t.historyEmpty,
+                    style: context.text.small.copyWith(color: c.textMuted),
+                  )
+                : SizedBox(
+                    height: 128,
+                    child: Scrollbar(
+                      controller: _historyScroll,
+                      thumbVisibility: true,
+                      child: ListView.builder(
+                        controller: _historyScroll,
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.only(bottom: 10),
+                        itemCount: items.length,
+                        itemBuilder: (context, index) => tile(items[index]),
+                      ),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _takePicture(Uint8List bytes, String name) async {
     try {
@@ -463,6 +856,8 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
 
   @override
   void dispose() {
+    _historyScroll.dispose();
+    _notifier.pageLeft();
     _promptCtrl.dispose();
     _negCtrl.dispose();
     super.dispose();
@@ -609,7 +1004,7 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
-              key: ValueKey('${st.model.id}$_upscaleMode'),
+              key: ValueKey('${st.model.id}$_upscaleMode$_sizeKey'),
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 SegmentedButton<bool>(
@@ -891,7 +1286,15 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
                     ),
                   ),
                 )
-              : _Canvas(state: st, onSave: _save),
+              : Column(
+                  children: [
+                    Expanded(
+                      child: _Canvas(state: st, onSave: _save),
+                    ),
+                    Container(height: 1, color: c.hairline),
+                    _historyPanel(st),
+                  ],
+                ),
         ),
       ],
     );

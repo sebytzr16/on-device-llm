@@ -17,6 +17,7 @@ void main() {
             agentTemperature: .6,
             agentContextSize: 16384,
             agentMaxConcurrent: 4,
+            agentTimeoutSeconds: 900,
             agentThinking: true,
             agentToolRounds: 5,
             agentWebAccess: AgentWebAccess.never,
@@ -27,6 +28,9 @@ void main() {
       expect(restored.toJson(), settings.toJson());
       final generation = restored.forAgent();
       expect(generation.maxTokens, 3000);
+      expect(generation.agentTimeoutSeconds, 900);
+      expect(const InferenceSettings().agentTimeoutSeconds, 0);
+      expect(settings.copyWith(agentTimeoutSeconds: 0).agentTimeoutSeconds, 0);
       expect(generation.contextSize, 16384);
       expect(generation.temperature, .6);
       expect(generation.topP, .8);
@@ -56,32 +60,41 @@ void main() {
     },
   );
 
-  test('untrusted agent settings clamp; small contexts leave prompt space', () {
-    final s = InferenceSettings.fromJson({
-      'agentMaxTokens': 99999,
-      'agentTemperature': double.nan,
-      'agentContextSize': -1,
-      'agentMaxConcurrent': 20,
-      'agentToolRounds': -3,
-      'agentInputBudget': -20,
-      'agentWebAccess': 'unknown',
-    });
-    expect(s.agentMaxTokens, 4096);
-    expect(s.agentTemperature, .3);
-    expect(s.agentContextSize, 512);
-    expect(s.agentMaxConcurrent, 4);
-    expect(s.agentToolRounds, 1);
-    expect(s.agentInputBudget, 256);
-    expect(s.agentWebAccess, AgentWebAccess.askOnce);
-    expect(s.forAgent().maxTokens, lessThan(s.agentContextSize));
-    expect(s.copyWith(agentMaxTokens: 1).agentMaxTokens, 64);
-    for (final budget in [256, 4800, 12000]) {
-      final content = HelperRequest.content(
-        'Summarise',
-        'long input ' * 9000,
-        budget: budget,
+  test(
+    'untrusted agent settings clamp; requested output stays independent of context',
+    () {
+      final s = InferenceSettings.fromJson({
+        'agentMaxTokens': 2000000,
+        'agentTemperature': double.nan,
+        'agentContextSize': -1,
+        'agentMaxConcurrent': 20,
+        'agentTimeoutSeconds': -20,
+        'agentToolRounds': -3,
+        'agentInputBudget': -20,
+        'agentWebAccess': 'unknown',
+      });
+      expect(s.agentMaxTokens, InferenceSettings.maxResponseTokens);
+      expect(s.agentTemperature, .3);
+      expect(s.agentContextSize, 512);
+      expect(s.agentMaxConcurrent, 4);
+      expect(s.agentTimeoutSeconds, 0);
+      expect(
+        s.copyWith(agentTimeoutSeconds: 999999).agentTimeoutSeconds,
+        86400,
       );
-      expect(content.length, lessThanOrEqualTo(budget));
-    }
-  });
+      expect(s.agentToolRounds, 1);
+      expect(s.agentInputBudget, 256);
+      expect(s.agentWebAccess, AgentWebAccess.askOnce);
+      expect(s.forAgent().maxTokens, InferenceSettings.maxResponseTokens);
+      expect(s.copyWith(agentMaxTokens: 1).agentMaxTokens, 1);
+      for (final budget in [256, 4800, 12000]) {
+        final content = HelperRequest.content(
+          'Summarise',
+          'long input ' * 9000,
+          budget: budget,
+        );
+        expect(content.length, lessThanOrEqualTo(budget));
+      }
+    },
+  );
 }

@@ -7,6 +7,7 @@ import '../../inference/engine/text_engine.dart';
 import '../tools/domain/tool_spec.dart';
 import '../settings/domain/entities/inference_settings.dart';
 import 'pairing_code.dart';
+import 'hosting_tls.dart';
 import 'request_queue.dart';
 import 'workspace_api.dart';
 
@@ -15,6 +16,10 @@ import 'workspace_api.dart';
 class ServedRequest {
   final DateTime at;
   final String client;
+
+  /// Trusted workspace origin for client aggregation; [client] remains the
+  /// actual socket peer in the request log.
+  final String? attributedClient;
 
   /// The model a completion asked for ('' for other requests).
   final String modelId;
@@ -35,6 +40,7 @@ class ServedRequest {
   const ServedRequest({
     required this.at,
     required this.client,
+    this.attributedClient,
     required this.status,
     this.modelId = '',
     this.method = '',
@@ -129,11 +135,47 @@ class DeviceModelServer {
 
   /// Traded for [accessToken] at [pairPath] by a device that found this
   /// server nearby; null turns pairing off.
-  final String? pairCode;
-  final PairingSession _pairing = PairingSession();
+  String? pairCode;
+  late PairingSession _pairing = PairingSession(lifetime: pairingLifetime);
+  final Duration pairingLifetime;
+  final String hostId = PairingCode.secret();
+  String pairingSecret = PairingCode.secret();
+  Timer? _pairTimer;
+  bool _pairLocked = false;
+  String? _expiredCode, _expiredSecret;
+  final void Function()? onPairingChanged;
+
+  void _armPairingExpiry() {
+    _pairTimer?.cancel();
+    if (pairCode == null || _server == null) return;
+    _pairTimer = Timer(_pairing.expiresAt.difference(DateTime.now()), () {
+      _rotatePairing(expired: true);
+    });
+  }
+
+  void _rotatePairing({bool expired = false}) {
+    if (expired) {
+      // QR redemption must not bypass a typed-code lockout. Expiry does.
+      _pairLocked = false;
+      _expiredCode = pairCode;
+      _expiredSecret = pairingSecret;
+    }
+    final oldCode = pairCode;
+    do {
+      pairCode = PairingCode.generate();
+    } while (pairCode == oldCode);
+    pairingSecret = PairingCode.secret();
+    _pairing = PairingSession(
+      lifetime: pairingLifetime,
+      failures: expired ? 0 : _pairing.failures,
+    );
+    _armPairingExpiry();
+    onPairingChanged?.call();
+  }
 
   /// When [pairCode] stops being accepted.
   DateTime get pairExpiresAt => _pairing.expiresAt;
+  bool get pairingLocked => _pairLocked;
   final void Function(bool locked)? onPairingUnavailable;
   final bool Function()? isAvailable;
 
@@ -150,11 +192,20 @@ class DeviceModelServer {
 
   /// Called while an answer streams with the pieces generated so far.
   final void Function(int pieces)? onProgress;
-  HttpServer? _server;
+  HttpServer? _server, _tlsServer;
+  HostingTls? _tls;
+  int? get tlsPort => _tlsServer?.port;
+  final Set<Directory> _imageDirectories = {};
   bool _busy = false;
   RequestQueue _queue = RequestQueue();
   final Duration bodyTimeout, generationTimeout;
   final Map<String, List<DateTime>> _clientRequests = {};
+  final Map<String, int> _clientConnections = {};
+  int _connections = 0;
+  final _pairAdmission = _Admission(maxGlobal: 8, maxClient: 4, rate: 20);
+  final _controlAdmission = _Admission(maxGlobal: 8, maxClient: 4, rate: 60);
+  static const maxClientConnections = 8;
+  static const maxConnections = 16;
 
   DeviceModelServer({
     required TextEngine engine,
@@ -164,6 +215,8 @@ class DeviceModelServer {
     required this.accessToken,
     this.pairCode,
     this.onPairingUnavailable,
+    this.onPairingChanged,
+    this.pairingLifetime = const Duration(minutes: 10),
     this.isAvailable,
     this.router,
     this.vectors,
@@ -203,16 +256,46 @@ class DeviceModelServer {
   int? get port => _server?.port;
   InternetAddress? get address => _server?.address;
 
-  /// Plain HTTP on the local network only: every request from an address
+  /// HTTP for loopback/legacy profiles plus an optional pinned TLS listener.
+  /// Every request from an address
   /// outside [allowedClient] is refused before the token is even checked.
-  Future<void> start({InternetAddress? address, int port = 0}) async {
+  Future<void> start({
+    InternetAddress? address,
+    int port = 0,
+    HostingTls? tls,
+  }) async {
     if (_server != null) throw StateError('Server is already running.');
     final server = await HttpServer.bind(
       address ?? InternetAddress.loopbackIPv4,
       port,
     );
+    try {
+      if (tls != null) {
+        final tlsPort = port == 0 ? 0 : (port == 65535 ? 65534 : port + 1);
+        try {
+          _tlsServer = await HttpServer.bindSecure(
+            address ?? InternetAddress.loopbackIPv4,
+            tlsPort,
+            tls.context,
+          );
+        } on SocketException {
+          if (tlsPort == 0) rethrow;
+          _tlsServer = await HttpServer.bindSecure(
+            address ?? InternetAddress.loopbackIPv4,
+            0,
+            tls.context,
+          );
+        }
+        _tls = tls;
+        unawaited(_serve(_tlsServer!));
+      }
+    } catch (_) {
+      await server.close(force: true);
+      rethrow;
+    }
     _queue = RequestQueue();
     _server = server;
+    _armPairingExpiry();
     unawaited(_serve(server));
   }
 
@@ -224,20 +307,39 @@ class DeviceModelServer {
     } catch (_) {
       // Socket shutdown ends the server loop.
     } finally {
-      if (identical(_server, server)) _server = null;
+      if (identical(_server, server)) {
+        _server = null;
+        _pairTimer?.cancel();
+      }
     }
   }
 
   Future<void> stop() async {
+    _pairTimer?.cancel();
     final server = _server;
     _server = null;
     _queue.close();
     await workspace?.dispose();
     await server?.close(force: true);
+    await _tlsServer?.close(force: true);
+    _tlsServer = null;
+    _tls = null;
     if (_busy) engine.cancel();
     router?.cancelAll();
     vectors?.dispose();
+    for (final directory in _imageDirectories.toList()) {
+      await _removeImageDirectory(directory);
+    }
     onSessionChange?.call(null);
+  }
+
+  Future<void> _removeImageDirectory(Directory directory) async {
+    try {
+      if (await directory.exists()) await directory.delete(recursive: true);
+      _imageDirectories.remove(directory);
+    } on FileSystemException {
+      // Retain failed cleanup for a retry when the server stops.
+    }
   }
 
   /// Whether [a] can only be a device on this network or a VPN peer:
@@ -267,6 +369,36 @@ class DeviceModelServer {
       return (b[0] & 0xfe) == 0xfc || (b[0] == 0xfe && (b[1] & 0xc0) == 0x80);
     }
     return false;
+  }
+
+  /// Identity used for client rate and connection budgets.
+  static String clientLimitKey(InternetAddress address) {
+    final bytes = address.rawAddress;
+    if (address.type == InternetAddressType.IPv6) {
+      if (bytes.take(10).every((b) => b == 0) &&
+          bytes[10] == 0xff &&
+          bytes[11] == 0xff) {
+        return InternetAddress.fromRawAddress(
+          Uint8List.fromList(bytes.sublist(12)),
+        ).address;
+      }
+      // Privacy addresses and rotated hosts on the same subnet share a budget.
+      return '${bytes.take(8).map((b) => b.toRadixString(16).padLeft(2, '0')).join()}/64';
+    }
+    return address.address;
+  }
+
+  bool _allowRequest(String key) {
+    final now = DateTime.now();
+    const window = Duration(minutes: 1);
+    _clientRequests.removeWhere(
+      (_, times) => times.every((t) => now.difference(t) >= window),
+    );
+    final recent = _clientRequests.putIfAbsent(key, () => []);
+    recent.removeWhere((t) => now.difference(t) >= window);
+    if (recent.length >= 20) return false;
+    recent.add(now);
+    return true;
   }
 
   static String _prompt(Object? value) {
@@ -717,18 +849,31 @@ class DeviceModelServer {
     Object? source, {
     required bool vision,
     required List<File> images,
-  }) => _messages(source, vision: vision, images: images);
+    required Directory imageDirectory,
+  }) => _messages(
+    source,
+    vision: vision,
+    images: images,
+    imageDirectory: imageDirectory,
+  );
 
   static List<Map<String, Object>> _messages(
     Object? source, {
     required bool vision,
     required List<File> images,
+    Directory? imageDirectory,
   }) {
     if (source is! List || source.isEmpty || source.length > 64) {
       throw const FormatException('Expected 1 to 64 messages.');
     }
     return [
-      for (final item in source) _message(item, vision: vision, images: images),
+      for (final item in source)
+        _message(
+          item,
+          vision: vision,
+          images: images,
+          imageDirectory: imageDirectory,
+        ),
     ];
   }
 
@@ -736,6 +881,7 @@ class DeviceModelServer {
     Object? item, {
     required bool vision,
     required List<File> images,
+    Directory? imageDirectory,
   }) {
     if (item is! Map ||
         item['role'] is! String ||
@@ -784,8 +930,11 @@ class DeviceModelServer {
           if (bytes.isEmpty || bytes.length > 8 * 1024 * 1024) {
             throw const FormatException('Image data must be at most 8 MB.');
           }
+          if (imageDirectory == null) {
+            throw StateError('Image decoding requires a private directory.');
+          }
           final file = File(
-            '${Directory.systemTemp.path}${Platform.pathSeparator}desktopServe-${DateTime.now().microsecondsSinceEpoch}-${images.length}.${match.group(1)}',
+            '${imageDirectory.path}${Platform.pathSeparator}${images.length}.${match.group(1)}',
           );
           file.writeAsBytesSync(bytes);
           images.add(file);
@@ -857,12 +1006,16 @@ class DeviceModelServer {
     response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     response.headers.set(
       'Access-Control-Allow-Headers',
-      'Authorization, Content-Type, X-API-Key, Anthropic-Version, Anthropic-Beta',
+      'Authorization, Content-Type, X-API-Key, X-Pairing-Mode, Anthropic-Version, Anthropic-Beta',
     );
     final started = DateTime.now();
     final clock = Stopwatch()..start();
     final client =
         request.connectionInfo?.remoteAddress.address ?? 'Unknown client';
+    final attributedClient = workspace?.completionClient(request);
+    String? connectionKey;
+    _Admission? reservedLane;
+    String? laneKey;
     var streaming = false, wantsStream = false, completion = false;
     // Whether this request holds an engine (released in the outer finally).
     var claimed = false;
@@ -876,6 +1029,7 @@ class DeviceModelServer {
     String? routed;
     String? queueKey;
     final images = <File>[];
+    Directory? imageDirectory;
     var requested = '';
     void release() {
       if (!claimed) return;
@@ -889,6 +1043,7 @@ class DeviceModelServer {
 
     var status = HttpStatus.ok;
     String? error;
+    Map<String, Object>? pairingRefusal;
     var usage = const _Usage();
     void refuse(int code, String message) {
       status = code;
@@ -905,7 +1060,11 @@ class DeviceModelServer {
           'code': null,
         },
       };
-      if (socket == null) {
+      if (socket == null && request.uri.path == pairPath) {
+        // HttpResponse otherwise drains unread input before sending headers.
+        // Detach below so a slow rejected peer receives the refusal immediately.
+        pairingRefusal = body;
+      } else if (socket == null) {
         _json(response, code, body);
       } else {
         writeHeaders(code, 'application/json; charset=utf-8');
@@ -926,7 +1085,30 @@ class DeviceModelServer {
         status = response.statusCode = HttpStatus.noContent;
         return;
       }
+      // Public bootstrap only: typed-code pairing trusts the local network,
+      // as explained in the UI. Never send the code or bearer token here.
+      if (request.uri.path == '/v1/pairing-tls' &&
+          _tls != null &&
+          request.method == 'GET') {
+        _json(response, HttpStatus.ok, {
+          'port': tlsPort!,
+          'fingerprint': _tls!.fingerprint,
+        });
+        return;
+      }
       if (request.uri.path == pairPath) {
+        if (_tls != null && request.connectionInfo?.localPort != tlsPort) {
+          refuse(HttpStatus.upgradeRequired, 'Pairing requires pinned HTTPS.');
+          return;
+        }
+        final key = clientLimitKey(remote);
+        if (!_pairAdmission.acquire(key)) {
+          response.persistentConnection = false;
+          refuse(HttpStatus.tooManyRequests, 'Pairing request limit reached.');
+          return;
+        }
+        reservedLane = _pairAdmission;
+        laneKey = key;
         await _pair(request, response, refuse);
         return;
       }
@@ -944,6 +1126,47 @@ class DeviceModelServer {
         refuse(HttpStatus.unauthorized, 'A valid access token is required.');
         return;
       }
+      final limitKey = clientLimitKey(remote);
+      final control =
+          workspace != null &&
+          request.method == 'POST' &&
+          RegExp(
+            r'^/v1/workspace/jobs/[^/]+/(approval|cancel)$',
+          ).hasMatch(request.uri.path);
+      if (control) {
+        if (!_controlAdmission.acquire(limitKey)) {
+          response.persistentConnection = false;
+          refuse(
+            HttpStatus.tooManyRequests,
+            'Workspace control limit reached.',
+          );
+          return;
+        }
+        reservedLane = _controlAdmission;
+        laneKey = limitKey;
+        await workspace!.handle(request);
+        return;
+      }
+      if (!_allowRequest(limitKey)) {
+        response.persistentConnection = false;
+        refuse(
+          HttpStatus.tooManyRequests,
+          'Client request limit reached. Retry in a minute.',
+        );
+        return;
+      }
+      // Reserve before any body is read or workspace handler is entered.
+      // Model selection is inside JSON, so this bounds readers and parsed
+      // requests waiting on every model queue, without a slow body owning it.
+      if (_connections >= maxConnections ||
+          (_clientConnections[limitKey] ?? 0) >= maxClientConnections) {
+        response.persistentConnection = false;
+        refuse(HttpStatus.tooManyRequests, 'Server connection limit reached.');
+        return;
+      }
+      _connections++;
+      _clientConnections[limitKey] = (_clientConnections[limitKey] ?? 0) + 1;
+      connectionKey = limitKey;
       if (workspace != null &&
           request.uri.path.startsWith('${WorkspaceApi.root}/')) {
         await workspace!.handle(request);
@@ -989,23 +1212,6 @@ class DeviceModelServer {
         refuse(HttpStatus.notFound, 'Endpoint not found.');
         return;
       }
-      final now = DateTime.now();
-      _clientRequests.removeWhere(
-        (_, times) =>
-            times.every((t) => now.difference(t) >= const Duration(minutes: 1)),
-      );
-      final recent = _clientRequests.putIfAbsent(client, () => []);
-      recent.removeWhere(
-        (t) => now.difference(t) >= const Duration(minutes: 1),
-      );
-      if (recent.length >= 20) {
-        refuse(
-          HttpStatus.tooManyRequests,
-          'Client request limit reached. Retry in a minute.',
-        );
-        return;
-      }
-      recent.add(now);
       // Slow request bodies cannot monopolize the model. Claim only after
       // the bounded read, and recheck availability after that await.
       final bodyText = await readBody(request, bodyTimeout);
@@ -1081,12 +1287,23 @@ class DeviceModelServer {
       }
       final engine = active;
       final prompt = raw ? _prompt(body['prompt']) : null;
+      if (!raw && (hasProjector?.call(model) ?? false)) {
+        imageDirectory = await Directory.systemTemp.createTemp('desktopServe-');
+        _imageDirectories.add(imageDirectory);
+        if (_server == null) {
+          throw const RouteRefusal(
+            HttpStatus.serviceUnavailable,
+            'The server stopped.',
+          );
+        }
+      }
       final messages = raw
           ? <Map<String, Object>>[]
           : _messages(
               body['messages'],
               vision: hasProjector?.call(model) ?? false,
               images: images,
+              imageDirectory: imageDirectory,
             );
       if (images.isNotEmpty && engine.metrics['supportsVision'] != true) {
         await prepareMedia?.call(model, engine);
@@ -1407,6 +1624,17 @@ class DeviceModelServer {
         error = 'Stream interrupted.';
       }
     } finally {
+      if (pairingRefusal != null) {
+        try {
+          socket = await response.detachSocket(writeHeaders: false);
+          output = socket;
+          writeHeaders(status, 'application/json; charset=utf-8');
+          output.write(jsonEncode(pairingRefusal));
+          await output.flush();
+        } catch (_) {
+          // A disconnected pairing peer has nothing left to receive.
+        }
+      }
       if (streaming && error != null) {
         try {
           final failure = {
@@ -1430,16 +1658,28 @@ class DeviceModelServer {
           await file.delete();
         } catch (_) {}
       }
+      if (imageDirectory != null) await _removeImageDirectory(imageDirectory);
       try {
         await output.close();
       } catch (_) {}
       socket?.destroy();
+      if (laneKey != null) reservedLane!.release(laneKey);
+      if (connectionKey != null) {
+        _connections--;
+        final remaining = _clientConnections[connectionKey]! - 1;
+        if (remaining == 0) {
+          _clientConnections.remove(connectionKey);
+        } else {
+          _clientConnections[connectionKey] = remaining;
+        }
+      }
       onServed?.call(
         ServedRequest(
           at: started,
           method: request.method,
           path: request.uri.path,
           client: client,
+          attributedClient: attributedClient,
           modelId: requested,
           status: status,
           stream: wantsStream,
@@ -1594,10 +1834,15 @@ class DeviceModelServer {
 
   static Future<String> readBody(
     Stream<List<int>> request,
-    Duration timeout,
-  ) async {
-    // Room for a few photos as base64 data URLs.
-    const maxBytes = 24 * 1024 * 1024;
+    Duration timeout, {
+    int maxBytes = 24 * 1024 * 1024,
+  }) async {
+    final limitMessage = maxBytes == 24 * 1024 * 1024
+        ? 'Request is larger than 24 MB.'
+        : 'Request is larger than $maxBytes bytes.';
+    if (request is HttpRequest && request.contentLength > maxBytes) {
+      throw FormatException(limitMessage);
+    }
     final bytes = BytesBuilder(copy: false);
     final iterator = StreamIterator(request);
     final clock = Stopwatch()..start();
@@ -1608,10 +1853,10 @@ class DeviceModelServer {
           throw TimeoutException('Request body deadline reached.');
         }
         if (!await iterator.moveNext().timeout(left)) break;
-        bytes.add(iterator.current);
-        if (bytes.length > maxBytes) {
-          throw const FormatException('Request is larger than 24 MB.');
+        if (iterator.current.length > maxBytes - bytes.length) {
+          throw FormatException(limitMessage);
         }
+        bytes.add(iterator.current);
       }
     } finally {
       await iterator.cancel();
@@ -1624,36 +1869,73 @@ class DeviceModelServer {
     HttpResponse response,
     void Function(int code, String message) refuse,
   ) async {
-    final code = pairCode;
-    if (request.method != 'POST' || code == null) {
+    if (request.method != 'POST' || pairCode == null) {
       refuse(HttpStatus.notFound, 'Endpoint not found.');
       return;
     }
-    if (!_pairing.available) {
-      onPairingUnavailable?.call(_pairing.locked);
+    if (_pairing.expired) _rotatePairing(expired: true);
+    // QR clients explicitly opt into the bounded QR lane during typed lockout.
+    if (_pairLocked && request.headers.value('X-Pairing-Mode') != 'qr') {
+      response.persistentConnection = false;
       refuse(
         HttpStatus.tooManyRequests,
-        'Too many wrong pairing codes. Restart the server for a new code.',
+        'Too many wrong pairing codes. Wait for the code to expire.',
       );
       return;
     }
-    // Counted as a failure before the body arrives, so requests sent at
-    // once cannot all pass the check above; only the right code takes it
-    // back.
-    _pairing.reserve();
-    final body = jsonDecode(await readBody(request, bodyTimeout));
+    final body = jsonDecode(
+      await readBody(request, bodyTimeout, maxBytes: 4096),
+    );
+    // Snapshot only after the asynchronous read: expiry may rotate meanwhile.
+    if (_pairing.expired) _rotatePairing(expired: true);
+    final session = _pairing;
+    final code = pairCode!;
+    final qr = body is Map && body.containsKey('secret');
     final given = body is Map ? PairingCode.normalize('${body['code']}') : '';
-    if (!_sameToken(given, code)) {
-      if (_pairing.locked) onPairingUnavailable?.call(true);
-      refuse(HttpStatus.unauthorized, 'Wrong pairing code.');
+    if (body is Map &&
+        ((qr && body['secret'] == _expiredSecret) ||
+            (!qr && given == _expiredCode))) {
+      refuse(
+        HttpStatus.gone,
+        'Pairing expired. Scan the new QR or enter the new code.',
+      );
       return;
     }
-    if (!_pairing.accept()) {
-      refuse(HttpStatus.unauthorized, 'Pairing code expired or already used.');
+    if (!qr && (_pairLocked || !session.reserve())) {
+      _pairLocked = true;
+      onPairingUnavailable?.call(true);
+      refuse(
+        HttpStatus.tooManyRequests,
+        'Too many wrong pairing codes. Wait for the code to expire.',
+      );
       return;
     }
-    onPairingUnavailable?.call(false);
-    _json(response, HttpStatus.ok, {'key': accessToken, 'model': modelId});
+    final valid = qr
+        ? body['secret'] is String &&
+              body['hostId'] == hostId &&
+              _sameToken(body['secret'] as String, pairingSecret)
+        : _sameToken(given, code);
+    if (!valid) {
+      if (!qr && session.locked) {
+        _pairLocked = true;
+        onPairingUnavailable?.call(true);
+      }
+      refuse(HttpStatus.unauthorized, 'Wrong pairing code or secret.');
+      return;
+    }
+    if (!identical(session, _pairing) || !session.accept(reserved: !qr)) {
+      refuse(
+        HttpStatus.gone,
+        'Pairing expired or already used. Scan the new QR.',
+      );
+      return;
+    }
+    _rotatePairing();
+    _json(response, HttpStatus.ok, {
+      'key': accessToken,
+      'model': modelId,
+      'hostId': hostId,
+    });
   }
 
   static bool _sameToken(String provided, String expected) {
@@ -1703,4 +1985,44 @@ class _Usage {
     'completion_tokens': hasCompletion ? completion : null,
     'total_tokens': hasPrompt && hasCompletion ? prompt + completion : null,
   };
+}
+
+/// Independent bounded budgets keep public pairing and authenticated controls
+/// usable without allowing either lane to create unlimited body readers.
+class _Admission {
+  final int maxGlobal, maxClient, rate;
+  final Map<String, List<DateTime>> _requests = {};
+  final Map<String, int> _clients = {};
+  int _active = 0;
+  _Admission({
+    required this.maxGlobal,
+    required this.maxClient,
+    required this.rate,
+  });
+
+  bool acquire(String key) {
+    final now = DateTime.now();
+    const window = Duration(minutes: 1);
+    _requests.removeWhere(
+      (_, times) => times.every((t) => now.difference(t) >= window),
+    );
+    final times = _requests.putIfAbsent(key, () => []);
+    times.removeWhere((t) => now.difference(t) >= window);
+    if (times.length >= rate) return false;
+    times.add(now);
+    if (_active >= maxGlobal || (_clients[key] ?? 0) >= maxClient) return false;
+    _active++;
+    _clients[key] = (_clients[key] ?? 0) + 1;
+    return true;
+  }
+
+  void release(String key) {
+    _active--;
+    final remaining = _clients[key]! - 1;
+    if (remaining == 0) {
+      _clients.remove(key);
+    } else {
+      _clients[key] = remaining;
+    }
+  }
 }

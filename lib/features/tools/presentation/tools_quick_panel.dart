@@ -45,8 +45,8 @@ class ToolsQuickPanel extends ConsumerWidget {
           title: Text(context.l10n.uiToolsQuickPanelLetTheModelCallTools),
           subtitle: Text(
             on
-                ? 'Search, read pages, search your documents, calculate.'
-                : 'Off: the model answers from what it knows and what you attach.',
+                ? context.l10n.quickToolsEnabledHint
+                : context.l10n.quickToolsDisabledHint,
           ),
           value: on,
           onChanged: (v) => update(s.copyWith(toolsEnabled: v)),
@@ -87,8 +87,8 @@ class ToolsQuickPanel extends ConsumerWidget {
             keyName: 'quick-tool-documents',
             label: context.l10n.uiToolsQuickPanelSearchDocuments,
             hint: noCollection
-                ? 'No knowledge collection selected: not offered.'
-                : 'Searches “${s.knowledgeCollection}”.',
+                ? context.l10n.quickToolsNoKnowledge
+                : context.l10n.quickToolsCollection(s.knowledgeCollection),
             warn: noCollection,
             value: s.toolDocuments,
             onChanged: (v) => update(s.copyWith(toolDocuments: v)),
@@ -129,8 +129,8 @@ class ToolsQuickPanel extends ConsumerWidget {
             title: Text(context.l10n.uiToolsQuickPanelToolUse),
             subtitle: Text(
               s.toolChoice == ToolChoice.required
-                  ? 'Required: a tool is called before the first answer.'
-                  : 'Auto: the model decides whether a tool is needed.',
+                  ? context.l10n.quickToolsRequiredHint
+                  : context.l10n.quickToolsAutoHint,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),

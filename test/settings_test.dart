@@ -1,3 +1,4 @@
+import 'package:ondevice_llm/features/settings/domain/settings_scope.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:ondevice_llm/inference/remote/remote_provider.dart';
@@ -18,7 +19,7 @@ void main() {
   test('invalid persisted settings cannot request unsafe allocations', () {
     final s = InferenceSettings.fromJson({
       'contextSize': -100,
-      'maxTokens': 900000,
+      'maxTokens': 2000000,
       'backend': 'future-npu',
       'kvCacheType': 'bad',
       'topP': double.nan,
@@ -51,6 +52,54 @@ void main() {
     expect(s.evidencePassages, 12);
     expect(InferenceSettings.fromJson(s.toJson()).toJson(), s.toJson());
   });
+  test(
+    'custom answer requests survive serialization and context constraints',
+    () {
+      for (final maximum in [1, 64000, 128000, 1048576]) {
+        final settings = InferenceSettings.fromJson({
+          'contextSize': 4096,
+          'maxTokens': maximum,
+          'agentMaxTokens': maximum,
+        });
+        final restored = InferenceSettings.fromJson(settings.toJson());
+        expect(restored.maxTokens, maximum);
+        expect(restored.agentMaxTokens, maximum);
+        expect(restored.forAgent().maxTokens, maximum);
+      }
+      for (final value in [-1, 0, 2000000]) {
+        final settings = InferenceSettings.fromJson({
+          'maxTokens': value,
+          'agentMaxTokens': value,
+        });
+        expect(settings.maxTokens, value.clamp(1, 1048576));
+        expect(settings.agentMaxTokens, value.clamp(1, 1048576));
+      }
+    },
+  );
+  test(
+    'custom limits resolve through global, model, preset and chat scopes',
+    () {
+      final global = const InferenceSettings().copyWith(maxTokens: 128000);
+      expect(
+        SettingsResolver.resolve(global: global).effective.maxTokens,
+        128000,
+      );
+      for (final scoped in [
+        SettingsResolver.resolve(global: global, model: {'maxTokens': 256000}),
+        SettingsResolver.resolve(global: global, preset: {'maxTokens': 256000}),
+        SettingsResolver.resolve(global: global, chat: {'maxTokens': 256000}),
+      ]) {
+        expect(scoped.effective.maxTokens, 256000);
+      }
+      expect(
+        SettingsResolver.sanitize({
+          'maxTokens': 128000,
+          'agentMaxTokens': 128000,
+        }),
+        {'maxTokens': 128000, 'agentMaxTokens': 128000},
+      );
+    },
+  );
   test('remote server is off unless a usable URL is configured', () {
     expect(const InferenceSettings().usesRemote, false);
     expect(

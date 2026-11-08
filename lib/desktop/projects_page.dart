@@ -97,9 +97,16 @@ class _DesktopProjectsPageState extends ConsumerState<DesktopProjectsPage> {
               onPressed: () => Navigator.pop(dialog),
               child: Text(dialog.l10n.cancel),
             ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialog, true),
-              child: Text(dialog.l10n.save),
+            // An empty name is refused by saveProject after the dialog
+            // closed, losing what was typed (audit C07): Save waits for one.
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: name,
+              builder: (_, value, _) => FilledButton(
+                onPressed: value.text.trim().isEmpty
+                    ? null
+                    : () => Navigator.pop(dialog, true),
+                child: Text(dialog.l10n.save),
+              ),
             ),
           ],
         ),

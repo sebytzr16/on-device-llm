@@ -215,6 +215,12 @@ void main() {
         'drafted': drafted,
       });
       expect(drafted.trim(), isNotEmpty);
+      // The draft must actually run, not just load (N50).
+      expect(m['draftDisabled'], isNot(true));
+      expect(
+        m['draftProposed'],
+        isA<num>().having((n) => n, 'proposed', greaterThan(0)),
+      );
     } else {
       report('speculation', {'skipped': 'no DRAFT_MODEL'});
     }

@@ -28,15 +28,15 @@ class AppearancePage extends ConsumerWidget {
               items: ThemeChoice.values,
               labelOf: (v) => switch (v) {
                 ThemeChoice.system => context.byFormFactor(
-                  'Follow the phone',
+                  context.l10n.languageSystem,
                   context.l10n.desktopThemeSystem,
                 ),
                 ThemeChoice.dark => context.byFormFactor(
-                  'Dark',
+                  context.l10n.desktopThemeDark,
                   context.l10n.desktopThemeDark,
                 ),
                 ThemeChoice.light => context.byFormFactor(
-                  'Light',
+                  context.l10n.desktopThemeLight,
                   context.l10n.desktopThemeLight,
                 ),
               },
@@ -109,7 +109,7 @@ class AppearancePage extends ConsumerWidget {
             ),
             SettingSlider(
               label: context.l10n.uiAdvancedAppearancePageTextSize,
-              hint: 'Scales all text in the app on top of the system setting.',
+              hint: context.l10n.appearanceTextScaleHint,
               value: s.textScale,
               min: .85,
               max: 1.4,

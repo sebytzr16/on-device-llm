@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/settings/domain/entities/inference_settings.dart';
+import '../../features/hosting/pinned_dio.dart';
 
 /// The phone performs transport/presentation only. Every reconnect reuses the
 /// server's job and event cursor, never another model or tool invocation.
@@ -13,6 +14,12 @@ class WorkspaceClient {
   static const _jobsKey = 'workspace_jobs_v1';
   static const _capabilitiesKey = 'workspace_capabilities_v1';
   final Dio dio;
+  final _pinnedClients = PinnedDioClients();
+  Dio _client(InferenceSettings settings) => _pinnedClients.forEndpoint(
+    dio,
+    settings.remoteUri,
+    settings.activeRemoteProfile?.fingerprint,
+  );
   WorkspaceClient({Dio? dio})
     : dio = dio ?? Dio(BaseOptions(connectTimeout: const Duration(seconds: 8)));
 
@@ -64,7 +71,7 @@ class WorkspaceClient {
     final prefs = await SharedPreferences.getInstance();
     final key = settings.remoteBaseUrl;
     try {
-      final response = await dio.getUri(
+      final response = await _client(settings).getUri(
         endpoint(settings, 'capabilities'),
         options: options(settings)..receiveTimeout = const Duration(seconds: 5),
       );
@@ -76,6 +83,7 @@ class WorkspaceClient {
       if (supported) await _remember(prefs, _capabilitiesKey, key, true);
       return supported;
     } on DioException catch (error) {
+      if (isTlsFailure(error)) rethrow;
       if (const [404, 405, 501].contains(error.response?.statusCode)) {
         await _remember(prefs, _capabilitiesKey, key, null);
         return false;
@@ -97,7 +105,7 @@ class WorkspaceClient {
   }) async {
     final file = File(path);
     final size = await file.length();
-    final response = await dio.postUri(
+    final response = await _client(settings).postUri(
       endpoint(settings, 'uploads').replace(queryParameters: {'name': name}),
       data: file.openRead(),
       options: options(settings)
@@ -163,7 +171,7 @@ class WorkspaceClient {
       while (!terminal && cancel?.isCancelled != true) {
         try {
           if (jobId == null) {
-            final response = await dio.postUri(
+            final response = await _client(settings).postUri(
               endpoint(settings, 'jobs'),
               data: body,
               options: options(settings),
@@ -172,7 +180,7 @@ class WorkspaceClient {
             jobId = response.data['jobId'] as String;
             await _remember(prefs, _jobsKey, entryId, jobId);
           }
-          final status = await dio.getUri(
+          final status = await _client(settings).getUri(
             endpoint(settings, 'jobs/$jobId'),
             options: options(settings),
             cancelToken: cancel,
@@ -180,8 +188,8 @@ class WorkspaceClient {
           final pendingApprovals = (status.data['pendingApprovals'] as List)
               .cast<String>();
           final snapshotSequence = status.data['sequence'] as int;
-          final response = await dio.getUri(
-            endpoint(settings, 'jobs/$jobId/events?after=$sequence'),
+          final response = await _client(settings).getUri(
+            endpoint(settings, 'jobs/$jobId/events?after=$sequence&compact=1'),
             options: options(settings, stream: true),
             cancelToken: cancel,
           );
@@ -200,6 +208,14 @@ class WorkspaceClient {
               throw StateError('Invalid server activity sequence.');
             }
             final type = received['type'];
+            if (type == 'checkpoint') {
+              final through = (received['data'] as Map)['through'];
+              if (through is! int || through < next) {
+                throw StateError('Invalid server activity checkpoint.');
+              }
+              sequence = through;
+              continue;
+            }
             if (type == 'approval' &&
                 (next > snapshotSequence ||
                     pendingApprovals.contains(
@@ -211,7 +227,7 @@ class WorkspaceClient {
                 data['description'] as String,
                 id,
               );
-              await dio.postUri(
+              await _client(settings).postUri(
                 endpoint(settings, 'jobs/$jobId/approval'),
                 data: {'id': id, 'allow': allow},
                 options: options(settings)
@@ -228,6 +244,7 @@ class WorkspaceClient {
             throw const SocketException('Server activity stream interrupted.');
           }
         } on DioException catch (error) {
+          if (isTlsFailure(error)) rethrow;
           if (cancel?.isCancelled == true) break;
           if (error.response != null &&
               !const [
@@ -263,12 +280,26 @@ class WorkspaceClient {
       if (cancel?.isCancelled == true && jobId != null && !terminal) {
         // A separate request remains usable after the streaming request's
         // token is cancelled. Losing connectivity alone does not enter here.
-        try {
-          await dio.postUri(
-            endpoint(settings, 'jobs/$jobId/cancel'),
-            options: options(settings),
-          );
-        } catch (_) {}
+        for (var attempt = 0; ; attempt++) {
+          try {
+            await _client(settings).postUri(
+              endpoint(settings, 'jobs/$jobId/cancel'),
+              options: options(settings),
+            );
+            break;
+          } on DioException catch (error) {
+            final code = error.response?.statusCode;
+            if (isTlsFailure(error) ||
+                attempt >= 2 ||
+                (code != null &&
+                    !const [408, 429, 500, 502, 503, 504].contains(code))) {
+              rethrow;
+            }
+            await Future<void>.delayed(
+              Duration(milliseconds: 200 * (attempt + 1)),
+            );
+          }
+        }
       }
       if (terminal || cancel?.isCancelled == true) {
         await _remember(prefs, _jobsKey, entryId, null);
@@ -284,5 +315,8 @@ class WorkspaceClient {
     _jobsKey,
   ).containsKey('${settings.remoteBaseUrl}:$requestId');
 
-  void dispose() => dio.close(force: true);
+  void dispose() {
+    dio.close(force: true);
+    _pinnedClients.close();
+  }
 }

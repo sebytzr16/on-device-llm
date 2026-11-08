@@ -1733,7 +1733,9 @@ class ChatNotifier extends _ChatBase
         state = state.copyWith(
           notice: notice ?? state.notice,
           // A tool call being written is not part of the answer.
-          partialAnswer: tools.isEmpty && !t.serverWorkspace
+          partialAnswer: t.holdAnswer
+              ? ''
+              : tools.isEmpty && !t.serverWorkspace
               ? answerText
               : ToolMarkup.visible(answerText),
           hasReasoningTokens: t.hasReasoningTokens,
@@ -1764,6 +1766,9 @@ class ChatNotifier extends _ChatBase
     final answer = t.answer, thinking = t.thinking;
     final toolMessages = <Map<String, Object>>[];
     final pendingHelpers = <({ToolCall call, Future<ToolResult> reply})>[];
+    t.holdAnswer =
+        HelperRequest.wanted(input) &&
+        tools.any((tool) => tool.name == 'ask_helper');
     final helperSlots = Map<ToolCall, Map<String, Object>>.identity();
     var helperCount = 0;
     Future<void> collectHelpers() async {
@@ -1848,7 +1853,9 @@ class ChatNotifier extends _ChatBase
         ? engine.canvasChanges.listen((event) {
             if (_alive && !_cancelled && event['canvas'] is String) {
               state = state.copyWith(
-                partialAnswer: '${event['committed'] ?? ''}${event['canvas']}',
+                partialAnswer: t.holdAnswer
+                    ? ''
+                    : '${event['committed'] ?? ''}${event['canvas']}',
                 metrics: engine.metrics,
               );
             }
@@ -1860,6 +1867,7 @@ class ChatNotifier extends _ChatBase
     // tools, answering from what was gathered (the call itself used to end
     // up as the answer).
     var lastRound = false;
+    var emptyRetried = false;
     // The remote model offered to read on instead of reading; told yes
     // once.
     var toldToRead = false;
@@ -1871,6 +1879,22 @@ class ChatNotifier extends _ChatBase
     try {
       while (true) {
         if (_cancelled) break;
+        // All independent jobs have started. Wait before generating any
+        // more answer tokens, including an acknowledgement or outline.
+        if (pendingHelpers.isNotEmpty) {
+          t.clearAnswer();
+          state = state.copyWith(partialAnswer: '');
+          await collectHelpers();
+          if (_cancelled || !_alive) break;
+          t.holdAnswer = false;
+          lastRound = true;
+          toolMessages.add({
+            'role': 'user',
+            'content':
+                'All helper replies are now available above. ${HelperRequest.mergeInstruction} '
+                'No more tools are available; write the final answer now.',
+          });
+        }
         budget?.check();
         if (toolMessages.isNotEmpty) {
           // Tool results can outgrow the context (nine pages plus thinking did
@@ -1933,7 +1957,7 @@ class ChatNotifier extends _ChatBase
               // the model must be free to answer. An outright action request
               // must prepare its card, not promise to.
               toolChoice:
-                  nativeTools && (lastRound || RetrievalPlan.smallTalk(input))
+                  (lastRound || (nativeTools && RetrievalPlan.smallTalk(input)))
                   ? 'none'
                   : nativeTools &&
                         rounds == 0 &&
@@ -2108,18 +2132,17 @@ class ChatNotifier extends _ChatBase
           t.newParser();
           continue;
         }
-        if (runner == null ||
-            tools.isEmpty ||
-            _cancelled ||
-            repeatStopped ||
-            t.echoStopped ||
-            !_alive) {
+        if (_cancelled || repeatStopped || t.echoStopped || !_alive) {
           break;
         }
         // Flush the parser so the round's text is complete before reading it.
         t.parser!.close();
         final roundText = answer.toString();
-        var calls = lastRound || (nativeTools && RetrievalPlan.smallTalk(input))
+        var calls =
+            runner == null ||
+                tools.isEmpty ||
+                lastRound ||
+                (nativeTools && RetrievalPlan.smallTalk(input))
             ? const <ToolCall>[]
             : nativeTools
             ? TextEngine.toolCallsOf(engine.metrics)
@@ -2130,17 +2153,19 @@ class ChatNotifier extends _ChatBase
               );
         // An explicit delegation should not end at a promise to call (owner, 2026-11-02).
         var appCall = false;
-        if (calls.isEmpty) {
-          final helperCall = HelperRequest.fallback(
-            input,
-            offered: tools.any((s) => s.name == 'ask_helper'),
-            round: rounds,
-            lastRound: lastRound,
-          );
-          if (helperCall != null) {
-            calls = [helperCall];
-            appCall = true;
-          }
+        // A model that searched instead of delegating still gets the agents
+        // the user asked for ("latest news, use four agents": LFM3 called only
+        // search_news, 2026-11-08).
+        final helperCalls = HelperRequest.fallbackCalls(
+          input,
+          offered: tools.any((s) => s.name == 'ask_helper'),
+          round: rounds,
+          lastRound: lastRound,
+          completed: calls.where((c) => c.name == 'ask_helper').length,
+        );
+        if (helperCalls.isNotEmpty) {
+          appCall = calls.isEmpty;
+          calls = [...calls, ...helperCalls];
         }
         // A plain timer request the phone's model answered with chat instead
         // of the required call is prepared from its own words.
@@ -2165,9 +2190,9 @@ class ChatNotifier extends _ChatBase
         // The round's words without any tool-call markup: the parser's own
         // split when the native library reports calls, else the known markers
         // (the text protocol only drops blocks that are calls).
-        final stripped = nativeTools
-            ? ToolMarkup.strip(roundText)
-            : TextToolProtocol.strip(roundText);
+        final stripped = TextToolProtocol.strip(
+          nativeTools ? ToolMarkup.strip(roundText) : roundText,
+        );
         final said = appCall
             ? ''
             : calls.isNotEmpty &&
@@ -2234,26 +2259,29 @@ class ChatNotifier extends _ChatBase
           t.newParser();
           continue;
         }
-        if (pendingHelpers.isNotEmpty &&
-            (calls.isEmpty || rounds >= settings.toolMaxRounds)) {
-          await collectHelpers();
-          if (_cancelled || !_alive) break;
-          lastRound = true;
-          t.clearAnswer();
-          toolMessages.add({
-            'role': 'user',
-            'content':
-                'All helper replies are now available above. Check them and write the final answer from them and your own work.',
-          });
-          t.newParser();
-          continue;
-        }
         if (calls.isEmpty) {
+          if (said.trim().isEmpty &&
+              !emptyRetried &&
+              (t.sources.isNotEmpty || (runner?.trace.isNotEmpty ?? false))) {
+            emptyRetried = true;
+            lastRound = true;
+            t.clearAnswer();
+            toolMessages.add({
+              'role': 'user',
+              'content':
+                  'Your last reply contained no answer. Write a plain-text answer now '
+                  'using the supplied sources and helper results, citing source numbers. '
+                  'Do not think aloud or call tools.',
+            });
+            t.newParser();
+            continue;
+          }
           if (rounds == 0 && prompt.researchTurn) t.researchSkipped = true;
           // A stray block the model wrote without stopping is not shown.
           if (said != roundText.trim()) t.replaceAnswer(said);
           break;
         }
+        if (runner == null) break;
         if (rounds >= settings.toolMaxRounds) {
           lastRound = true;
           t.clearAnswer();
@@ -2279,7 +2307,8 @@ class ChatNotifier extends _ChatBase
                 {...c.toJson(), 'arguments': c.jsonArguments},
             ],
         });
-        // Start every helper before awaiting other tools; they can span model rounds (owner, 2026-11-02).
+        if (calls.any((c) => c.name == 'ask_helper')) t.holdAnswer = true;
+        // Start every helper before awaiting other tools.
         if (!_cancelled) {
           for (final call in calls.where((c) => c.name == 'ask_helper')) {
             pendingHelpers.add((call: call, reply: runner.run(call)));
@@ -2331,7 +2360,7 @@ class ChatNotifier extends _ChatBase
               elapsedMs: 0,
               output:
                   'Helper job ${++helperCount} started on $helperName: ${call.args['task']}. '
-                  'Its reply will be added before you write the answer; keep working (research, more helpers, or outline).',
+                  'Its reply will be added before you write the final answer.',
             );
           } else {
             result = await runner.run(call);
@@ -2543,6 +2572,28 @@ class ChatNotifier extends _ChatBase
             ) ??
             false)) {
       t.replaceAnswer(_t.actionReadyAnswer);
+    }
+    // A model can spend its entire final budget on thinking or another
+    // call, even after the no-tools retry. Preserve useful evidence rather
+    // than saving an empty bubble (and a citations warning alone).
+    if (ok && t.answer.toString().trim().isEmpty) {
+      final evidence = <String>[
+        for (var i = 0; i < t.sources.length; i++)
+          '- ${t.sources[i].title}: ${t.sources[i].snippet} [${i + 1}]',
+      ];
+      if (evidence.isEmpty) {
+        for (final result in t.runner?.trace ?? const <ToolResult>[]) {
+          if (result.call.name == 'ask_helper') {
+            final text = TextToolProtocol.strip(
+              ToolRunner.helperReplyText(result.output),
+            );
+            if (text.isNotEmpty) evidence.add(text);
+          }
+        }
+      }
+      if (evidence.isNotEmpty) {
+        t.replaceAnswer('Available findings:\n\n${evidence.join('\n\n')}');
+      }
     }
   }
 
@@ -3273,9 +3324,10 @@ class ChatNotifier extends _ChatBase
         // model. A refusal (not downloaded, no memory) reaches the chat
         // model as a tool error, so it does the job itself.
         helper:
-            settings.toolHelper &&
-                settings.helperModelId.isNotEmpty &&
-                settings.toolsEnabled
+            // The helper is the user's own opt-in (Settings > Tools > Helper
+            // model): it is offered whenever this runner exists, so a remote
+            // research turn with the Tools switch off still gets it (R01).
+            settings.toolHelper && settings.helperModelId.isNotEmpty
             ? (task, text) async {
                 try {
                   final reply = await ref
@@ -3340,6 +3392,9 @@ class ChatNotifier extends _ChatBase
       );
       offered = runner;
       tools = runner.specs();
+      if (tools.any((t) => t.name == 'ask_helper')) {
+        turnNotes.writeln(HelperRequest.mergeInstruction);
+      }
       if (HelperRequest.wanted(input) &&
           tools.any((t) => t.name == 'ask_helper')) {
         turnNotes.writeln(
@@ -3524,23 +3579,33 @@ class ChatNotifier extends _ChatBase
       final longResult =
           biggest != null && (biggest['content'] as String).length >= 4000;
       final available = (budget['availableTokens'] as num?)?.toInt();
+      // Estimate each exchange's tokens from the counts this preview already
+      // returned instead of rendering every dropped exchange on its own:
+      // several are dropped per round and the preview at the top of the next
+      // round confirms the result once (audit N23: a full re-render per
+      // dropped message is quadratic on long chats).
+      final prompt = (budget['promptTokens'] as num?)?.toInt() ?? 0;
+      final chars = messages.fold<int>(
+        0,
+        (n, m) => n + '${m['content'] ?? ''}'.length,
+      );
+      final charsPerToken = prompt > 0 && chars > 0 ? chars / prompt : 4.0;
       final omitted = await ContextUse.omitToFit(
         messages,
         deficit: available == null ? 1 : max(1, -available),
         keep: longResult ? 2 : 0,
         cancelled: () => _cancelled,
-        count: (exchange) async {
-          final measured = await engine.previewPrompt(
-            messages: exchange,
-            fallbackTemplate: model.family.fallbackTemplate,
-            settings: settings,
-          );
-          return max(1, (measured['promptTokens'] as num?)?.toInt() ?? 1);
-        },
+        count: (exchange) async => max(
+          1,
+          (exchange.fold<int>(0, (n, m) => n + '${m['content'] ?? ''}'.length) /
+                  charsPerToken)
+              .ceil(),
+        ),
       );
       if (omitted > 0) {
         _fittedOmitted += omitted;
-        rounds--;
+        // Omit rounds count toward the 12-round cap: each one still costs a
+        // full-prompt preview at the top of the loop.
         continue;
       }
       if (biggest == null) break;

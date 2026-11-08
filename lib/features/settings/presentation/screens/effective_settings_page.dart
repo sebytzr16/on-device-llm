@@ -44,8 +44,8 @@ class EffectiveSettingsPage extends ConsumerWidget {
           children: [
             SettingsNote(
               overridden.isEmpty
-                  ? 'Nothing is overridden: your settings apply as saved.'
-                  : '${overridden.length} setting${overridden.length == 1 ? '' : 's'} come from a model profile, preset or chat. Select a row to see what each layer asked for.',
+                  ? context.l10n.effectiveNothingOverridden
+                  : context.l10n.effectiveOverrideSummary(overridden.length),
               icon: Icons.layers_outlined,
             ),
             SettingsSection(
@@ -57,10 +57,14 @@ class EffectiveSettingsPage extends ConsumerWidget {
                     title: Text(l.label),
                     subtitle: Text(
                       l.id == SettingsLayer.idDefault
-                          ? 'every setting'
+                          ? context.l10n.effectiveEverySetting
                           : l.values.isEmpty
-                          ? 'nothing'
-                          : '${l.values.length} setting${l.values.length == 1 ? '' : 's'}: ${l.values.keys.take(6).join(', ')}${l.values.length > 6 ? '…' : ''}',
+                          ? context.l10n.effectiveLayerEmpty
+                          : context.l10n.effectiveLayerSettingCount(
+                              l.values.length,
+                              l.values.keys.take(6).join(', '),
+                              l.values.length > 6 ? '…' : '',
+                            ),
                     ),
                   ),
               ],
@@ -82,16 +86,16 @@ class EffectiveSettingsPage extends ConsumerWidget {
     );
   }
 
-  static String _layerName(String id) => switch (id) {
-    SettingsLayer.idDefault => 'default',
-    SettingsLayer.idDevice => 'this phone',
-    SettingsLayer.idRecommended => "model's recommended",
-    SettingsLayer.idGlobal => 'your settings',
-    SettingsLayer.idModel => 'model profile',
-    SettingsLayer.idPreset => 'preset',
-    SettingsLayer.idChat => 'this chat',
-    SettingsLayer.idProject => 'project',
-    SettingsLayer.idTurn => 'this turn',
+  static String _layerName(String id, AppLocalizations l10n) => switch (id) {
+    SettingsLayer.idDefault => l10n.effectiveLayerDefault,
+    SettingsLayer.idDevice => l10n.effectiveLayerDevice,
+    SettingsLayer.idRecommended => l10n.effectiveLayerRecommended,
+    SettingsLayer.idGlobal => l10n.effectiveLayerGlobal,
+    SettingsLayer.idModel => l10n.effectiveLayerModel,
+    SettingsLayer.idPreset => l10n.desktopSourcePreset,
+    SettingsLayer.idChat => l10n.desktopSourceChat,
+    SettingsLayer.idProject => l10n.desktopSourceProject,
+    SettingsLayer.idTurn => l10n.effectiveLayerTurn,
     _ => id,
   };
 
@@ -137,8 +141,8 @@ class EffectiveSettingsPage extends ConsumerWidget {
       dense: true,
       title: Text(spec.labelIn(context.l10n)),
       subtitle: Text(
-        '${spec.display(value)} · ${_layerName(origin)}'
-        '${stale ? ' · loaded model uses ${spec.display(live)}, reloads next message' : ''}',
+        '${spec.display(value)} · ${_layerName(origin, context.l10n)}'
+        '${stale ? context.l10n.effectiveReloadNextMessage(spec.display(live)) : ''}',
         style: TextStyle(color: stale ? c.warning : null),
       ),
       trailing: fromScope
@@ -152,7 +156,7 @@ class EffectiveSettingsPage extends ConsumerWidget {
                 borderRadius: AppDesign.radius(AppDesign.rFull),
               ),
               child: Text(
-                _layerName(origin),
+                _layerName(origin, context.l10n),
                 style: context.text.caption.copyWith(color: c.accent),
               ),
             )
@@ -169,11 +173,18 @@ class EffectiveSettingsPage extends ConsumerWidget {
             children: [
               Text(context.l10n.settingEffectiveValue(spec.display(value))),
               Text(
-                'Default: ${spec.display(const InferenceSettings().toJson()[spec.key])}',
+                context.l10n.effectiveDefaultValue(
+                  spec.display(const InferenceSettings().toJson()[spec.key]),
+                ),
               ),
               for (final req
                   in r.requested[spec.key] ?? const <(String, Object?)>[])
-                Text('${_layerName(req.$1)} asked for ${spec.display(req.$2)}'),
+                Text(
+                  context.l10n.effectiveLayerRequestedValue(
+                    _layerName(req.$1, context.l10n),
+                    spec.display(req.$2),
+                  ),
+                ),
               if (spec.reloadRequired) ...[
                 const SizedBox(height: AppDesign.sm),
                 Text(

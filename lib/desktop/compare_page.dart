@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/design/app_design.dart';
+import '../core/design/app_dialog.dart';
+import 'history_store.dart';
 import '../core/errors/exceptions.dart';
 import '../core/l10n/l10n.dart';
 import '../core/providers/shared_providers.dart';
@@ -46,10 +48,15 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
   bool _sideBySide = false;
   bool _showSystem = false;
   bool _running = false;
+  bool _viewingHistory = false;
+  bool _showHistory = false;
+  final _historyScroll = ScrollController();
   int _runEpoch = 0;
+  Future<void>? _activeRun;
 
   @override
   void dispose() {
+    _historyScroll.dispose();
     _runEpoch++;
     for (final column in _columns) {
       column.epoch++;
@@ -89,6 +96,7 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
       for (final column in _columns)
         if (column.task != null) column.task!,
     ]);
+    await _activeRun;
     if (mounted) setState(() => _running = false);
   }
 
@@ -112,6 +120,18 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
   }
 
   Future<void> _run() async {
+    if (_running) return;
+    final task = _executeRun();
+    _activeRun = task;
+    try {
+      await task;
+    } finally {
+      if (_activeRun == task) _activeRun = null;
+    }
+  }
+
+  Future<void> _executeRun() async {
+    if (_viewingHistory) setState(() => _viewingHistory = false);
     final prompt = _prompt.text.trim();
     final system = _system.text.trim();
     if (prompt.isEmpty || _running) return;
@@ -123,8 +143,12 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
             .firstOrNull,
     ];
     if (chosen.any((m) => m == null) || chosen[0]!.id == chosen[1]!.id) return;
+    final historyStore = ref.read(compareHistoryStoreProvider);
     final run = ++_runEpoch;
+    final parallel = _sideBySide;
+    final createdAt = DateTime.now();
     setState(() {
+      _viewingHistory = false;
       _running = true;
       for (final column in _columns) {
         column.answer = '';
@@ -140,13 +164,43 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
           _answer(_columns[1], chosen[1]!, prompt, system, run),
         ]);
       } else {
-        await _answer(_columns[0], chosen[0]!, prompt, system, run);
-        if (_runEpoch == run) {
-          await _answer(_columns[1], chosen[1]!, prompt, system, run);
+        for (var index = 0; index < _columns.length; index++) {
+          if (_runEpoch != run) break;
+          // A previous run (including parallel mode) may retain the other model.
+          final other = _columns[1 - index];
+          if (other.ownEngine) await _release(other);
+          if (_runEpoch != run) break;
+          await _answer(_columns[index], chosen[index]!, prompt, system, run);
         }
       }
     } finally {
-      if (mounted && _runEpoch == run) setState(() => _running = false);
+      // Snapshot before allowing another run or history selection to mutate panes.
+      final entry = HistoryEntry(
+        createdAt: createdAt,
+        data: {
+          'prompt': prompt,
+          'systemPrompt': system,
+          'mode': parallel ? 'parallel' : 'sequential',
+          'interrupted': _runEpoch != run,
+          'sides': [
+            for (var i = 0; i < _columns.length; i++)
+              {
+                'modelId': chosen[i]!.id,
+                'answer': _columns[i].answer,
+                'metrics': _columns[i].metrics,
+                'totalMs': _columns[i].elapsed?.inMilliseconds,
+                'error': _columns[i].error,
+              },
+          ],
+        },
+      );
+      try {
+        await historyStore.save(entry);
+        if (mounted) ref.invalidate(compareHistoryProvider);
+      } catch (e) {
+        _historyError(e);
+      }
+      if (mounted) setState(() => _running = false);
     }
   }
 
@@ -158,12 +212,17 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
     int run,
   ) async {
     final epoch = column.epoch;
+    final desiredSettings = ref
+        .read(modelManagerProvider.notifier)
+        .servedSettings(model);
     Future<void> work() async {
+      final totalWatch = Stopwatch()..start();
       LlamaEngine? engine = column.engine;
       try {
         final chat = ref.read(llamaEngineProvider);
         if (engine == chat &&
             (chat.isBusy ||
+                ref.read(sessionBusyProvider) ||
                 ref.read(modelManagerProvider).loadedModelId != model.id)) {
           column.engine = null;
           engine = null;
@@ -173,6 +232,7 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
           if (chatModel == model.id &&
               chat.isLoaded &&
               !chat.isBusy &&
+              !ref.read(sessionBusyProvider) &&
               !_columns.any((c) => c != column && c.engine == chat)) {
             engine = chat;
             column.ownEngine = false;
@@ -189,13 +249,19 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
             });
             column.engine = engine;
             if (mounted) setState(() {});
-            await ref
-                .read(modelManagerProvider.notifier)
-                .loadServed(model, engine);
-            column.loading = false;
-            if (mounted) setState(() {});
           }
           column.engine = engine;
+        }
+        if (column.ownEngine) {
+          column.loading = true;
+          if (mounted) setState(() {});
+          // The engine compares the canonical native load configuration and
+          // preserves its runtime and caches for unchanged or sampling settings.
+          await ref
+              .read(modelManagerProvider.notifier)
+              .loadServed(model, engine);
+          column.loading = false;
+          if (mounted) setState(() {});
         }
         if (_runEpoch != run || column.epoch != epoch || !mounted) return;
         if (engine.isBusy) {
@@ -211,9 +277,7 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
         await for (final chunk in engine.generate(
           messages: messages,
           fallbackTemplate: model.family.fallbackTemplate,
-          settings: ref
-              .read(modelManagerProvider.notifier)
-              .servedSettings(model),
+          settings: desiredSettings,
         )) {
           if (_runEpoch != run || column.epoch != epoch || !mounted) break;
           setState(() => column.answer += chunk);
@@ -245,8 +309,10 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
           );
         }
       } finally {
+        totalWatch.stop();
         if (mounted && column.epoch == epoch) {
           setState(() {
+            column.elapsed ??= totalWatch.elapsed;
             column.loading = false;
             column.generating = false;
             column.progress = null;
@@ -259,6 +325,189 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
     column.task = task;
     await task;
     if (column.task == task) column.task = null;
+  }
+
+  void _historyError(Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(context.l10n.historyFailed('$error'))),
+    );
+  }
+
+  Future<void> _restoreHistory(HistoryEntry entry) async {
+    if (_running) return;
+    for (final column in _columns) {
+      await _release(column);
+    }
+    if (!mounted) return;
+    setState(() {
+      _viewingHistory = true;
+      _prompt.text = entry.data['prompt'] as String;
+      _system.text = entry.data['systemPrompt'] as String;
+      _showSystem = _system.text.isNotEmpty;
+      _sideBySide = entry.data['mode'] == 'parallel';
+      final sides = entry.data['sides'] as List;
+      for (var i = 0; i < 2; i++) {
+        final side = sides[i] as Map;
+        final column = _columns[i];
+        column.modelId = side['modelId'] as String;
+        column.answer = side['answer'] as String;
+        column.error = side['error'] as String?;
+        column.metrics = Map<String, dynamic>.from(side['metrics'] as Map);
+        column.elapsed = side['totalMs'] == null
+            ? null
+            : Duration(milliseconds: side['totalMs'] as int);
+      }
+    });
+  }
+
+  Widget _historyPanel() {
+    final t = context.l10n;
+    final c = context.colors;
+    final names = {
+      for (final m in ref.watch(modelManagerProvider).catalog)
+        m.id: m.displayName,
+    };
+    final material = MaterialLocalizations.of(context);
+    String when(DateTime at) {
+      final local = at.toLocal();
+      return '${material.formatShortDate(local)} '
+          '${material.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
+    }
+
+    Future<void> clear() async {
+      if (!await confirmAction(
+        context,
+        title: t.historyClear,
+        message: t.historyClearConfirm,
+        confirmLabel: t.historyClear,
+        destructive: true,
+      )) {
+        return;
+      }
+      try {
+        await ref.read(compareHistoryStoreProvider).clear();
+        ref.invalidate(compareHistoryProvider);
+      } catch (e) {
+        _historyError(e);
+      }
+    }
+
+    Future<void> delete(String id) async {
+      if (!await confirmAction(
+        context,
+        title: t.historyDelete,
+        message: t.historyDeleteConfirm,
+        confirmLabel: t.historyDelete,
+        destructive: true,
+      )) {
+        return;
+      }
+      try {
+        await ref.read(compareHistoryStoreProvider).delete(id);
+        ref.invalidate(compareHistoryProvider);
+      } catch (e) {
+        _historyError(e);
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: AppDesign.sm),
+      child: Material(
+        color: c.surface,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: c.hairline),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(t.historyTitle, style: context.text.title),
+                  ),
+                  TextButton.icon(
+                    onPressed: _running ? null : clear,
+                    icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                    label: Text(t.historyClear),
+                  ),
+                ],
+              ),
+            ),
+            Container(height: 1, color: c.hairline),
+            SizedBox(
+              height: 180,
+              child: ref
+                  .watch(compareHistoryProvider)
+                  .when(
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (e, _) => Center(child: Text(t.historyFailed('$e'))),
+                    data: (items) => items.isEmpty
+                        ? Center(
+                            child: Text(
+                              t.historyEmpty,
+                              style: context.text.small.copyWith(
+                                color: c.textMuted,
+                              ),
+                            ),
+                          )
+                        : Scrollbar(
+                            controller: _historyScroll,
+                            thumbVisibility: true,
+                            child: ListView.builder(
+                              controller: _historyScroll,
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              itemCount: items.length,
+                              itemBuilder: (context, index) {
+                                final item = items[index];
+                                final models = (item.data['sides'] as List)
+                                    .map((s) {
+                                      final id = s['modelId'] as String?;
+                                      return names[id] ?? id ?? '';
+                                    })
+                                    .join('  vs  ');
+                                return ListTile(
+                                  dense: true,
+                                  enabled: !_running,
+                                  title: Text(
+                                    item.data['prompt'] as String,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: Text(
+                                    '$models · ${when(item.createdAt)}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: context.text.small.copyWith(
+                                      color: c.textMuted,
+                                    ),
+                                  ),
+                                  onTap: _running
+                                      ? null
+                                      : () => _restoreHistory(item),
+                                  trailing: IconButton(
+                                    tooltip: t.historyDelete,
+                                    iconSize: 18,
+                                    icon: const Icon(Icons.delete_outline),
+                                    onPressed: _running
+                                        ? null
+                                        : () => delete(item.id),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -285,11 +534,29 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(t.desktopCompareTitle, style: context.text.headline),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  t.desktopCompareTitle,
+                  style: context.text.headline,
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => setState(() => _showHistory = !_showHistory),
+                icon: const Icon(Icons.history),
+                label: Text(t.historyTitle),
+              ),
+            ],
+          ),
+          if (_viewingHistory)
+            Text(t.historyReadOnly, style: context.text.small),
+          if (_showHistory) _historyPanel(),
           const SizedBox(height: 16),
           TextField(
             key: const Key('desktopComparePrompt'),
             controller: _prompt,
+            readOnly: _viewingHistory || _running,
             maxLines: 3,
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(labelText: t.desktopComparePrompt),
@@ -302,6 +569,7 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
           if (_showSystem)
             TextField(
               controller: _system,
+              readOnly: _viewingHistory || _running,
               maxLines: 2,
               decoration: InputDecoration(labelText: t.desktopCompareSystem),
             ),
@@ -319,7 +587,7 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
                   ),
                 ],
                 selected: {_sideBySide},
-                onSelectionChanged: _running
+                onSelectionChanged: _running || _viewingHistory
                     ? null
                     : (v) => setState(() => _sideBySide = v.first),
               ),
@@ -393,7 +661,11 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
                           key: Key('desktopCompareModel$index'),
                           isExpanded: true,
                           borderRadius: AppDesign.radius(AppDesign.rMd),
-                          hint: Text(t.desktopComparePickModel),
+                          hint: Text(
+                            _viewingHistory
+                                ? column.modelId ?? t.desktopComparePickModel
+                                : t.desktopComparePickModel,
+                          ),
                           value: model?.id,
                           items: [
                             for (final item in models)
@@ -406,7 +678,7 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
                                 ),
                               ),
                           ],
-                          onChanged: _running
+                          onChanged: _running || _viewingHistory
                               ? null
                               : (id) => _select(index, id),
                         ),
@@ -417,7 +689,9 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
                 if (column.ownEngine)
                   IconButton(
                     tooltip: t.desktopCompareUnload,
-                    onPressed: () => _select(index, null),
+                    onPressed: _viewingHistory
+                        ? null
+                        : () => _select(index, null),
                     icon: const Icon(Icons.eject_outlined),
                   ),
                 IconButton(
@@ -454,7 +728,7 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
                   ? const SizedBox.shrink()
                   : ChatBubble(
                       streaming: column.generating,
-                      modelName: model?.displayName,
+                      modelName: model?.displayName ?? column.modelId,
                       message: ChatMessage(
                         id: 'compare-$index',
                         role: ChatRole.assistant,

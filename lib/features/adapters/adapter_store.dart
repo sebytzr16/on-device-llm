@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
 import '../../core/providers/shared_providers.dart';
+import '../../data/storage/gguf_split.dart';
+import '../../data/storage/model_file_leases.dart';
 import '../../data/storage/model_storage.dart';
 
 /// A LoRA adapter GGUF the user imported (roadmap P2 "LoRA adapter
@@ -264,7 +266,19 @@ class AdaptersNotifier extends Notifier<AdaptersState> {
     )) {
       await ref.read(llamaEngineProvider).unload();
     }
-    await ModelStorage.delete(a.fileName);
+    // Another runtime may still hold the file leased (a server pool copy of
+    // the base model, a vector engine): refuse the delete until it unloads
+    // (audit N14, 2026-11-07).
+    final file = await ModelStorage.modelFile(a.fileName);
+    final guard = ModelFileLeases.instance.beginMutation([
+      for (final name in GgufSplit.parse(a.fileName)?.names ?? [a.fileName])
+        p.join(file.parent.path, name),
+    ]);
+    try {
+      await ModelStorage.delete(a.fileName);
+    } finally {
+      guard.release();
+    }
     state = state.copyWith(
       adapters: state.adapters.where((x) => x.id != adapterId).toList(),
       attachments: {

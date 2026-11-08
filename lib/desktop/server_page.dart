@@ -564,18 +564,58 @@ class _DesktopServerPageState extends ConsumerState<DesktopServerPage> {
                 const SizedBox(height: 12),
                 if (host.log.isEmpty)
                   Text(t.desktopServerNoRequests, style: context.text.mono),
-                for (final r in host.log)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 5),
-                    child: SelectableText(
-                      '${r.at.toIso8601String()}  ${r.method} ${r.path} · ${r.status} · ${r.took.inMilliseconds} ms'
-                      '${r.completion ? ' · ${r.promptTokens} / ${r.completionTokens}' : ''}',
-                      style: context.text.mono,
-                    ),
-                  ),
+                // A fixed-height box with its own scroll bar, so a long log
+                // does not push the page down (owner, 2026-11-08).
+                if (host.log.isNotEmpty) _RequestLog(log: host.log),
               ],
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _RequestLog extends StatefulWidget {
+  final List<ServedRequest> log;
+  const _RequestLog({required this.log});
+  @override
+  State<_RequestLog> createState() => _RequestLogState();
+}
+
+class _RequestLogState extends State<_RequestLog> {
+  final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final log = widget.log;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 280),
+      child: Scrollbar(
+        controller: _scroll,
+        thumbVisibility: true,
+        child: ListView.builder(
+          controller: _scroll,
+          shrinkWrap: true,
+          padding: const EdgeInsets.only(right: 16),
+          itemCount: log.length,
+          itemBuilder: (context, i) {
+            final r = log[i];
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: SelectableText(
+                '${r.at.toIso8601String()}  ${r.method} ${r.path} · ${r.status} · ${r.took.inMilliseconds} ms'
+                '${r.completion ? ' · ${r.promptTokens} / ${r.completionTokens}' : ''}',
+                style: context.text.mono,
+              ),
+            );
+          },
+        ),
       ),
     );
   }

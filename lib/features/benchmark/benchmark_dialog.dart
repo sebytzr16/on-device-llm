@@ -143,37 +143,60 @@ class _ResultDialog extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         spacing: AppDesign.md,
         children: [
-          row('Backend', '${result.backend} · ${result.library}'),
-          row('Prefill', '${result.prefillTps.toStringAsFixed(0)} tok/s'),
+          row(
+            context.l10n.uiMetricsSheetBackend,
+            '${result.backend} · ${result.library}',
+          ),
+          row(
+            context.l10n.benchmarkPrefill,
+            '${result.prefillTps.toStringAsFixed(0)} tok/s',
+          ),
           row(
             '',
-            '${result.promptTokens} tok in ${(result.prefillMs / 1000).toStringAsFixed(2)} s',
+            context.l10n.benchmarkPrefillDetail(
+              result.promptTokens,
+              (result.prefillMs / 1000).toStringAsFixed(2),
+            ),
           ),
-          row('Decode', '${result.decodeTps.toStringAsFixed(1)} tok/s'),
+          row(
+            context.l10n.benchmarkDecode,
+            '${result.decodeTps.toStringAsFixed(1)} tok/s',
+          ),
           if (result.samples.length > 1)
-            row('Basis', 'median of ${result.samples.length}'),
+            row(
+              context.l10n.benchmarkBasis,
+              context.l10n.benchmarkMedianSamples(result.samples.length),
+            ),
           // What a first chat message costs (review #8).
           for (final (label, s) in [
-            ('Chat', result.chat),
-            ('Chat + tools', result.chatTools),
+            (context.l10n.scheduleChat, result.chat),
+            (context.l10n.benchmarkChatTools, result.chatTools),
           ])
             if (s != null) ...[
               row(
                 label,
-                '${(s.prefillMs / 1000).toStringAsFixed(2)} s to first token',
+                context.l10n.benchmarkChatFirstToken(
+                  (s.prefillMs / 1000).toStringAsFixed(2),
+                ),
               ),
               row(
                 '',
                 '${s.promptTokens} tok · ${s.decodeTps.toStringAsFixed(1)} tok/s',
               ),
             ],
-          row('Threads', '${result.threads} / ${result.batchThreads}'),
+          row(
+            context.l10n.benchmarkThreads,
+            '${result.threads} / ${result.batchThreads}',
+          ),
           if (result.engineSummary.isNotEmpty)
-            row('Engine', result.engineSummary),
-          row('Peak RSS', '${result.peakRssMb.round()} MB'),
-          row('Context', '${result.contextSize}'),
+            row(context.l10n.runEngine, result.engineSummary),
+          row(
+            context.l10n.uiMetricsSheetPeakRSS,
+            '${result.peakRssMb.round()} MB',
+          ),
+          row(context.l10n.uiMetricsSheetContext, '${result.contextSize}'),
           if (result.thermalSummary.isNotEmpty)
-            row('Thermal', result.thermalSummary),
+            row(context.l10n.benchmarkThermal, result.thermalSummary),
           Text(
             context.l10n.benchmarkMeasuredAt(
               MaterialLocalizations.of(
@@ -205,7 +228,10 @@ class _ResultDialog extends StatelessWidget {
         ),
         TextButton.icon(
           onPressed: () => SharePlus.instance.share(
-            ShareParams(text: card, subject: 'OnDevice LLM benchmark'),
+            ShareParams(
+              text: card,
+              subject: context.l10n.benchmarkShareSubject,
+            ),
           ),
           icon: const Icon(Icons.ios_share, size: 16),
           label: Text(context.l10n.uiBenchmarkDialogShare),

@@ -17,6 +17,7 @@ import '../../domain/entities/model_catalog.dart';
 import '../../domain/entities/model_info.dart';
 import '../../../settings/presentation/providers/model_profiles_provider.dart';
 import '../../../settings/presentation/screens/model_profile_page.dart';
+import '../providers/hidden_library_models.dart';
 import '../providers/model_manager_provider.dart';
 import '../widgets/config_card_flow.dart';
 import '../widgets/model_card.dart';
@@ -159,7 +160,10 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
       builder: (context) => AlertDialog(
         title: Text(context.l10n.downloadQuestion(model.displayName)),
         content: Text(
-          '${model.sizeLabel} from Hugging Face.\n\nLicense: ${model.license}\n\nBy continuing, you acknowledge the publisher’s model license. The file is verified with SHA-256 before use.',
+          context.l10n.modelDownloadLicenseNotice(
+            model.sizeLabel,
+            model.license,
+          ),
         ),
         actions: [
           TextButton(
@@ -257,10 +261,12 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
         onDeleteVision: () =>
             _attempt(context, () => manager.deleteVision(model)),
         onBenchmark: () => showBenchmarkDialog(context, ref, model),
-        onRemoveEntry:
-            !model.isDownloaded && !catalogModels.any((m) => m.id == model.id)
-            ? () => _attempt(context, () => manager.deleteModel(model))
-            : null,
+        onRemoveEntry: model.isDownloaded
+            ? null
+            : catalogModels.any((m) => m.id == model.id)
+            ? () =>
+                  ref.read(hiddenLibraryModelsProvider.notifier).hide(model.id)
+            : () => _attempt(context, () => manager.deleteModel(model)),
         onProfile: model.isDownloaded
             ? () => Navigator.push(
                 context,
@@ -289,7 +295,12 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
     final memory = ref.watch(deviceMemoryProvider).value;
     final busy = ref.watch(sessionBusyProvider) || state.isLoadingModel;
     final onDevice = state.catalog.where((m) => m.isDownloaded).toList();
-    final available = availableLibraryModels(state.catalog, desktop: false);
+    final hidden = ref.watch(hiddenLibraryModelsProvider);
+    final available = availableLibraryModels(
+      state.catalog,
+      desktop: false,
+      hidden: hidden,
+    );
     return Scaffold(
       appBar: AppBar(
         actions: [
@@ -514,6 +525,27 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                           children: [
                             const SizedBox(height: AppDesign.xl),
                             _SectionLabel(context.l10n.availableToDownload),
+                            if (hidden.isNotEmpty)
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton.icon(
+                                  key: const Key('restore-removed-models'),
+                                  onPressed: () => ref
+                                      .read(
+                                        hiddenLibraryModelsProvider.notifier,
+                                      )
+                                      .restoreAll(),
+                                  icon: const Icon(
+                                    Icons.undo_rounded,
+                                    size: 16,
+                                  ),
+                                  label: Text(
+                                    context.l10n.modelRestoreRemoved(
+                                      hidden.length,
+                                    ),
+                                  ),
+                                ),
+                              ),
                             if (available.isEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(

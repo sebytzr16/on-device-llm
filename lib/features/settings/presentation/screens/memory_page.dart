@@ -221,11 +221,11 @@ class MemoryPage extends ConsumerWidget {
                           child: SettingsRow(
                             title: Text(m.content),
                             subtitle: Text(
-                              '${m.sourceChatId == null ? 'added by you' : 'learned'} · ${m.updatedAt.toLocal().toString().substring(0, 10)}'
+                              '${m.sourceChatId == null ? context.l10n.memoryOriginManual : context.l10n.memoryOriginLearned} · ${m.updatedAt.toLocal().toString().substring(0, 10)}'
                               // A note about a moment (where the user was that
                               // day) is kept but never shown to the model; say so
                               // rather than let it look like it is in use.
-                              '${UserMemory.transient(m.content) ? ' · passing state, not given to the model' : ''}'
+                              '${UserMemory.transient(m.content) ? context.l10n.memoryTransientNotUsed : ''}'
                               '${m.expiresAt == null ? '' : '\n${context.l10n.memoryExpires(m.expiresAt!.toLocal().toString().substring(0, 10))}'}',
                               style: context.text.mono.copyWith(
                                 color: UserMemory.transient(m.content)

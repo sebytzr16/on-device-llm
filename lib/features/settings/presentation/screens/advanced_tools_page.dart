@@ -38,8 +38,8 @@ class ToolsPage extends ConsumerWidget {
               value: s.toolChoice,
               items: ToolChoice.values,
               labelOf: (v) => switch (v) {
-                ToolChoice.auto => 'Auto',
-                ToolChoice.required => 'Required',
+                ToolChoice.auto => context.l10n.uiToolsQuickPanelAuto,
+                ToolChoice.required => context.l10n.uiToolsQuickPanelRequired,
               },
               onChanged: (v) => n.update(s.copyWith(toolChoice: v)),
             ),
@@ -85,8 +85,8 @@ class ToolsPage extends ConsumerWidget {
               title: Text(context.l10n.uiAdvancedToolsPageSearchDocuments),
               subtitle: Text(
                 s.knowledgeCollection.isNotEmpty
-                    ? 'Searches the “${s.knowledgeCollection}” collection.'
-                    : 'Needs a knowledge collection selected under Settings > Knowledge: none is, so it is not offered.',
+                    ? context.l10n.toolSearchCollection(s.knowledgeCollection)
+                    : context.l10n.toolNeedsKnowledgeCollection,
                 style: TextStyle(
                   color: s.knowledgeCollection.isNotEmpty ? null : c.warning,
                 ),
@@ -128,15 +128,13 @@ class ToolsPage extends ConsumerWidget {
         ),
         SettingsNote(
           supportsTools == true
-              ? 'The loaded model\'s chat template supports native tool calls.'
+              ? context.l10n.toolNativeSupported
               : supportsTools == false
-              ? 'The loaded model\'s template has no tool-call format; tools are described in the prompt instead and the model answers with a JSON block. Small models do this less reliably.'
-              : 'Whether a model has native tool-call support is shown here once it is loaded.',
+              ? context.l10n.toolNativeFallback
+              : context.l10n.toolNativeLoadToCheck,
           icon: Icons.build_outlined,
         ),
-        const SettingsNote(
-          'Every call is bounded: one query or page per call, 30 s per call, results cut at 6,000 characters, pages read through the public-web policy only. Calls and results are kept in the answer\'s run record.',
-        ),
+        SettingsNote(context.l10n.toolCallPolicyNote),
       ],
     );
   }
@@ -169,14 +167,14 @@ class _HelperModelRow extends ConsumerWidget {
       subtitle: sameAsChat
           ? Text(context.l10n.toolHelperSameAsChatHint)
           : picked == null
-          ? models.isEmpty
+          ? models.isEmpty && !s.usesRemote
                 ? Text(
                     context.l10n.toolHelperNoModels,
                     style: TextStyle(color: c.warning),
                   )
                 : null
           : Text(picked.sizeLabel),
-      trailing: models.isEmpty
+      trailing: models.isEmpty && !s.usesRemote
           ? null
           : MenuAnchor(
               builder: (context, menu, _) => IconButton(
@@ -251,12 +249,11 @@ class AgentsSettingsSection extends ConsumerWidget {
       key: const Key('agents-settings'),
       label: t.agentsSection,
       children: [
-        number(
-          t.agentMaxTokens,
-          s.agentMaxTokens.toDouble(),
-          (v) => n.update(s.copyWith(agentMaxTokens: v.round())),
-          max: 4096,
-          integer: true,
+        AnswerTokensControl(
+          label: t.agentMaxTokens,
+          value: s.agentMaxTokens,
+          contextWindow: s.agentContextSize,
+          onChanged: (v) => n.update(s.copyWith(agentMaxTokens: v)),
         ),
         number(
           t.agentTemperature,
@@ -314,6 +311,20 @@ class AgentsSettingsSection extends ConsumerWidget {
           title: Text(t.agentThinking),
           value: s.agentThinking,
           onChanged: (v) => n.update(s.copyWith(agentThinking: v)),
+        ),
+        SettingDropdown<int>(
+          label: t.agentTimeoutSeconds,
+          hint: t.agentTimeoutHint,
+          value: s.agentTimeoutSeconds,
+          items: {0, 90, 300, 900, 1800, 3600, s.agentTimeoutSeconds}.toList()
+            ..sort(),
+          labelOf: (value) => value == 0
+              ? t.agentTimeoutUnlimited
+              : value % 60 == 0
+              ? '${value ~/ 60} min'
+              : '$value s',
+          onChanged: (value) =>
+              n.update(s.copyWith(agentTimeoutSeconds: value)),
         ),
         SettingSlider(
           label: t.agentToolRounds,

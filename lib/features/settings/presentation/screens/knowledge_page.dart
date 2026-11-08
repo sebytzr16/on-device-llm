@@ -580,11 +580,11 @@ class _KnowledgePageState extends ConsumerState<KnowledgePage> {
                               ),
                               subtitle: Text(
                                 '${d.active ? '' : '${context.l10n.previousVersion} · '}'
-                                '${d.chunkCount} passages · ${(d.chars / 1000).toStringAsFixed(0)}k characters · ${d.addedAt.toLocal().toString().substring(0, 10)}'
+                                '${context.l10n.knowledgeDocumentStats(d.chunkCount, (d.chars / 1000).toStringAsFixed(0), d.addedAt.toLocal().toString().substring(0, 10))}'
                                 '${embeddingReady
                                     ? (indexed[d.id] ?? 0) >= d.chunkCount
-                                          ? ' · meaning ✓'
-                                          : ' · meaning ${indexed[d.id] ?? 0}/${d.chunkCount}'
+                                          ? context.l10n.knowledgeMeaningComplete
+                                          : context.l10n.knowledgeMeaningProgress(indexed[d.id] ?? 0, d.chunkCount)
                                     : ''}',
                                 style: context.text.mono.copyWith(
                                   color: c.textFaint,

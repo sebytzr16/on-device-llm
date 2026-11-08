@@ -38,40 +38,81 @@ class _RunDetailsSheet extends StatelessWidget {
       ...runTimingRows(t, m),
       if (m['backend'] != null)
         (
-          'backend',
+          t.uiMetricsSheetBackend,
           m['backend'].toString().startsWith('CPU / ')
               ? m['backend'].toString()
               : m['backend'].toString().split(' / ').first,
         ),
       if (cpuFallback != null) (t.avx512Fallback, cpuFallback),
       if (m['tokensPerSecond'] is num)
-        ('speed', '${fmt(m['tokensPerSecond'])} tok/s'),
+        (t.runSpeed, '${fmt(m['tokensPerSecond'])} tok/s'),
       if (m['firstTokenMs'] is num)
-        ('first token', '${(m['firstTokenMs'] as num).round()} ms'),
-      if (m['promptTokens'] != null) ('prompt tokens', '${m['promptTokens']}'),
+        (
+          t.uiMetricsSheetFirstToken,
+          '${(m['firstTokenMs'] as num).round()} ms',
+        ),
+      if (m['promptTokens'] != null)
+        (t.runPromptTokens, '${m['promptTokens']}'),
       if (m['cachedPromptTokens'] is num &&
           (m['cachedPromptTokens'] as num) > 0)
-        ('cached', '${m['cachedPromptTokens']}'),
-      if (m['tokens'] != null) ('generated', '${m['tokens']}'),
+        (t.runCachedTokens, '${m['cachedPromptTokens']}'),
+      if (m['tokens'] != null) (t.runGeneratedTokens, '${m['tokens']}'),
       if (m['thinkingTokens'] is num && (m['thinkingTokens'] as num) > 0)
-        ('thinking', '${m['thinkingTokens']}'),
+        (t.uiMetricsSheetThinking, '${m['thinkingTokens']}'),
       if (m['contextUsed'] != null && m['contextSize'] != null)
-        ('context', '${m['contextUsed']} / ${m['contextSize']}'),
-      if (m['peakRssMb'] is num) ('peak RSS', '${fmt(m['peakRssMb'])} MB'),
+        (t.uiMetricsSheetContext, '${m['contextUsed']} / ${m['contextSize']}'),
+      if (m['peakRssMb'] is num)
+        (t.uiMetricsSheetPeakRSS, '${fmt(m['peakRssMb'])} MB'),
       if (m['trimmedMessages'] is num && (m['trimmedMessages'] as num) > 0)
-        ('trimmed turns', '${m['trimmedMessages']}'),
-      if (run.sources > 0) ('sources', '${run.sources}'),
+        (t.runTrimmedTurns, '${m['trimmedMessages']}'),
+      if (run.sources > 0) (t.goalSourcesTitle, '${run.sources}'),
       if (m['searchProviders'] is List)
         for (final p in m['searchProviders'] as List)
           if (p is Map)
             (
               '${p['provider']}',
-              '${p['status']} · ${p['relevant']} relevant / ${p['parsed']} parsed',
+              t.runSearchProviderCounts(
+                '${p['status']}',
+                '${p['relevant']}',
+                '${p['parsed']}',
+              ),
             ),
       if (m['stages'] is Map)
         for (final phase in (m['stages'] as Map).entries)
           ('${phase.key}', '${phase.value} ms'),
     ];
+    final fieldLabels = <String, String>{
+      'temperature': t.runFieldTemperature,
+      'topP': t.runFieldTopP,
+      'minP': t.runFieldMinP,
+      'topK': t.runFieldTopK,
+      'repetitionPenalty': t.runFieldRepetitionPenalty,
+      'maxTokens': t.runFieldMaxTokens,
+      'contextSize': t.runFieldContextSize,
+      'thinkingModeEnabled': t.runFieldThinkingModeEnabled,
+      'thinkingBudgetTokens': t.runFieldThinkingBudgetTokens,
+      'webMode': t.runFieldWebMode,
+      'knowledgeCollection': t.runFieldKnowledgeCollection,
+      'memoryEnabled': t.runFieldMemoryEnabled,
+      'promptCache': t.runFieldPromptCache,
+      'backend': t.runFieldBackend,
+      'kvCacheType': t.runFieldKvCacheType,
+      'vCacheType': t.runFieldVCacheType,
+      'seed': t.runFieldSeed,
+      'presencePenalty': t.runFieldPresencePenalty,
+      'frequencyPenalty': t.runFieldFrequencyPenalty,
+      'responseFormat': t.runFieldResponseFormat,
+      'toolsEnabled': t.runFieldToolsEnabled,
+      'toolChoice': t.runFieldToolChoice,
+      'draftModelId': t.runFieldDraftModelId,
+      'threads': t.runFieldThreads,
+      'batchThreads': t.runFieldBatchThreads,
+      'batchSize': t.runFieldBatchSize,
+      'microBatchSize': t.runFieldMicroBatchSize,
+      'requestedGpuLayers': t.runFieldRequestedGpuLayers,
+      'flashAttentionPolicy': t.runFieldFlashAttentionPolicy,
+      'memory': t.runFieldMemory,
+    };
     final s = run.settings;
     final settings = <(String, String)>[
       for (final k in const [
@@ -109,38 +150,45 @@ class _RunDetailsSheet extends StatelessWidget {
             !(k == 'toolChoice' &&
                 (s[k] == 'auto' || s['toolsEnabled'] != true)))
           (
-            run.origins.containsKey(k) ? '$k (${run.origins[k]})' : k,
+            run.origins.containsKey(k)
+                ? '${fieldLabels[k]} (${run.origins[k]})'
+                : fieldLabels[k]!,
             fmt(s[k]),
           ),
     ];
     final tools = <(String, String)>[
-      for (final t in run.toolTrace)
+      for (final tool in run.toolTrace)
         (
-          '${(t['call'] as Map?)?['name']}(${_short((t['call'] as Map?)?['arguments'])})',
-          '${t['ok'] == true ? 'ok' : 'error'} · ${t['elapsedMs']} ms',
+          '${(tool['call'] as Map?)?['name']}(${_short((tool['call'] as Map?)?['arguments'])})',
+          '${tool['ok'] == true ? t.runToolOk : t.runToolError} · ${tool['elapsedMs']} ms',
         ),
     ];
     final speculation = <(String, String)>[
       if (m['draftModel'] is String && (m['draftModel'] as String).isNotEmpty)
-        ('draft model', m['draftModel'].toString()),
+        (t.uiAdvancedMemoryRopePageDraftModel, m['draftModel'].toString()),
       if (m['draftProposed'] is num && (m['draftProposed'] as num) > 0)
         (
-          'drafts accepted',
+          t.runDraftsAccepted,
           '${m['draftAccepted']} / ${m['draftProposed']} (${((m['draftAcceptRate'] as num? ?? 0) * 100).round()}%)',
         ),
       if (m['draftSpeedup'] is num && (m['draftSpeedup'] as num) > 0)
         (
-          'draft speed',
-          '${(m['draftSpeedup'] as num).toStringAsFixed(2)}x plain',
+          t.runDraftSpeed,
+          t.runDraftSpeedValue((m['draftSpeedup'] as num).toStringAsFixed(2)),
         ),
       if (m['draftDisabled'] == true)
         (
-          'drafting',
-          'paused after ${m['draftRounds']} rounds (${(m['draftAcceptRate'] as num? ?? 1) < 0.35 ? 'acceptance below 35%' : 'slower than plain decoding'})',
+          t.runDrafting,
+          t.runDraftPaused(
+            m['draftRounds'] as num,
+            (m['draftAcceptRate'] as num? ?? 1) < 0.35
+                ? t.runDraftLowAcceptance
+                : t.runDraftSlower,
+          ),
         ),
       if (m['finishReason'] is String &&
           (m['finishReason'] as String).isNotEmpty)
-        ('ended by', m['finishReason'].toString()),
+        (t.runEndedBy, m['finishReason'].toString()),
     ];
     final e = run.engine;
     final engine = <(String, String)>[
@@ -155,7 +203,7 @@ class _RunDetailsSheet extends StatelessWidget {
         'flashAttentionPolicy',
         'memory',
       ])
-        if (e[k] != null) (k, fmt(e[k])),
+        if (e[k] != null) (fieldLabels[k]!, fmt(e[k])),
     ];
     Widget table(String title, List<(String, String)> rows) => rows.isEmpty
         ? const SizedBox.shrink()
@@ -257,7 +305,7 @@ class _RunDetailsSheet extends StatelessWidget {
               ),
               table(t.runSettings, settings),
               table(t.runEngine, engine),
-              table('Tools', tools),
+              table(t.uiAdvancedToolsPageTools, tools),
             ],
           ),
         ],

@@ -1,3 +1,4 @@
+import '../features/settings/presentation/widgets/answer_tokens_control.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -509,7 +510,7 @@ class DesktopSamplingFields extends StatelessWidget {
           onChanged: (v) => onChanged(s.copyWith(temperature: v)),
         ),
         DesktopSlider(
-          label: 'Top P',
+          label: context.l10n.settingLabelTopP,
           source: source?.call('topP'),
           value: s.topP,
           min: 0,
@@ -519,7 +520,7 @@ class DesktopSamplingFields extends StatelessWidget {
           onChanged: (v) => onChanged(s.copyWith(topP: v)),
         ),
         DesktopSlider(
-          label: 'Min P',
+          label: context.l10n.settingLabelMinP,
           source: source?.call('minP'),
           value: s.minP,
           min: 0,
@@ -529,7 +530,7 @@ class DesktopSamplingFields extends StatelessWidget {
           onChanged: (v) => onChanged(s.copyWith(minP: v)),
         ),
         DesktopSlider(
-          label: 'Top K',
+          label: context.l10n.settingLabelTopK,
           source: source?.call('topK'),
           value: s.topK.toDouble(),
           min: 0,
@@ -558,15 +559,13 @@ class DesktopSamplingFields extends StatelessWidget {
           format: fixed,
           onChanged: (v) => onChanged(s.copyWith(presencePenalty: v)),
         ),
-        DesktopSlider(
+        AnswerTokensSetting(
+          compact: true,
           label: t.desktopInspectorMaxTokens,
           source: source?.call('maxTokens'),
-          value: s.maxTokens.toDouble(),
-          min: 256,
-          max: 16384,
-          divisions: 63,
-          format: (v) => v.round().toString(),
-          onChanged: (v) => onChanged(s.copyWith(maxTokens: v.round())),
+          value: s.maxTokens,
+          contextWindow: s.contextSize,
+          onChanged: (v) => onChanged(s.copyWith(maxTokens: v)),
         ),
       ],
     );

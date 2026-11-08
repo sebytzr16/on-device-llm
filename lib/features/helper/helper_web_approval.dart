@@ -59,11 +59,15 @@ class AgentWebQuestion {
 
 /// Every waiter owns its cancellation; one cancelled agent cannot answer for another.
 class AgentWebApproval {
+  final Duration timeout;
   final void Function(Map<String, AgentWebQuestion>) changed;
   final _pending = <String, AgentWebQuestion>{};
   bool _disposed = false;
   final _stop = CancelToken();
-  AgentWebApproval({required this.changed});
+  AgentWebApproval({
+    required this.changed,
+    this.timeout = const Duration(seconds: 60),
+  });
 
   Future<bool> request({
     required String chatId,
@@ -96,13 +100,17 @@ class AgentWebApproval {
       }
       if (!question.answer.isCompleted) changed(Map.unmodifiable(_pending));
       final allowed = await Future.any<bool>([
-        question.answer.future,
+        // An unanswered banner must not stall every helper indefinitely.
+        // A timeout is local to this request and is never saved as a denial.
+        question.answer.future.timeout(timeout, onTimeout: () => false),
         _stop.whenCancel.then((error) => throw error),
         if (cancel != null) cancel.whenCancel.then((error) => throw error),
       ]);
       if (cancel?.isCancelled == true) throw cancel!.cancelError!;
       // Persistence completes before any network call can begin.
-      if (stored == null) await (question.saving ??= save(allowed));
+      if (stored == null && question.answer.isCompleted) {
+        await (question.saving ??= save(allowed));
+      }
       if (cancel?.isCancelled == true) throw cancel!.cancelError!;
       return allowed;
     } finally {

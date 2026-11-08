@@ -1255,7 +1255,7 @@ abstract class AppLocalizations {
   /// No description provided for @privateByDefaultHint.
   ///
   /// In en, this message translates to:
-  /// **'No accounts, analytics or cloud inference. Downloads and optional search are the only network features.'**
+  /// **'No accounts or analytics. Answers run on this phone unless you add a remote server. Downloads and optional search are the only other network features.'**
   String get privateByDefaultHint;
 
   /// No description provided for @noModelLoadedTitle.
@@ -3295,7 +3295,7 @@ abstract class AppLocalizations {
   /// No description provided for @hostPairHint.
   ///
   /// In en, this message translates to:
-  /// **'On the other phone: scan this code with the camera and copy the text, or paste the copied connection, then in OnDevice LLM open Settings > Remote server > Add > Paste connection. Any OpenAI-compatible app works too, with the URL, model and token.'**
+  /// **'Scan this QR code in OnDevice LLM, or paste the copied pairing connection. It expires after 10 minutes and can be used once.'**
   String get hostPairHint;
 
   /// No description provided for @hostRecent.
@@ -3337,7 +3337,7 @@ abstract class AppLocalizations {
   /// No description provided for @remotePasted.
   ///
   /// In en, this message translates to:
-  /// **'Added {name}. Turn on Use remote server to chat with it.'**
+  /// **'Added {name}. Chats now run on it.'**
   String remotePasted(String name);
 
   /// No description provided for @remotePaste.
@@ -8987,7 +8987,7 @@ abstract class AppLocalizations {
   /// No description provided for @remotePairLocked.
   ///
   /// In en, this message translates to:
-  /// **'Too many wrong codes. Restart the server on the other device to get a new code.'**
+  /// **'Too many wrong codes. Wait for the code to expire, then enter the new code, or scan the QR code.'**
   String get remotePairLocked;
 
   /// No description provided for @remotePairUnreachable.
@@ -12096,13 +12096,13 @@ abstract class AppLocalizations {
   /// No description provided for @hostPairLocked.
   ///
   /// In en, this message translates to:
-  /// **'Pairing is locked after five wrong codes. Restart the server to pair another device.'**
+  /// **'Typed pairing is locked after five wrong codes. Wait for the code to expire or use the QR code.'**
   String get hostPairLocked;
 
   /// No description provided for @hostPairExpired.
   ///
   /// In en, this message translates to:
-  /// **'This pairing code has expired or was used. Restart the server to pair another device.'**
+  /// **'This pairing code expired. Scan the new QR code or enter the new pairing code.'**
   String get hostPairExpired;
 
   /// No description provided for @hostAddressPlaceholder.
@@ -13583,6 +13583,24 @@ abstract class AppLocalizations {
   /// **'Max agents at once'**
   String get agentMaxConcurrent;
 
+  /// No description provided for @agentTimeoutSeconds.
+  ///
+  /// In en, this message translates to:
+  /// **'Agent time limit'**
+  String get agentTimeoutSeconds;
+
+  /// No description provided for @agentTimeoutUnlimited.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlimited'**
+  String get agentTimeoutUnlimited;
+
+  /// No description provided for @agentTimeoutHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Maximum active time per agent. Unlimited runs until completion or Stop. Waiting for model loading or web approval does not count.'**
+  String get agentTimeoutHint;
+
   /// No description provided for @agentThinking.
   ///
   /// In en, this message translates to:
@@ -13744,6 +13762,1484 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Server tool approval'**
   String get workspaceApprovalTitle;
+
+  /// No description provided for @remotePairTrustNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Pair only on a network you trust.'**
+  String get remotePairTrustNote;
+
+  /// No description provided for @runSpeed.
+  ///
+  /// In en, this message translates to:
+  /// **'speed'**
+  String get runSpeed;
+
+  /// No description provided for @runPromptTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'prompt tokens'**
+  String get runPromptTokens;
+
+  /// No description provided for @runCachedTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'cached'**
+  String get runCachedTokens;
+
+  /// No description provided for @runGeneratedTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'generated'**
+  String get runGeneratedTokens;
+
+  /// No description provided for @runTrimmedTurns.
+  ///
+  /// In en, this message translates to:
+  /// **'trimmed turns'**
+  String get runTrimmedTurns;
+
+  /// No description provided for @runToolOk.
+  ///
+  /// In en, this message translates to:
+  /// **'ok'**
+  String get runToolOk;
+
+  /// No description provided for @runToolError.
+  ///
+  /// In en, this message translates to:
+  /// **'error'**
+  String get runToolError;
+
+  /// No description provided for @runDraftsAccepted.
+  ///
+  /// In en, this message translates to:
+  /// **'drafts accepted'**
+  String get runDraftsAccepted;
+
+  /// No description provided for @runDraftSpeed.
+  ///
+  /// In en, this message translates to:
+  /// **'draft speed'**
+  String get runDraftSpeed;
+
+  /// No description provided for @runDrafting.
+  ///
+  /// In en, this message translates to:
+  /// **'drafting'**
+  String get runDrafting;
+
+  /// No description provided for @runDraftLowAcceptance.
+  ///
+  /// In en, this message translates to:
+  /// **'acceptance below 35%'**
+  String get runDraftLowAcceptance;
+
+  /// No description provided for @runDraftSlower.
+  ///
+  /// In en, this message translates to:
+  /// **'slower than plain decoding'**
+  String get runDraftSlower;
+
+  /// No description provided for @runEndedBy.
+  ///
+  /// In en, this message translates to:
+  /// **'ended by'**
+  String get runEndedBy;
+
+  /// No description provided for @metricsUnknownReason.
+  ///
+  /// In en, this message translates to:
+  /// **'unknown reason'**
+  String get metricsUnknownReason;
+
+  /// No description provided for @metricsStagesHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Wall time from send to done, per stage of the last turn.'**
+  String get metricsStagesHint;
+
+  /// No description provided for @metricsTemplateEmbedded.
+  ///
+  /// In en, this message translates to:
+  /// **'embedded (Jinja)'**
+  String get metricsTemplateEmbedded;
+
+  /// No description provided for @metricsTemplateFamilyFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'family fallback'**
+  String get metricsTemplateFamilyFallback;
+
+  /// No description provided for @metricsThinkingNative.
+  ///
+  /// In en, this message translates to:
+  /// **'native'**
+  String get metricsThinkingNative;
+
+  /// No description provided for @metricsThinkingPrompted.
+  ///
+  /// In en, this message translates to:
+  /// **'prompted'**
+  String get metricsThinkingPrompted;
+
+  /// No description provided for @metricsNoModel.
+  ///
+  /// In en, this message translates to:
+  /// **'none loaded'**
+  String get metricsNoModel;
+
+  /// No description provided for @metricsStageLoad.
+  ///
+  /// In en, this message translates to:
+  /// **'load'**
+  String get metricsStageLoad;
+
+  /// No description provided for @metricsStageJudge.
+  ///
+  /// In en, this message translates to:
+  /// **'judge'**
+  String get metricsStageJudge;
+
+  /// No description provided for @metricsStagePlan.
+  ///
+  /// In en, this message translates to:
+  /// **'plan'**
+  String get metricsStagePlan;
+
+  /// No description provided for @metricsStageSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'search'**
+  String get metricsStageSearch;
+
+  /// No description provided for @metricsStageRead.
+  ///
+  /// In en, this message translates to:
+  /// **'read'**
+  String get metricsStageRead;
+
+  /// No description provided for @metricsStageFit.
+  ///
+  /// In en, this message translates to:
+  /// **'fit'**
+  String get metricsStageFit;
+
+  /// No description provided for @metricsStageAnswer.
+  ///
+  /// In en, this message translates to:
+  /// **'answer'**
+  String get metricsStageAnswer;
+
+  /// No description provided for @ropeModelDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Model default'**
+  String get ropeModelDefault;
+
+  /// No description provided for @ropeLinear.
+  ///
+  /// In en, this message translates to:
+  /// **'Linear'**
+  String get ropeLinear;
+
+  /// No description provided for @ropeModelValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Model value'**
+  String get ropeModelValue;
+
+  /// No description provided for @draftLowAcceptance.
+  ///
+  /// In en, this message translates to:
+  /// **'acceptance under 35%'**
+  String get draftLowAcceptance;
+
+  /// No description provided for @settingsNextModelLoad.
+  ///
+  /// In en, this message translates to:
+  /// **'These apply on the next model load.'**
+  String get settingsNextModelLoad;
+
+  /// No description provided for @documentNoMessagesSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'No messages match this selection.'**
+  String get documentNoMessagesSelected;
+
+  /// No description provided for @documentLoadModelFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'Load a model before drafting a document.'**
+  String get documentLoadModelFirst;
+
+  /// No description provided for @structuredOutputLimitHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Constrained answers still stop at Max tokens: a cut-off JSON object is reported as invalid. The format also applies to the remote server through response_format.'**
+  String get structuredOutputLimitHint;
+
+  /// No description provided for @toolNeedsKnowledgeCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs a knowledge collection selected under Settings > Knowledge: none is, so it is not offered.'**
+  String get toolNeedsKnowledgeCollection;
+
+  /// No description provided for @toolCallPolicyNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Every call is bounded: one query or page per call, 30 s per call, results cut at 6,000 characters, pages read through the public-web policy only. Calls and results are kept in the answer\'s run record.'**
+  String get toolCallPolicyNote;
+
+  /// No description provided for @memoryTransientNotUsed.
+  ///
+  /// In en, this message translates to:
+  /// **' · passing state, not given to the model'**
+  String get memoryTransientNotUsed;
+
+  /// No description provided for @remotePhoneExplanation.
+  ///
+  /// In en, this message translates to:
+  /// **'Point the app at a server you run yourself — LM Studio, Ollama or llama-server on a PC at home over your LAN or a VPN — or at a hosted API with your own key. Your messages and any web evidence are sent to that connection instead of being answered on the phone.'**
+  String get remotePhoneExplanation;
+
+  /// No description provided for @remoteKeyStoragePrivacy.
+  ///
+  /// In en, this message translates to:
+  /// **'API keys are stored in this device\'s secure storage (Android keystore, Windows data protection), never in the settings file or exports, and are only ever sent to the connection they belong to. Over the internet use HTTPS or a VPN.'**
+  String get remoteKeyStoragePrivacy;
+
+  /// No description provided for @quickToolsNoKnowledge.
+  ///
+  /// In en, this message translates to:
+  /// **'No knowledge collection selected: not offered.'**
+  String get quickToolsNoKnowledge;
+
+  /// No description provided for @runFieldTemperature.
+  ///
+  /// In en, this message translates to:
+  /// **'temperature'**
+  String get runFieldTemperature;
+
+  /// No description provided for @runFieldTopP.
+  ///
+  /// In en, this message translates to:
+  /// **'topP'**
+  String get runFieldTopP;
+
+  /// No description provided for @runFieldMinP.
+  ///
+  /// In en, this message translates to:
+  /// **'minP'**
+  String get runFieldMinP;
+
+  /// No description provided for @runFieldTopK.
+  ///
+  /// In en, this message translates to:
+  /// **'topK'**
+  String get runFieldTopK;
+
+  /// No description provided for @runFieldRepetitionPenalty.
+  ///
+  /// In en, this message translates to:
+  /// **'repetitionPenalty'**
+  String get runFieldRepetitionPenalty;
+
+  /// No description provided for @runFieldMaxTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'maxTokens'**
+  String get runFieldMaxTokens;
+
+  /// No description provided for @runFieldContextSize.
+  ///
+  /// In en, this message translates to:
+  /// **'contextSize'**
+  String get runFieldContextSize;
+
+  /// No description provided for @runFieldThinkingModeEnabled.
+  ///
+  /// In en, this message translates to:
+  /// **'thinkingModeEnabled'**
+  String get runFieldThinkingModeEnabled;
+
+  /// No description provided for @runFieldThinkingBudgetTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'thinkingBudgetTokens'**
+  String get runFieldThinkingBudgetTokens;
+
+  /// No description provided for @runFieldWebMode.
+  ///
+  /// In en, this message translates to:
+  /// **'webMode'**
+  String get runFieldWebMode;
+
+  /// No description provided for @runFieldKnowledgeCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'knowledgeCollection'**
+  String get runFieldKnowledgeCollection;
+
+  /// No description provided for @runFieldMemoryEnabled.
+  ///
+  /// In en, this message translates to:
+  /// **'memoryEnabled'**
+  String get runFieldMemoryEnabled;
+
+  /// No description provided for @runFieldPromptCache.
+  ///
+  /// In en, this message translates to:
+  /// **'promptCache'**
+  String get runFieldPromptCache;
+
+  /// No description provided for @runFieldBackend.
+  ///
+  /// In en, this message translates to:
+  /// **'backend'**
+  String get runFieldBackend;
+
+  /// No description provided for @runFieldKvCacheType.
+  ///
+  /// In en, this message translates to:
+  /// **'kvCacheType'**
+  String get runFieldKvCacheType;
+
+  /// No description provided for @runFieldVCacheType.
+  ///
+  /// In en, this message translates to:
+  /// **'vCacheType'**
+  String get runFieldVCacheType;
+
+  /// No description provided for @runFieldSeed.
+  ///
+  /// In en, this message translates to:
+  /// **'seed'**
+  String get runFieldSeed;
+
+  /// No description provided for @runFieldPresencePenalty.
+  ///
+  /// In en, this message translates to:
+  /// **'presencePenalty'**
+  String get runFieldPresencePenalty;
+
+  /// No description provided for @runFieldFrequencyPenalty.
+  ///
+  /// In en, this message translates to:
+  /// **'frequencyPenalty'**
+  String get runFieldFrequencyPenalty;
+
+  /// No description provided for @runFieldResponseFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'responseFormat'**
+  String get runFieldResponseFormat;
+
+  /// No description provided for @runFieldToolsEnabled.
+  ///
+  /// In en, this message translates to:
+  /// **'toolsEnabled'**
+  String get runFieldToolsEnabled;
+
+  /// No description provided for @runFieldToolChoice.
+  ///
+  /// In en, this message translates to:
+  /// **'toolChoice'**
+  String get runFieldToolChoice;
+
+  /// No description provided for @runFieldDraftModelId.
+  ///
+  /// In en, this message translates to:
+  /// **'draftModelId'**
+  String get runFieldDraftModelId;
+
+  /// No description provided for @runFieldThreads.
+  ///
+  /// In en, this message translates to:
+  /// **'threads'**
+  String get runFieldThreads;
+
+  /// No description provided for @runFieldBatchThreads.
+  ///
+  /// In en, this message translates to:
+  /// **'batchThreads'**
+  String get runFieldBatchThreads;
+
+  /// No description provided for @runFieldBatchSize.
+  ///
+  /// In en, this message translates to:
+  /// **'batchSize'**
+  String get runFieldBatchSize;
+
+  /// No description provided for @runFieldMicroBatchSize.
+  ///
+  /// In en, this message translates to:
+  /// **'microBatchSize'**
+  String get runFieldMicroBatchSize;
+
+  /// No description provided for @runFieldRequestedGpuLayers.
+  ///
+  /// In en, this message translates to:
+  /// **'requestedGpuLayers'**
+  String get runFieldRequestedGpuLayers;
+
+  /// No description provided for @runFieldFlashAttentionPolicy.
+  ///
+  /// In en, this message translates to:
+  /// **'flashAttentionPolicy'**
+  String get runFieldFlashAttentionPolicy;
+
+  /// No description provided for @runFieldMemory.
+  ///
+  /// In en, this message translates to:
+  /// **'memory'**
+  String get runFieldMemory;
+
+  /// No description provided for @runSearchProviderCounts.
+  ///
+  /// In en, this message translates to:
+  /// **'{status} · {relevant} relevant / {parsed} parsed'**
+  String runSearchProviderCounts(String status, String relevant, String parsed);
+
+  /// No description provided for @runDraftSpeedValue.
+  ///
+  /// In en, this message translates to:
+  /// **'{speed}x plain'**
+  String runDraftSpeedValue(String speed);
+
+  /// No description provided for @runDraftPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'{rounds, plural, =1{paused after 1 round ({reason})} other{paused after {rounds} rounds ({reason})}}'**
+  String runDraftPaused(num rounds, String reason);
+
+  /// No description provided for @metricsLastBenchmark.
+  ///
+  /// In en, this message translates to:
+  /// **'last: {decode} tok/s · {prefill} tok/s prefill · {backend}'**
+  String metricsLastBenchmark(String decode, String prefill, String backend);
+
+  /// No description provided for @metricsGpuUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'GPU unavailable: {reason}'**
+  String metricsGpuUnavailable(String reason);
+
+  /// No description provided for @metricsGpuVariantUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'GPU variant unavailable on this device: {reason}'**
+  String metricsGpuVariantUnavailable(String reason);
+
+  /// No description provided for @metricsTokenCounts.
+  ///
+  /// In en, this message translates to:
+  /// **'{generated} generated · {prompt} prompt'**
+  String metricsTokenCounts(String generated, String prompt);
+
+  /// No description provided for @metricsTrimmedMessages.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 older message trimmed to fit} other{{count} older messages trimmed to fit}}'**
+  String metricsTrimmedMessages(num count);
+
+  /// No description provided for @ropeTrainedContext.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{The loaded model was trained for 1 token.} other{The loaded model was trained for {tokens} tokens.}}'**
+  String ropeTrainedContext(int count, String tokens);
+
+  /// No description provided for @settingDefaultValue.
+  ///
+  /// In en, this message translates to:
+  /// **'{value} (default)'**
+  String settingDefaultValue(String value);
+
+  /// No description provided for @draftLastAnswerSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{proposed, plural, =1{Last answer: {accepted} of 1 drafted token accepted ({percent}%) with {model}. {paused}Below ~60% the draft usually costs more than it saves.} other{Last answer: {accepted} of {proposed} drafted tokens accepted ({percent}%) with {model}. {paused}Below ~60% the draft usually costs more than it saves.}}'**
+  String draftLastAnswerSummary(
+    int accepted,
+    int proposed,
+    int percent,
+    String model,
+    String paused,
+  );
+
+  /// No description provided for @draftPausedExplanation.
+  ///
+  /// In en, this message translates to:
+  /// **'{rounds, plural, =1{Drafting was paused for the rest of that answer after 1 round ({reason}); it retries every answer. } other{Drafting was paused for the rest of that answer after {rounds} rounds ({reason}); it retries every answer. }}'**
+  String draftPausedExplanation(num rounds, String reason);
+
+  /// No description provided for @imageChatModelMemoryRecovery.
+  ///
+  /// In en, this message translates to:
+  /// **'{detail}\nChat model \"{model}\" is loaded and may be using GPU memory. Eject \"{model}\" from the model selector, then retry.'**
+  String imageChatModelMemoryRecovery(String detail, String model);
+
+  /// No description provided for @modelDownloadLicenseNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'{size} from Hugging Face.\n\nLicense: {license}\n\nBy continuing, you acknowledge the publisher’s model license. The file is verified with SHA-256 before use.'**
+  String modelDownloadLicenseNotice(String size, String license);
+
+  /// No description provided for @onboardingModelLicenseNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'{size} from Hugging Face. License: {license}. The file is verified with SHA-256 before use.'**
+  String onboardingModelLicenseNotice(String size, String license);
+
+  /// No description provided for @onboardingModelReadyPrivacy.
+  ///
+  /// In en, this message translates to:
+  /// **'{model} is on this phone. From here on, nothing leaves it.'**
+  String onboardingModelReadyPrivacy(String model);
+
+  /// No description provided for @effectiveReloadNextMessage.
+  ///
+  /// In en, this message translates to:
+  /// **' · loaded model uses {value}, reloads next message'**
+  String effectiveReloadNextMessage(String value);
+
+  /// No description provided for @benchmarkPrefill.
+  ///
+  /// In en, this message translates to:
+  /// **'Prefill'**
+  String get benchmarkPrefill;
+
+  /// No description provided for @benchmarkDecode.
+  ///
+  /// In en, this message translates to:
+  /// **'Decode'**
+  String get benchmarkDecode;
+
+  /// No description provided for @benchmarkBasis.
+  ///
+  /// In en, this message translates to:
+  /// **'Basis'**
+  String get benchmarkBasis;
+
+  /// No description provided for @benchmarkChatTools.
+  ///
+  /// In en, this message translates to:
+  /// **'Chat + tools'**
+  String get benchmarkChatTools;
+
+  /// No description provided for @benchmarkThreads.
+  ///
+  /// In en, this message translates to:
+  /// **'Threads'**
+  String get benchmarkThreads;
+
+  /// No description provided for @benchmarkThermal.
+  ///
+  /// In en, this message translates to:
+  /// **'Thermal'**
+  String get benchmarkThermal;
+
+  /// No description provided for @benchmarkShareSubject.
+  ///
+  /// In en, this message translates to:
+  /// **'OnDevice LLM benchmark'**
+  String get benchmarkShareSubject;
+
+  /// No description provided for @documentTemplateTranscript.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation transcript'**
+  String get documentTemplateTranscript;
+
+  /// No description provided for @documentTemplateReport.
+  ///
+  /// In en, this message translates to:
+  /// **'Research report'**
+  String get documentTemplateReport;
+
+  /// No description provided for @documentTemplateLetter.
+  ///
+  /// In en, this message translates to:
+  /// **'Letter'**
+  String get documentTemplateLetter;
+
+  /// No description provided for @documentTemplateMeetingNotes.
+  ///
+  /// In en, this message translates to:
+  /// **'Meeting notes'**
+  String get documentTemplateMeetingNotes;
+
+  /// No description provided for @documentTemplateStudyGuide.
+  ///
+  /// In en, this message translates to:
+  /// **'Study guide'**
+  String get documentTemplateStudyGuide;
+
+  /// No description provided for @documentTemplateSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'Executive summary'**
+  String get documentTemplateSummary;
+
+  /// No description provided for @remoteServerModel.
+  ///
+  /// In en, this message translates to:
+  /// **'server model'**
+  String get remoteServerModel;
+
+  /// No description provided for @chatShareSubject.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation from OnDevice LLM'**
+  String get chatShareSubject;
+
+  /// No description provided for @chatExportConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Export conversation'**
+  String get chatExportConversation;
+
+  /// No description provided for @documentDefaultTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'OnDevice LLM document'**
+  String get documentDefaultTitle;
+
+  /// No description provided for @codeBlockLanguageFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'code'**
+  String get codeBlockLanguageFallback;
+
+  /// No description provided for @helperMeasurementYes.
+  ///
+  /// In en, this message translates to:
+  /// **'yes'**
+  String get helperMeasurementYes;
+
+  /// No description provided for @helperMeasurementNo.
+  ///
+  /// In en, this message translates to:
+  /// **'no'**
+  String get helperMeasurementNo;
+
+  /// No description provided for @helperMeasurementDevices.
+  ///
+  /// In en, this message translates to:
+  /// **'Devices'**
+  String get helperMeasurementDevices;
+
+  /// No description provided for @presetScope.
+  ///
+  /// In en, this message translates to:
+  /// **'Preset'**
+  String get presetScope;
+
+  /// No description provided for @presetMoreOverrides.
+  ///
+  /// In en, this message translates to:
+  /// **'More overrides'**
+  String get presetMoreOverrides;
+
+  /// No description provided for @appearanceTextScaleHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Scales all text in the app on top of the system setting.'**
+  String get appearanceTextScaleHint;
+
+  /// No description provided for @contextBatchNextLoad.
+  ///
+  /// In en, this message translates to:
+  /// **'Context and batch changes apply the next time a model loads.'**
+  String get contextBatchNextLoad;
+
+  /// No description provided for @hardwareNextLoad.
+  ///
+  /// In en, this message translates to:
+  /// **'Hardware changes apply on the next model load.'**
+  String get hardwareNextLoad;
+
+  /// No description provided for @searchRegionCanadaEnglish.
+  ///
+  /// In en, this message translates to:
+  /// **'Canada (English)'**
+  String get searchRegionCanadaEnglish;
+
+  /// No description provided for @searchRegionUnitedStates.
+  ///
+  /// In en, this message translates to:
+  /// **'United States'**
+  String get searchRegionUnitedStates;
+
+  /// No description provided for @searchRegionUnitedKingdom.
+  ///
+  /// In en, this message translates to:
+  /// **'United Kingdom'**
+  String get searchRegionUnitedKingdom;
+
+  /// No description provided for @searchRegionAustralia.
+  ///
+  /// In en, this message translates to:
+  /// **'Australia'**
+  String get searchRegionAustralia;
+
+  /// No description provided for @searchRegionNewZealand.
+  ///
+  /// In en, this message translates to:
+  /// **'New Zealand'**
+  String get searchRegionNewZealand;
+
+  /// No description provided for @searchRegionIreland.
+  ///
+  /// In en, this message translates to:
+  /// **'Ireland'**
+  String get searchRegionIreland;
+
+  /// No description provided for @searchRegionIndia.
+  ///
+  /// In en, this message translates to:
+  /// **'India'**
+  String get searchRegionIndia;
+
+  /// No description provided for @searchRegionSouthAfrica.
+  ///
+  /// In en, this message translates to:
+  /// **'South Africa'**
+  String get searchRegionSouthAfrica;
+
+  /// No description provided for @searchRegionFrance.
+  ///
+  /// In en, this message translates to:
+  /// **'France'**
+  String get searchRegionFrance;
+
+  /// No description provided for @searchRegionJapan.
+  ///
+  /// In en, this message translates to:
+  /// **'Japan'**
+  String get searchRegionJapan;
+
+  /// No description provided for @searchRegionNoregion.
+  ///
+  /// In en, this message translates to:
+  /// **'No region'**
+  String get searchRegionNoregion;
+
+  /// No description provided for @outputFreeText.
+  ///
+  /// In en, this message translates to:
+  /// **'Free text'**
+  String get outputFreeText;
+
+  /// No description provided for @outputJsonAnyObject.
+  ///
+  /// In en, this message translates to:
+  /// **'JSON (any object)'**
+  String get outputJsonAnyObject;
+
+  /// No description provided for @outputJsonSchema.
+  ///
+  /// In en, this message translates to:
+  /// **'JSON matching a schema'**
+  String get outputJsonSchema;
+
+  /// No description provided for @toolNativeSupported.
+  ///
+  /// In en, this message translates to:
+  /// **'The loaded model\'s chat template supports native tool calls.'**
+  String get toolNativeSupported;
+
+  /// No description provided for @toolNativeFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'The loaded model\'s template has no tool-call format; tools are described in the prompt instead and the model answers with a JSON block. Small models do this less reliably.'**
+  String get toolNativeFallback;
+
+  /// No description provided for @toolNativeLoadToCheck.
+  ///
+  /// In en, this message translates to:
+  /// **'Whether a model has native tool-call support is shown here once it is loaded.'**
+  String get toolNativeLoadToCheck;
+
+  /// No description provided for @effectiveNothingOverridden.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing is overridden: your settings apply as saved.'**
+  String get effectiveNothingOverridden;
+
+  /// No description provided for @effectiveEverySetting.
+  ///
+  /// In en, this message translates to:
+  /// **'every setting'**
+  String get effectiveEverySetting;
+
+  /// No description provided for @effectiveLayerEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'nothing'**
+  String get effectiveLayerEmpty;
+
+  /// No description provided for @effectiveLayerDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'default'**
+  String get effectiveLayerDefault;
+
+  /// No description provided for @effectiveLayerDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'this phone'**
+  String get effectiveLayerDevice;
+
+  /// No description provided for @effectiveLayerRecommended.
+  ///
+  /// In en, this message translates to:
+  /// **'model\'s recommended'**
+  String get effectiveLayerRecommended;
+
+  /// No description provided for @effectiveLayerGlobal.
+  ///
+  /// In en, this message translates to:
+  /// **'your settings'**
+  String get effectiveLayerGlobal;
+
+  /// No description provided for @effectiveLayerModel.
+  ///
+  /// In en, this message translates to:
+  /// **'model profile'**
+  String get effectiveLayerModel;
+
+  /// No description provided for @effectiveLayerTurn.
+  ///
+  /// In en, this message translates to:
+  /// **'this turn'**
+  String get effectiveLayerTurn;
+
+  /// No description provided for @memoryOriginManual.
+  ///
+  /// In en, this message translates to:
+  /// **'added by you'**
+  String get memoryOriginManual;
+
+  /// No description provided for @memoryOriginLearned.
+  ///
+  /// In en, this message translates to:
+  /// **'learned'**
+  String get memoryOriginLearned;
+
+  /// No description provided for @remoteSamplingContextHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Sampling, max tokens and thinking mode apply to remote chats too (Anthropic ignores sampling). Context size is the app’s fitting budget; set it no higher than the selected model’s real context window.'**
+  String get remoteSamplingContextHint;
+
+  /// No description provided for @remoteSelfHostedHeader.
+  ///
+  /// In en, this message translates to:
+  /// **'ON YOUR OWN HARDWARE'**
+  String get remoteSelfHostedHeader;
+
+  /// No description provided for @remoteHostedHeader.
+  ///
+  /// In en, this message translates to:
+  /// **'HOSTED APIS (YOUR KEY)'**
+  String get remoteHostedHeader;
+
+  /// No description provided for @settingsToolsOff.
+  ///
+  /// In en, this message translates to:
+  /// **'off'**
+  String get settingsToolsOff;
+
+  /// No description provided for @settingsNoOverrides.
+  ///
+  /// In en, this message translates to:
+  /// **'nothing overridden'**
+  String get settingsNoOverrides;
+
+  /// No description provided for @backendCpuOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'CPU only'**
+  String get backendCpuOnly;
+
+  /// No description provided for @webAutoShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Web · auto'**
+  String get webAutoShort;
+
+  /// No description provided for @webAlwaysShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Web · always'**
+  String get webAlwaysShort;
+
+  /// No description provided for @kvFp16Default.
+  ///
+  /// In en, this message translates to:
+  /// **'FP16 (default)'**
+  String get kvFp16Default;
+
+  /// No description provided for @kvQ8SavesRam.
+  ///
+  /// In en, this message translates to:
+  /// **'Q8_0 (saves RAM)'**
+  String get kvQ8SavesRam;
+
+  /// No description provided for @kvQ4SavesMoreRam.
+  ///
+  /// In en, this message translates to:
+  /// **'Q4_0 (saves more RAM)'**
+  String get kvQ4SavesMoreRam;
+
+  /// No description provided for @settingCustomOption.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom…'**
+  String get settingCustomOption;
+
+  /// No description provided for @quickToolsEnabledHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search, read pages, search your documents, calculate.'**
+  String get quickToolsEnabledHint;
+
+  /// No description provided for @quickToolsDisabledHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Off: the model answers from what it knows and what you attach.'**
+  String get quickToolsDisabledHint;
+
+  /// No description provided for @quickToolsRequiredHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Required: a tool is called before the first answer.'**
+  String get quickToolsRequiredHint;
+
+  /// No description provided for @quickToolsAutoHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto: the model decides whether a tool is needed.'**
+  String get quickToolsAutoHint;
+
+  /// No description provided for @modelContextBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} ctx'**
+  String modelContextBadge(String count);
+
+  /// No description provided for @benchmarkPrefillDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'{tokens} tok in {seconds} s'**
+  String benchmarkPrefillDetail(int tokens, String seconds);
+
+  /// No description provided for @benchmarkMedianSamples.
+  ///
+  /// In en, this message translates to:
+  /// **'median of {count}'**
+  String benchmarkMedianSamples(int count);
+
+  /// No description provided for @benchmarkChatFirstToken.
+  ///
+  /// In en, this message translates to:
+  /// **'{seconds} s to first token'**
+  String benchmarkChatFirstToken(String seconds);
+
+  /// No description provided for @sourceReferenceSponsoredCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{{count} reference} other{{count} references}} · {sponsored, plural, =1{{sponsored} sponsored} other{{sponsored} sponsored}}'**
+  String sourceReferenceSponsoredCount(int count, int sponsored);
+
+  /// No description provided for @presetOverridesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} · overrides'**
+  String presetOverridesTitle(String name);
+
+  /// No description provided for @presetMoreOverridesCount.
+  ///
+  /// In en, this message translates to:
+  /// **'More overrides · {count}'**
+  String presetMoreOverridesCount(int count);
+
+  /// No description provided for @toolSearchCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'Searches the “{collection}” collection.'**
+  String toolSearchCollection(String collection);
+
+  /// No description provided for @quickToolsCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'Searches “{collection}”.'**
+  String quickToolsCollection(String collection);
+
+  /// No description provided for @effectiveOverrideSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{{count} setting comes} other{{count} settings come}} from a model profile, preset or chat. Select a row to see what each layer asked for.'**
+  String effectiveOverrideSummary(int count);
+
+  /// No description provided for @effectiveLayerSettingCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{{count} setting} other{{count} settings}}: {keys}{ellipsis}'**
+  String effectiveLayerSettingCount(int count, String keys, String ellipsis);
+
+  /// No description provided for @effectiveDefaultValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Default: {value}'**
+  String effectiveDefaultValue(String value);
+
+  /// No description provided for @effectiveLayerRequestedValue.
+  ///
+  /// In en, this message translates to:
+  /// **'{layer} asked for {value}'**
+  String effectiveLayerRequestedValue(String layer, String value);
+
+  /// No description provided for @knowledgeDocumentStats.
+  ///
+  /// In en, this message translates to:
+  /// **'{passages, plural, =1{{passages} passage} other{{passages} passages}} · {characters}k characters · {date}'**
+  String knowledgeDocumentStats(int passages, String characters, String date);
+
+  /// No description provided for @knowledgeMeaningProgress.
+  ///
+  /// In en, this message translates to:
+  /// **' · meaning {indexed}/{total}'**
+  String knowledgeMeaningProgress(int indexed, int total);
+
+  /// No description provided for @remoteHeadersExample.
+  ///
+  /// In en, this message translates to:
+  /// **'HTTP-Referer: https://example.app\nX-Title: My app'**
+  String get remoteHeadersExample;
+
+  /// No description provided for @threadsAutoCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto ({count})'**
+  String threadsAutoCount(int count);
+
+  /// No description provided for @settingCustomValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom · {value}'**
+  String settingCustomValue(String value);
+
+  /// No description provided for @settingsAppearanceSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{theme} · {accent} · {percent}%'**
+  String settingsAppearanceSummary(String theme, String accent, int percent);
+
+  /// No description provided for @settingsContextBatchSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{context} ctx · {batch} batch · cache {state}'**
+  String settingsContextBatchSummary(
+    String context,
+    String batch,
+    String state,
+  );
+
+  /// No description provided for @settingsHardwareSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{backend} · {layers, select, all{all layers} one{1 layer} other{{layers} layers}} · {decodeThreads}/{prefillThreads} thr · {cache} kv'**
+  String settingsHardwareSummary(
+    String backend,
+    String layers,
+    String decodeThreads,
+    String prefillThreads,
+    String cache,
+  );
+
+  /// No description provided for @settingsSamplingSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'T {temperature} · top-p {topP} · top-k {topK} · max {maxTokens}'**
+  String settingsSamplingSummary(
+    String temperature,
+    String topP,
+    int topK,
+    String maxTokens,
+  );
+
+  /// No description provided for @settingsReasoningSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'think {budget} · {results, plural, =1{{results} result} other{{results} results}} · {pages, plural, =1{{pages} page} other{{pages} pages}} · {passages, plural, =1{{passages} passage} other{{passages} passages}} · {seconds} s'**
+  String settingsReasoningSummary(
+    String budget,
+    int results,
+    int pages,
+    int passages,
+    int seconds,
+  );
+
+  /// No description provided for @settingsRopeSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'K {k} · V {v} · rope {scaling}{draft}'**
+  String settingsRopeSummary(String k, String v, String scaling, String draft);
+
+  /// No description provided for @settingsToolsSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'on · {rounds, plural, =1{{rounds} round} other{{rounds} rounds}}{calculator}{web}{documents}'**
+  String settingsToolsSummary(
+    int rounds,
+    String calculator,
+    String web,
+    String documents,
+  );
+
+  /// No description provided for @settingsAdaptersSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{imported} imported · {attached} attached'**
+  String settingsAdaptersSummary(int imported, int attached);
+
+  /// No description provided for @settingsOverrideCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{{count} overridden} other{{count} overridden}} by profile, preset or chat'**
+  String settingsOverrideCount(int count);
+
+  /// No description provided for @summaryOn.
+  ///
+  /// In en, this message translates to:
+  /// **'on'**
+  String get summaryOn;
+
+  /// No description provided for @summaryOff.
+  ///
+  /// In en, this message translates to:
+  /// **'off'**
+  String get summaryOff;
+
+  /// No description provided for @summarySame.
+  ///
+  /// In en, this message translates to:
+  /// **'same'**
+  String get summarySame;
+
+  /// No description provided for @summaryDraftOn.
+  ///
+  /// In en, this message translates to:
+  /// **' · draft on'**
+  String get summaryDraftOn;
+
+  /// No description provided for @summaryCalculator.
+  ///
+  /// In en, this message translates to:
+  /// **' · calc'**
+  String get summaryCalculator;
+
+  /// No description provided for @summaryWeb.
+  ///
+  /// In en, this message translates to:
+  /// **' · web'**
+  String get summaryWeb;
+
+  /// No description provided for @summaryDocuments.
+  ///
+  /// In en, this message translates to:
+  /// **' · docs'**
+  String get summaryDocuments;
+
+  /// No description provided for @summaryAccentAmber.
+  ///
+  /// In en, this message translates to:
+  /// **'amber'**
+  String get summaryAccentAmber;
+
+  /// No description provided for @summaryAccentBlue.
+  ///
+  /// In en, this message translates to:
+  /// **'blue'**
+  String get summaryAccentBlue;
+
+  /// No description provided for @summaryAccentGreen.
+  ///
+  /// In en, this message translates to:
+  /// **'green'**
+  String get summaryAccentGreen;
+
+  /// No description provided for @summaryAccentRose.
+  ///
+  /// In en, this message translates to:
+  /// **'rose'**
+  String get summaryAccentRose;
+
+  /// No description provided for @summaryAccentViolet.
+  ///
+  /// In en, this message translates to:
+  /// **'violet'**
+  String get summaryAccentViolet;
+
+  /// No description provided for @summaryAccentTeal.
+  ///
+  /// In en, this message translates to:
+  /// **'teal'**
+  String get summaryAccentTeal;
+
+  /// No description provided for @knowledgeMeaningComplete.
+  ///
+  /// In en, this message translates to:
+  /// **' · meaning ✓'**
+  String get knowledgeMeaningComplete;
+
+  /// No description provided for @dateMonthJan.
+  ///
+  /// In en, this message translates to:
+  /// **'Jan'**
+  String get dateMonthJan;
+
+  /// No description provided for @dateMonthFeb.
+  ///
+  /// In en, this message translates to:
+  /// **'Feb'**
+  String get dateMonthFeb;
+
+  /// No description provided for @dateMonthMar.
+  ///
+  /// In en, this message translates to:
+  /// **'Mar'**
+  String get dateMonthMar;
+
+  /// No description provided for @dateMonthApr.
+  ///
+  /// In en, this message translates to:
+  /// **'Apr'**
+  String get dateMonthApr;
+
+  /// No description provided for @dateMonthMay.
+  ///
+  /// In en, this message translates to:
+  /// **'May'**
+  String get dateMonthMay;
+
+  /// No description provided for @dateMonthJun.
+  ///
+  /// In en, this message translates to:
+  /// **'Jun'**
+  String get dateMonthJun;
+
+  /// No description provided for @dateMonthJul.
+  ///
+  /// In en, this message translates to:
+  /// **'Jul'**
+  String get dateMonthJul;
+
+  /// No description provided for @dateMonthAug.
+  ///
+  /// In en, this message translates to:
+  /// **'Aug'**
+  String get dateMonthAug;
+
+  /// No description provided for @dateMonthSep.
+  ///
+  /// In en, this message translates to:
+  /// **'Sep'**
+  String get dateMonthSep;
+
+  /// No description provided for @dateMonthOct.
+  ///
+  /// In en, this message translates to:
+  /// **'Oct'**
+  String get dateMonthOct;
+
+  /// No description provided for @dateMonthNov.
+  ///
+  /// In en, this message translates to:
+  /// **'Nov'**
+  String get dateMonthNov;
+
+  /// No description provided for @dateMonthDec.
+  ///
+  /// In en, this message translates to:
+  /// **'Dec'**
+  String get dateMonthDec;
+
+  /// No description provided for @historyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'History'**
+  String get historyTitle;
+
+  /// No description provided for @historyEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No history yet.'**
+  String get historyEmpty;
+
+  /// No description provided for @historyDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get historyDelete;
+
+  /// No description provided for @historyDeleteConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this history item and its saved files?'**
+  String get historyDeleteConfirm;
+
+  /// No description provided for @historyClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear history'**
+  String get historyClear;
+
+  /// No description provided for @historyClearConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete all saved comparison runs?'**
+  String get historyClearConfirm;
+
+  /// No description provided for @historyStorage.
+  ///
+  /// In en, this message translates to:
+  /// **'History uses {size} · newest 300 kept'**
+  String historyStorage(String size);
+
+  /// No description provided for @historyFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not access history: {error}'**
+  String historyFailed(String error);
+
+  /// No description provided for @historyReadOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved run · press Run to compare again.'**
+  String get historyReadOnly;
+
+  /// No description provided for @benchmarkHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'Speed benchmark history'**
+  String get benchmarkHistory;
+
+  /// No description provided for @benchmarkHistoryEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No speed benchmark history yet'**
+  String get benchmarkHistoryEmpty;
+
+  /// No description provided for @benchmarkHistoryHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove receipts without deleting this model or its saved profile.'**
+  String get benchmarkHistoryHint;
+
+  /// No description provided for @benchmarkDeleteReceipt.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete receipt'**
+  String get benchmarkDeleteReceipt;
+
+  /// No description provided for @benchmarkDeleteReceipts.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete receipts'**
+  String get benchmarkDeleteReceipts;
+
+  /// No description provided for @benchmarkDeleteSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete selected ({count})'**
+  String benchmarkDeleteSelected(int count);
+
+  /// No description provided for @benchmarkSelectReceipt.
+  ///
+  /// In en, this message translates to:
+  /// **'Select receipt from {date}'**
+  String benchmarkSelectReceipt(String date);
+
+  /// No description provided for @benchmarkDeleteReceiptsConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete {count} selected benchmark receipts? The model and its saved profile will be kept.'**
+  String benchmarkDeleteReceiptsConfirm(int count);
+
+  /// No description provided for @benchmarkClearHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear history'**
+  String get benchmarkClearHistory;
+
+  /// No description provided for @benchmarkClearHistoryConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete all benchmark receipts for this model? The model and its saved profile will be kept.'**
+  String get benchmarkClearHistoryConfirm;
+
+  /// No description provided for @downloadRemoveHistoryRow.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove history row'**
+  String get downloadRemoveHistoryRow;
+
+  /// No description provided for @downloadClearFinishedHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear finished history'**
+  String get downloadClearFinishedHistory;
+
+  /// No description provided for @downloadHistoryHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Removing history rows keeps downloaded model files. Active downloads are not cancelled.'**
+  String get downloadHistoryHint;
+
+  /// No description provided for @downloadRemoveHistoryConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove the download history row for {name}? The downloaded model file will be kept. This does not cancel a download.'**
+  String downloadRemoveHistoryConfirm(String name);
+
+  /// No description provided for @downloadClearFinishedConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove completed, failed and cancelled download history rows? Downloaded model files and active downloads will be kept.'**
+  String get downloadClearFinishedConfirm;
+
+  /// No description provided for @historyRemoveError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save the history change. Please try again.'**
+  String get historyRemoveError;
+
+  /// No description provided for @answerTokensInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a positive whole number up to 1,048,576.'**
+  String get answerTokensInvalid;
+
+  /// No description provided for @answerTokensContextLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'The context window ({context} tokens) limits the actual answer. Prompt and thinking tokens also use this window. Your requested value is saved.'**
+  String answerTokensContextLimit(int context);
+
+  /// No description provided for @answerTokensHint.
+  ///
+  /// In en, this message translates to:
+  /// **'The longest answer the model may write. Drag up to 64,000, or tap Custom to type any value. The context window still limits how much fits.'**
+  String get answerTokensHint;
+
+  /// No description provided for @modelRestoreRemoved.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore removed ({count})'**
+  String modelRestoreRemoved(int count);
 }
 
 class _AppLocalizationsDelegate

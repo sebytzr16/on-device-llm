@@ -1,5 +1,6 @@
 # Reuse an existing Windows Ninja build's compiler settings and static libs.
-param([string]$BuildDirectory = 'build/native-windows/x64-cuda')
+param([string]$BuildDirectory = 'build/native-windows/x64-cuda',
+      [string]$TestSource = 'native/tests/chat_stream.cpp')
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location -LiteralPath $repo
@@ -18,7 +19,7 @@ $vcvars = $vsRoots | Where-Object { Test-Path -LiteralPath $_ } |
     Sort-Object FullName -Descending | Select-Object -First 1
 if (-not $vcvars) { throw 'Visual Studio Build Tools are required.' }
 $response = "$(Build-Value 'DEFINES') $(Build-Value 'FLAGS') $(Build-Value 'INCLUDES') " +
-    "`"$repo/native/tests/chat_stream.cpp`" /Fe:`"$out/chat-stream-test.exe`" /Fo:`"$out/chat-stream-test.obj`" " +
+    "`"$repo/$TestSource`" /Fe:`"$out/chat-stream-test.exe`" /Fo:`"$out/chat-stream-test.obj`" " +
     "/link $(Build-Value 'LINK_LIBRARIES')"
 [IO.File]::WriteAllText("$out/chat-stream-test.rsp", $response)
 $command = "@echo off`r`ncall `"$($vcvars.FullName)`" >nul`r`ncd /d `"$build`"`r`ncl @`"$out/chat-stream-test.rsp`"`r`n"

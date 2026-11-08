@@ -931,21 +931,23 @@ String relativeTime(DateTime t, {DateTime? now, AppLocalizations? l10n}) {
   if (day == today.subtract(const Duration(days: 1))) {
     return l10n?.yesterday ?? 'Yesterday';
   }
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
+  final t10n = l10n ?? AppLocalizationsEn();
+  final months = [
+    t10n.dateMonthJan,
+    t10n.dateMonthFeb,
+    t10n.dateMonthMar,
+    t10n.dateMonthApr,
+    t10n.dateMonthMay,
+    t10n.dateMonthJun,
+    t10n.dateMonthJul,
+    t10n.dateMonthAug,
+    t10n.dateMonthSep,
+    t10n.dateMonthOct,
+    t10n.dateMonthNov,
+    t10n.dateMonthDec,
   ];
-  final base = '${local.day} ${months[local.month - 1]}';
+  final month = months[local.month - 1];
+  final base = '${local.day} $month';
   return local.year == now.year ? base : '$base ${local.year}';
 }
 

@@ -39,10 +39,9 @@ class SettingSpec {
       }.contains(key);
   bool get available => DesktopHost.active || !desktopOnly;
 
-  /// Sampling and answer length belong to each model (owner 2026-11-01):
-  /// the app-wide layer no longer sets them, so a model starts from its
-  /// own recommended values.
-  bool get perModel => group == groupGeneration;
+  /// Sampling belongs to each model. Answer length also has an app-wide
+  /// default (owner 2026-11-08), overridden by model/preset/chat choices.
+  bool get perModel => group == groupGeneration && key != 'maxTokens';
 
   static const groupGeneration = 'Generation';
   static const groupReasoning = 'Reasoning';
@@ -585,8 +584,8 @@ class SettingSpec {
       label: 'Max answer tokens',
       group: groupAgents,
       kind: SettingKind.integer,
-      min: 64,
-      max: 4096,
+      min: InferenceSettings.minResponseTokens,
+      max: InferenceSettings.maxResponseTokens,
     ),
     SettingSpec(
       key: 'agentTemperature',
@@ -643,6 +642,15 @@ class SettingSpec {
       kind: SettingKind.integer,
       min: 1,
       max: 4,
+    ),
+    SettingSpec(
+      key: 'agentTimeoutSeconds',
+      label: 'Agent time limit (seconds)',
+      group: groupAgents,
+      kind: SettingKind.integer,
+      min: 0,
+      max: 86400,
+      hint: '0 = unlimited',
     ),
     SettingSpec(
       key: 'agentThinking',

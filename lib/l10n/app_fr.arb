@@ -199,7 +199,7 @@
   "systemInstructionsHint": "p. ex. Réponds brièvement. Préfère les unités métriques.",
   "couldNotOpenLink": "Impossible d’ouvrir ce lien.",
   "privateByDefault": "Privé par défaut",
-  "privateByDefaultHint": "Ni compte, ni analytique, ni inférence dans le nuage. Les téléchargements et la recherche optionnelle sont les seules fonctions réseau.",
+  "privateByDefaultHint": "Ni compte, ni analytique. Les réponses sont calculées sur ce téléphone, sauf si vous ajoutez un serveur distant. Les téléchargements et la recherche optionnelle sont les seules autres fonctions réseau.",
   "noModelLoadedTitle": "Aucun modèle chargé",
   "chooseFromLibrary": "Choisissez-en un dans la bibliothèque",
   "obPrivateHeadline": "Privé par construction",
@@ -539,14 +539,14 @@
   "hostHideToken": "Masquer le jeton",
   "hostShowToken": "Afficher le jeton",
   "hostCopyConnection": "Copier la connexion",
-  "hostPairHint": "Sur l'autre téléphone : scannez ce code avec l'appareil photo et copiez le texte, ou collez la connexion copiée, puis dans OnDevice LLM ouvrez Réglages > Serveur distant > Coller la connexion. Toute application compatible OpenAI fonctionne aussi, avec l'URL, le modèle et le jeton.",
+  "hostPairHint": "Scannez ce QR code dans OnDevice LLM ou collez la connexion copiée. Elle expire après 10 minutes et ne peut être utilisée qu’une fois.",
   "hostRecent": "Requêtes récentes",
   "hostNoneYet": "Aucune pour l'instant.",
   "hostCopy": "Copier : {what}",
   "hostInOut": "{prompt} reçus · {completion} générés",
   "remotePasteNone": "Le presse-papiers ne contient aucune connexion. Sur l'autre téléphone, touchez d'abord Copier la connexion (ou scannez son code QR).",
   "remotePasteNonePc": "Le presse-papiers ne contient aucune connexion. Sur l'autre appareil, utilisez d'abord Copier la connexion.",
-  "remotePasted": "{name} ajouté. Activez « Utiliser le serveur distant » pour discuter avec lui.",
+  "remotePasted": "{name} ajouté. Les discussions passent maintenant par lui.",
   "remotePaste": "Coller la connexion",
   "remoteAdd": "Ajouter une connexion",
   "configCopied": "Configuration copiée en texte",
@@ -1521,7 +1521,7 @@
   "remotePairCodeMessage": "Saisissez le code d'appairage à 6 chiffres affiché à côté du serveur sur {name}. Laissez vide pour saisir une clé d'accès à la place.",
   "remotePairConnect": "Connecter",
   "remotePairWrong": "Code d'appairage incorrect. Vérifiez le code sur l'autre appareil et réessayez.",
-  "remotePairLocked": "Trop de codes incorrects. Redémarrez le serveur sur l'autre appareil pour obtenir un nouveau code.",
+  "remotePairLocked": "Trop de codes incorrects. Attendez l’expiration du code, puis saisissez le nouveau code, ou scannez le code QR.",
   "remotePairUnreachable": "Impossible de joindre {name}. Vérifiez que les deux appareils sont sur le même Wi-Fi et que le serveur est démarré.",
   "desktopServerAddress": "Adresse pour les téléphones",
   "desktopLanTitle": "Vérification du réseau",
@@ -2139,8 +2139,8 @@
   "goalWatchNotificationsDenied": "Les notifications sont refusées. Autorisez-les dans les paramètres Android avant de programmer une veille.",
   "voiceOfflineUnavailable": "Aucune voix hors ligne vérifiée disponible. Installez une voix hors ligne ou le pack vocal intégré.",
   "themeHintPc": "Sombre est le thème par défaut ; Système suit le thème de Windows.",
-  "hostPairLocked": "L’association est bloquée après cinq codes incorrects. Redémarrez le serveur pour associer un autre appareil.",
-  "hostPairExpired": "Ce code d’association a expiré ou a déjà été utilisé. Redémarrez le serveur pour associer un autre appareil.",
+  "hostPairLocked": "L’association par code est bloquée après cinq codes incorrects. Attendez l’expiration du code ou utilisez le code QR.",
+  "hostPairExpired": "Ce code d’association a expiré. Scannez le nouveau QR code ou saisissez le nouveau code.",
   "hostAddressPlaceholder": "<adresse-ip-appareil>",
   "imageCreate": "Créer",
   "imageUpscale": "Agrandir",
@@ -2399,6 +2399,9 @@
   "agentModelDefault": "Utiliser les valeurs du modèle",
   "agentContextSize": "Taille du contexte des agents",
   "agentMaxConcurrent": "Agents simultanés maximum",
+  "agentTimeoutSeconds": "Durée limite des agents",
+  "agentTimeoutUnlimited": "Illimitée",
+  "agentTimeoutHint": "Durée active maximale par agent. Illimitée laisse les agents terminer ou attend votre arrêt. Le chargement du modèle et l’attente d’une autorisation web ne comptent pas.",
   "agentThinking": "Réflexion des agents",
   "agentToolRounds": "Tours d’outils",
   "agentWebAccess": "Accès web des agents",
@@ -2439,5 +2442,693 @@
   "workspaceTool": "Serveur : {tool}",
   "workspaceReading": "Serveur : lecture de {file}{progress}",
   "workspaceServer": "serveur",
-  "workspaceApprovalTitle": "Autorisation d’un outil du serveur"
+  "workspaceApprovalTitle": "Autorisation d’un outil du serveur",
+  "remotePairTrustNote": "Effectuez l’association uniquement sur un réseau de confiance.",
+  "runSpeed": "vitesse",
+  "runPromptTokens": "tokens du prompt",
+  "runCachedTokens": "en cache",
+  "runGeneratedTokens": "générés",
+  "runTrimmedTurns": "échanges retirés",
+  "runToolOk": "réussi",
+  "runToolError": "erreur",
+  "runDraftsAccepted": "tokens du brouillon acceptés",
+  "runDraftSpeed": "vitesse du brouillon",
+  "runDrafting": "brouillon",
+  "runDraftLowAcceptance": "taux d’acceptation inférieur à 35 %",
+  "runDraftSlower": "plus lent que le décodage simple",
+  "runEndedBy": "fin due à",
+  "metricsUnknownReason": "raison inconnue",
+  "metricsStagesHint": "Temps écoulé entre l’envoi et la fin, par étape du dernier échange.",
+  "metricsTemplateEmbedded": "intégré (Jinja)",
+  "metricsTemplateFamilyFallback": "repli sur la famille",
+  "metricsThinkingNative": "natif",
+  "metricsThinkingPrompted": "via le prompt",
+  "metricsNoModel": "aucun modèle chargé",
+  "metricsStageLoad": "chargement",
+  "metricsStageJudge": "évaluation",
+  "metricsStagePlan": "planification",
+  "metricsStageSearch": "recherche",
+  "metricsStageRead": "lecture",
+  "metricsStageFit": "ajustement",
+  "metricsStageAnswer": "réponse",
+  "ropeModelDefault": "Valeur par défaut du modèle",
+  "ropeLinear": "Linéaire",
+  "ropeModelValue": "Valeur du modèle",
+  "draftLowAcceptance": "taux d’acceptation inférieur à 35 %",
+  "settingsNextModelLoad": "Ces réglages s’appliquent au prochain chargement du modèle.",
+  "documentNoMessagesSelected": "Aucun message ne correspond à cette sélection.",
+  "documentLoadModelFirst": "Chargez un modèle avant de rédiger un document.",
+  "structuredOutputLimitHint": "Les réponses contraintes s’arrêtent aussi à la limite de tokens : un objet JSON tronqué est signalé comme invalide. Le format s’applique également au serveur distant via response_format.",
+  "toolNeedsKnowledgeCollection": "Une collection doit être sélectionnée dans Réglages > Bibliothèque de connaissances : aucune ne l’est, cet outil n’est donc pas proposé.",
+  "toolCallPolicyNote": "Chaque appel est limité : une requête ou une page par appel, 30 s par appel, résultats tronqués à 6 000 caractères, pages lues uniquement selon la politique d’accès au Web public. Les appels et leurs résultats sont conservés dans le journal d’exécution de la réponse.",
+  "memoryTransientNotUsed": " · état passager, non transmis au modèle",
+  "remotePhoneExplanation": "Connectez l’application à un serveur que vous gérez — LM Studio, Ollama ou llama-server sur un PC chez vous, via votre réseau local ou un VPN — ou à une API hébergée avec votre propre clé. Vos messages et les éléments recueillis sur le Web sont envoyés à cette connexion, qui répond à la place du téléphone.",
+  "remoteKeyStoragePrivacy": "Les clés API sont conservées dans le stockage sécurisé de cet appareil (Keystore Android, protection des données Windows), jamais dans le fichier de réglages ni dans les exports, et ne sont envoyées qu’à la connexion à laquelle elles appartiennent. Sur Internet, utilisez HTTPS ou un VPN.",
+  "quickToolsNoKnowledge": "Aucune collection de connaissances sélectionnée : outil non proposé.",
+  "runFieldTemperature": "température",
+  "runFieldTopP": "top P",
+  "runFieldMinP": "min P",
+  "runFieldTopK": "top K",
+  "runFieldRepetitionPenalty": "pénalité de répétition",
+  "runFieldMaxTokens": "tokens maximum",
+  "runFieldContextSize": "taille du contexte",
+  "runFieldThinkingModeEnabled": "mode réflexion activé",
+  "runFieldThinkingBudgetTokens": "budget de tokens de réflexion",
+  "runFieldWebMode": "mode Web",
+  "runFieldKnowledgeCollection": "collection de connaissances",
+  "runFieldMemoryEnabled": "mémoire activée",
+  "runFieldPromptCache": "cache du prompt",
+  "runFieldBackend": "moteur",
+  "runFieldKvCacheType": "type de cache K",
+  "runFieldVCacheType": "type de cache V",
+  "runFieldSeed": "graine",
+  "runFieldPresencePenalty": "pénalité de présence",
+  "runFieldFrequencyPenalty": "pénalité de fréquence",
+  "runFieldResponseFormat": "format de réponse",
+  "runFieldToolsEnabled": "outils activés",
+  "runFieldToolChoice": "choix d’outil",
+  "runFieldDraftModelId": "identifiant du modèle brouillon",
+  "runFieldThreads": "threads",
+  "runFieldBatchThreads": "threads de préremplissage",
+  "runFieldBatchSize": "taille du lot",
+  "runFieldMicroBatchSize": "taille du micro-lot",
+  "runFieldRequestedGpuLayers": "couches GPU demandées",
+  "runFieldFlashAttentionPolicy": "politique Flash Attention",
+  "runFieldMemory": "mémoire",
+  "runSearchProviderCounts": "{status} · {relevant} pertinents / {parsed} analysés",
+  "@runSearchProviderCounts": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      },
+      "relevant": {
+        "type": "String"
+      },
+      "parsed": {
+        "type": "String"
+      }
+    }
+  },
+  "runDraftSpeedValue": "{speed}× le décodage simple",
+  "@runDraftSpeedValue": {
+    "placeholders": {
+      "speed": {
+        "type": "String"
+      }
+    }
+  },
+  "runDraftPaused": "{rounds, plural, =1{en pause après 1 cycle ({reason})} other{en pause après {rounds} cycles ({reason})}}",
+  "@runDraftPaused": {
+    "placeholders": {
+      "rounds": {
+        "type": "num"
+      },
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "metricsLastBenchmark": "dernier : {decode} tok/s · {prefill} tok/s en préremplissage · {backend}",
+  "@metricsLastBenchmark": {
+    "placeholders": {
+      "decode": {
+        "type": "String"
+      },
+      "prefill": {
+        "type": "String"
+      },
+      "backend": {
+        "type": "String"
+      }
+    }
+  },
+  "metricsGpuUnavailable": "GPU indisponible : {reason}",
+  "@metricsGpuUnavailable": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "metricsGpuVariantUnavailable": "Variante GPU indisponible sur cet appareil : {reason}",
+  "@metricsGpuVariantUnavailable": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "metricsTokenCounts": "{generated} générés · {prompt} dans le prompt",
+  "@metricsTokenCounts": {
+    "placeholders": {
+      "generated": {
+        "type": "String"
+      },
+      "prompt": {
+        "type": "String"
+      }
+    }
+  },
+  "metricsTrimmedMessages": "{count, plural, =1{1 ancien message retiré pour respecter la limite} other{{count} anciens messages retirés pour respecter la limite}}",
+  "@metricsTrimmedMessages": {
+    "placeholders": {
+      "count": {
+        "type": "num"
+      }
+    }
+  },
+  "ropeTrainedContext": "{count, plural, =1{Le modèle chargé a été entraîné pour 1 token.} other{Le modèle chargé a été entraîné pour {tokens} tokens.}}",
+  "@ropeTrainedContext": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "tokens": {
+        "type": "String"
+      }
+    }
+  },
+  "settingDefaultValue": "{value} (par défaut)",
+  "@settingDefaultValue": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "draftLastAnswerSummary": "{proposed, plural, =1{Dernière réponse : {accepted} token du brouillon accepté sur 1 ({percent} %) avec {model}. {paused}Sous ~60 %, le brouillon coûte généralement plus qu’il ne fait gagner.} other{Dernière réponse : {accepted} tokens du brouillon acceptés sur {proposed} ({percent} %) avec {model}. {paused}Sous ~60 %, le brouillon coûte généralement plus qu’il ne fait gagner.}}",
+  "@draftLastAnswerSummary": {
+    "placeholders": {
+      "accepted": {
+        "type": "int"
+      },
+      "proposed": {
+        "type": "int"
+      },
+      "percent": {
+        "type": "int"
+      },
+      "model": {
+        "type": "String"
+      },
+      "paused": {
+        "type": "String"
+      }
+    }
+  },
+  "draftPausedExplanation": "{rounds, plural, =1{Le brouillon a été suspendu pour le reste de cette réponse après 1 cycle ({reason}) ; il est réessayé à chaque réponse. } other{Le brouillon a été suspendu pour le reste de cette réponse après {rounds} cycles ({reason}) ; il est réessayé à chaque réponse. }}",
+  "@draftPausedExplanation": {
+    "placeholders": {
+      "rounds": {
+        "type": "num"
+      },
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "imageChatModelMemoryRecovery": "{detail}\nLe modèle de discussion « {model} » est chargé et utilise peut-être de la mémoire GPU. Déchargez « {model} » dans le sélecteur de modèle, puis réessayez.",
+  "@imageChatModelMemoryRecovery": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      },
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "modelDownloadLicenseNotice": "{size} depuis Hugging Face.\n\nLicence : {license}\n\nEn continuant, vous reconnaissez avoir pris connaissance de la licence du modèle fournie par l’éditeur. Le fichier est vérifié avec SHA-256 avant utilisation.",
+  "@modelDownloadLicenseNotice": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      },
+      "license": {
+        "type": "String"
+      }
+    }
+  },
+  "onboardingModelLicenseNotice": "{size} depuis Hugging Face. Licence : {license}. Le fichier est vérifié avec SHA-256 avant utilisation.",
+  "@onboardingModelLicenseNotice": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      },
+      "license": {
+        "type": "String"
+      }
+    }
+  },
+  "onboardingModelReadyPrivacy": "{model} est sur ce téléphone. Désormais, rien n’en sort.",
+  "@onboardingModelReadyPrivacy": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "effectiveReloadNextMessage": " · le modèle chargé utilise {value}, rechargement au prochain message",
+  "@effectiveReloadNextMessage": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "helperSharedResources": "Moteur : {backend} · Couches GPU : {layers}",
+  "@helperSharedResources": {
+    "placeholders": {
+      "backend": {
+        "type": "String"
+      },
+      "layers": {
+        "type": "String"
+      }
+    }
+  },
+  "benchmarkPrefill": "Préremplissage",
+  "benchmarkDecode": "Décodage",
+  "benchmarkBasis": "Base",
+  "benchmarkChatTools": "Discussion + outils",
+  "benchmarkThreads": "Fils d’exécution",
+  "benchmarkThermal": "État thermique",
+  "benchmarkShareSubject": "Test de performances OnDevice LLM",
+  "documentTemplateTranscript": "Transcription de la conversation",
+  "documentTemplateReport": "Rapport de recherche",
+  "documentTemplateLetter": "Lettre",
+  "documentTemplateMeetingNotes": "Notes de réunion",
+  "documentTemplateStudyGuide": "Guide d’étude",
+  "documentTemplateSummary": "Synthèse",
+  "remoteServerModel": "modèle du serveur",
+  "chatShareSubject": "Conversation depuis OnDevice LLM",
+  "chatExportConversation": "Exporter la conversation",
+  "documentDefaultTitle": "Document OnDevice LLM",
+  "codeBlockLanguageFallback": "code",
+  "helperMeasurementYes": "oui",
+  "helperMeasurementNo": "non",
+  "helperMeasurementDevices": "Appareils",
+  "presetScope": "Préréglage",
+  "presetMoreOverrides": "Autres valeurs personnalisées",
+  "appearanceTextScaleHint": "Ajuste la taille de tout le texte de l’application en plus du réglage du système.",
+  "contextBatchNextLoad": "Les modifications du contexte et des lots s’appliquent au prochain chargement d’un modèle.",
+  "hardwareNextLoad": "Les modifications matérielles s’appliquent au prochain chargement du modèle.",
+  "searchRegionCanadaEnglish": "Canada (anglais)",
+  "searchRegionUnitedStates": "États-Unis",
+  "searchRegionUnitedKingdom": "Royaume-Uni",
+  "searchRegionAustralia": "Australie",
+  "searchRegionNewZealand": "Nouvelle-Zélande",
+  "searchRegionIreland": "Irlande",
+  "searchRegionIndia": "Inde",
+  "searchRegionSouthAfrica": "Afrique du Sud",
+  "searchRegionFrance": "France",
+  "searchRegionJapan": "Japon",
+  "searchRegionNoregion": "Aucune région",
+  "outputFreeText": "Texte libre",
+  "outputJsonAnyObject": "JSON (tout objet)",
+  "outputJsonSchema": "JSON conforme à un schéma",
+  "toolNativeSupported": "La trame de discussion du modèle chargé prend en charge les appels d’outils natifs.",
+  "toolNativeFallback": "La trame du modèle chargé n’a pas de format d’appel d’outils ; les outils sont décrits dans l’invite et le modèle répond avec un bloc JSON. Les petits modèles le font de façon moins fiable.",
+  "toolNativeLoadToCheck": "La prise en charge des appels d’outils natifs s’affiche ici une fois le modèle chargé.",
+  "effectiveNothingOverridden": "Aucune valeur n’est remplacée : vos réglages s’appliquent tels qu’ils sont enregistrés.",
+  "effectiveEverySetting": "tous les réglages",
+  "effectiveLayerEmpty": "aucun",
+  "effectiveLayerDefault": "par défaut",
+  "effectiveLayerDevice": "ce téléphone",
+  "effectiveLayerRecommended": "recommandation du modèle",
+  "effectiveLayerGlobal": "vos réglages",
+  "effectiveLayerModel": "profil du modèle",
+  "effectiveLayerTurn": "ce tour",
+  "memoryOriginManual": "ajouté par vous",
+  "memoryOriginLearned": "appris",
+  "remoteSamplingContextHint": "L’échantillonnage, le nombre maximal de jetons et le mode de réflexion s’appliquent aussi aux discussions distantes (Anthropic ignore l’échantillonnage). La taille du contexte est le budget d’ajustement de l’application ; elle ne doit pas dépasser la fenêtre de contexte réelle du modèle sélectionné.",
+  "remoteSelfHostedHeader": "SUR VOTRE PROPRE MATÉRIEL",
+  "remoteHostedHeader": "API HÉBERGÉES (VOTRE CLÉ)",
+  "settingsToolsOff": "désactivés",
+  "settingsNoOverrides": "aucune valeur remplacée",
+  "backendCpuOnly": "CPU uniquement",
+  "webAutoShort": "Web · auto",
+  "webAlwaysShort": "Web · toujours",
+  "kvFp16Default": "FP16 (par défaut)",
+  "kvQ8SavesRam": "Q8_0 (économise la RAM)",
+  "kvQ4SavesMoreRam": "Q4_0 (économise davantage de RAM)",
+  "settingCustomOption": "Personnalisé…",
+  "quickToolsEnabledHint": "Recherche Web et documentaire, lecture de pages, calcul.",
+  "quickToolsDisabledHint": "Désactivés : le modèle répond à partir de ses connaissances et de vos pièces jointes.",
+  "quickToolsRequiredHint": "Obligatoire : un outil est appelé avant la première réponse.",
+  "quickToolsAutoHint": "Auto : le modèle décide si un outil est nécessaire.",
+  "modelContextBadge": "{count} de contexte",
+  "@modelContextBadge": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "benchmarkPrefillDetail": "{tokens} jetons en {seconds} s",
+  "@benchmarkPrefillDetail": {
+    "placeholders": {
+      "tokens": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "benchmarkMedianSamples": "médiane de {count}",
+  "@benchmarkMedianSamples": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "benchmarkChatFirstToken": "{seconds} s avant le premier jeton",
+  "@benchmarkChatFirstToken": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "sourceReferenceSponsoredCount": "{count, plural, =1{{count} référence} other{{count} références}} · {sponsored, plural, =1{{sponsored} sponsorisée} other{{sponsored} sponsorisées}}",
+  "@sourceReferenceSponsoredCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "sponsored": {
+        "type": "int"
+      }
+    }
+  },
+  "presetOverridesTitle": "{name} · valeurs personnalisées",
+  "@presetOverridesTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "presetMoreOverridesCount": "Autres valeurs personnalisées · {count}",
+  "@presetMoreOverridesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "toolSearchCollection": "Recherche dans la collection « {collection} ».",
+  "@toolSearchCollection": {
+    "placeholders": {
+      "collection": {
+        "type": "String"
+      }
+    }
+  },
+  "quickToolsCollection": "Recherche dans « {collection} ».",
+  "@quickToolsCollection": {
+    "placeholders": {
+      "collection": {
+        "type": "String"
+      }
+    }
+  },
+  "effectiveOverrideSummary": "{count, plural, =1{{count} réglage provient} other{{count} réglages proviennent}} d’un profil de modèle, d’un préréglage ou d’une discussion. Sélectionnez une ligne pour voir la valeur demandée par chaque couche.",
+  "@effectiveOverrideSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "effectiveLayerSettingCount": "{count, plural, =1{{count} réglage} other{{count} réglages}} : {keys}{ellipsis}",
+  "@effectiveLayerSettingCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "keys": {
+        "type": "String"
+      },
+      "ellipsis": {
+        "type": "String"
+      }
+    }
+  },
+  "effectiveDefaultValue": "Par défaut : {value}",
+  "@effectiveDefaultValue": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "effectiveLayerRequestedValue": "{layer} a demandé {value}",
+  "@effectiveLayerRequestedValue": {
+    "placeholders": {
+      "layer": {
+        "type": "String"
+      },
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "knowledgeDocumentStats": "{passages, plural, =1{{passages} passage} other{{passages} passages}} · {characters}k caractères · {date}",
+  "@knowledgeDocumentStats": {
+    "placeholders": {
+      "passages": {
+        "type": "int"
+      },
+      "characters": {
+        "type": "String"
+      },
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "knowledgeMeaningProgress": " · sens {indexed}/{total}",
+  "@knowledgeMeaningProgress": {
+    "placeholders": {
+      "indexed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "remoteHeadersExample": "HTTP-Referer: https://example.app\nX-Title: Mon application",
+  "threadsAutoCount": "Auto ({count})",
+  "@threadsAutoCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingCustomValue": "Personnalisé · {value}",
+  "@settingCustomValue": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsAppearanceSummary": "{theme} · {accent} · {percent} %",
+  "@settingsAppearanceSummary": {
+    "placeholders": {
+      "theme": {
+        "type": "String"
+      },
+      "accent": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsContextBatchSummary": "{context} contexte · lot {batch} · cache {state}",
+  "@settingsContextBatchSummary": {
+    "placeholders": {
+      "context": {
+        "type": "String"
+      },
+      "batch": {
+        "type": "String"
+      },
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsHardwareSummary": "{backend} · {layers, select, all{toutes les couches} one{1 couche} other{{layers} couches}} · {decodeThreads}/{prefillThreads} fils · {cache} kv",
+  "@settingsHardwareSummary": {
+    "placeholders": {
+      "backend": {
+        "type": "String"
+      },
+      "layers": {
+        "type": "String"
+      },
+      "decodeThreads": {
+        "type": "String"
+      },
+      "prefillThreads": {
+        "type": "String"
+      },
+      "cache": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsSamplingSummary": "T {temperature} · top-p {topP} · top-k {topK} · max {maxTokens}",
+  "@settingsSamplingSummary": {
+    "placeholders": {
+      "temperature": {
+        "type": "String"
+      },
+      "topP": {
+        "type": "String"
+      },
+      "topK": {
+        "type": "int"
+      },
+      "maxTokens": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsReasoningSummary": "réflexion {budget} · {results, plural, =1{{results} résultat} other{{results} résultats}} · {pages, plural, =1{{pages} page} other{{pages} pages}} · {passages, plural, =1{{passages} passage} other{{passages} passages}} · {seconds} s",
+  "@settingsReasoningSummary": {
+    "placeholders": {
+      "budget": {
+        "type": "String"
+      },
+      "results": {
+        "type": "int"
+      },
+      "pages": {
+        "type": "int"
+      },
+      "passages": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsRopeSummary": "K {k} · V {v} · rope {scaling}{draft}",
+  "@settingsRopeSummary": {
+    "placeholders": {
+      "k": {
+        "type": "String"
+      },
+      "v": {
+        "type": "String"
+      },
+      "scaling": {
+        "type": "String"
+      },
+      "draft": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsToolsSummary": "activés · {rounds, plural, =1{{rounds} tour} other{{rounds} tours}}{calculator}{web}{documents}",
+  "@settingsToolsSummary": {
+    "placeholders": {
+      "rounds": {
+        "type": "int"
+      },
+      "calculator": {
+        "type": "String"
+      },
+      "web": {
+        "type": "String"
+      },
+      "documents": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsAdaptersSummary": "{imported, plural, =1{{imported} importé} other{{imported} importés}} · {attached, plural, =1{{attached} associé} other{{attached} associés}}",
+  "@settingsAdaptersSummary": {
+    "placeholders": {
+      "imported": {
+        "type": "int"
+      },
+      "attached": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsOverrideCount": "{count, plural, =1{{count} valeur remplacée} other{{count} valeurs remplacées}} par un profil, un préréglage ou une discussion",
+  "@settingsOverrideCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "summaryOn": "activé",
+  "summaryOff": "désactivé",
+  "summarySame": "identique",
+  "summaryDraftOn": " · brouillon activé",
+  "summaryCalculator": " · calcul",
+  "summaryWeb": " · web",
+  "summaryDocuments": " · docs",
+  "summaryAccentAmber": "ambre",
+  "summaryAccentBlue": "bleu",
+  "summaryAccentGreen": "vert",
+  "summaryAccentRose": "rose",
+  "summaryAccentViolet": "violet",
+  "summaryAccentTeal": "sarcelle",
+  "knowledgeMeaningComplete": " · sens ✓",
+  "dateMonthJan": "janv.",
+  "dateMonthFeb": "févr.",
+  "dateMonthMar": "mars",
+  "dateMonthApr": "avr.",
+  "dateMonthMay": "mai",
+  "dateMonthJun": "juin",
+  "dateMonthJul": "juil.",
+  "dateMonthAug": "août",
+  "dateMonthSep": "sept.",
+  "dateMonthOct": "oct.",
+  "dateMonthNov": "nov.",
+  "dateMonthDec": "déc.",
+  "historyTitle": "Historique",
+  "historyEmpty": "Aucun élément dans l’historique.",
+  "historyDelete": "Supprimer",
+  "historyDeleteConfirm": "Supprimer cet élément de l’historique et ses fichiers enregistrés ?",
+  "historyClear": "Effacer l’historique",
+  "historyClearConfirm": "Supprimer toutes les comparaisons enregistrées ?",
+  "historyStorage": "Historique : {size} · 300 éléments les plus récents conservés",
+  "historyFailed": "Impossible d’accéder à l’historique : {error}",
+  "historyReadOnly": "Comparaison enregistrée · appuyez sur Lancer pour comparer à nouveau.",
+  "benchmarkHistory": "Historique des mesures de vitesse",
+  "benchmarkHistoryEmpty": "Aucune mesure de vitesse enregistrée",
+  "benchmarkHistoryHint": "Supprimez les reçus sans supprimer ce modèle ni son profil enregistré.",
+  "benchmarkDeleteReceipt": "Supprimer le reçu",
+  "benchmarkDeleteReceipts": "Supprimer les reçus",
+  "benchmarkDeleteSelected": "Supprimer la sélection ({count})",
+  "benchmarkSelectReceipt": "Sélectionner le reçu du {date}",
+  "benchmarkDeleteReceiptsConfirm": "Supprimer les {count} reçus de mesure sélectionnés ? Le modèle et son profil enregistré seront conservés.",
+  "benchmarkClearHistory": "Effacer l’historique",
+  "benchmarkClearHistoryConfirm": "Supprimer tous les reçus de mesure de ce modèle ? Le modèle et son profil enregistré seront conservés.",
+  "downloadRemoveHistoryRow": "Retirer de l’historique",
+  "downloadClearFinishedHistory": "Effacer l’historique des téléchargements terminés",
+  "downloadHistoryHint": "Retirer des lignes de l’historique conserve les fichiers des modèles téléchargés. Les téléchargements en cours ne sont pas annulés.",
+  "downloadRemoveHistoryConfirm": "Retirer de l’historique le téléchargement de {name} ? Le fichier du modèle téléchargé sera conservé. Cette action n’annule pas le téléchargement.",
+  "downloadClearFinishedConfirm": "Retirer de l’historique les téléchargements réussis, échoués ou annulés ? Les fichiers des modèles téléchargés et les téléchargements en cours seront conservés.",
+  "historyRemoveError": "Impossible d’enregistrer la modification de l’historique. Veuillez réessayer.",
+  "answerTokensInvalid": "Entrez un nombre entier positif jusqu'à 1 048 576.",
+  "answerTokensContextLimit": "La fenêtre de contexte ({context} jetons) limite la réponse réelle. Le prompt et la réflexion utilisent aussi cette fenêtre. La valeur demandée est enregistrée.",
+  "answerTokensHint": "La réponse la plus longue que le modèle peut écrire. Faites glisser jusqu'à 64 000, ou touchez Personnalisé pour saisir une valeur. La fenêtre de contexte limite toujours ce qui tient.",
+  "modelRestoreRemoved": "Restaurer les retirés ({count})"
 }

@@ -159,7 +159,11 @@ class ToolRunner {
       ? [
           for (final s in _allSpecs())
             if (webTools.contains(s.name) ||
-                PhoneActions.kinds.contains(s.name))
+                PhoneActions.kinds.contains(s.name) ||
+                // The helper is the user's own opt-in (Settings > Tools >
+                // Helper model), so a remote research turn with the Tools
+                // switch off still offers it (R01).
+                (s.name == 'ask_helper' && helper != null))
               s,
         ]
       : _allSpecs();
@@ -347,7 +351,13 @@ class ToolRunner {
             );
     } catch (e) {
       ok = false;
-      output = 'Error: ${_explain(e)}';
+      output =
+          webAllowed &&
+              (call.name == 'search_web' || call.name == 'search_news')
+          ? 'Search failed temporarily. Answer using results and sources already '
+                'found this turn. Do not claim web access is blocked. '
+                'If evidence is insufficient, state what could not be verified.'
+          : 'Error: ${_explain(e)}';
     }
     if (!_selfBudgets(call.name) && output.length > maxResultChars) {
       output =
@@ -1024,6 +1034,48 @@ class TextToolProtocol {
     r'<tool_call>\s*(\{[\s\S]*?\})\s*(?:</tool_call>|$)',
   );
 
+  /// Gemma 4 can use its native syntax even when prompted for JSON fences.
+  static final _gemma = RegExp(
+    r'<\|tool_call>\s*call:([\w.\-]+)\s*([\s\S]*?)(?:<tool_call\|>|$)',
+  );
+
+  static Object? _gemmaArgs(String raw) {
+    // Native strings use <|"|> delimiters and object keys are unquoted.
+    // Scan strings first so braces, colons and quotes inside values are data.
+    const quote = '<|"|>';
+    final out = StringBuffer();
+    var at = 0;
+    while (at < raw.length) {
+      if (raw.startsWith(quote, at)) {
+        final end = raw.indexOf(quote, at + quote.length);
+        if (end < 0) throw const FormatException('Unclosed Gemma string');
+        out.write(jsonEncode(raw.substring(at + quote.length, end)));
+        at = end + quote.length;
+      } else if (raw[at] == '"') {
+        final start = at++;
+        while (at < raw.length) {
+          if (raw[at++] == r'\') {
+            at++;
+          } else if (raw[at - 1] == '"') {
+            break;
+          }
+        }
+        out.write(raw.substring(start, at.clamp(0, raw.length)));
+      } else {
+        final key = RegExp(r'[A-Za-z_][\w.\-]*(?=\s*:)').matchAsPrefix(raw, at);
+        if (key != null) {
+          out.write(jsonEncode(key[0]));
+          at = key.end;
+        } else {
+          out.write(raw[at++]);
+        }
+      }
+    }
+    final decoded = jsonDecode(out.toString());
+    if (decoded is! Map) throw const FormatException('Expected tool arguments');
+    return decoded;
+  }
+
   /// Llama 3.x: `<function=search_web>{"query": "…"}</function>`.
   static final _function = RegExp(
     r'<function=([\w.\-]+)>\s*(\{[\s\S]*?\})\s*(?:</function>|$)',
@@ -1145,6 +1197,14 @@ class TextToolProtocol {
     }
     for (final m in _tagged.allMatches(answer)) {
       add(m, _jsonCall(m[1]!));
+    }
+    for (final m in _gemma.allMatches(answer)) {
+      try {
+        add(m, (m[1]!, _gemmaArgs(m[2]!)));
+      } on FormatException {
+        // Never guess arguments for malformed calls. The host can ask the
+        // model to repair its format before executing anything.
+      }
     }
     for (final m in _function.allMatches(answer)) {
       try {

@@ -17,6 +17,64 @@ import 'package:ondevice_llm/features/models/presentation/providers/model_manage
 import 'package:ondevice_llm/features/models/presentation/providers/model_recommendations_provider.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:ondevice_llm/inference/engine/llama_engine.dart';
+import 'package:ondevice_llm/inference/remote/remote_engine.dart';
+import 'package:ondevice_llm/inference/remote/remote_provider.dart';
+
+const _remoteSettings = InferenceSettings(
+  remoteEnabled: true,
+  remoteProfiles: [
+    RemoteProfile(
+      id: 'api',
+      name: 'API',
+      providerId: 'custom',
+      baseUrl: 'https://example.org/v1',
+      model: 'remote-model',
+    ),
+  ],
+  remoteProfileId: 'api',
+  remoteApiKeys: {'api': 'test-key'},
+  serverSampling: true,
+  agentMaxConcurrent: 2,
+);
+
+class _Remote extends RemoteEngine {
+  final settingsSeen = <InferenceSettings>[];
+  final prompts = <List<Map<String, Object>>>[];
+  final rounds = <String>[];
+  Completer<void>? gate;
+  int cancels = 0;
+  bool disposed = false;
+
+  @override
+  Stream<String> generate({
+    required List<Map<String, Object>> messages,
+    required String fallbackTemplate,
+    required InferenceSettings settings,
+    String assistantPrefix = '',
+    List<dynamic> tools = const [],
+    String toolChoice = 'auto',
+  }) async* {
+    settingsSeen.add(settings);
+    prompts.add(messages);
+    await gate?.future;
+    metrics = {'tokens': 3, 'promptTokens': 20, 'tokensPerSecond': 50.0};
+    yield rounds.isEmpty
+        ? '<think>checked</think>remote result'
+        : rounds.removeAt(0);
+  }
+
+  @override
+  void cancel() {
+    cancels++;
+    if (gate?.isCompleted == false) gate!.complete();
+  }
+
+  @override
+  void dispose() {
+    disposed = true;
+    super.dispose();
+  }
+}
 
 class _Engine extends LlamaEngine {
   bool loaded = false;
@@ -183,6 +241,19 @@ Future<void> _until(bool Function() done) async {
 }
 
 void main() {
+  test('R01 remote Same as chat works without a loaded local model', () async {
+    final runner = HelperRunner(
+      engine: _Engine(),
+      chatEngine: _Engine(),
+      catalog: () => [],
+      loadedModelId: () => null,
+      settingsFor: (_) => const InferenceSettings(),
+      localChat: () => false,
+      chatSettings: () => _remoteSettings,
+    );
+    addTearDown(runner.dispose);
+    expect(await runner.modelNameFor(HelperRunner.sameAsChat), isNotEmpty);
+  });
   late Directory directory;
   late ModelInfo model;
   late _Engine engine, chat;
@@ -253,6 +324,246 @@ void main() {
     jobs.dispose();
     await directory.delete(recursive: true);
   });
+
+  HelperRunner remoteRunner(
+    List<_Remote> clients, {
+    InferenceSettings settings = _remoteSettings,
+    void Function(_Remote)? configure,
+  }) {
+    runner.dispose();
+    return runner = HelperRunner(
+      engine: engine,
+      chatEngine: chat,
+      catalog: () => [model],
+      loadedModelId: () => null,
+      settingsFor: (_) => const InferenceSettings(),
+      chatSettings: () => settings,
+      localChat: () => false,
+      desktop: () => false,
+      memory: () async => const DeviceMemory(
+        totalBytes: 1000000,
+        availableBytes: 1000000,
+        lowMemory: false,
+      ),
+      remoteEngine: () {
+        final client = _Remote();
+        configure?.call(client);
+        clients.add(client);
+        return client;
+      },
+      publish: (job) => jobs.read(helperJobsProvider.notifier).publish(job),
+    );
+  }
+
+  test(
+    'remote helpers preserve connection, budgets and panel metrics',
+    () async {
+      final clients = <_Remote>[];
+      remoteRunner(clients);
+      final reply = await runner.run(
+        modelId: '@chat',
+        task: 'check',
+        messageId: 'turn',
+        maxTokens: 128,
+      );
+      expect(reply.text, 'remote result');
+      expect(reply.modelName, 'remote-model');
+      final settings = clients.single.settingsSeen.single;
+      expect(settings.remoteApiKey, 'test-key');
+      expect(settings.remoteModel, 'remote-model');
+      expect(settings.serverSampling, false);
+      expect(settings.maxTokens, 128);
+      final job = jobs.read(helperJobsProvider).jobs.single;
+      expect(job.phase, HelperPhase.done);
+      expect(job.messageId, 'turn');
+      expect(job.firstToken, isNotNull);
+      expect(job.thinking, 'checked');
+      expect(job.metrics['tokens'], 3);
+      expect(clients.single.disposed, true);
+      expect(engine.loads, 0);
+    },
+  );
+
+  test(
+    'remote helpers run concurrently, queue and cancel independently',
+    () async {
+      final clients = <_Remote>[];
+      remoteRunner(clients);
+      // Factory creates a separate cancellable client per job.
+      final gates = List.generate(3, (_) => Completer<void>());
+      runner.dispose();
+      runner = HelperRunner(
+        engine: engine,
+        chatEngine: chat,
+        catalog: () => [],
+        loadedModelId: () => null,
+        settingsFor: (_) => const InferenceSettings(),
+        chatSettings: () => _remoteSettings,
+        remoteEngine: () {
+          final client = _Remote()..gate = gates[clients.length];
+          clients.add(client);
+          return client;
+        },
+      );
+      final cancel = CancelToken();
+      final first = runner.run(modelId: '@chat', task: 'one', cancel: cancel);
+      final firstCheck = expectLater(first, throwsA(isA<HelperUnavailable>()));
+      final second = runner.run(modelId: '@chat', task: 'two');
+      final third = runner.run(modelId: '@chat', task: 'three');
+      await _until(() => clients.length == 2);
+      await Future<void>.delayed(const Duration(milliseconds: 15));
+      expect(clients.length, 2);
+      cancel.cancel();
+      await firstCheck;
+      await _until(() => clients.length == 3);
+      expect(clients[0].cancels, greaterThan(0));
+      expect(clients[1].cancels, 0);
+      gates[1].complete();
+      gates[2].complete();
+      expect((await second).text, 'remote result');
+      expect((await third).text, 'remote result');
+    },
+  );
+
+  test(
+    'an explicitly selected local helper stays local with remote chat',
+    () async {
+      final clients = <_Remote>[];
+      remoteRunner(clients);
+      expect(
+        (await runner.run(
+          modelId: model.id,
+          task: 'local',
+          agentSettings: _remoteSettings,
+        )).text,
+        'result',
+      );
+      expect(engine.loads, 1);
+      expect(clients, isEmpty);
+    },
+  );
+
+  for (final dispose in [false, true]) {
+    test(
+      'remote helpers cancel active and queued jobs, dispose=$dispose',
+      () async {
+        final clients = <_Remote>[];
+        remoteRunner(
+          clients,
+          settings: _remoteSettings.copyWith(agentMaxConcurrent: 1),
+          configure: (client) => client.gate = Completer<void>(),
+        );
+        final firstCancel = CancelToken(), queuedCancel = CancelToken();
+        final first = runner.run(
+          modelId: '@chat',
+          task: 'active',
+          cancel: firstCancel,
+        );
+        final queued = runner.run(
+          modelId: '@chat',
+          task: 'queued',
+          cancel: queuedCancel,
+        );
+        final checks = [
+          expectLater(first, throwsA(isA<HelperUnavailable>())),
+          expectLater(queued, throwsA(isA<HelperUnavailable>())),
+        ];
+        await _until(
+          () => clients.length == 1 && clients.single.prompts.isNotEmpty,
+        );
+        if (dispose) {
+          runner.dispose();
+        } else {
+          queuedCancel.cancel();
+          firstCancel.cancel();
+        }
+        await Future.wait(checks);
+        await _until(() => clients.single.disposed);
+        expect(
+          clients.length,
+          1,
+          reason: 'Cancelled queued jobs never contact the API',
+        );
+        expect(
+          jobs
+              .read(helperJobsProvider)
+              .jobs
+              .every((job) => job.phase == HelperPhase.cancelled),
+          true,
+        );
+      },
+    );
+  }
+
+  test(
+    'remote helper timeout cancels its request and publishes timedOut',
+    () async {
+      final clients = <_Remote>[];
+      remoteRunner(
+        clients,
+        settings: _remoteSettings.copyWith(agentTimeoutSeconds: 1),
+        configure: (client) => client.gate = Completer<void>(),
+      );
+      await expectLater(
+        runner.run(modelId: '@chat', task: 'slow'),
+        throwsA(
+          isA<HelperUnavailable>().having(
+            (e) => e.reason,
+            'reason',
+            'timed out',
+          ),
+        ),
+      );
+      expect(clients.single.cancels, greaterThan(0));
+      expect(
+        jobs.read(helperJobsProvider).jobs.single.phase,
+        HelperPhase.timedOut,
+      );
+    },
+  );
+
+  for (final allow in [false, true]) {
+    test(
+      'remote helper web approval allow=$allow uses the helper loop',
+      () async {
+        final clients = <_Remote>[];
+        final tools = FakeAgentTools();
+        var approvals = 0;
+        remoteRunner(clients);
+        runner.dispose();
+        runner = HelperRunner(
+          engine: engine,
+          chatEngine: chat,
+          catalog: () => [],
+          loadedModelId: () => null,
+          settingsFor: (_) => const InferenceSettings(),
+          chatSettings: () => _remoteSettings,
+          remoteEngine: () {
+            final client = _Remote()
+              ..rounds.addAll([
+                '```tool\n{"name":"search_web","arguments":{"query":"test"}}\n```',
+                'answer',
+              ]);
+            clients.add(client);
+            return client;
+          },
+        );
+        final reply = await runner.run(
+          modelId: '@chat',
+          task: 'research',
+          webTools: tools,
+          approveWeb: (_) async {
+            approvals++;
+            return allow;
+          },
+        );
+        expect(reply.text, 'answer');
+        expect(approvals, 1);
+        expect(tools.calls.length, allow ? 1 : 0);
+        expect(clients.single.prompts.length, 2);
+      },
+    );
+  }
 
   for (final side in [false, true]) {
     test('agent web tool loop runs on side batch=$side', () async {
@@ -800,6 +1111,68 @@ void main() {
       expect(engine.prompts.length, 2);
     },
   );
+
+  test(
+    'unlimited agent setting bypasses the legacy deadline and Stop still works',
+    () async {
+      runner.dispose();
+      runner = create(timeout: const Duration(milliseconds: 30));
+      engine.gate = Completer<void>();
+      final cancel = CancelToken();
+      final reply = runner.run(
+        modelId: model.id,
+        task: 'long job',
+        cancel: cancel,
+        agentSettings: const InferenceSettings(agentTimeoutSeconds: 0),
+      );
+      final checked = expectLater(
+        reply,
+        throwsA(
+          isA<HelperUnavailable>().having(
+            (error) => error.reason,
+            'reason',
+            'cancelled',
+          ),
+        ),
+      );
+      await _until(() => engine.prompts.isNotEmpty);
+      await Future<void>.delayed(const Duration(milliseconds: 90));
+      expect(engine.cancels, 0);
+      expect(jobs.read(helperJobsProvider).jobs.single.terminal, isFalse);
+      cancel.cancel();
+      await checked;
+      expect(engine.cancels, 1);
+    },
+  );
+
+  test('configured agent duration replaces the legacy deadline', () async {
+    runner.dispose();
+    runner = create(timeout: const Duration(milliseconds: 30));
+    engine.gate = Completer<void>();
+    final reply = runner.run(
+      modelId: model.id,
+      task: 'bounded job',
+      agentSettings: const InferenceSettings(agentTimeoutSeconds: 1),
+    );
+    final checked = expectLater(
+      reply,
+      throwsA(
+        isA<HelperUnavailable>().having(
+          (error) => error.reason,
+          'reason',
+          'timed out',
+        ),
+      ),
+    );
+    await _until(() => engine.prompts.isNotEmpty);
+    await Future<void>.delayed(const Duration(milliseconds: 90));
+    expect(engine.cancels, 0);
+    await checked;
+    expect(
+      jobs.read(helperJobsProvider).jobs.single.phase,
+      HelperPhase.timedOut,
+    );
+  });
 
   test('shared chat timeout waits until the engine settles', () async {
     runner.dispose();

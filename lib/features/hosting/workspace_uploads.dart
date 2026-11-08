@@ -15,12 +15,26 @@ class WorkspaceUploads {
   static const maxFileBytes = 64 * 1024 * 1024;
   static const maxTotalBytes = 256 * 1024 * 1024;
   final _files = <String, WorkspaceUpload>{};
+  final _references = <String, int>{};
   int _bytes = 0;
   int _reserved = 0;
 
   WorkspaceUpload? operator [](String id) => _files[id];
 
+  /// Retain before accepted work can wait on another job or model.
+  void acquire(String id) {
+    if (_files.containsKey(id)) {
+      _references[id] = (_references[id] ?? 0) + 1;
+    }
+  }
+
   Future<void> release(String id) async {
+    final references = _references[id] ?? 0;
+    if (references > 1) {
+      _references[id] = references - 1;
+      return;
+    }
+    _references.remove(id);
     final upload = _files.remove(id);
     if (upload == null) return;
     if (await upload.file.exists()) {
@@ -91,6 +105,7 @@ class WorkspaceUploads {
       if (await upload.file.parent.exists()) await upload.file.parent.delete();
     }
     _files.clear();
+    _references.clear();
     _bytes = 0;
   }
 }

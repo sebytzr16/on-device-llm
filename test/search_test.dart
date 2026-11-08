@@ -50,6 +50,71 @@ void main() {
   final results = File('test/fixtures/ddg_results.html').readAsStringSync();
 
   test(
+    'parallel normalized helper queries share one request and cached results',
+    () async {
+      final dio = Dio();
+      final adapter = _CannedAdapter([_body(results, 200)]);
+      dio.httpClientAdapter = adapter;
+      final scraper = DuckDuckGoScraper(
+        dio: dio,
+        requestSpacing: Duration.zero,
+      );
+      addTearDown(scraper.dispose);
+      final token = CancelToken();
+      final replies = await Future.wait([
+        for (final query in [
+          'latest news',
+          ' Latest   News ',
+          'latest\nnews',
+          'LATEST NEWS',
+        ])
+          scraper.search(query, cancelToken: token),
+      ]);
+      expect(adapter.calls, 1);
+      for (final reply in replies) {
+        expect(reply.map((r) => r.url), replies.first.map((r) => r.url));
+      }
+      await scraper.search('latest  news', cancelToken: token);
+      expect(adapter.calls, 1);
+      await scraper.search('latest news', region: 'fr-fr');
+      await scraper.search('latest news', dateFilter: 'd');
+      await scraper.search('latest news', limit: 10);
+      expect(
+        adapter.calls,
+        4,
+        reason: 'region, date and larger limits stay distinct',
+      );
+    },
+  );
+
+  test(
+    'parallel failed searches share the failure and clear in-flight state',
+    () async {
+      final dio = Dio();
+      final adapter = _CannedAdapter([
+        _body('service unavailable', 503),
+        _body(results, 200),
+      ]);
+      dio.httpClientAdapter = adapter;
+      final scraper = DuckDuckGoScraper(
+        dio: dio,
+        requestSpacing: Duration.zero,
+      );
+      addTearDown(scraper.dispose);
+      await Future.wait([
+        for (var i = 0; i < 4; i++)
+          expectLater(
+            scraper.search('same query'),
+            throwsA(isA<SearchHttpException>()),
+          ),
+      ]);
+      expect(adapter.calls, 1);
+      expect(await scraper.search('same query'), isNotEmpty);
+      expect(adapter.calls, 2);
+    },
+  );
+
+  test(
     'extracts snippets, decodes redirects once and excludes unsafe URLs',
     () {
       final scraper = DuckDuckGoScraper();

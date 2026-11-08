@@ -18,6 +18,30 @@ void main() {
   ];
   final search = want('search_web', {'query': 'flutter version'});
 
+  test('Gemma native calls decode keys and strings without losing data', () {
+    for (final answer in [
+      '<|tool_call>call:search_web{query:<|"|>flutter version<|"|>}<tool_call|>',
+      '<|tool_call>call:search_web{"query":"flutter version"}<tool_call|>',
+    ]) {
+      expect(calls(answer), search);
+      expect(TextToolProtocol.strip(answer), isEmpty);
+    }
+    final native = TextToolProtocol.parse(
+      '<|tool_call>call:unknown_tool{config:{count:3,enabled:true},'
+      'terms:[<|"|>a "quote", {key:value}<|"|>,null]}<tool_call|>',
+      counter: 1,
+    ).single;
+    expect(native.args, {
+      'config': {'count': 3, 'enabled': true},
+      'terms': ['a "quote", {key:value}', null],
+    });
+    expect(
+      calls('<|tool_call>call:search_news","topic":"nuclear war"}<tool_call|>'),
+      isEmpty,
+      reason: 'Malformed arguments must not be guessed or executed',
+    );
+  });
+
   test('the shapes models write a call in are all understood', () {
     for (final answer in [
       '```tool\n{"name": "search_web", "arguments": {"query": "flutter version"}}\n```',

@@ -13,8 +13,20 @@ class DesktopAdvancedToggle extends ConsumerWidget {
     key: const Key('desktop-advanced-toggle'),
     showSelectedIcon: false,
     segments: [
-      ButtonSegment(value: false, label: Text(context.l10n.desktopBasic)),
-      ButtonSegment(value: true, label: Text(context.l10n.desktopAdvanced)),
+      ButtonSegment(
+        value: false,
+        label: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(context.l10n.desktopBasic, maxLines: 1),
+        ),
+      ),
+      ButtonSegment(
+        value: true,
+        label: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(context.l10n.desktopAdvanced, maxLines: 1),
+        ),
+      ),
     ],
     selected: {ref.watch(desktopPreferencesProvider).advanced},
     onSelectionChanged: (value) => ref

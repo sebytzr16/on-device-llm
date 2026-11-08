@@ -227,7 +227,7 @@
   "systemInstructionsHint": "e.g. Answer briefly. Prefer metric units.",
   "couldNotOpenLink": "Could not open this link.",
   "privateByDefault": "Private by default",
-  "privateByDefaultHint": "No accounts, analytics or cloud inference. Downloads and optional search are the only network features.",
+  "privateByDefaultHint": "No accounts or analytics. Answers run on this phone unless you add a remote server. Downloads and optional search are the only other network features.",
   "noModelLoadedTitle": "No model loaded",
   "chooseFromLibrary": "Choose one from the library",
   "obPrivateHeadline": "Private by construction",
@@ -837,7 +837,7 @@
   "hostHideToken": "Hide token",
   "hostShowToken": "Show token",
   "hostCopyConnection": "Copy connection",
-  "hostPairHint": "On the other phone: scan this code with the camera and copy the text, or paste the copied connection, then in OnDevice LLM open Settings > Remote server > Add > Paste connection. Any OpenAI-compatible app works too, with the URL, model and token.",
+  "hostPairHint": "Scan this QR code in OnDevice LLM, or paste the copied pairing connection. It expires after 10 minutes and can be used once.",
   "hostRecent": "Recent requests",
   "hostNoneYet": "None yet.",
   "hostCopy": "Copy {what}",
@@ -861,7 +861,7 @@
   },
   "remotePasteNone": "The clipboard has no connection. On the other phone, tap Copy connection (or scan its QR code) first.",
   "remotePasteNonePc": "The clipboard has no connection. On the other device, use Copy connection first.",
-  "remotePasted": "Added {name}. Turn on Use remote server to chat with it.",
+  "remotePasted": "Added {name}. Chats now run on it.",
   "@remotePasted": {
     "placeholders": {
       "name": {
@@ -2915,7 +2915,7 @@
   },
   "remotePairConnect": "Connect",
   "remotePairWrong": "Wrong pairing code. Check the code on the other device and try again.",
-  "remotePairLocked": "Too many wrong codes. Restart the server on the other device to get a new code.",
+  "remotePairLocked": "Too many wrong codes. Wait for the code to expire, then enter the new code, or scan the QR code.",
   "remotePairUnreachable": "Couldn't reach {name}. Check that both devices are on the same Wi-Fi and the server is running.",
   "@remotePairUnreachable": {
     "placeholders": {
@@ -3794,8 +3794,8 @@
   "goalWatchNotificationsDenied": "Notifications are denied. Allow notifications in Android settings before setting a Goal watch.",
   "voiceOfflineUnavailable": "No verified offline voice is available. Install an offline voice or the bundled voice pack.",
   "themeHintPc": "Dark is the designed default; System follows the Windows theme.",
-  "hostPairLocked": "Pairing is locked after five wrong codes. Restart the server to pair another device.",
-  "hostPairExpired": "This pairing code has expired or was used. Restart the server to pair another device.",
+  "hostPairLocked": "Typed pairing is locked after five wrong codes. Wait for the code to expire or use the QR code.",
+  "hostPairExpired": "This pairing code expired. Scan the new QR code or enter the new pairing code.",
   "hostAddressPlaceholder": "<device-ip>",
   "imageCreate": "Create",
   "imageUpscale": "Upscale",
@@ -4469,6 +4469,9 @@
   "agentModelDefault": "Use the model’s values",
   "agentContextSize": "Agent context size",
   "agentMaxConcurrent": "Max agents at once",
+  "agentTimeoutSeconds": "Agent time limit",
+  "agentTimeoutUnlimited": "Unlimited",
+  "agentTimeoutHint": "Maximum active time per agent. Unlimited runs until completion or Stop. Waiting for model loading or web approval does not count.",
   "agentThinking": "Thinking for agents",
   "agentToolRounds": "Tool rounds",
   "agentWebAccess": "Agent web access",
@@ -4509,5 +4512,727 @@
   "workspaceTool": "Server: {tool}",
   "workspaceReading": "Server: reading {file}{progress}",
   "workspaceServer": "server",
-  "workspaceApprovalTitle": "Server tool approval"
+  "workspaceApprovalTitle": "Server tool approval",
+  "remotePairTrustNote": "Pair only on a network you trust.",
+  "runSpeed": "speed",
+  "runPromptTokens": "prompt tokens",
+  "runCachedTokens": "cached",
+  "runGeneratedTokens": "generated",
+  "runTrimmedTurns": "trimmed turns",
+  "runToolOk": "ok",
+  "runToolError": "error",
+  "runDraftsAccepted": "drafts accepted",
+  "runDraftSpeed": "draft speed",
+  "runDrafting": "drafting",
+  "runDraftLowAcceptance": "acceptance below 35%",
+  "runDraftSlower": "slower than plain decoding",
+  "runEndedBy": "ended by",
+  "metricsUnknownReason": "unknown reason",
+  "metricsStagesHint": "Wall time from send to done, per stage of the last turn.",
+  "metricsTemplateEmbedded": "embedded (Jinja)",
+  "metricsTemplateFamilyFallback": "family fallback",
+  "metricsThinkingNative": "native",
+  "metricsThinkingPrompted": "prompted",
+  "metricsNoModel": "none loaded",
+  "metricsStageLoad": "load",
+  "metricsStageJudge": "judge",
+  "metricsStagePlan": "plan",
+  "metricsStageSearch": "search",
+  "metricsStageRead": "read",
+  "metricsStageFit": "fit",
+  "metricsStageAnswer": "answer",
+  "ropeModelDefault": "Model default",
+  "ropeLinear": "Linear",
+  "ropeModelValue": "Model value",
+  "draftLowAcceptance": "acceptance under 35%",
+  "settingsNextModelLoad": "These apply on the next model load.",
+  "documentNoMessagesSelected": "No messages match this selection.",
+  "documentLoadModelFirst": "Load a model before drafting a document.",
+  "structuredOutputLimitHint": "Constrained answers still stop at Max tokens: a cut-off JSON object is reported as invalid. The format also applies to the remote server through response_format.",
+  "toolNeedsKnowledgeCollection": "Needs a knowledge collection selected under Settings > Knowledge: none is, so it is not offered.",
+  "toolCallPolicyNote": "Every call is bounded: one query or page per call, 30 s per call, results cut at 6,000 characters, pages read through the public-web policy only. Calls and results are kept in the answer's run record.",
+  "memoryTransientNotUsed": " · passing state, not given to the model",
+  "remotePhoneExplanation": "Point the app at a server you run yourself — LM Studio, Ollama or llama-server on a PC at home over your LAN or a VPN — or at a hosted API with your own key. Your messages and any web evidence are sent to that connection instead of being answered on the phone.",
+  "remoteKeyStoragePrivacy": "API keys are stored in this device's secure storage (Android keystore, Windows data protection), never in the settings file or exports, and are only ever sent to the connection they belong to. Over the internet use HTTPS or a VPN.",
+  "quickToolsNoKnowledge": "No knowledge collection selected: not offered.",
+  "runFieldTemperature": "temperature",
+  "runFieldTopP": "topP",
+  "runFieldMinP": "minP",
+  "runFieldTopK": "topK",
+  "runFieldRepetitionPenalty": "repetitionPenalty",
+  "runFieldMaxTokens": "maxTokens",
+  "runFieldContextSize": "contextSize",
+  "runFieldThinkingModeEnabled": "thinkingModeEnabled",
+  "runFieldThinkingBudgetTokens": "thinkingBudgetTokens",
+  "runFieldWebMode": "webMode",
+  "runFieldKnowledgeCollection": "knowledgeCollection",
+  "runFieldMemoryEnabled": "memoryEnabled",
+  "runFieldPromptCache": "promptCache",
+  "runFieldBackend": "backend",
+  "runFieldKvCacheType": "kvCacheType",
+  "runFieldVCacheType": "vCacheType",
+  "runFieldSeed": "seed",
+  "runFieldPresencePenalty": "presencePenalty",
+  "runFieldFrequencyPenalty": "frequencyPenalty",
+  "runFieldResponseFormat": "responseFormat",
+  "runFieldToolsEnabled": "toolsEnabled",
+  "runFieldToolChoice": "toolChoice",
+  "runFieldDraftModelId": "draftModelId",
+  "runFieldThreads": "threads",
+  "runFieldBatchThreads": "batchThreads",
+  "runFieldBatchSize": "batchSize",
+  "runFieldMicroBatchSize": "microBatchSize",
+  "runFieldRequestedGpuLayers": "requestedGpuLayers",
+  "runFieldFlashAttentionPolicy": "flashAttentionPolicy",
+  "runFieldMemory": "memory",
+  "runSearchProviderCounts": "{status} · {relevant} relevant / {parsed} parsed",
+  "@runSearchProviderCounts": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      },
+      "relevant": {
+        "type": "String"
+      },
+      "parsed": {
+        "type": "String"
+      }
+    }
+  },
+  "runDraftSpeedValue": "{speed}x plain",
+  "@runDraftSpeedValue": {
+    "placeholders": {
+      "speed": {
+        "type": "String"
+      }
+    }
+  },
+  "runDraftPaused": "{rounds, plural, =1{paused after 1 round ({reason})} other{paused after {rounds} rounds ({reason})}}",
+  "@runDraftPaused": {
+    "placeholders": {
+      "rounds": {
+        "type": "num"
+      },
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "metricsLastBenchmark": "last: {decode} tok/s · {prefill} tok/s prefill · {backend}",
+  "@metricsLastBenchmark": {
+    "placeholders": {
+      "decode": {
+        "type": "String"
+      },
+      "prefill": {
+        "type": "String"
+      },
+      "backend": {
+        "type": "String"
+      }
+    }
+  },
+  "metricsGpuUnavailable": "GPU unavailable: {reason}",
+  "@metricsGpuUnavailable": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "metricsGpuVariantUnavailable": "GPU variant unavailable on this device: {reason}",
+  "@metricsGpuVariantUnavailable": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "metricsTokenCounts": "{generated} generated · {prompt} prompt",
+  "@metricsTokenCounts": {
+    "placeholders": {
+      "generated": {
+        "type": "String"
+      },
+      "prompt": {
+        "type": "String"
+      }
+    }
+  },
+  "metricsTrimmedMessages": "{count, plural, =1{1 older message trimmed to fit} other{{count} older messages trimmed to fit}}",
+  "@metricsTrimmedMessages": {
+    "placeholders": {
+      "count": {
+        "type": "num"
+      }
+    }
+  },
+  "ropeTrainedContext": "{count, plural, =1{The loaded model was trained for 1 token.} other{The loaded model was trained for {tokens} tokens.}}",
+  "@ropeTrainedContext": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "tokens": {
+        "type": "String"
+      }
+    }
+  },
+  "settingDefaultValue": "{value} (default)",
+  "@settingDefaultValue": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "draftLastAnswerSummary": "{proposed, plural, =1{Last answer: {accepted} of 1 drafted token accepted ({percent}%) with {model}. {paused}Below ~60% the draft usually costs more than it saves.} other{Last answer: {accepted} of {proposed} drafted tokens accepted ({percent}%) with {model}. {paused}Below ~60% the draft usually costs more than it saves.}}",
+  "@draftLastAnswerSummary": {
+    "placeholders": {
+      "accepted": {
+        "type": "int"
+      },
+      "proposed": {
+        "type": "int"
+      },
+      "percent": {
+        "type": "int"
+      },
+      "model": {
+        "type": "String"
+      },
+      "paused": {
+        "type": "String"
+      }
+    }
+  },
+  "draftPausedExplanation": "{rounds, plural, =1{Drafting was paused for the rest of that answer after 1 round ({reason}); it retries every answer. } other{Drafting was paused for the rest of that answer after {rounds} rounds ({reason}); it retries every answer. }}",
+  "@draftPausedExplanation": {
+    "placeholders": {
+      "rounds": {
+        "type": "num"
+      },
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "imageChatModelMemoryRecovery": "{detail}\nChat model \"{model}\" is loaded and may be using GPU memory. Eject \"{model}\" from the model selector, then retry.",
+  "@imageChatModelMemoryRecovery": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      },
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "modelDownloadLicenseNotice": "{size} from Hugging Face.\n\nLicense: {license}\n\nBy continuing, you acknowledge the publisher’s model license. The file is verified with SHA-256 before use.",
+  "@modelDownloadLicenseNotice": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      },
+      "license": {
+        "type": "String"
+      }
+    }
+  },
+  "onboardingModelLicenseNotice": "{size} from Hugging Face. License: {license}. The file is verified with SHA-256 before use.",
+  "@onboardingModelLicenseNotice": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      },
+      "license": {
+        "type": "String"
+      }
+    }
+  },
+  "onboardingModelReadyPrivacy": "{model} is on this phone. From here on, nothing leaves it.",
+  "@onboardingModelReadyPrivacy": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "effectiveReloadNextMessage": " · loaded model uses {value}, reloads next message",
+  "@effectiveReloadNextMessage": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "benchmarkPrefill": "Prefill",
+  "benchmarkDecode": "Decode",
+  "benchmarkBasis": "Basis",
+  "benchmarkChatTools": "Chat + tools",
+  "benchmarkThreads": "Threads",
+  "benchmarkThermal": "Thermal",
+  "benchmarkShareSubject": "OnDevice LLM benchmark",
+  "documentTemplateTranscript": "Conversation transcript",
+  "documentTemplateReport": "Research report",
+  "documentTemplateLetter": "Letter",
+  "documentTemplateMeetingNotes": "Meeting notes",
+  "documentTemplateStudyGuide": "Study guide",
+  "documentTemplateSummary": "Executive summary",
+  "remoteServerModel": "server model",
+  "chatShareSubject": "Conversation from OnDevice LLM",
+  "chatExportConversation": "Export conversation",
+  "documentDefaultTitle": "OnDevice LLM document",
+  "codeBlockLanguageFallback": "code",
+  "helperMeasurementYes": "yes",
+  "helperMeasurementNo": "no",
+  "helperMeasurementDevices": "Devices",
+  "presetScope": "Preset",
+  "presetMoreOverrides": "More overrides",
+  "appearanceTextScaleHint": "Scales all text in the app on top of the system setting.",
+  "contextBatchNextLoad": "Context and batch changes apply the next time a model loads.",
+  "hardwareNextLoad": "Hardware changes apply on the next model load.",
+  "searchRegionCanadaEnglish": "Canada (English)",
+  "searchRegionUnitedStates": "United States",
+  "searchRegionUnitedKingdom": "United Kingdom",
+  "searchRegionAustralia": "Australia",
+  "searchRegionNewZealand": "New Zealand",
+  "searchRegionIreland": "Ireland",
+  "searchRegionIndia": "India",
+  "searchRegionSouthAfrica": "South Africa",
+  "searchRegionFrance": "France",
+  "searchRegionJapan": "Japan",
+  "searchRegionNoregion": "No region",
+  "outputFreeText": "Free text",
+  "outputJsonAnyObject": "JSON (any object)",
+  "outputJsonSchema": "JSON matching a schema",
+  "toolNativeSupported": "The loaded model's chat template supports native tool calls.",
+  "toolNativeFallback": "The loaded model's template has no tool-call format; tools are described in the prompt instead and the model answers with a JSON block. Small models do this less reliably.",
+  "toolNativeLoadToCheck": "Whether a model has native tool-call support is shown here once it is loaded.",
+  "effectiveNothingOverridden": "Nothing is overridden: your settings apply as saved.",
+  "effectiveEverySetting": "every setting",
+  "effectiveLayerEmpty": "nothing",
+  "effectiveLayerDefault": "default",
+  "effectiveLayerDevice": "this phone",
+  "effectiveLayerRecommended": "model's recommended",
+  "effectiveLayerGlobal": "your settings",
+  "effectiveLayerModel": "model profile",
+  "effectiveLayerTurn": "this turn",
+  "memoryOriginManual": "added by you",
+  "memoryOriginLearned": "learned",
+  "remoteSamplingContextHint": "Sampling, max tokens and thinking mode apply to remote chats too (Anthropic ignores sampling). Context size is the app’s fitting budget; set it no higher than the selected model’s real context window.",
+  "remoteSelfHostedHeader": "ON YOUR OWN HARDWARE",
+  "remoteHostedHeader": "HOSTED APIS (YOUR KEY)",
+  "settingsToolsOff": "off",
+  "settingsNoOverrides": "nothing overridden",
+  "backendCpuOnly": "CPU only",
+  "webAutoShort": "Web · auto",
+  "webAlwaysShort": "Web · always",
+  "kvFp16Default": "FP16 (default)",
+  "kvQ8SavesRam": "Q8_0 (saves RAM)",
+  "kvQ4SavesMoreRam": "Q4_0 (saves more RAM)",
+  "settingCustomOption": "Custom…",
+  "quickToolsEnabledHint": "Search, read pages, search your documents, calculate.",
+  "quickToolsDisabledHint": "Off: the model answers from what it knows and what you attach.",
+  "quickToolsRequiredHint": "Required: a tool is called before the first answer.",
+  "quickToolsAutoHint": "Auto: the model decides whether a tool is needed.",
+  "modelContextBadge": "{count} ctx",
+  "@modelContextBadge": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "benchmarkPrefillDetail": "{tokens} tok in {seconds} s",
+  "@benchmarkPrefillDetail": {
+    "placeholders": {
+      "tokens": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "benchmarkMedianSamples": "median of {count}",
+  "@benchmarkMedianSamples": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "benchmarkChatFirstToken": "{seconds} s to first token",
+  "@benchmarkChatFirstToken": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "sourceReferenceSponsoredCount": "{count, plural, =1{{count} reference} other{{count} references}} · {sponsored, plural, =1{{sponsored} sponsored} other{{sponsored} sponsored}}",
+  "@sourceReferenceSponsoredCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "sponsored": {
+        "type": "int"
+      }
+    }
+  },
+  "presetOverridesTitle": "{name} · overrides",
+  "@presetOverridesTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "presetMoreOverridesCount": "More overrides · {count}",
+  "@presetMoreOverridesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "toolSearchCollection": "Searches the “{collection}” collection.",
+  "@toolSearchCollection": {
+    "placeholders": {
+      "collection": {
+        "type": "String"
+      }
+    }
+  },
+  "quickToolsCollection": "Searches “{collection}”.",
+  "@quickToolsCollection": {
+    "placeholders": {
+      "collection": {
+        "type": "String"
+      }
+    }
+  },
+  "effectiveOverrideSummary": "{count, plural, =1{{count} setting comes} other{{count} settings come}} from a model profile, preset or chat. Select a row to see what each layer asked for.",
+  "@effectiveOverrideSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "effectiveLayerSettingCount": "{count, plural, =1{{count} setting} other{{count} settings}}: {keys}{ellipsis}",
+  "@effectiveLayerSettingCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "keys": {
+        "type": "String"
+      },
+      "ellipsis": {
+        "type": "String"
+      }
+    }
+  },
+  "effectiveDefaultValue": "Default: {value}",
+  "@effectiveDefaultValue": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "effectiveLayerRequestedValue": "{layer} asked for {value}",
+  "@effectiveLayerRequestedValue": {
+    "placeholders": {
+      "layer": {
+        "type": "String"
+      },
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "knowledgeDocumentStats": "{passages, plural, =1{{passages} passage} other{{passages} passages}} · {characters}k characters · {date}",
+  "@knowledgeDocumentStats": {
+    "placeholders": {
+      "passages": {
+        "type": "int"
+      },
+      "characters": {
+        "type": "String"
+      },
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "knowledgeMeaningProgress": " · meaning {indexed}/{total}",
+  "@knowledgeMeaningProgress": {
+    "placeholders": {
+      "indexed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "remoteHeadersExample": "HTTP-Referer: https://example.app\nX-Title: My app",
+  "threadsAutoCount": "Auto ({count})",
+  "@threadsAutoCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingCustomValue": "Custom · {value}",
+  "@settingCustomValue": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsAppearanceSummary": "{theme} · {accent} · {percent}%",
+  "@settingsAppearanceSummary": {
+    "placeholders": {
+      "theme": {
+        "type": "String"
+      },
+      "accent": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsContextBatchSummary": "{context} ctx · {batch} batch · cache {state}",
+  "@settingsContextBatchSummary": {
+    "placeholders": {
+      "context": {
+        "type": "String"
+      },
+      "batch": {
+        "type": "String"
+      },
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsHardwareSummary": "{backend} · {layers, select, all{all layers} one{1 layer} other{{layers} layers}} · {decodeThreads}/{prefillThreads} thr · {cache} kv",
+  "@settingsHardwareSummary": {
+    "placeholders": {
+      "backend": {
+        "type": "String"
+      },
+      "layers": {
+        "type": "String"
+      },
+      "decodeThreads": {
+        "type": "String"
+      },
+      "prefillThreads": {
+        "type": "String"
+      },
+      "cache": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsSamplingSummary": "T {temperature} · top-p {topP} · top-k {topK} · max {maxTokens}",
+  "@settingsSamplingSummary": {
+    "placeholders": {
+      "temperature": {
+        "type": "String"
+      },
+      "topP": {
+        "type": "String"
+      },
+      "topK": {
+        "type": "int"
+      },
+      "maxTokens": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsReasoningSummary": "think {budget} · {results, plural, =1{{results} result} other{{results} results}} · {pages, plural, =1{{pages} page} other{{pages} pages}} · {passages, plural, =1{{passages} passage} other{{passages} passages}} · {seconds} s",
+  "@settingsReasoningSummary": {
+    "placeholders": {
+      "budget": {
+        "type": "String"
+      },
+      "results": {
+        "type": "int"
+      },
+      "pages": {
+        "type": "int"
+      },
+      "passages": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsRopeSummary": "K {k} · V {v} · rope {scaling}{draft}",
+  "@settingsRopeSummary": {
+    "placeholders": {
+      "k": {
+        "type": "String"
+      },
+      "v": {
+        "type": "String"
+      },
+      "scaling": {
+        "type": "String"
+      },
+      "draft": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsToolsSummary": "on · {rounds, plural, =1{{rounds} round} other{{rounds} rounds}}{calculator}{web}{documents}",
+  "@settingsToolsSummary": {
+    "placeholders": {
+      "rounds": {
+        "type": "int"
+      },
+      "calculator": {
+        "type": "String"
+      },
+      "web": {
+        "type": "String"
+      },
+      "documents": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsAdaptersSummary": "{imported} imported · {attached} attached",
+  "@settingsAdaptersSummary": {
+    "placeholders": {
+      "imported": {
+        "type": "int"
+      },
+      "attached": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsOverrideCount": "{count, plural, =1{{count} overridden} other{{count} overridden}} by profile, preset or chat",
+  "@settingsOverrideCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "summaryOn": "on",
+  "summaryOff": "off",
+  "summarySame": "same",
+  "summaryDraftOn": " · draft on",
+  "summaryCalculator": " · calc",
+  "summaryWeb": " · web",
+  "summaryDocuments": " · docs",
+  "summaryAccentAmber": "amber",
+  "summaryAccentBlue": "blue",
+  "summaryAccentGreen": "green",
+  "summaryAccentRose": "rose",
+  "summaryAccentViolet": "violet",
+  "summaryAccentTeal": "teal",
+  "knowledgeMeaningComplete": " · meaning ✓",
+  "dateMonthJan": "Jan",
+  "dateMonthFeb": "Feb",
+  "dateMonthMar": "Mar",
+  "dateMonthApr": "Apr",
+  "dateMonthMay": "May",
+  "dateMonthJun": "Jun",
+  "dateMonthJul": "Jul",
+  "dateMonthAug": "Aug",
+  "dateMonthSep": "Sep",
+  "dateMonthOct": "Oct",
+  "dateMonthNov": "Nov",
+  "dateMonthDec": "Dec",
+  "historyTitle": "History",
+  "historyEmpty": "No history yet.",
+  "historyDelete": "Delete",
+  "historyDeleteConfirm": "Delete this history item and its saved files?",
+  "historyClear": "Clear history",
+  "historyClearConfirm": "Delete all saved comparison runs?",
+  "historyStorage": "History uses {size} · newest 300 kept",
+  "historyFailed": "Could not access history: {error}",
+  "historyReadOnly": "Saved run · press Run to compare again.",
+  "@historyStorage": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "@historyFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "benchmarkHistory": "Speed benchmark history",
+  "benchmarkHistoryEmpty": "No speed benchmark history yet",
+  "benchmarkHistoryHint": "Remove receipts without deleting this model or its saved profile.",
+  "benchmarkDeleteReceipt": "Delete receipt",
+  "benchmarkDeleteReceipts": "Delete receipts",
+  "benchmarkDeleteSelected": "Delete selected ({count})",
+  "benchmarkSelectReceipt": "Select receipt from {date}",
+  "benchmarkDeleteReceiptsConfirm": "Delete {count} selected benchmark receipts? The model and its saved profile will be kept.",
+  "benchmarkClearHistory": "Clear history",
+  "benchmarkClearHistoryConfirm": "Delete all benchmark receipts for this model? The model and its saved profile will be kept.",
+  "downloadRemoveHistoryRow": "Remove history row",
+  "downloadClearFinishedHistory": "Clear finished history",
+  "downloadHistoryHint": "Removing history rows keeps downloaded model files. Active downloads are not cancelled.",
+  "downloadRemoveHistoryConfirm": "Remove the download history row for {name}? The downloaded model file will be kept. This does not cancel a download.",
+  "downloadClearFinishedConfirm": "Remove completed, failed and cancelled download history rows? Downloaded model files and active downloads will be kept.",
+  "historyRemoveError": "Could not save the history change. Please try again."
+,
+  "@benchmarkDeleteSelected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@benchmarkSelectReceipt": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "@benchmarkDeleteReceiptsConfirm": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@downloadRemoveHistoryConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "answerTokensInvalid": "Enter a positive whole number up to 1,048,576.",
+  "answerTokensContextLimit": "The context window ({context} tokens) limits the actual answer. Prompt and thinking tokens also use this window. Your requested value is saved.",
+  "@answerTokensContextLimit": {"placeholders": {"context": {"type": "int"}}},
+  "answerTokensHint": "The longest answer the model may write. Drag up to 64,000, or tap Custom to type any value. The context window still limits how much fits.",
+  "modelRestoreRemoved": "Restore removed ({count})",
+  "@modelRestoreRemoved": {"placeholders": {"count": {"type": "int"}}}
 }

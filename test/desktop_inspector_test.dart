@@ -1,3 +1,4 @@
+import 'package:ondevice_llm/features/settings/presentation/widgets/answer_tokens_control.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,8 +12,11 @@ import 'package:ondevice_llm/features/settings/presentation/providers/settings_p
 
 import 'support/desktop_chat_harness.dart';
 
-Finder slider(String label) =>
-    find.byWidgetPredicate((w) => w is DesktopSlider && w.label == label);
+Finder slider(String label) => find.byWidgetPredicate(
+  (w) =>
+      (w is DesktopSlider && w.label == label) ||
+      (w is AnswerTokensControl && w.label == label),
+);
 
 const resetModel = Key('desktop-inspector-reset');
 const resetChat = Key('desktop-inspector-reset-chat');
@@ -176,12 +180,12 @@ void main() {
   ]) {
     for (final (label, key, value, display) in [
       (t.desktopInspectorTemperature, 'temperature', 1.25, '1.25'),
-      ('Top P', 'topP', 0.6, '0.60'),
-      ('Min P', 'minP', 0.12, '0.12'),
-      ('Top K', 'topK', 75.0, '75'),
+      (t.settingLabelTopP, 'topP', 0.6, '0.60'),
+      (t.settingLabelMinP, 'minP', 0.12, '0.12'),
+      (t.settingLabelTopK, 'topK', 75.0, '75'),
       (t.desktopInspectorRepeatPenalty, 'repetitionPenalty', 1.15, '1.15'),
       (t.desktopInspectorPresencePenalty, 'presencePenalty', 0.5, '0.50'),
-      (t.desktopInspectorMaxTokens, 'maxTokens', 2048.0, '2048'),
+      (t.desktopInspectorMaxTokens, 'maxTokens', 2048.0, '2,048'),
     ]) {
       testWidgets(
         '$label saves $scope and displays its value; reset restores recommendations',
@@ -222,6 +226,11 @@ void main() {
             -200,
             scrollable: find.byType(Scrollable).first,
           );
+          await Scrollable.ensureVisible(
+            tester.element(find.byKey(resetModel)),
+            alignment: 0.5,
+          );
+          await tester.pumpAndSettle();
           await tester.tap(find.byKey(resetModel));
           await tester.pumpAndSettle();
           expect(saved(), isEmpty);
@@ -229,7 +238,12 @@ void main() {
             container.read(effectiveSettingsProvider).effective.toJson()[key],
             baseline,
           );
-          expect(tester.widget<DesktopSlider>(control).value, baseline);
+          expect(
+            key == 'maxTokens'
+                ? tester.widget<AnswerTokensControl>(control).value
+                : tester.widget<DesktopSlider>(control).value,
+            baseline,
+          );
         },
       );
     }

@@ -73,8 +73,8 @@ class InferenceSettings {
   InferenceSettings forAgent({int? answerTokens}) => copyWith(
     contextSize: agentContextSize.clamp(512, 65536),
     maxTokens: (answerTokens ?? agentMaxTokens).clamp(
-      64,
-      min(4096, agentContextSize.clamp(512, 65536) ~/ 2),
+      minResponseTokens,
+      maxResponseTokens,
     ),
     temperature: agentTemperature.clamp(0, 2),
     topP: agentTopP < 0 ? topP : agentTopP.clamp(0, 1),
@@ -118,10 +118,8 @@ class InferenceSettings {
   static const minContext = 512, maxContext = 1 << 20;
   static const maxBatch = 4096;
 
-  /// 64K since 2026-09-24 (request): hosted models answer that long;
-  /// on the phone [responseReserve] keeps a large budget from starving the
-  /// prompt.
-  static const minResponseTokens = 64, maxResponseTokens = 65536;
+  /// Requested answer limits are persisted independently of runtime context.
+  static const minResponseTokens = 1, maxResponseTokens = 1 << 20;
   static const maxThinkingBudget = 65536;
   static const minResearchSeconds = 10, maxResearchSeconds = 180;
   static const minEvidencePassages = 2, maxEvidencePassages = 16;
@@ -134,10 +132,10 @@ class InferenceSettings {
   /// in small ones). The engines reserve the whole budget before the prompt
   /// is placed: with half, a 64K budget in a 64K context kept 32K back plus
   /// the thinking room, and a 27K-token document was cut to 25% (owner,
-  /// 2026-11-01). A quarter still lets one answer run to 16K tokens there.
+  /// 2026-11-01). This only budgets prompt space; it does not cap answer generation.
   int responseReserve(int window) => maxTokens.clamp(
     1,
-    window < 2 * minResponseTokens
+    window < 128
         ? max(1, window - 1)
         : max(window ~/ 4, min(window ~/ 2, 2048)),
   );
@@ -498,6 +496,9 @@ class InferenceSettings {
   final double agentRepeatPenalty;
   final int agentContextSize;
   final int agentMaxConcurrent;
+
+  /// Active execution seconds per agent. Zero leaves stopping to the user.
+  final int agentTimeoutSeconds;
   final bool agentThinking;
   final int agentToolRounds;
   final AgentWebAccess agentWebAccess;
@@ -646,6 +647,7 @@ class InferenceSettings {
     this.agentRepeatPenalty = -1,
     this.agentContextSize = 4096,
     this.agentMaxConcurrent = 3,
+    this.agentTimeoutSeconds = 0,
     this.agentThinking = false,
     this.agentToolRounds = 3,
     this.agentWebAccess = AgentWebAccess.askOnce,
@@ -946,6 +948,7 @@ class InferenceSettings {
     double? agentRepeatPenalty,
     int? agentContextSize,
     int? agentMaxConcurrent,
+    int? agentTimeoutSeconds,
     bool? agentThinking,
     int? agentToolRounds,
     AgentWebAccess? agentWebAccess,
@@ -1083,6 +1086,7 @@ class InferenceSettings {
           if (agentRepeatPenalty != null) 'agentRepeatPenalty',
           if (agentContextSize != null) 'agentContextSize',
           if (agentMaxConcurrent != null) 'agentMaxConcurrent',
+          if (agentTimeoutSeconds != null) 'agentTimeoutSeconds',
           if (agentThinking != null) 'agentThinking',
           if (agentToolRounds != null) 'agentToolRounds',
           if (agentWebAccess != null) 'agentWebAccess',
@@ -1216,7 +1220,9 @@ class InferenceSettings {
     toolActions: toolActions ?? this.toolActions,
     toolHelper: toolHelper ?? this.toolHelper,
     helperModelId: helperModelId ?? this.helperModelId,
-    agentMaxTokens: agentMaxTokens?.clamp(64, 4096) ?? this.agentMaxTokens,
+    agentMaxTokens:
+        agentMaxTokens?.clamp(minResponseTokens, maxResponseTokens) ??
+        this.agentMaxTokens,
     agentTemperature: agentTemperature?.clamp(0, 2) ?? this.agentTemperature,
     agentTopP: agentTopP?.clamp(-1, 1) ?? this.agentTopP,
     agentMinP: agentMinP?.clamp(-1, 1) ?? this.agentMinP,
@@ -1227,6 +1233,8 @@ class InferenceSettings {
         agentContextSize?.clamp(512, 65536) ?? this.agentContextSize,
     agentMaxConcurrent:
         agentMaxConcurrent?.clamp(1, 4) ?? this.agentMaxConcurrent,
+    agentTimeoutSeconds:
+        agentTimeoutSeconds?.clamp(0, 86400) ?? this.agentTimeoutSeconds,
     agentThinking: agentThinking ?? this.agentThinking,
     agentToolRounds: agentToolRounds?.clamp(1, 8) ?? this.agentToolRounds,
     agentWebAccess: agentWebAccess ?? this.agentWebAccess,
@@ -1375,6 +1383,7 @@ class InferenceSettings {
     'agentRepeatPenalty': agentRepeatPenalty,
     'agentContextSize': agentContextSize,
     'agentMaxConcurrent': agentMaxConcurrent,
+    'agentTimeoutSeconds': agentTimeoutSeconds,
     'agentThinking': agentThinking,
     'agentToolRounds': agentToolRounds,
     'agentWebAccess': agentWebAccess.name,
@@ -1628,7 +1637,12 @@ class InferenceSettings {
       toolActions: boolean('toolActions', true),
       toolHelper: boolean('toolHelper', false),
       helperModelId: text('helperModelId', 300),
-      agentMaxTokens: integer('agentMaxTokens', 512, 64, 4096),
+      agentMaxTokens: integer(
+        'agentMaxTokens',
+        512,
+        minResponseTokens,
+        maxResponseTokens,
+      ),
       agentTemperature: number('agentTemperature', 0.3, 0, 2),
       agentTopP: number('agentTopP', -1, -1, 1),
       agentMinP: number('agentMinP', -1, -1, 1),
@@ -1636,6 +1650,7 @@ class InferenceSettings {
       agentRepeatPenalty: number('agentRepeatPenalty', -1, -1, 2),
       agentContextSize: integer('agentContextSize', 4096, 512, 65536),
       agentMaxConcurrent: integer('agentMaxConcurrent', 3, 1, 4),
+      agentTimeoutSeconds: integer('agentTimeoutSeconds', 0, 0, 86400),
       agentThinking: boolean('agentThinking', false),
       agentToolRounds: integer('agentToolRounds', 3, 1, 8),
       agentWebAccess:

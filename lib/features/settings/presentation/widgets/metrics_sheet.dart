@@ -70,7 +70,11 @@ class _MetricsSheet extends ConsumerWidget {
             Padding(
               padding: EdgeInsets.zero,
               child: Text(
-                'last: ${r.decodeTps.toStringAsFixed(1)} tok/s · ${r.prefillTps.toStringAsFixed(0)} tok/s prefill · ${r.backend}',
+                context.l10n.metricsLastBenchmark(
+                  r.decodeTps.toStringAsFixed(1),
+                  r.prefillTps.toStringAsFixed(0),
+                  r.backend,
+                ),
                 style: context.text.mono.copyWith(color: c.textMuted),
               ),
             ),
@@ -180,7 +184,9 @@ class _Panel extends StatelessWidget {
           value: fallback || notAuto ? 'CPU' : backend,
           tone: fallback ? c.warning : null,
           detail: fallback
-              ? 'GPU unavailable: ${reason!.isEmpty ? 'unknown reason' : reason}'
+              ? context.l10n.metricsGpuUnavailable(
+                  reason!.isEmpty ? context.l10n.metricsUnknownReason : reason,
+                )
               : notAuto
               ? reason
               : choice,
@@ -195,14 +201,19 @@ class _Panel extends StatelessWidget {
             detail:
                 cpuVariantFallback(context.l10n, metrics) ??
                 ((metrics['nativeLibrarySkipped'] as List?)?.isNotEmpty == true
-                    ? 'GPU variant unavailable on this device: ${(metrics['nativeLibrarySkipped'] as List).first.toString().split(': ').last}'
+                    ? context.l10n.metricsGpuVariantUnavailable(
+                        (metrics['nativeLibrarySkipped'] as List).first
+                            .toString()
+                            .split(': ')
+                            .last,
+                      )
                     : null),
           ),
         if (metrics['stages'] is Map)
           _Row(
             label: context.l10n.uiMetricsSheetStages,
-            value: _stageSummary(metrics['stages'] as Map),
-            detail: 'Wall time from send to done, per stage of the last turn.',
+            value: _stageSummary(context.l10n, metrics['stages'] as Map),
+            detail: context.l10n.metricsStagesHint,
           ),
         _Row(
           label: context.l10n.uiMetricsSheetTokensSec,
@@ -214,14 +225,16 @@ class _Panel extends StatelessWidget {
         ),
         _Row(
           label: context.l10n.uiMetricsSheetTokens,
-          value:
-              '${tokens?.toInt() ?? '—'} generated · ${prompt?.toInt() ?? '—'} prompt',
+          value: context.l10n.metricsTokenCounts(
+            '${tokens?.toInt() ?? '—'}',
+            '${prompt?.toInt() ?? '—'}',
+          ),
         ),
         _Row(
           label: context.l10n.uiMetricsSheetContext,
           value: '${used?.toInt() ?? '—'} / ${size?.toInt() ?? '—'}',
           detail: trimmed > 0
-              ? '$trimmed older message${trimmed == 1 ? '' : 's'} trimmed to fit'
+              ? context.l10n.metricsTrimmedMessages(trimmed)
               : null,
           tone: fill != null && fill > 0.9 ? c.warning : null,
         ),
@@ -246,12 +259,14 @@ class _Panel extends StatelessWidget {
         _Row(
           label: context.l10n.uiMetricsSheetTemplate,
           value: metrics['hasTemplate'] == true
-              ? 'embedded (Jinja)'
-              : 'family fallback',
+              ? context.l10n.metricsTemplateEmbedded
+              : context.l10n.metricsTemplateFamilyFallback,
         ),
         _Row(
           label: context.l10n.uiMetricsSheetThinking,
-          value: metrics['supportsThinking'] == true ? 'native' : 'prompted',
+          value: metrics['supportsThinking'] == true
+              ? context.l10n.metricsThinkingNative
+              : context.l10n.metricsThinkingPrompted,
         ),
       ],
     );
@@ -266,7 +281,7 @@ class _ModelRow extends StatelessWidget {
   Widget build(BuildContext context) => _Row(
     label: context.l10n.uiMetricsSheetModel,
     value: model == null
-        ? 'none loaded'
+        ? context.l10n.metricsNoModel
         : '${model!.displayName} · ${model!.sizeLabel} · ${model!.quantLabel}',
   );
 }
@@ -329,15 +344,15 @@ class _Row extends StatelessWidget {
 }
 
 /// "plan 1.8 s · search 1.2 s · read 6.4 s · answer 9.7 s"
-String _stageSummary(Map stages) {
-  const labels = {
-    'loadMs': 'load',
-    'judgeMs': 'judge',
-    'planMs': 'plan',
-    'searchMs': 'search',
-    'readMs': 'read',
-    'budgetMs': 'fit',
-    'generateMs': 'answer',
+String _stageSummary(AppLocalizations t, Map stages) {
+  final labels = {
+    'loadMs': t.metricsStageLoad,
+    'judgeMs': t.metricsStageJudge,
+    'planMs': t.metricsStagePlan,
+    'searchMs': t.metricsStageSearch,
+    'readMs': t.metricsStageRead,
+    'budgetMs': t.metricsStageFit,
+    'generateMs': t.metricsStageAnswer,
   };
   final parts = <String>[];
   for (final e in labels.entries) {

@@ -4,9 +4,9 @@ import '../../domain/entities/inference_settings.dart';
 import '../../../../core/l10n/l10n.dart';
 
 /// Human-readable enum names (North Star 6.6: no raw identifiers in the UI).
-String backendLabel(GpuBackend b) => switch (b) {
-  GpuBackend.auto => 'Automatic',
-  GpuBackend.cpu => 'CPU only',
+String backendLabel(GpuBackend b, [AppLocalizations? strings]) => switch (b) {
+  GpuBackend.auto => (strings ?? AppLocalizationsEn()).avx512Auto,
+  GpuBackend.cpu => (strings ?? AppLocalizationsEn()).backendCpuOnly,
   GpuBackend.vulkan => 'Vulkan (GPU)',
   GpuBackend.opencl => 'OpenCL (GPU)',
   GpuBackend.metal => 'Metal (GPU)',
@@ -15,8 +15,8 @@ String backendLabel(GpuBackend b) => switch (b) {
 };
 
 /// Short form for one-line summaries.
-String backendShort(GpuBackend b) => switch (b) {
-  GpuBackend.auto => 'auto',
+String backendShort(GpuBackend b, [AppLocalizations? strings]) => switch (b) {
+  GpuBackend.auto => (strings ?? AppLocalizationsEn()).webAuto,
   GpuBackend.cpu => 'cpu',
   GpuBackend.vulkan => 'vulkan',
   GpuBackend.opencl => 'opencl',
@@ -48,16 +48,16 @@ String thinkingLevelHint(ThinkingLevel level, AppLocalizations l10n) =>
       ThinkingLevel.high => l10n.thinkHighHint,
     };
 
-String webModeShort(WebMode m) => switch (m) {
-  WebMode.off => 'Local',
-  WebMode.auto => 'Web · auto',
-  WebMode.always => 'Web · always',
+String webModeShort(WebMode m, [AppLocalizations? strings]) => switch (m) {
+  WebMode.off => (strings ?? AppLocalizationsEn()).webLocal,
+  WebMode.auto => (strings ?? AppLocalizationsEn()).webAutoShort,
+  WebMode.always => (strings ?? AppLocalizationsEn()).webAlwaysShort,
 };
 
-String kvCacheLabel(KvCacheType t) => switch (t) {
-  KvCacheType.fp16 => 'FP16 (default)',
-  KvCacheType.q8_0 => 'Q8_0 (saves RAM)',
-  KvCacheType.q4_0 => 'Q4_0 (saves more RAM)',
+String kvCacheLabel(KvCacheType t, [AppLocalizations? strings]) => switch (t) {
+  KvCacheType.fp16 => (strings ?? AppLocalizationsEn()).kvFp16Default,
+  KvCacheType.q8_0 => (strings ?? AppLocalizationsEn()).kvQ8SavesRam,
+  KvCacheType.q4_0 => (strings ?? AppLocalizationsEn()).kvQ4SavesMoreRam,
 };
 
 /// Backends the user may pick on this platform. QNN is never offered here:
@@ -71,10 +71,13 @@ List<GpuBackend> availableBackends() => [
   if (Platform.isWindows) GpuBackend.cuda,
 ];
 
-String gpuLayersLabel(int n) => n == 999 ? 'All' : '$n';
+String gpuLayersLabel(int n, [AppLocalizations? strings]) =>
+    n == 999 ? (strings ?? AppLocalizationsEn()).all : '$n';
 
-String threadsLabel(InferenceSettings s) =>
-    s.cpuThreads == 0 ? 'Auto (${s.effectiveThreads})' : '${s.cpuThreads}';
+String threadsLabel(InferenceSettings s, [AppLocalizations? strings]) =>
+    s.cpuThreads == 0
+    ? (strings ?? AppLocalizationsEn()).threadsAutoCount(s.effectiveThreads)
+    : '${s.cpuThreads}';
 
 String microBatchLabel(InferenceSettings s) => s.microBatchSize == 0
     ? 'Auto (${s.effectiveMicroBatchSize})'
@@ -113,6 +116,9 @@ const thinkingBudgetPresets = [0, 256, 512, 1024, 2048, 4096, 8192, 16384];
 /// 0 = auto (512).
 const batchPresets = [0, 128, 256, 512, 1024, 2048, 4096];
 
-String batchThreadsLabel(InferenceSettings s) => s.batchThreads == 0
-    ? 'Auto (${s.effectiveBatchThreads})'
+String batchThreadsLabel(InferenceSettings s, [AppLocalizations? strings]) =>
+    s.batchThreads == 0
+    ? (strings ?? AppLocalizationsEn()).threadsAutoCount(
+        s.effectiveBatchThreads,
+      )
     : '${s.batchThreads}';

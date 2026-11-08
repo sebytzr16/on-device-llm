@@ -23,6 +23,7 @@ import '../server_usage.dart';
 import '../host_discovery.dart';
 import '../model_pool.dart';
 import '../pairing_code.dart';
+import '../hosting_tls.dart';
 import 'pool_options_provider.dart';
 import 'hosted_workspace.dart';
 
@@ -46,8 +47,10 @@ class DeviceHostingState {
 
   /// Six digits a nearby device trades for [token] (LAN servers only).
   final String? pairCode;
+  final String? pairingSecret, hostId;
+  final String? fingerprint;
 
-  /// When [pairCode] expires; the code is cleared then.
+  /// When the current code and QR secret rotate.
   final DateTime? pairExpiresAt;
   final String? modelId;
 
@@ -80,6 +83,9 @@ class DeviceHostingState {
     this.endpoint,
     this.token,
     this.pairCode,
+    this.pairingSecret,
+    this.hostId,
+    this.fingerprint,
     this.pairExpiresAt,
     this.modelId,
     this.ownEngine = false,
@@ -110,14 +116,15 @@ class DeviceHostingState {
 
   /// What another OnDevice LLM app pastes (or scans) to connect: the
   /// Remote server page's "Paste connection" reads exactly this.
-  String? get pairing => endpoint == null || token == null
+  String? get pairing =>
+      endpoint == null || pairingSecret == null || hostId == null
       ? null
-      : jsonEncode({
-          'ondevice_llm': 'connection',
-          'url': endpoint,
-          'model': modelId ?? '',
-          'key': token,
-        });
+      : PairingQr(
+          endpoint!,
+          hostId!,
+          pairingSecret!,
+          fingerprint: fingerprint,
+        ).encode();
 
   /// This state with one more request in the counters and the log. A
   /// refusal (bad token, busy, bad request) is not a failure of the phone.
@@ -154,6 +161,10 @@ class DeviceHostingState {
     String? activeClient,
     bool clearClient = false,
     bool clearPairCode = false,
+    String? pairCode,
+    String? pairingSecret,
+    String? hostId,
+    DateTime? pairExpiresAt,
     String? error,
     int? liveTokens,
     List<ServedRequest>? log,
@@ -170,13 +181,23 @@ class DeviceHostingState {
     starting: starting ?? this.starting,
     endpoint: endpoint,
     token: token,
-    pairCode: clearPairCode ? null : pairCode,
-    pairExpiresAt: clearPairCode ? null : pairExpiresAt,
+    pairCode: clearPairCode ? null : pairCode ?? this.pairCode,
+    pairingSecret: pairingSecret ?? this.pairingSecret,
+    hostId: hostId ?? this.hostId,
+    fingerprint: fingerprint,
+    pairExpiresAt: clearPairCode ? null : pairExpiresAt ?? this.pairExpiresAt,
     modelId: modelId,
     ownEngine: ownEngine ?? this.ownEngine,
     pooled: pooled ?? this.pooled,
     activeClient: clearClient ? null : activeClient ?? this.activeClient,
-    error: error ?? this.error,
+    error:
+        error ??
+        (pairCode != null &&
+                ['en', 'fr', 'es'].any(
+                  (locale) => this.error == stringsFor(locale).hostPairLocked,
+                )
+            ? null
+            : this.error),
     stoppedReason: stoppedReason,
     startedAt: startedAt,
     liveTokens: liveTokens ?? this.liveTokens,
@@ -204,7 +225,6 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
   // True while the served model moves to its own runtime: requests wait.
   bool _moving = false;
   Timer? _powerTimer;
-  Timer? _pairTimer;
   int _lifecycle = 0;
   bool _alive = true;
   HostingGuards guards = const HostingGuards();
@@ -215,7 +235,6 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
       _alive = false;
       _lifecycle++;
       _powerTimer?.cancel();
-      _pairTimer?.cancel();
       final server = _server;
       _server = null;
       final pool = _pool;
@@ -297,6 +316,17 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
           vision: (id) => ref.read(modelManagerProvider).vision.contains(id),
         ),
         pairCode: pairCode,
+        onPairingChanged: () {
+          final current = _server;
+          if (!_alive || lifecycle != _lifecycle || current == null) return;
+          state = state.copyWith(
+            pairCode: current.pairingLocked ? null : current.pairCode,
+            clearPairCode: current.pairingLocked,
+            pairingSecret: current.pairingSecret,
+            hostId: current.hostId,
+            pairExpiresAt: current.pairExpiresAt,
+          );
+        },
         onPairingUnavailable: (locked) {
           if (!_alive || lifecycle != _lifecycle) return;
           final t = stringsFor(ref.read(settingsProvider).localeCode);
@@ -354,9 +384,12 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
         onServed: record,
       );
       startingServer = server;
+      final tls = lan ? await HostingTls.load() : null;
+      if (!_alive || lifecycle != _lifecycle) return;
       await server.start(
         address: lan ? InternetAddress.anyIPv4 : InternetAddress.loopbackIPv4,
         port: port,
+        tls: tls,
       );
       if (!_alive || lifecycle != _lifecycle) {
         await server.stop();
@@ -379,30 +412,19 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
         running: true,
         endpoint: endpointFor(
           host,
-          server.port!,
+          server.tlsPort ?? server.port!,
           ref.read(settingsProvider).localeCode,
+          tls: lan,
         ),
         token: token,
-        pairCode: pairCode,
+        fingerprint: tls?.fingerprint,
+        pairCode: server.pairCode,
+        pairingSecret: lan ? server.pairingSecret : null,
+        hostId: lan ? server.hostId : null,
         pairExpiresAt: pairCode == null ? null : server.pairExpiresAt,
         modelId: model.id,
         startedAt: DateTime.now(),
       );
-      // Expiry is otherwise only noticed at the next pairing attempt, so
-      // the page would keep showing a dead code.
-      if (pairCode != null) {
-        _pairTimer?.cancel();
-        _pairTimer = Timer(server.pairExpiresAt.difference(DateTime.now()), () {
-          if (!_alive || lifecycle != _lifecycle) return;
-          if (state.pairCode == null) return;
-          state = state.copyWith(
-            clearPairCode: true,
-            error: stringsFor(
-              ref.read(settingsProvider).localeCode,
-            ).hostPairExpired,
-          );
-        });
-      }
       // The desktop keeps both models loaded rather than refusing the
       // chat another one.
       if (DesktopHost.active) {
@@ -607,8 +629,6 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
     final lifecycle = ++_lifecycle;
     _powerTimer?.cancel();
     _powerTimer = null;
-    _pairTimer?.cancel();
-    _pairTimer = null;
     final server = _server;
     _server = null;
     final pool = _pool;
@@ -677,8 +697,13 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
   }
 
   /// A missing address stays a display placeholder, never an mDNS input.
-  static String endpointFor(String? address, int port, String localeCode) =>
-      'http://${address ?? stringsFor(localeCode).hostAddressPlaceholder}:$port/v1/';
+  static String endpointFor(
+    String? address,
+    int port,
+    String localeCode, {
+    bool tls = false,
+  }) =>
+      '${tls ? 'https' : 'http'}://${address ?? stringsFor(localeCode).hostAddressPlaceholder}:$port/v1/';
 
   /// Higher is better: Wi-Fi/Ethernet/hotspot interfaces, then private LAN
   /// ranges; mobile-data and carrier (192.0.0.0/24, 100.64/10) last.

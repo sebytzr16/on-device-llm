@@ -18,6 +18,7 @@ extension SettingSpecLabels on SettingSpec {
           'agentRepeatPenalty' => t.agentRepeatPenalty,
           'agentContextSize' => t.agentContextSize,
           'agentMaxConcurrent' => t.agentMaxConcurrent,
+          'agentTimeoutSeconds' => t.agentTimeoutSeconds,
           'agentThinking' => t.agentThinking,
           'agentToolRounds' => t.agentToolRounds,
           'agentWebAccess' => t.agentWebAccess,

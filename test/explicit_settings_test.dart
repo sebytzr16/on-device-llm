@@ -17,25 +17,28 @@ void main() {
       expect(r.originOf('contextSize'), SettingsLayer.idGlobal);
     },
   );
-  test("app-wide sampling is ignored: the model's own values apply", () {
-    final saved = SettingsResolver.editGlobal(const InferenceSettings(), {
-      'temperature': .2,
-      'maxTokens': 65536,
-    });
-    final r = SettingsResolver.resolve(
-      global: saved,
-      recommended: {'temperature': 1.0},
-    );
-    expect(r.effective.temperature, 1.0);
-    expect(r.originOf('temperature'), SettingsLayer.idRecommended);
-    expect(r.effective.maxTokens, const InferenceSettings().maxTokens);
-    final profiled = SettingsResolver.resolve(
-      global: saved,
-      recommended: {'temperature': 1.0},
-      model: {'temperature': .4},
-    );
-    expect(profiled.effective.temperature, .4);
-  });
+  test(
+    "app-wide sampling is ignored; answer limits remain a global default",
+    () {
+      final saved = SettingsResolver.editGlobal(const InferenceSettings(), {
+        'temperature': .2,
+        'maxTokens': 65536,
+      });
+      final r = SettingsResolver.resolve(
+        global: saved,
+        recommended: {'temperature': 1.0},
+      );
+      expect(r.effective.temperature, 1.0);
+      expect(r.originOf('temperature'), SettingsLayer.idRecommended);
+      expect(r.effective.maxTokens, 65536);
+      final profiled = SettingsResolver.resolve(
+        global: saved,
+        recommended: {'temperature': 1.0},
+        model: {'temperature': .4},
+      );
+      expect(profiled.effective.temperature, .4);
+    },
+  );
   test('registry edit records the explicitly selected keys', () {
     final chosen = SettingsResolver.editGlobal(const InferenceSettings(), {
       'temperature': .7,

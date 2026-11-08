@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/design/app_design.dart';
+import '../core/design/app_dialog.dart';
 import '../core/l10n/l10n.dart';
 import '../core/providers/shared_providers.dart';
 import '../data/storage/model_storage.dart';
@@ -264,22 +265,155 @@ class _ModelOptimizeSectionState extends ConsumerState<ModelOptimizeSection> {
   }
 }
 
-class BenchmarkReceiptSection extends ConsumerWidget {
+/// Shared entry point for the phone's model card, beside its benchmark action.
+class BenchmarkHistoryButton extends StatelessWidget {
+  final String modelId;
+  const BenchmarkHistoryButton({super.key, required this.modelId});
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    tooltip: context.l10n.benchmarkHistory,
+    icon: const Icon(Icons.history),
+    onPressed: () => showAppDialog<void>(
+      context: context,
+      builder: (dialog) => Dialog(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Padding(
+            padding: const EdgeInsets.all(AppDesign.md),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        dialog.l10n.benchmarkHistory,
+                        style: dialog.text.title,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: dialog.l10n.desktopClose,
+                      onPressed: () => Navigator.pop(dialog),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: BenchmarkReceiptSection(modelId: modelId),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class BenchmarkReceiptSection extends ConsumerStatefulWidget {
   final String modelId;
   const BenchmarkReceiptSection({super.key, required this.modelId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<BenchmarkReceiptSection> createState() =>
+      _BenchmarkReceiptSectionState();
+}
+
+class _BenchmarkReceiptSectionState
+    extends ConsumerState<BenchmarkReceiptSection> {
+  final _selected = <BenchmarkReceipt>{};
+
+  @override
+  void didUpdateWidget(BenchmarkReceiptSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.modelId != widget.modelId) _selected.clear();
+  }
+
+  Future<void> _delete({BenchmarkReceipt? receipt, bool clear = false}) async {
+    final t = context.l10n;
+    final selected = receipt == null ? _selected.toList() : [receipt];
+    final store = ref.read(benchmarkReceiptsProvider.notifier);
+    final modelId = widget.modelId;
+    if (!await confirmAction(
+      context,
+      title: clear ? t.benchmarkClearHistory : t.benchmarkDeleteReceipts,
+      message: clear
+          ? t.benchmarkClearHistoryConfirm
+          : t.benchmarkDeleteReceiptsConfirm(selected.length),
+      confirmLabel: clear ? t.benchmarkClearHistory : t.benchmarkDeleteReceipts,
+      destructive: true,
+    )) {
+      return;
+    }
+    try {
+      if (clear) {
+        await store.clearModel(modelId);
+      } else {
+        await store.remove(modelId, selected);
+      }
+      if (mounted) setState(() => _selected.removeAll(selected));
+    } catch (_) {
+      if (mounted) {
+        showIslandToast(context, t.historyRemoveError, tone: IslandTone.error);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final t = context.l10n;
     final receipts = ref
         .watch(benchmarkReceiptsProvider)
-        .where((r) => r.json['modelId'] == modelId)
+        .where((r) => r.json['modelId'] == widget.modelId)
         .toList()
         .reversed;
+    _selected.retainAll(receipts);
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (receipts.isEmpty)
+          Text(t.benchmarkHistoryEmpty, style: context.text.caption),
+        if (receipts.isNotEmpty) ...[
+          Text(t.benchmarkHistory, style: context.text.label),
+          Text(
+            t.benchmarkHistoryHint,
+            style: context.text.caption.copyWith(
+              color: context.colors.textMuted,
+            ),
+          ),
+          Wrap(
+            spacing: AppDesign.sm,
+            children: [
+              TextButton(
+                onPressed: _selected.isEmpty ? null : () => _delete(),
+                child: Text(t.benchmarkDeleteSelected(_selected.length)),
+              ),
+              TextButton(
+                onPressed: () => _delete(clear: true),
+                child: Text(t.benchmarkClearHistory),
+              ),
+            ],
+          ),
+        ],
         for (final receipt in receipts)
           ExpansionTile(
+            key: ObjectKey(receipt),
+            leading: Checkbox(
+              value: _selected.contains(receipt),
+              semanticLabel: t.benchmarkSelectReceipt(
+                receipt.json['timestamp'] as String,
+              ),
+              onChanged: (selected) => setState(() {
+                if (selected == true) {
+                  _selected.add(receipt);
+                } else {
+                  _selected.remove(receipt);
+                }
+              }),
+            ),
             title: Text(
               t.tuneReceipt(receipt.json['timestamp'] as String),
               style: context.text.small,
@@ -289,6 +423,11 @@ class BenchmarkReceiptSection extends ConsumerWidget {
               style: context.text.caption,
             ),
             children: [
+              TextButton.icon(
+                icon: const Icon(Icons.delete_outline),
+                label: Text(t.benchmarkDeleteReceipt),
+                onPressed: () => _delete(receipt: receipt),
+              ),
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: DataTable(

@@ -1,3 +1,5 @@
+import '../../../../core/l10n/l10n.dart';
+
 import '../../../../inference/engine/text_engine.dart';
 import '../../../settings/domain/entities/inference_settings.dart';
 import 'chat_document.dart';
@@ -14,14 +16,21 @@ enum DocumentTemplate {
 class DocumentDraftService {
   static const maxInputChars = 24000;
 
-  static String label(DocumentTemplate template) => switch (template) {
-    DocumentTemplate.transcript => 'Conversation transcript',
-    DocumentTemplate.report => 'Research report',
-    DocumentTemplate.letter => 'Letter',
-    DocumentTemplate.meetingNotes => 'Meeting notes',
-    DocumentTemplate.studyGuide => 'Study guide',
-    DocumentTemplate.summary => 'Executive summary',
-  };
+  static String label(DocumentTemplate template, [AppLocalizations? strings]) =>
+      switch (template) {
+        DocumentTemplate.transcript =>
+          (strings ?? AppLocalizationsEn()).documentTemplateTranscript,
+        DocumentTemplate.report =>
+          (strings ?? AppLocalizationsEn()).documentTemplateReport,
+        DocumentTemplate.letter =>
+          (strings ?? AppLocalizationsEn()).documentTemplateLetter,
+        DocumentTemplate.meetingNotes =>
+          (strings ?? AppLocalizationsEn()).documentTemplateMeetingNotes,
+        DocumentTemplate.studyGuide =>
+          (strings ?? AppLocalizationsEn()).documentTemplateStudyGuide,
+        DocumentTemplate.summary =>
+          (strings ?? AppLocalizationsEn()).documentTemplateSummary,
+      };
 
   static String instruction(DocumentTemplate template) => switch (template) {
     DocumentTemplate.transcript => 'Preserve the conversation in order.',

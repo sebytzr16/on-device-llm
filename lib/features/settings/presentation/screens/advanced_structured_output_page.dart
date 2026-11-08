@@ -34,10 +34,11 @@ class StructuredOutputPage extends ConsumerWidget {
               value: s.responseFormat,
               items: ResponseFormat.values,
               labelOf: (v) => switch (v) {
-                ResponseFormat.text => 'Free text',
-                ResponseFormat.json => 'JSON (any object)',
-                ResponseFormat.jsonSchema => 'JSON matching a schema',
-                ResponseFormat.gbnf => 'GBNF grammar',
+                ResponseFormat.text => context.l10n.outputFreeText,
+                ResponseFormat.json => context.l10n.outputJsonAnyObject,
+                ResponseFormat.jsonSchema => context.l10n.outputJsonSchema,
+                ResponseFormat.gbnf =>
+                  context.l10n.uiAdvancedStructuredOutputPageGBNFGrammar,
               },
               onChanged: (v) => n.update(s.copyWith(responseFormat: v)),
             ),
@@ -95,9 +96,7 @@ class StructuredOutputPage extends ConsumerWidget {
               ),
           ],
         ),
-        const SettingsNote(
-          'Constrained answers still stop at Max tokens: a cut-off JSON object is reported as invalid. The format also applies to the remote server through response_format.',
-        ),
+        SettingsNote(context.l10n.structuredOutputLimitHint),
       ],
     );
   }

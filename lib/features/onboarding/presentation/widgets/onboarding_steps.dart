@@ -231,7 +231,10 @@ class PickModelStep extends StatelessWidget {
           ],
           const SizedBox(height: AppDesign.lg),
           Text(
-            '${selected.sizeLabel} from Hugging Face. License: ${selected.license}. The file is verified with SHA-256 before use.',
+            context.l10n.onboardingModelLicenseNotice(
+              selected.sizeLabel,
+              selected.license,
+            ),
             style: context.text.small,
           ),
           CheckboxListTile(
@@ -296,7 +299,7 @@ class DownloadStep extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '${model.displayName} is on this phone. From here on, nothing leaves it.',
+              context.l10n.onboardingModelReadyPrivacy(model.displayName),
               style: context.text.bodyMuted,
             ),
             const SizedBox(height: AppDesign.lg),

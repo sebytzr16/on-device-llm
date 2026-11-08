@@ -1,6 +1,7 @@
 package app.ondevicellm.ondevice_llm
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -18,6 +19,7 @@ import java.util.UUID
 class ShareInbox(private val activity: Activity, messenger: BinaryMessenger) {
     private val channel = MethodChannel(messenger, "ondevice_llm/share")
     private val pending = ArrayDeque<Intent>()
+    private val pendingDrafts = mutableListOf<Intent>()
 
     init {
         channel.setMethodCallHandler { call, result ->
@@ -30,19 +32,33 @@ class ShareInbox(private val activity: Activity, messenger: BinaryMessenger) {
 
     /// Called for the launch intent and every later one (singleTop).
     fun offer(intent: Intent?, notify: Boolean) {
-        val action = intent?.action
+        if (intent == null) return
+        val action = intent.action
         if (action != Intent.ACTION_SEND && action != Intent.ACTION_SEND_MULTIPLE &&
             action != ScheduledPrompts.ACTION_RUN && action != Intent.ACTION_PROCESS_TEXT &&
             action != Intent.ACTION_ASSIST && action != Launchers.ACTION_LAUNCH) return
         // Reopened from Recents, Android replays the launch intent: that share
         // (or scheduled prompt) was already handled.
-        if (((intent?.flags ?: 0) and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return
-        pending.addLast(intent ?: return)
+        if ((intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return
+        if (action == ScheduledPrompts.ACTION_RUN) {
+            // Authenticate and resolve an enabled saved schedule before charging
+            // the notification budget. External drafts have their own bounded lane.
+            val payload = try { scheduledPayload(activity, intent) } catch (_: Exception) { return }
+            if (payload.isEmpty()) return
+            if (payload.containsKey("scheduled")) {
+                if (!ScheduledPrompts.allowScheduledRun()) return
+            } else {
+                if (pendingDrafts.size >= 5 || !ScheduledPrompts.allowScheduledDraft()) return
+                pendingDrafts.add(intent)
+            }
+        }
+        pending.addLast(intent)
         if (notify) channel.invokeMethod("arrived", null)
     }
 
     private fun take(result: MethodChannel.Result) {
         val intent = pending.pollFirst()
+        if (intent != null) pendingDrafts.remove(intent)
         // Taken once: a recreated activity must not see it again.
         if (intent != null && pending.isEmpty()) activity.intent = Intent(Intent.ACTION_MAIN)
         if (intent == null) {
@@ -60,17 +76,8 @@ class ShareInbox(private val activity: Activity, messenger: BinaryMessenger) {
     }
 
     private fun read(intent: Intent): Map<String, Any?> {
-        // A scheduled prompt's notification was tapped: its text and kind.
-        // Without our token another app sent it: its text is only a draft.
         if (intent.action == ScheduledPrompts.ACTION_RUN) {
-            val token = intent.getStringExtra(ScheduledPrompts.EXTRA_TOKEN)
-            if (token != ScheduledPrompts.token(activity)) {
-                return mapOf("text" to intent.getStringExtra(ScheduledPrompts.EXTRA_PROMPT))
-            }
-            return mapOf(
-                "text" to intent.getStringExtra(ScheduledPrompts.EXTRA_PROMPT),
-                "scheduled" to (intent.getStringExtra(ScheduledPrompts.EXTRA_KIND) ?: "chat"),
-            )
+            return scheduledPayload(activity, intent)
         }
         // Text selected in another app ("Ask OnDevice LLM").
         if (intent.action == Intent.ACTION_PROCESS_TEXT) {
@@ -163,6 +170,19 @@ class ShareInbox(private val activity: Activity, messenger: BinaryMessenger) {
     }
 
     companion object {
+        internal fun scheduledPayload(context: Context, intent: Intent): Map<String, Any?> {
+            // External intents may populate a draft, never submit it.
+            if (intent.getStringExtra(ScheduledPrompts.EXTRA_TOKEN) != ScheduledPrompts.token(context)) {
+                return mapOf("text" to intent.getStringExtra(ScheduledPrompts.EXTRA_PROMPT))
+            }
+            // Trusted notifications resolve a saved, still-enabled schedule.
+            // Extras cannot supply executable prompt text or change its kind.
+            val item = ScheduledPrompts.find(context, intent.getIntExtra(ScheduledPrompts.EXTRA_ID, -1))
+                ?: return emptyMap()
+            if (!item.optBoolean("enabled", true)) return emptyMap()
+            return mapOf("text" to item.optString("prompt"), "scheduled" to item.optString("kind", "chat"))
+        }
+
         const val MAX_BYTES = 64L * 1024 * 1024
     }
 }

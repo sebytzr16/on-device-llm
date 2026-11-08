@@ -97,9 +97,9 @@ class _ScanSettingsPageState extends State<ScanSettingsPage> {
                             value: 'auto',
                             child: Text(t.searchRegionAutomatic),
                           ),
-                          const DropdownMenuItem(
+                          DropdownMenuItem(
                             value: 'en',
-                            child: Text('English'),
+                            child: Text(context.l10n.languageEnglish),
                           ),
                           const DropdownMenuItem(
                             value: 'fr',

@@ -340,11 +340,10 @@ struct Progress {
     ~Progress() { sd_set_progress_callback(nullptr, nullptr); }
 };
 
-uint8_t* rgba(const sd_image_t& image, int32_t* width, int32_t* height) {
+void write_rgba(const sd_image_t& image, uint8_t* out) {
     const size_t count = pixels(image.width, image.height);
     if (!image.data || image.channel < 1 || image.channel > 4)
         throw std::runtime_error("Backend returned invalid image data");
-    auto out = std::make_unique<uint8_t[]>(count * 4);
     for (size_t i = 0; i < count; ++i) {
         const uint8_t* src = image.data + i * image.channel;
         out[i * 4] = src[0];
@@ -352,6 +351,11 @@ uint8_t* rgba(const sd_image_t& image, int32_t* width, int32_t* height) {
         out[i * 4 + 2] = image.channel <= 2 ? src[0] : src[2];
         out[i * 4 + 3] = image.channel == 4 ? src[3] : image.channel == 2 ? src[1] : 255;
     }
+}
+
+uint8_t* rgba(const sd_image_t& image, int32_t* width, int32_t* height) {
+    auto out = std::make_unique<uint8_t[]>(pixels(image.width, image.height) * 4);
+    write_rgba(image, out.get());
     *width = static_cast<int32_t>(image.width);
     *height = static_cast<int32_t>(image.height);
     return out.release();
@@ -508,9 +512,7 @@ uint8_t* generate_frames(od_sd_ctx_t* ctx, const char* request, const uint8_t* i
             const sd_image_t& frame = result->frames[f];
             if (frame.width != first.width || frame.height != first.height)
                 throw std::runtime_error("Frames differ in size");
-            int32_t fw = 0, fh = 0;
-            std::unique_ptr<uint8_t[]> one(rgba(frame, &fw, &fh));
-            std::copy(one.get(), one.get() + frame_pixels * 4, out.get() + f * frame_pixels * 4);
+            write_rgba(frame, out.get() + f * frame_pixels * 4);
         }
         *width = static_cast<int32_t>(first.width);
         *height = static_cast<int32_t>(first.height);

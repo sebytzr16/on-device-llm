@@ -84,8 +84,10 @@ class _PresetSheet extends ConsumerWidget {
                               MaterialPageRoute<void>(
                                 builder: (_) => Consumer(
                                   builder: (context, ref, _) => OverridesPage(
-                                    title: '${p.name} · overrides',
-                                    scopeLabel: 'Preset',
+                                    title: context.l10n.presetOverridesTitle(
+                                      p.name,
+                                    ),
+                                    scopeLabel: context.l10n.presetScope,
                                     overrides:
                                         ref
                                             .watch(presetsProvider)
@@ -119,8 +121,10 @@ class _PresetSheet extends ConsumerWidget {
                           value: 'overrides',
                           child: Text(
                             p.overrides.isEmpty
-                                ? 'More overrides'
-                                : 'More overrides · ${p.overrides.length}',
+                                ? context.l10n.presetMoreOverrides
+                                : context.l10n.presetMoreOverridesCount(
+                                    p.overrides.length,
+                                  ),
                           ),
                         ),
                       PopupMenuItem(
@@ -267,7 +271,10 @@ Future<Preset?> showPresetEditor(
                     child: Text(context.l10n.useSetting),
                   ),
                   for (final m in WebMode.values)
-                    DropdownMenuItem(value: m, child: Text(webModeShort(m))),
+                    DropdownMenuItem(
+                      value: m,
+                      child: Text(webModeShort(m, context.l10n)),
+                    ),
                 ],
                 onChanged: (v) => setState(() => webMode = v),
               ),

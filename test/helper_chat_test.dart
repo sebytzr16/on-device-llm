@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/core/providers/shared_providers.dart';
 import 'package:ondevice_llm/data/local/database/app_database.dart';
+import 'package:ondevice_llm/data/network/web_search/search_models.dart';
 import 'package:ondevice_llm/features/chat/domain/entities/turn_run.dart';
 import 'package:ondevice_llm/features/chat/presentation/providers/chat_provider.dart';
 import 'package:ondevice_llm/features/helper/helper_runner.dart';
@@ -122,10 +123,60 @@ class _BackgroundEngine extends fixtures.TestEngine {
       1 =>
         '<tool_call>{"name":"ask_helper","arguments":{"task":"first"}}</tool_call>'
             '<tool_call>{"name":"ask_helper","arguments":{"task":"second"}}</tool_call>',
-      2 =>
-        '<tool_call>{"name":"calculator","arguments":{"expression":"1+1"}}</tool_call>',
       _ => 'The final answer',
     };
+  }
+}
+
+class _EmptySynthesisEngine extends fixtures.TestEngine {
+  final bool recover;
+  int rounds = 0;
+  final choices = <String>[];
+  _EmptySynthesisEngine(this.recover) {
+    metrics = {'supportsTools': true};
+  }
+  @override
+  Stream<String> generate({
+    required List<Map<String, Object>> messages,
+    required String fallbackTemplate,
+    required InferenceSettings settings,
+    String assistantPrefix = '',
+    List<ToolSpec> tools = const [],
+    String toolChoice = 'auto',
+  }) async* {
+    rounds++;
+    choices.add(toolChoice);
+    if (rounds == 1) {
+      yield "I've launched the helpers. Please share their replies.";
+    } else {
+      // The schema stays (prompt cache); the final round only forbids calls.
+      expect(toolChoice, 'none');
+      yield recover && rounds == 3
+          ? 'Recovered final answer from the helper findings.'
+          : rounds == 2
+          ? '```json\n{"name":"search_web","arguments":{"query":"news"}}\n```'
+          : '<think>Only thinking</think>';
+    }
+  }
+}
+
+class _SourceEmptyEngine extends fixtures.TestEngine {
+  int calls = 0;
+  @override
+  Stream<String> generate({
+    required List<Map<String, Object>> messages,
+    required String fallbackTemplate,
+    required InferenceSettings settings,
+    String assistantPrefix = '',
+    List<ToolSpec> tools = const [],
+    String toolChoice = 'auto',
+  }) async* {
+    calls++;
+    if (calls > 1) {
+      expect(tools, isEmpty);
+      expect(toolChoice, 'none');
+    }
+    yield '<think>Only thinking, no answer.</think>';
   }
 }
 
@@ -178,6 +229,98 @@ class _SharedBackgroundEngine extends _BackgroundEngine {
 
 void main() {
   test(
+    'empty source-based answer retries once and retains cited findings',
+    () async {
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      final engine = _SourceEmptyEngine();
+      final container = ProviderContainer(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          llamaEngineProvider.overrideWithValue(engine),
+          settingsProvider.overrideWith(() => _Settings(false)),
+          modelManagerProvider.overrideWith(fixtures.TestModels.new),
+        ],
+      );
+      try {
+        await container
+            .read(chatProvider.notifier)
+            .send(
+              'Explain tides',
+              promptOverride: 'Explain tides from the supplied report',
+              answerSources: [
+                const SearchResult(
+                  title: 'Tides report',
+                  url: 'https://example.org/tides',
+                  snippet: 'Tides follow the gravitational pull of the Moon.',
+                  rank: 1,
+                ),
+              ],
+            );
+        expect(engine.calls, 2);
+        final answer = container.read(chatProvider).messages.last.content;
+        expect(answer, contains('Tides report'));
+        expect(answer, contains('gravitational pull'));
+        expect(answer, contains('[1]'));
+      } finally {
+        container.dispose();
+        await db.close();
+      }
+    },
+  );
+
+  for (final recover in [true, false]) {
+    test(
+      'empty synthesis retries without tools then preserves evidence: $recover',
+      () async {
+        final db = AppDatabase.forTesting(NativeDatabase.memory());
+        final helper = _Helper()..gates.add(Completer<void>());
+        final engine = _EmptySynthesisEngine(recover);
+        final container = ProviderContainer(
+          overrides: [
+            appDatabaseProvider.overrideWithValue(db),
+            llamaEngineProvider.overrideWithValue(engine),
+            settingsProvider.overrideWith(() => _Settings(true)),
+            modelManagerProvider.overrideWith(fixtures.TestModels.new),
+            helperRunnerProvider.overrideWithValue(helper),
+          ],
+        );
+        final partials = <String>[];
+        final sub = container.listen(
+          chatProvider,
+          (_, next) => partials.add(next.partialAnswer),
+        );
+        try {
+          final sent = container
+              .read(chatProvider.notifier)
+              .send('Use one helper to explain tides');
+          for (var i = 0; i < 200 && helper.calls == 0; i++) {
+            await Future<void>.delayed(const Duration(milliseconds: 5));
+          }
+          expect(helper.calls, 1);
+          expect(engine.rounds, 1);
+          expect(partials.every((p) => p.isEmpty), isTrue);
+          helper.gates.single.complete();
+          await sent;
+          expect(engine.rounds, 3);
+          final answer = container.read(chatProvider).messages.last.content;
+          expect(
+            answer,
+            contains(recover ? 'Recovered final answer' : 'Result for'),
+          );
+          expect(answer, isNot(contains('search_web')));
+          expect(partials.join(), isNot(contains('Please share')));
+        } finally {
+          if (!helper.gates.single.isCompleted) helper.gates.single.complete();
+          sub.close();
+          container.dispose();
+          helper.dispose();
+          await db.close();
+        }
+      },
+    );
+  }
+
+  test(
     'three shared GPU replies all reach the main final prompt and report to its answer',
     () async {
       final directory = await Directory.systemTemp.createTemp(
@@ -225,23 +368,14 @@ void main() {
         final sent = container
             .read(chatProvider.notifier)
             .send('Use three helpers for independent parts');
-        for (
-          var i = 0;
-          i < 200 && (engine.sideCalls < 3 || engine.rounds < 3);
-          ++i
-        ) {
+        for (var i = 0; i < 200 && engine.sideCalls < 3; ++i) {
           await Future<void>.delayed(const Duration(milliseconds: 5));
         }
         expect(engine.sideCalls, 3);
-        expect(engine.rounds, 3);
+        expect(engine.rounds, 1);
         expect(container.read(helperStreamsProvider('test')), 3);
         final modelName = '${fixtures.testModel.displayName} (shared GPU)';
-        expect(
-          engine.prompts
-              .expand((p) => p)
-              .any((m) => '${m['content']}'.contains('started on $modelName')),
-          isTrue,
-        );
+        expect(container.read(chatProvider).partialAnswer, isEmpty);
         engine.sideGate.complete();
         await sent;
         final answer = container.read(chatProvider).messages.last;
@@ -337,6 +471,44 @@ void main() {
     );
   }
 
+  test('other tool calls retain all four fallback helpers', () async {
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final helper = _Helper();
+    final engine = fixtures.TestEngine()
+      ..toolBlock =
+          '<tool_call>{"name":"calculator","arguments":{"expression":"1+1"}}</tool_call>';
+    final container = ProviderContainer(
+      overrides: [
+        appDatabaseProvider.overrideWithValue(db),
+        llamaEngineProvider.overrideWithValue(engine),
+        settingsProvider.overrideWith(() => _Settings(true)),
+        modelManagerProvider.overrideWith(fixtures.TestModels.new),
+        helperRunnerProvider.overrideWithValue(helper),
+      ],
+    );
+    try {
+      await container
+          .read(chatProvider.notifier)
+          .send('Explain tides and use four agents to do that');
+      expect(helper.calls, 4);
+      final trace = TurnRun.decode(
+        container.read(chatProvider).messages.last.runJson,
+      )!.toolTrace;
+      expect(
+        trace.where((r) => (r['call'] as Map)['name'] == 'ask_helper'),
+        hasLength(4),
+      );
+      expect(
+        trace.where((r) => (r['call'] as Map)['name'] == 'calculator'),
+        hasLength(1),
+      );
+    } finally {
+      container.dispose();
+      helper.dispose();
+      await db.close();
+    }
+  });
+
   test('parallel helpers start together and report in call order', () async {
     final db = AppDatabase.forTesting(NativeDatabase.memory());
     final helper = _Helper()
@@ -364,10 +536,7 @@ void main() {
       expect(helper.started, ['first', 'second']);
       helper.gates[1].complete();
       await Future<void>.delayed(const Duration(milliseconds: 10));
-      expect(
-        engine.toolMessages!.map((m) => m['content']).join(' '),
-        contains('Helper job 1 started'),
-      );
+      expect(container.read(chatProvider).partialAnswer, isEmpty);
       helper.gates[0].complete();
       expect(await sent, isTrue);
       final replies = engine.receivedMessages!
@@ -399,7 +568,7 @@ void main() {
 
   for (final cancel in [false, true]) {
     test(
-      'background helpers overlap another model/tool round (cancel=$cancel)',
+      'helpers block further generation until all settle (cancel=$cancel)',
       () async {
         final db = AppDatabase.forTesting(NativeDatabase.memory());
         final helper = _Helper()
@@ -417,16 +586,13 @@ void main() {
         try {
           final chat = container.read(chatProvider.notifier);
           final sent = chat.send('Use two helpers for independent parts');
-          for (var i = 0; i < 200 && engine.rounds < 3; i++) {
+          for (var i = 0; i < 200 && helper.calls < 2; i++) {
             await Future<void>.delayed(const Duration(milliseconds: 5));
           }
           expect(helper.calls, 2);
           expect(helper.gates.every((g) => !g.isCompleted), isTrue);
-          expect(engine.rounds, 3);
-          expect(
-            engine.prompts.last.any((m) => m['name'] == 'calculator'),
-            isTrue,
-          );
+          expect(engine.rounds, 1);
+          expect(container.read(chatProvider).partialAnswer, isEmpty);
           if (cancel) {
             chat.cancel();
           } else {
@@ -436,9 +602,9 @@ void main() {
           await sent;
           if (cancel) {
             expect(helper.cancellations, 2);
-            expect(engine.rounds, 3);
+            expect(engine.rounds, 1);
           } else {
-            expect(engine.rounds, 4);
+            expect(engine.rounds, 2);
             final results = engine.prompts.last
                 .where((m) => m['name'] == 'ask_helper')
                 .toList();
@@ -452,7 +618,7 @@ void main() {
             final trace = TurnRun.decode(
               container.read(chatProvider).messages.last.runJson,
             )!.toolTrace;
-            expect(trace, hasLength(3));
+            expect(trace, hasLength(2));
             expect(
               trace.take(2).every((r) => (r['elapsedMs'] as int) > 0),
               isTrue,

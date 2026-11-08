@@ -16,6 +16,8 @@ import '../../core/platform/device_info.dart';
 import '../../core/providers/shared_providers.dart';
 import '../../core/utils/priority_work_queue.dart';
 import '../../inference/engine/llama_engine.dart';
+import '../../inference/engine/text_engine.dart';
+import '../../inference/remote/remote_engine.dart';
 import '../models/domain/entities/model_info.dart';
 import '../models/presentation/providers/model_manager_provider.dart';
 import '../models/presentation/providers/model_recommendations_provider.dart';
@@ -45,7 +47,7 @@ class HelperUnavailable implements Exception {
   String toString() => 'HelperUnavailable: $reason';
 }
 
-/// Keeps a small model resident between side jobs, on its own worker.
+/// Keeps local agent weights resident and routes Same as chat to remote APIs.
 class HelperRunner {
   final LlamaEngine engine;
   final LlamaEngine chatEngine;
@@ -63,6 +65,12 @@ class HelperRunner {
   final Future<DeviceMemory?> Function() memory;
   final bool Function() desktop;
   final bool Function() localChat;
+  final InferenceSettings Function()? chatSettings;
+
+  /// A job owns its client so cancellation never stops the chat or another job.
+  final RemoteEngine Function()? remoteEngine;
+  final _remoteQueues = List.generate(4, (_) => PriorityWorkQueue());
+  final _remotePending = List.filled(4, 0);
   final Duration idle;
   final Duration timeout;
   final Duration loadTimeout;
@@ -98,6 +106,8 @@ class HelperRunner {
     this.memory = DeviceMemory.read,
     this.desktop = _desktop,
     this.localChat = _localChat,
+    this.chatSettings,
+    this.remoteEngine,
     this.idle = const Duration(minutes: 3),
     this.timeout = const Duration(seconds: 90),
     this.loadTimeout = const Duration(seconds: 120),
@@ -302,8 +312,23 @@ class HelperRunner {
     return future;
   }
 
-  /// The agent model setting that means "whatever the chat has loaded".
+  /// The agent model setting that means the chat's selected local or remote model.
   static const sameAsChat = '@chat';
+
+  String _remoteName(InferenceSettings settings) =>
+      settings.remoteModel.trim().isEmpty
+      ? 'server default'
+      : settings.remoteModel.trim();
+
+  InferenceSettings? _remoteSettings(
+    String modelId,
+    InferenceSettings? agentSettings,
+  ) {
+    final settings = agentSettings ?? chatSettings?.call();
+    return modelId == sameAsChat && settings?.usesRemote == true
+        ? settings
+        : null;
+  }
 
   String _resolve(String modelId) {
     if (modelId != sameAsChat) return modelId;
@@ -337,6 +362,8 @@ class HelperRunner {
     String modelId, {
     InferenceSettings? agentSettings,
   }) async {
+    final remote = _remoteSettings(modelId, agentSettings);
+    if (remote != null) return _remoteName(remote);
     modelId = _resolve(modelId);
     final sideGpu = _usesSharedGpu(modelId);
     final placement = sideGpu
@@ -357,6 +384,36 @@ class HelperRunner {
     CancelToken? cancel,
   }) async {
     if (_disposed) throw const HelperUnavailable('helper is disposed');
+    final remote = _remoteSettings(modelId, agentSettings);
+    if (remote != null) {
+      final maximum = remote.agentMaxConcurrent.clamp(1, 4);
+      var lane = 0;
+      for (var i = 1; i < maximum; i++) {
+        if (_remotePending[i] < _remotePending[lane]) lane = i;
+      }
+      _remotePending[lane]++;
+      try {
+        return await _runHere(
+          remoteSettings: remote,
+          workQueue: _remoteQueues[lane],
+          sideGpu: false,
+          placement: remote,
+          modelId: modelId,
+          task: task,
+          input: input,
+          messageId: messageId,
+          maxTokens: maxTokens,
+          jobTimeout: remote.agentTimeoutSeconds <= 0
+              ? null
+              : Duration(seconds: remote.agentTimeoutSeconds.clamp(1, 86400)),
+          webTools: webTools,
+          approveWeb: approveWeb,
+          cancel: cancel,
+        );
+      } finally {
+        _remotePending[lane]--;
+      }
+    }
     modelId = _resolve(modelId);
     final sideGpu = _usesSharedGpu(modelId);
     final reuse =
@@ -383,6 +440,13 @@ class HelperRunner {
         input: input,
         messageId: messageId,
         maxTokens: maxTokens,
+        jobTimeout: agentSettings == null
+            ? timeout
+            : agentSettings.agentTimeoutSeconds <= 0
+            ? null
+            : Duration(
+                seconds: agentSettings.agentTimeoutSeconds.clamp(1, 86400),
+              ),
         webTools: webTools,
         approveWeb: approveWeb,
         cancel: cancel,
@@ -394,6 +458,9 @@ class HelperRunner {
 
   /// Jobs queue in arrival order. Cancellation also applies while queued.
   Future<HelperReply> _runHere({
+    InferenceSettings? remoteSettings,
+    PriorityWorkQueue? workQueue,
+    required Duration? jobTimeout,
     required bool sideGpu,
     required InferenceSettings placement,
     required String modelId,
@@ -412,9 +479,12 @@ class HelperRunner {
     var phase = HelperPhase.queued;
     final chatId = loadedModelId();
     final chatModel = catalog().where((m) => m.id == chatId).firstOrNull;
-    final modelName = _modelName(modelId, sideGpu, placement);
+    final modelName = remoteSettings == null
+        ? _modelName(modelId, sideGpu, placement)
+        : _remoteName(remoteSettings);
     // A desktop agent model batches all its jobs on one resident copy, like the chat model's side batch (owner, 2026-11-02).
     final ownSide =
+        remoteSettings == null &&
         batchOwnModel &&
         desktop() &&
         !sideGpu &&
@@ -495,7 +565,8 @@ class HelperRunner {
 
     emit();
     bool? previousLiveMetrics;
-    LlamaEngine? active;
+    TextEngine? active;
+    RemoteEngine? remoteClient;
     var finished = false;
     HelperUnavailable? stopped;
     void stop(String reason) {
@@ -537,8 +608,10 @@ class HelperRunner {
           if (sideGpu)
             'backend':
                 '${chatEngine.metrics['backend']} (shared with ${chatModel?.displayName ?? chatId})',
-          if (!sideGpu) 'loadProgress': ?active!.loadProgress,
-          if (!sideGpu) 'prefillProgress': ?active!.prefillProgress,
+          if (!sideGpu && active is LlamaEngine)
+            'loadProgress': ?(active as LlamaEngine).loadProgress,
+          if (!sideGpu && active is LlamaEngine)
+            'prefillProgress': ?(active as LlamaEngine).prefillProgress,
         };
       }
       emit();
@@ -556,6 +629,19 @@ class HelperRunner {
             : 'own engine'}): $task',
       );
       Timer? timer;
+      final activeTime = Stopwatch();
+      void armDeadline() {
+        timer?.cancel();
+        if (jobTimeout == null) return;
+        activeTime.start();
+        final remaining = jobTimeout - activeTime.elapsed;
+        if (remaining <= Duration.zero) {
+          stop('timed out');
+        } else {
+          timer = Timer(remaining, () => stop('timed out'));
+        }
+      }
+
       bool Function()? previousLoadStop;
       var changedLoadStop = false;
       try {
@@ -564,23 +650,29 @@ class HelperRunner {
         _idleTimer?.cancel();
         // Side batches run on the chat's loaded weights, not a file.
         final model = catalog().where((m) => m.id == modelId).firstOrNull;
-        if (model == null ||
-            (!sideGpu &&
-                (!model.isDownloaded ||
-                    model.localPath == null ||
-                    !await File(model.localPath!).exists()))) {
+        if (remoteSettings == null &&
+            (model == null ||
+                (!sideGpu &&
+                    (!model.isDownloaded ||
+                        model.localPath == null ||
+                        !await File(model.localPath!).exists())))) {
           throw const HelperUnavailable('model is not downloaded');
         }
-        final file = File(model.localPath ?? '');
+        final file = File(model?.localPath ?? '');
         if (stopped != null) throw stopped!;
         final reuse =
+            remoteSettings == null &&
             !sideGpu &&
             shareChat &&
             loadedModelId() == modelId &&
             chatEngine.isLoaded;
-        final target = sideGpu || reuse ? chatEngine : engine;
+        if (remoteSettings != null) {
+          remoteClient = remoteEngine?.call() ?? RemoteEngine();
+        }
+        final TextEngine target =
+            remoteClient ?? (sideGpu || reuse ? chatEngine : engine);
         // A chat generation owns its context until the stream has ended.
-        if (!side && target.isBusy) {
+        if (!side && target is LlamaEngine && target.isBusy) {
           throw const HelperUnavailable('model is busy');
         }
         var settings =
@@ -588,6 +680,10 @@ class HelperRunner {
                     ? settingsFor(chatModel).withAgentSettings(placement)
                     : placement)
                 .forAgent(answerTokens: maxTokens);
+        // Server defaults must not override the helper's bounded response.
+        if (remoteSettings != null) {
+          settings = settings.copyWith(serverSampling: false);
+        }
         if (reuse && engine.isLoaded) {
           // The chat may have loaded a model the helper already held.
           await _release();
@@ -608,7 +704,7 @@ class HelperRunner {
               // Read now: the cached device facts predate the chat's load.
               final available = await memory();
               final fileBytes = await file.length();
-              final bytes = model.sizeBytes > fileBytes
+              final bytes = model!.sizeBytes > fileBytes
                   ? model.sizeBytes
                   : fileBytes;
               if (available == null ||
@@ -636,7 +732,7 @@ class HelperRunner {
                 );
               } catch (error, stack) {
                 _log.warning(
-                  '$id: loading ${model.displayName} failed',
+                  '$id: loading ${model!.displayName} failed',
                   error,
                   stack,
                 );
@@ -653,7 +749,7 @@ class HelperRunner {
             timer = null;
             loadMs = loading.elapsedMilliseconds;
             _log.info(
-              '$id: loaded ${model.displayName} in $loadMs ms '
+              '$id: loaded ${model!.displayName} in $loadMs ms '
               '(${engine.metrics['backend']}, ${(engine.metrics['effectiveSettings'] as Map?)?['gpuLayers']} GPU layers)',
             );
             _residentSettings = settings;
@@ -662,13 +758,16 @@ class HelperRunner {
           }
         }
 
-        if (!reuse && !sideGpu) {
+        if (remoteSettings == null && !reuse && !sideGpu) {
           // Batched jobs run beside each other, so only their loads queue.
           await (ownSide ? _queue.submit(ensureLoaded) : ensureLoaded());
         }
         if (stopped != null) throw stopped!;
         if (_disposed) throw const HelperUnavailable('helper is disposed');
-        if (!reuse && !sideGpu && _residentSettings != null) {
+        if (remoteSettings == null &&
+            !reuse &&
+            !sideGpu &&
+            _residentSettings != null) {
           settings = settings.copyWith(
             backend: _residentSettings!.backend,
             nGpuLayers: _residentSettings!.nGpuLayers,
@@ -676,7 +775,7 @@ class HelperRunner {
         }
         active = target;
         phase = side ? HelperPhase.queued : HelperPhase.prefill;
-        if (!side) {
+        if (!side && target is LlamaEngine) {
           // Previous job counters must not appear during fresh prefill (owner, 2026-11-02).
           target.metrics = {
             for (final e in target.metrics.entries)
@@ -699,8 +798,7 @@ class HelperRunner {
           }
           phase = HelperPhase.prefill;
           generation ??= Stopwatch()..start();
-          timer?.cancel();
-          timer = Timer(timeout, () => stop('timed out'));
+          armDeadline();
           emit();
         }
 
@@ -715,9 +813,9 @@ class HelperRunner {
             // Waiting for the user does not consume the inference deadline.
             if (value == 'approval') {
               timer?.cancel();
+              activeTime.stop();
             } else {
-              timer?.cancel();
-              timer = Timer(timeout, () => stop('timed out'));
+              armDeadline();
             }
             emit();
           },
@@ -739,13 +837,13 @@ class HelperRunner {
                     messages: messages,
                     fallbackTemplate: sideGpu
                         ? chatModel?.family.fallbackTemplate ?? ''
-                        : model.family.fallbackTemplate,
+                        : model!.family.fallbackTemplate,
                     settings: settings,
                     onStarted: started,
                   )
                 : target.generate(
                     messages: messages,
-                    fallbackTemplate: model.family.fallbackTemplate,
+                    fallbackTemplate: model?.family.fallbackTemplate ?? '',
                     settings: settings,
                   );
             await for (final part in stream) {
@@ -834,8 +932,9 @@ class HelperRunner {
         updates?.cancel();
         finished = true;
         if (previousLiveMetrics != null) {
-          active?.reportLiveMetrics = previousLiveMetrics!;
+          (active as LlamaEngine).reportLiveMetrics = previousLiveMetrics!;
         }
+        remoteClient?.dispose();
         active = null;
         _stops.remove(cancelJob);
         if (side) sideEngine().sideMetrics.remove(id);
@@ -845,7 +944,7 @@ class HelperRunner {
       }
     }
 
-    unawaited(side ? execute() : _queue.submit(execute));
+    unawaited(side ? execute() : (workQueue ?? _queue).submit(execute));
     return reply.future;
   }
 
@@ -895,6 +994,8 @@ final helperRunnerProvider = Provider<HelperRunner>((ref) {
       if (alive) jobs.publish(job);
     },
     localChat: () => !ref.read(effectiveSettingsProvider).effective.usesRemote,
+    chatSettings: () => ref.read(effectiveSettingsProvider).effective,
+    remoteEngine: ref.watch(remoteHelperEngineFactoryProvider),
     engine: ref.watch(helperEngineProvider),
     extraEngine: createHelperEngine,
     lanes: 4,

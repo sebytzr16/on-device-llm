@@ -372,10 +372,18 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       try {
         final target = await ModelStorage.modelFile(entry.fileName);
         if (!await target.exists()) {
-          path = (await file.rename(target.path)).path;
+          // A file a runtime holds leased is not moved out from under it
+          // (audit N14, 2026-11-07); the guard refuses with the usual
+          // in-use error and the row keeps the file where it is.
+          final guard = _guardModelPaths([file.path]);
+          try {
+            path = (await file.rename(target.path)).path;
+          } finally {
+            guard.release();
+          }
         }
       } catch (_) {
-        // A file that cannot be renamed is used where it is.
+        // A file that cannot be renamed (or is in use) is used where it is.
       }
       await (db.update(db.models)..where((t) => t.id.equals(entry.id))).write(
         ModelsCompanion(

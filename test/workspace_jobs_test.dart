@@ -5,6 +5,92 @@ import 'package:ondevice_llm/features/hosting/workspace_jobs.dart';
 
 void main() {
   test(
+    'a paused subscriber receives completion emitted during replay',
+    () async {
+      final job = WorkspaceJob('job', 'request', 'input');
+      addTearDown(job.dispose);
+      job.emit('started');
+      job.emit('agent', {'id': 'a', 'output': 'working'});
+      final subscriber = StreamIterator(job.events(compact: true));
+      addTearDown(subscriber.cancel);
+      expect(await subscriber.moveNext(), isTrue);
+      job.emit('agent', {'id': 'a', 'output': 'finished'});
+      job.emit('done');
+      final remaining = <Map<String, dynamic>>[];
+      while (await subscriber.moveNext()) {
+        remaining.add(subscriber.current);
+      }
+      expect(remaining.last['type'], 'done');
+      expect(
+        remaining
+            .where((event) => event['type'] == 'agent')
+            .last['data']['output'],
+        'finished',
+      );
+    },
+  );
+
+  test('a large replacement snapshot is not charged twice', () async {
+    final job = WorkspaceJob('job', 'request', 'input');
+    addTearDown(job.dispose);
+    final output = 'x' * (WorkspaceJob.maxJournalBytes ~/ 2 + 1000);
+    job.emit('agent', {'id': 'a', 'output': output});
+    job.emit('agent', {'id': 'a', 'output': '$output updated'});
+    expect(job.cancel.isCancelled, isFalse);
+    expect(job.retainedBytes, lessThan(WorkspaceJob.maxJournalBytes));
+    job.emit('done');
+    final snapshots = (await job.events(compact: true).toList()).where(
+      (event) => event['type'] == 'agent',
+    );
+    expect(snapshots.single['data']['output'], endsWith(' updated'));
+  });
+
+  test(
+    'four streaming snapshots compact without cancelling long jobs',
+    () async {
+      final job = WorkspaceJob('job', 'request', 'input');
+      addTearDown(job.dispose);
+      job.emit('started');
+      for (var step = 0; step < 500; step++) {
+        for (var agent = 0; agent < 4; agent++) {
+          job.emit('agent', {
+            'id': 'a$agent',
+            'phase': 'generating',
+            'output': '${'writing ' * 1200}$step:$agent',
+            'elapsedMs': step * 200,
+          });
+        }
+      }
+      expect(job.cancel.isCancelled, isFalse);
+      expect(job.terminal, isFalse);
+      expect(
+        job.retainedBytes,
+        lessThanOrEqualTo(WorkspaceJob.maxJournalBytes),
+      );
+      job.emit('done');
+      final replay = await job.events(compact: true).toList();
+      expect(replay.any((event) => event['type'] == 'checkpoint'), isTrue);
+      for (var agent = 0; agent < 4; agent++) {
+        final latest = replay
+            .where(
+              (event) =>
+                  event['type'] == 'agent' && event['data']['id'] == 'a$agent',
+            )
+            .last;
+        expect(latest['data']['output'], endsWith('499:$agent'));
+      }
+      final legacy = await job.events().toList();
+      expect(
+        legacy.map((event) => event['sequence']),
+        List.generate(job.sequence, (index) => index + 1),
+      );
+      final resumed = await job.events(after: 1000, compact: true).toList();
+      expect(resumed.first['sequence'], 1001);
+      expect(resumed.last['type'], 'done');
+    },
+  );
+
+  test(
     'rejoining replays ordered activity without duplicating execution',
     () async {
       final jobs = WorkspaceJobs();

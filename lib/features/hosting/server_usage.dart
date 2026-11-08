@@ -38,7 +38,26 @@ class ServerUsage {
     return [for (var i = minute - 29; i <= minute; i++) minutes[i] ?? 0];
   }
 
+  /// Distinct clients kept in the session view. Every request, rejected
+  /// ones included, records its address, so a LAN scan (or IPv6 privacy
+  /// addresses) would otherwise grow this map for as long as the server runs
+  /// (audit M08). Totals above stay exact; only the least recently seen
+  /// clients drop out of the per-client list.
+  static const maxClients = 64;
+
+  static Map<String, UsageGroup> _keepRecent(Map<String, UsageGroup> all) {
+    if (all.length <= maxClients) return all;
+    final recent = all.entries.toList()
+      ..sort(
+        (a, b) => (b.value.lastSeen ?? DateTime(0)).compareTo(
+          a.value.lastSeen ?? DateTime(0),
+        ),
+      );
+    return {for (final e in recent.take(maxClients)) e.key: e.value};
+  }
+
   ServerUsage record(ServedRequest r) {
+    final client = r.attributedClient ?? r.client;
     final minute = r.at.millisecondsSinceEpoch ~/ 60000;
     final newest = minutes.keys.fold(minute, (a, b) => a > b ? a : b);
     final answer = r.ok && r.completion;
@@ -52,10 +71,12 @@ class ServerUsage {
       answerMs: answerMs + (answer ? r.took.inMicroseconds / 1000 : 0),
       rates: rates + (rate ? 1 : 0),
       rateSum: rateSum + (rate ? r.tokensPerSecond : 0),
-      clients: Map.unmodifiable({
-        ...clients,
-        r.client: (clients[r.client] ?? const UsageGroup()).add(r),
-      }),
+      clients: Map.unmodifiable(
+        _keepRecent({
+          ...clients,
+          client: (clients[client] ?? const UsageGroup()).add(r),
+        }),
+      ),
       models: Map.unmodifiable({
         ...models,
         if (r.modelId.isNotEmpty)

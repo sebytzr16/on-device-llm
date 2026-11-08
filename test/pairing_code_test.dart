@@ -78,34 +78,38 @@ void main() {
     );
   });
 
-  test('guesses sent at once still get five tries in total', () async {
-    await start();
-    final results = await Future.wait([
-      for (var i = 0; i < 20; i++)
-        PairingCode.redeem(endpoint, '${100000 + i}').then<Object>(
-          (v) => v,
-          onError: (Object e) => (e as PairingException).failure,
+  test(
+    'guesses sent at once get at most five tries including reader admission',
+    () async {
+      await start();
+      final results = await Future.wait([
+        for (var i = 0; i < 20; i++)
+          PairingCode.redeem(endpoint, '${100000 + i}').then<Object>(
+            (v) => v,
+            onError: (Object e) => (e as PairingException).failure,
+          ),
+      ]);
+      // Reader admission can reject a request before it spends a code attempt.
+      final wrongCodes = results
+          .where((r) => r == PairingFailure.wrongCode)
+          .length;
+      expect(wrongCodes, inInclusiveRange(1, PairingCode.maxFailures));
+      expect(
+        results.where((r) => r == PairingFailure.lockedOut),
+        hasLength(20 - wrongCodes),
+      );
+      await expectLater(
+        PairingCode.redeem(endpoint, '482913'),
+        throwsA(
+          isA<PairingException>().having(
+            (e) => e.failure,
+            'failure',
+            PairingFailure.lockedOut,
+          ),
         ),
-    ]);
-    expect(
-      results.where((r) => r == PairingFailure.wrongCode),
-      hasLength(PairingCode.maxFailures),
-    );
-    expect(
-      results.where((r) => r == PairingFailure.lockedOut),
-      hasLength(20 - PairingCode.maxFailures),
-    );
-    await expectLater(
-      PairingCode.redeem(endpoint, '482913'),
-      throwsA(
-        isA<PairingException>().having(
-          (e) => e.failure,
-          'failure',
-          PairingFailure.lockedOut,
-        ),
-      ),
-    );
-  });
+      );
+    },
+  );
 
   test('no code (loopback-only server) means no pairing', () async {
     await start(code: null);

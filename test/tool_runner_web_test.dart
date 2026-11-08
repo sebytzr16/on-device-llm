@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ondevice_llm/core/errors/exceptions.dart';
 import 'package:ondevice_llm/data/local/database/app_database.dart';
 import 'package:ondevice_llm/features/knowledge/knowledge_store.dart';
 import 'package:ondevice_llm/data/network/web_search/duckduckgo_scraper.dart';
@@ -33,6 +34,21 @@ class _Search extends DuckDuckGoScraper {
       ),
     ];
   }
+}
+
+class _FailedSearch extends _Search {
+  final Exception error;
+  _FailedSearch(this.error);
+
+  @override
+  Future<List<SearchResult>> search(
+    String query, {
+    int limit = 5,
+    CancelToken? cancelToken,
+    String localeCode = '',
+    String? dateFilter,
+    String? region,
+  }) async => throw error;
 }
 
 class _RecipeSearch extends DuckDuckGoScraper {
@@ -147,6 +163,34 @@ ToolCall _call(String name, Map<String, Object> args) => ToolCall(
 );
 
 void main() {
+  test(
+    'search failures direct helpers to existing evidence without claiming a block',
+    () async {
+      for (final error in [
+        const SearchChallengeException('provider bot check'),
+        SearchCooldownException('provider block', DateTime.now()),
+        const SearchHttpException('DDG HTTP 503'),
+      ]) {
+        final runner = ToolRunner(
+          scraper: _FailedSearch(error),
+          reader: _Reader(''),
+          settings: const InferenceSettings(
+            webMode: WebMode.auto,
+            toolsEnabled: true,
+          ),
+        );
+        final result = await runner.run(
+          _call('search_web', {'query': 'current facts'}),
+        );
+        expect(result.ok, isFalse);
+        expect(result.output, contains('Search failed temporarily'));
+        expect(result.output, contains('already found this turn'));
+        expect(result.output, isNot(contains('provider block')));
+        expect(result.output, isNot(contains('provider bot check')));
+      }
+    },
+  );
+
   test('source keys keep path and query case (P2-49)', () {
     expect(
       ToolRunner.sourceKey('https://example.com/Foo'),

@@ -78,7 +78,7 @@ class LlamaEngine implements TextEngine {
       jsonEncode({
         'messages': messages,
         'fallbackTemplate': fallbackTemplate,
-        'settings': settings.toJson(),
+        'settings': generationConfig(settings: settings),
       }),
       onStarted,
     );
@@ -899,16 +899,28 @@ class LlamaEngine implements TextEngine {
     return op.future;
   }
 
-  /// The settings as the bridge reads them, with the response budget
-  /// capped at a quarter of the loaded context ([InferenceSettings.responseReserve]).
+  /// The settings as the bridge reads them. The actual maxTokens is passed
+  /// through for generation; reservedTokens carries the response reserve
+  /// ([InferenceSettings.responseReserve]) for prompt budgeting only.
   Map<String, dynamic> _native(InferenceSettings settings) {
     final context = metrics['contextSize'];
-    final window = context is int && context > 0
-        ? context
-        : settings.contextSize;
+    return generationConfig(
+      settings: settings,
+      contextSize: context is int && context > 0 ? context : null,
+    );
+  }
+
+  /// Serializes generation and prompt budgets independently. [contextSize]
+  /// overrides the requested window when the loaded model uses a smaller one.
+  static Map<String, dynamic> generationConfig({
+    required InferenceSettings settings,
+    int? contextSize,
+  }) {
+    final window = contextSize ?? settings.contextSize;
     return {
       ...settings.toJson(),
-      'maxTokens': settings.responseReserve(window),
+      'maxTokens': settings.maxTokens,
+      'reservedTokens': settings.responseReserve(window),
     };
   }
 

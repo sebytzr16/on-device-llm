@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 
+import '../chat/domain/turn_prompts.dart';
 import '../settings/domain/entities/inference_settings.dart';
 import '../tools/domain/tool_spec.dart';
 import '../tools/tool_runner.dart';
@@ -41,7 +42,8 @@ class HelperToolLoop {
     var available =
         specs.isNotEmpty && settings.agentWebAccess != AgentWebAccess.never;
     final system =
-        'You are a helper model. Do exactly the task you are given and reply with the result only, no preamble. Be concise.'
+        '${TurnPrompts.clockLine()}\n'
+        'You are a helper model. Do exactly the task you are given and reply with the result only, no preamble. Be concise. Use today\'s date for current searches; do not invent a past year.'
         '${settings.agentThinking ? '' : ' Do not think aloud.'}'
         '\n${settings.agentInstructions}';
     final request = HelperRequest.content(
@@ -65,13 +67,19 @@ class HelperToolLoop {
       return utf8.decode(bytes.take(end).toList());
     }
 
-    for (var round = 0; round <= settings.agentToolRounds; round++) {
+    var answerRetry = false;
+    for (var round = 0; round <= settings.agentToolRounds + 1; round++) {
       if (cancel?.isCancelled == true) throw cancel!.cancelError!;
       final offered =
-          available && round < settings.agentToolRounds && budget >= 512;
+          !answerRetry &&
+          available &&
+          round < settings.agentToolRounds &&
+          budget >= 512;
       var instruction = offered
           ? '\n${TextToolProtocol.instructions(specs)}'
-          : '\nWeb tools are unavailable. Answer now using the information available.';
+          : '\n${available ? '' : 'Web tools are unavailable for this helper. '}'
+                'Answer now using the results and information already available. '
+                'Use the task input when web results are missing and state what cannot be verified. Do not output a tool call.';
       if (offered && utf8.encode(instruction).length > budget ~/ 2) {
         instruction =
             '\nReply with a tool JSON block: {"name":"search_web","arguments":{"query":"..."}} or {"name":"read_url","arguments":{"url":"..."}}. Otherwise answer the task.';
@@ -111,7 +119,28 @@ class HelperToolLoop {
           .replaceAll(RegExp(r'</think>', caseSensitive: false), '');
       if (cancel?.isCancelled == true) throw cancel!.cancelError!;
       final calls = TextToolProtocol.parse(text, counter: round + 1);
-      if (calls.isEmpty || !offered) return TextToolProtocol.strip(text);
+      final answer = TextToolProtocol.strip(text);
+      if (calls.isEmpty && answer.isNotEmpty) return answer;
+      if (!offered || calls.isEmpty) {
+        if (!answerRetry) {
+          answerRetry = true;
+          history.add({'role': 'assistant', 'content': ''});
+          history.add({
+            'role': 'user',
+            'content':
+                'Write the result in plain text from the task input and available evidence. No tools are available. State missing information rather than inventing current facts.',
+          });
+          continue;
+        }
+        final evidence = trace
+            .where((r) => r.ok)
+            .map((r) => r.output)
+            .join('\n');
+        return evidence.isNotEmpty
+            ? 'Available evidence:\n$evidence'
+            : 'No verified web results are available. '
+                  '${input.trim().isEmpty ? 'The task requires information not supplied in the input.' : 'Available task input:\n${cut(input, settings.agentInputBudget)}'}';
+      }
       history.add({'role': 'assistant', 'content': text});
       final results = <String>[];
       for (final call in calls) {

@@ -75,9 +75,15 @@ class _WorkspacePageState extends ConsumerState<ConversationWorkspacePage> {
               onPressed: () => Navigator.pop(dialog),
               child: Text(dialog.l10n.cancel),
             ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialog, true),
-              child: Text(dialog.l10n.save),
+            // Save waits for a name, as on desktop (audit C07).
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: name,
+              builder: (_, value, _) => FilledButton(
+                onPressed: value.text.trim().isEmpty
+                    ? null
+                    : () => Navigator.pop(dialog, true),
+                child: Text(dialog.l10n.save),
+              ),
             ),
           ],
         ),

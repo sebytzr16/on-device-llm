@@ -151,13 +151,26 @@ class PhoneAction {
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
     if (name.isEmpty) name = 'note';
+    // Windows refuses device names as files whatever the extension
+    // ("CON.md", "nul.txt"), and trailing dots or spaces are dropped
+    // (audit M13).
+    name = name.replaceAll(RegExp(r'[. ]+$'), '');
+    if (name.isEmpty) name = 'note';
     final ext = p.extension(name).toLowerCase();
     if (!PhoneActions.fileTypes.contains(ext)) {
       final format = _s('format').toLowerCase().replaceAll('.', '');
       name =
           '$name.${PhoneActions.fileTypes.contains('.$format') ? format : 'md'}';
     }
-    return name.length > 80 ? name.substring(name.length - 80) : name;
+    if (name.length > 80) name = name.substring(name.length - 80);
+    // Checked after truncation, which can expose an inner "CON." prefix.
+    if (RegExp(
+      r'^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\.|$)',
+      caseSensitive: false,
+    ).hasMatch(name)) {
+      name = '_$name';
+    }
+    return name;
   }
 
   /// Why the model's arguments cannot work, or null.
@@ -598,9 +611,25 @@ abstract final class PhoneActions {
 
   /// Writes a save_file action and returns the file.
   static Future<File> writeFile(PhoneAction a) async {
-    final file = File(p.join((await filesDir()).path, a.fileName));
-    await file.writeAsString('${a.args['content']}', encoding: utf8);
-    return file;
+    // A second file with the same name gets " (2)", " (3)"… instead of
+    // silently replacing the earlier one (audit M13).
+    final dir = (await filesDir()).path;
+    final name = a.fileName;
+    final stem = p.basenameWithoutExtension(name);
+    final ext = p.extension(name);
+    // Exclusive create reserves the name, so two saves at once never pick
+    // the same free path.
+    for (var n = 1; ; n++) {
+      final file = File(p.join(dir, n == 1 ? name : '$stem ($n)$ext'));
+      try {
+        await file.create(exclusive: true);
+      } on FileSystemException {
+        if (await file.exists()) continue;
+        rethrow;
+      }
+      await file.writeAsString('${a.args['content']}', encoding: utf8);
+      return file;
+    }
   }
 
   /// Opens the phone's app for [a] (or the share sheet for a file). False

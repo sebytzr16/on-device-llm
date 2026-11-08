@@ -1155,7 +1155,10 @@ class _SourcesBubble extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.all(AppDesign.sm),
           child: Text(
-            '${evidence.length} reference${evidence.length == 1 ? '' : 's'} · ${sponsored.length} sponsored',
+            context.l10n.sourceReferenceSponsoredCount(
+              evidence.length,
+              sponsored.length,
+            ),
             style: context.text.mono.copyWith(color: c.textMuted),
           ),
         ),

@@ -12,6 +12,7 @@ HelperJob _job(
   String id, {
   HelperPhase phase = HelperPhase.generating,
   String? reason,
+  String output = 'A useful result',
 }) => HelperJob(
   id: id,
   task: 'Summarise the notes',
@@ -20,7 +21,7 @@ HelperJob _job(
   messageId: 'answer',
   phase: phase,
   reason: reason,
-  output: 'A useful result',
+  output: output,
   thinking: 'Working through the notes',
   elapsed: const Duration(seconds: 2),
   firstToken: const Duration(milliseconds: 500),
@@ -177,6 +178,10 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('2 agents'), findsOneWidget);
         expect(find.text('40.0 tok/s'), findsOneWidget);
+        expect(find.text('A useful result'), findsNWidgets(2));
+        // New work opens automatically; the user can still fold it.
+        await tester.tap(find.byKey(const Key('helper-live-toggle')));
+        await tester.pumpAndSettle();
         expect(
           tester.getSize(find.byKey(const Key('helper-live-strip'))).height,
           lessThanOrEqualTo(56),
@@ -191,7 +196,22 @@ void main() {
         await tester.tap(find.byKey(const Key('agent-details-one')));
         await tester.pumpAndSettle();
         expect(find.byType(HelperJobCard), findsOneWidget);
-        expect(find.text('A useful result'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byType(Dialog),
+            matching: find.text('A useful result'),
+          ),
+          findsOneWidget,
+        );
+        notifier.publish(_job('one', output: 'A streamed update'));
+        await tester.pumpAndSettle();
+        expect(
+          find.descendant(
+            of: find.byType(Dialog),
+            matching: find.text('A streamed update'),
+          ),
+          findsOneWidget,
+        );
         Navigator.of(tester.element(find.byType(HelperJobCard))).pop();
         await tester.pumpAndSettle();
         notifier.publish(_job('one', phase: HelperPhase.done));
@@ -252,6 +272,9 @@ void main() {
       );
       await tester.pumpAndSettle();
       final panel = find.byKey(const Key('helper-live-strip'));
+      expect(find.text('Not enough memory for this agent'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('helper-live-toggle')));
+      await tester.pumpAndSettle();
       expect(tester.getSize(panel).height, lessThanOrEqualTo(56));
       expect(find.text('Not enough memory for this agent'), findsNothing);
       await tester.tap(find.byKey(const Key('helper-live-toggle')));
@@ -266,10 +289,12 @@ void main() {
       await tester.scrollUntilVisible(
         find.byKey(const Key('helper-phone-row-job-11')),
         200,
-        scrollable: find.descendant(
-          of: find.byKey(const Key('helper-live-agents')),
-          matching: find.byType(Scrollable),
-        ),
+        scrollable: find
+            .descendant(
+              of: find.byKey(const Key('helper-live-agents')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
       );
       await tester.pumpAndSettle();
       expect(
@@ -281,6 +306,76 @@ void main() {
       await tester.tap(find.byKey(const Key('helper-live-toggle')));
       await tester.pumpAndSettle();
       expect(tester.getSize(panel).height, lessThanOrEqualTo(56));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('four phone agents keep their live previews visible together', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    for (var i = 0; i < 4; i++) {
+      container
+          .read(helperJobsProvider.notifier)
+          .publish(
+            _job('four-$i', output: 'Agent $i is writing a separate answer'),
+          );
+    }
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: AppTheme.dark,
+          home: const Scaffold(body: HelperLivePanel()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final panel = tester.getRect(find.byKey(const Key('helper-live-strip')));
+    for (var i = 0; i < 4; i++) {
+      final preview = tester.getRect(
+        find.byKey(Key('helper-phone-output-four-$i')),
+      );
+      expect(preview.top, greaterThanOrEqualTo(panel.top));
+      expect(preview.bottom, lessThanOrEqualTo(panel.bottom));
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'phone previews stream, respect manual folding and reopen a fresh batch',
+    (tester) async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final jobs = container.read(helperJobsProvider.notifier);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: AppTheme.dark,
+            home: const Scaffold(body: HelperLivePanel()),
+          ),
+        ),
+      );
+      jobs.publish(_job('live', output: 'First words'));
+      await tester.pumpAndSettle();
+      expect(find.text('First words'), findsOneWidget);
+      jobs.publish(_job('live', output: 'First words and more'));
+      await tester.pumpAndSettle();
+      expect(find.text('First words and more'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('helper-live-toggle')));
+      await tester.pumpAndSettle();
+      jobs.publish(_job('live', output: 'Still writing'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('helper-live-agents')), findsNothing);
+      jobs.publish(_job('live', phase: HelperPhase.done));
+      jobs.publish(_job('next', output: 'Next task'));
+      await tester.pumpAndSettle();
+      expect(find.text('Next task'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );

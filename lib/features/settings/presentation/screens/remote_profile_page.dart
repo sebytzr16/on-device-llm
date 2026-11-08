@@ -525,7 +525,12 @@ class _RemoteProfilePageState extends ConsumerState<RemoteProfilePage> {
                           onEditingComplete: _save,
                         ),
                         const SizedBox(height: AppDesign.md),
-                        Row(
+                        // Wrap: on a phone the result line goes under the
+                        // button instead of a two-word-wide column beside it.
+                        Wrap(
+                          spacing: AppDesign.md,
+                          runSpacing: AppDesign.sm,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             FilledButton.tonalIcon(
                               key: const Key('remote-test'),
@@ -546,14 +551,11 @@ class _RemoteProfilePageState extends ConsumerState<RemoteProfilePage> {
                                     : context.l10n.remoteTestConnection,
                               ),
                             ),
-                            const SizedBox(width: AppDesign.md),
                             if (_probe != null)
-                              Expanded(
-                                child: Text(
-                                  _probe!,
-                                  style: context.text.mono.copyWith(
-                                    color: ok ? c.success : c.warning,
-                                  ),
+                              Text(
+                                _probe!,
+                                style: context.text.mono.copyWith(
+                                  color: ok ? c.success : c.warning,
                                 ),
                               ),
                           ],
@@ -714,8 +716,7 @@ class _RemoteProfilePageState extends ConsumerState<RemoteProfilePage> {
                       style: context.text.mono,
                       decoration: InputDecoration(
                         labelText: context.l10n.uiRemoteProfilePageExtraHeaders,
-                        hintText:
-                            'HTTP-Referer: https://example.app\nX-Title: My app',
+                        hintText: context.l10n.remoteHeadersExample,
                         helperText: context.l10n.remoteExtraHeadersHelp,
                         helperMaxLines: 3,
                         alignLabelWithHint: true,

@@ -22,6 +22,7 @@ import '../widgets/settings_widgets.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/design/app_dialog.dart';
 import '../../../../core/platform/form_factor.dart';
+import '../widgets/answer_tokens_control.dart';
 
 /// Layer 3 (North Star 6.6): each advanced group is its own pushed page so
 /// the main settings screen stays short.
@@ -161,7 +162,7 @@ class ContextBatchPage extends ConsumerWidget {
           ],
         ),
         SettingsNote(
-          'Context and batch changes apply the next time a model loads.',
+          context.l10n.contextBatchNextLoad,
           tone: c.warning,
           icon: Icons.schedule_outlined,
         ),
@@ -188,7 +189,7 @@ class HardwarePage extends ConsumerWidget {
               hint: context.l10n.uiAdvancedPagesAutomaticUsesCPUOpenCL2Faster,
               value: s.backend,
               items: availableBackends(),
-              labelOf: backendLabel,
+              labelOf: (v) => backendLabel(v, context.l10n),
               onChanged: (v) => n.update(s.copyWith(backend: v)),
             ),
             if (DesktopHost.active) const CpuVariantSetting(),
@@ -199,7 +200,7 @@ class HardwarePage extends ConsumerWidget {
               min: 0,
               max: 999,
               divisions: 999,
-              display: gpuLayersLabel(s.nGpuLayers),
+              display: gpuLayersLabel(s.nGpuLayers, context.l10n),
               onChanged: (v) => n.update(s.copyWith(nGpuLayers: v.round())),
             ),
             SettingSlider(
@@ -211,7 +212,7 @@ class HardwarePage extends ConsumerWidget {
               min: 0,
               max: 16,
               divisions: 16,
-              display: threadsLabel(s),
+              display: threadsLabel(s, context.l10n),
               onChanged: (v) => n.update(s.copyWith(cpuThreads: v.round())),
             ),
             SettingSlider(
@@ -221,7 +222,7 @@ class HardwarePage extends ConsumerWidget {
               min: 0,
               max: 16,
               divisions: 16,
-              display: batchThreadsLabel(s),
+              display: batchThreadsLabel(s, context.l10n),
               onChanged: (v) => n.update(s.copyWith(batchThreads: v.round())),
             ),
             SettingsSwitchRow(
@@ -241,13 +242,13 @@ class HardwarePage extends ConsumerWidget {
               hint: context.l10n.uiAdvancedPagesPrecisionOfCachedAttentionState,
               value: s.kvCacheType,
               items: KvCacheType.values,
-              labelOf: kvCacheLabel,
+              labelOf: (v) => kvCacheLabel(v, context.l10n),
               onChanged: (v) => n.update(s.copyWith(kvCacheType: v)),
             ),
           ],
         ),
         SettingsNote(
-          'Hardware changes apply on the next model load.',
+          context.l10n.hardwareNextLoad,
           tone: context.colors.warning,
           icon: Icons.schedule_outlined,
         ),
@@ -323,13 +324,14 @@ class ReasoningSearchPage extends ConsumerWidget {
                         s.localeCode,
                         localeName: Platform.localeName,
                       ),
+                      context.l10n,
                     ),
                   ),
               value: s.searchRegion,
               items: ['', ...InferenceSettings.searchRegions],
               labelOf: (v) => v.isEmpty
                   ? context.l10n.searchRegionAutomatic
-                  : _regionName(v),
+                  : _regionName(v, context.l10n),
               onChanged: (v) => n.update(s.copyWith(searchRegion: v)),
             ),
             SettingsRow(
@@ -528,17 +530,17 @@ class ReasoningSearchPage extends ConsumerWidget {
   }
 }
 
-String _regionName(String region) => switch (region) {
-  'ca-en' => 'Canada (English)',
+String _regionName(String region, AppLocalizations l10n) => switch (region) {
+  'ca-en' => l10n.searchRegionCanadaEnglish,
   'ca-fr' => 'Canada (français)',
-  'us-en' => 'United States',
-  'uk-en' => 'United Kingdom',
-  'au-en' => 'Australia',
-  'nz-en' => 'New Zealand',
-  'ie-en' => 'Ireland',
-  'in-en' => 'India',
-  'za-en' => 'South Africa',
-  'fr-fr' => 'France',
+  'us-en' => l10n.searchRegionUnitedStates,
+  'uk-en' => l10n.searchRegionUnitedKingdom,
+  'au-en' => l10n.searchRegionAustralia,
+  'nz-en' => l10n.searchRegionNewZealand,
+  'ie-en' => l10n.searchRegionIreland,
+  'in-en' => l10n.searchRegionIndia,
+  'za-en' => l10n.searchRegionSouthAfrica,
+  'fr-fr' => l10n.searchRegionFrance,
   'be-fr' => 'Belgique',
   'ch-fr' => 'Suisse (français)',
   'de-de' => 'Deutschland',
@@ -547,8 +549,8 @@ String _regionName(String region) => switch (region) {
   'mx-es' => 'México',
   'ue-es' => 'Estados Unidos (español)',
   'br-pt' => 'Brasil',
-  'jp-jp' => 'Japan',
-  'wt-wt' => 'No region',
+  'jp-jp' => l10n.searchRegionJapan,
+  'wt-wt' => l10n.searchRegionNoregion,
   _ => region,
 };
 
@@ -616,6 +618,53 @@ class _SupportCheckTile extends ConsumerWidget {
           action,
         ],
       ),
+    );
+  }
+}
+
+/// Phone: the answer limit on its own page, like the other drill rows.
+class AnswerTokensPage extends ConsumerWidget {
+  const AnswerTokensPage({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(settingsProvider);
+    final n = ref.read(settingsProvider.notifier);
+    final c = context.colors;
+    return _AdvancedScaffold(
+      title: context.l10n.settingLabelMaxTokens,
+      children: [
+        SettingsGroup(
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: AppDesign.sm),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AnswerTokensSetting(
+                    label: context.l10n.uiAdvancedPagesMaxTokensPerResponse,
+                    value: s.maxTokens,
+                    contextWindow: s.contextSize,
+                    onChanged: (v) => n.update(s.copyWith(maxTokens: v)),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppDesign.lg,
+                      0,
+                      AppDesign.lg,
+                      AppDesign.md,
+                    ),
+                    child: Text(
+                      context.l10n.answerTokensHint,
+                      style: context.text.small.copyWith(color: c.textMuted),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

@@ -91,6 +91,37 @@ class DownloadsButton extends ConsumerWidget {
 
 class DownloadCenter extends ConsumerWidget {
   const DownloadCenter({super.key});
+  Future<void> _remove(BuildContext context, {DownloadRecord? row}) async {
+    final t = context.l10n;
+    final clear = row == null;
+    if (!await confirmAction(
+      context,
+      title: clear
+          ? t.downloadClearFinishedHistory
+          : t.downloadRemoveHistoryRow,
+      message: clear
+          ? t.downloadClearFinishedConfirm
+          : t.downloadRemoveHistoryConfirm(row.name),
+      confirmLabel: clear
+          ? t.downloadClearFinishedHistory
+          : t.downloadRemoveHistoryRow,
+      destructive: true,
+    )) {
+      return;
+    }
+    try {
+      if (clear) {
+        await DownloadHistory.clearFinished();
+      } else {
+        await DownloadHistory.remove(row.attempt);
+      }
+    } catch (_) {
+      if (context.mounted) {
+        showIslandToast(context, t.historyRemoveError, tone: IslandTone.error);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.l10n;
@@ -168,12 +199,26 @@ class DownloadCenter extends ConsumerWidget {
                 ),
               const SizedBox(height: 24),
               Text(t.modelDownloadHistory, style: context.text.title),
+              Text(
+                t.downloadHistoryHint,
+                style: context.text.caption.copyWith(
+                  color: context.colors.textMuted,
+                ),
+              ),
               history.when(
                 loading: () => const LinearProgressIndicator(),
                 error: (e, _) => Text('$e'),
                 data: (rows) => Column(
                   children: [
                     if (rows.isEmpty) Text(t.modelNoHistory),
+                    if (rows.any(DownloadHistory.isFinished))
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: () => _remove(context),
+                          child: Text(t.downloadClearFinishedHistory),
+                        ),
+                      ),
                     for (final row in rows.where(
                       (r) => !active.any(
                         (p) =>
@@ -182,10 +227,21 @@ class DownloadCenter extends ConsumerWidget {
                     ))
                       ListTile(
                         title: Text(row.name),
-                        subtitle: Text(
-                          '${bytesLabel(row.size)} · ${MaterialLocalizations.of(context).formatMediumDate(row.date.toLocal())}',
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(result(row.result)),
+                            Text(
+                              '${bytesLabel(row.size)} · ${MaterialLocalizations.of(context).formatMediumDate(row.date.toLocal())}',
+                            ),
+                          ],
                         ),
-                        trailing: Text(result(row.result)),
+                        trailing: IconButton(
+                          tooltip: t.downloadRemoveHistoryRow,
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => _remove(context, row: row),
+                        ),
+                        isThreeLine: true,
                       ),
                   ],
                 ),

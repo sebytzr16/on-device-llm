@@ -9,6 +9,7 @@ import 'package:ondevice_llm/data/network/web_search/duckduckgo_scraper.dart';
 import 'package:ondevice_llm/data/network/web_search/search_models.dart';
 import 'package:ondevice_llm/data/network/web_search/web_page_reader.dart';
 import 'package:ondevice_llm/features/chat/presentation/providers/chat_provider.dart';
+import 'package:ondevice_llm/features/helper/helper_jobs.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:ondevice_llm/features/settings/presentation/providers/settings_provider.dart';
@@ -26,10 +27,14 @@ class _Remote extends TestSettings {
   final bool serverSettings;
   final WebMode web;
   final bool webResearch;
+  final bool helper;
+  final String provider;
   _Remote({
     this.serverSettings = true,
     this.web = WebMode.auto,
     this.webResearch = true,
+    this.helper = false,
+    this.provider = 'lmstudio',
   });
   @override
   InferenceSettings build() => super.build().copyWith(
@@ -39,8 +44,10 @@ class _Remote extends TestSettings {
       RemoteProfile(
         id: 'laptop',
         name: 'Laptop',
-        providerId: 'lmstudio',
-        baseUrl: 'http://10.0.0.9:1234/v1',
+        providerId: provider,
+        baseUrl: provider == 'custom'
+            ? 'http://127.0.0.1:1/v1'
+            : 'http://10.0.0.9:1234/v1',
         model: 'qwen3-32b',
         serverSettings: serverSettings,
       ),
@@ -48,6 +55,9 @@ class _Remote extends TestSettings {
     remoteProfileId: 'laptop',
     remoteWebResearch: webResearch,
     autoTitles: false,
+    toolsEnabled: helper,
+    toolHelper: helper,
+    helperModelId: helper ? '@chat' : '',
   );
 }
 
@@ -97,6 +107,7 @@ class _Call {
 
 class _Engine extends RemoteEngine {
   final calls = <_Call>[];
+  String fallback = 'It is cloudy in Toronto.';
 
   /// Scripted rounds, in order: each one's text and tool calls.
   final replies = <(String, List<Map<String, Object>>)>[];
@@ -116,7 +127,7 @@ class _Engine extends RemoteEngine {
   }) async* {
     calls.add(_Call(messages, settings, tools, toolChoice));
     final (text, toolCalls) = replies.isEmpty
-        ? ('It is cloudy in Toronto.', const <Map<String, Object>>[])
+        ? (fallback, const <Map<String, Object>>[])
         : replies.removeAt(0);
     metrics = {
       'promptTokens': 40,
@@ -129,10 +140,19 @@ class _Engine extends RemoteEngine {
   }
 }
 
+class _NoModels extends TestModels {
+  @override
+  ModelManagerState build() {
+    ready = Future.value();
+    return const ModelManagerState();
+  }
+}
+
 Future<(ProviderContainer, _Engine)> _start(
   _Remote settings, {
   _NoWeb? search,
   _NoPages? reader,
+  RemoteEngine Function()? helperEngine,
 }) async {
   SharedPreferences.setMockInitialValues({});
   final db = AppDatabase.forTesting(NativeDatabase.memory());
@@ -142,7 +162,11 @@ Future<(ProviderContainer, _Engine)> _start(
       appDatabaseProvider.overrideWithValue(db),
       remoteEngineProvider.overrideWithValue(engine),
       settingsProvider.overrideWith(() => settings),
-      modelManagerProvider.overrideWith(TestModels.new),
+      modelManagerProvider.overrideWith(
+        settings.helper ? _NoModels.new : TestModels.new,
+      ),
+      if (helperEngine != null)
+        remoteHelperEngineFactoryProvider.overrideWithValue(helperEngine),
       if (search != null) duckDuckGoScraperProvider.overrideWithValue(search),
       if (reader != null) webPageReaderProvider.overrideWithValue(reader),
     ],
@@ -156,6 +180,64 @@ Future<(ProviderContainer, _Engine)> _start(
 }
 
 void main() {
+  for (final provider in ['anthropic', 'gemini', 'custom']) {
+    test(
+      'R01 $provider chat delegates to remote Same as chat with no local model',
+      () async {
+        final helper = _Engine()..replies.add(('Agent evidence', []));
+        final (container, engine) = await _start(
+          _Remote(web: WebMode.off, helper: true, provider: provider),
+          helperEngine: () => helper,
+        );
+        engine.fallback = 'Final answer using Agent evidence';
+        engine.replies.addAll([
+          (
+            '',
+            [
+              {
+                'id': 'agent-1',
+                'name': 'ask_helper',
+                'arguments': '{"task":"Check this fact"}',
+              },
+            ],
+          ),
+          ('Final answer using Agent evidence', []),
+        ]);
+        expect(
+          await container
+              .read(chatProvider.notifier)
+              .send('Check this fact with a helper'),
+          true,
+        );
+        expect(container.read(chatProvider).error, isNull);
+        expect(
+          engine.calls.first.tools.map((tool) => tool.name),
+          contains('ask_helper'),
+        );
+        expect(helper.calls, hasLength(1));
+        expect(
+          helper.calls.single.settings.activeRemoteProfile?.providerId,
+          provider,
+        );
+        expect(helper.calls.single.settings.remoteModel, 'qwen3-32b');
+        expect(container.read(modelManagerProvider).loadedModelId, isNull);
+        expect(
+          container.read(helperJobsProvider).jobs.single.phase,
+          HelperPhase.done,
+        );
+        expect(
+          engine.calls.last.messages
+              .map((message) => '${message['content']}')
+              .join('\n'),
+          contains('Agent evidence'),
+        );
+        expect(
+          container.read(chatProvider).messages.last.content,
+          contains('Final answer'),
+        );
+      },
+    );
+  }
   test('stablePrefix: remote turns receive question notes', () async {
     final (container, engine) = await _start(_Remote(web: WebMode.off));
     final chat = container.read(chatProvider.notifier);

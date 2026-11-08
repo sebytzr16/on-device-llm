@@ -72,6 +72,7 @@ class ScheduledPrompts(private val activity: Activity, messenger: BinaryMessenge
 
     companion object {
         const val ACTION_RUN = "app.ondevicellm.ondevice_llm.RUN_SCHEDULED"
+        const val EXTRA_ID = "scheduled_id"
         const val EXTRA_PROMPT = "scheduled_prompt"
         const val EXTRA_KIND = "scheduled_kind"
         /// MainActivity is exported, so any app can send it [ACTION_RUN]:
@@ -83,6 +84,26 @@ class ScheduledPrompts(private val activity: Activity, messenger: BinaryMessenge
         private const val KEY = "items"
         private const val TOKEN_KEY = "intent_token"
         private const val CHANNEL_ID = "scheduled"
+
+        // Process-wide and monotonic: recreating MainActivity cannot bypass it.
+        private val runTimes = java.util.ArrayDeque<Long>()
+        private val draftTimes = java.util.ArrayDeque<Long>()
+        @Synchronized
+        fun allowScheduledRun(now: Long = android.os.SystemClock.elapsedRealtime()): Boolean {
+            return allowScheduledIntake(runTimes, now)
+        }
+
+        @Synchronized
+        fun allowScheduledDraft(now: Long = android.os.SystemClock.elapsedRealtime()): Boolean {
+            return allowScheduledIntake(draftTimes, now)
+        }
+
+        private fun allowScheduledIntake(times: java.util.ArrayDeque<Long>, now: Long): Boolean {
+            while (times.isNotEmpty() && now - times.first() >= 60_000L) times.removeFirst()
+            if (times.size >= 5) return false
+            times.addLast(now)
+            return true
+        }
 
         fun token(context: Context): String {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -188,8 +209,7 @@ class ScheduledPrompts(private val activity: Activity, messenger: BinaryMessenge
             val open = Intent(context, MainActivity::class.java)
                 .setAction(ACTION_RUN)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                .putExtra(EXTRA_PROMPT, item.optString("prompt"))
-                .putExtra(EXTRA_KIND, item.optString("kind", "chat"))
+                .putExtra(EXTRA_ID, id)
                 .putExtra(EXTRA_TOKEN, token(context))
             val tap = PendingIntent.getActivity(
                 context,

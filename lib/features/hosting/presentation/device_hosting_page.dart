@@ -460,7 +460,7 @@ class _DeviceHostingPageState extends ConsumerState<DeviceHostingPage> {
       ),
       if (state.pairing != null) ...[
         const SizedBox(height: AppDesign.lg),
-        // The code carries the access token: shown only on request, since
+        // The code carries a one-time pairing secret, shown on request since
         // the screen stays on while serving.
         Center(
           child: _showQr
