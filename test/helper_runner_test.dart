@@ -846,7 +846,10 @@ void main() {
     final first = runner.run(modelId: model.id, task: 'one');
     final second = runner.run(modelId: model.id, task: 'two');
     final third = runner.run(modelId: model.id, task: 'three');
-    await pumpEventQueue();
+    // Loading touches real files; slow CI runners need more than one turn.
+    for (var i = 0; i < 500 && own.peakSide < 3; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
     expect(own.peakSide, 3);
     expect(own.loads, 1);
     own.sideGate.complete();
