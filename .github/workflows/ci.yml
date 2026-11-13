@@ -15,8 +15,11 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      # Resolved dependencies must match the committed lockfile (S19).
+      # Resolved dependencies must match the committed lockfile (S19). The
+      # lockfile is resolved with the build's Flutter; the oldest supported
+      # SDK pins some packages (intl) to other versions, so it re-resolves.
       - name: Verify pubspec.lock is committed
+        if: matrix.flutter == '3.47.5'
         run: git diff --exit-code pubspec.lock
       - run: dart run build_runner build
       # Formatter output differs between Dart versions; check with the build's Flutter.

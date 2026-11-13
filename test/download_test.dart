@@ -205,21 +205,24 @@ void main() {
       expectedSize: bytes.length,
     );
 
-    test('joined pause completes without cancelling the first caller', () async {
-      final owner = shared('owner');
-      await started.future;
-      final joined = shared('joined');
-      final check = expectLater(joined, throwsA(isA<DioException>()));
-      // Let the second request reach the destination wait.
-      await Future<void>.delayed(Duration.zero);
-      await manager.pause('joined');
-      await check;
-      expect(adapter.callCount, 1);
-      body.add(Uint8List.fromList(bytes));
-      await body.close();
-      await owner;
-      expect(await File('${dir.path}/shared.gguf').readAsBytes(), bytes);
-    });
+    test(
+      'joined pause completes without cancelling the first caller',
+      () async {
+        final owner = shared('owner');
+        await started.future;
+        final joined = shared('joined');
+        final check = expectLater(joined, throwsA(isA<DioException>()));
+        // Let the second request reach the destination wait.
+        await Future<void>.delayed(Duration.zero);
+        await manager.pause('joined');
+        await check;
+        expect(adapter.callCount, 1);
+        body.add(Uint8List.fromList(bytes));
+        await body.close();
+        await owner;
+        expect(await File('${dir.path}/shared.gguf').readAsBytes(), bytes);
+      },
+    );
 
     test('owner failure reaches joiners and permits a fresh attempt', () async {
       final owner = shared('owner');
