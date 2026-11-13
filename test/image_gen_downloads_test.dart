@@ -299,6 +299,9 @@ void main() {
       'a verified component is cached until its size or mtime changes',
       () async {
         await install();
+        final file = await ModelStorage.modelFile(model.files.last.fileName);
+        // Some file systems keep whole seconds only; start on one.
+        await file.setLastModified(DateTime(2026, 1, 1, 12));
         expect(await ImageGenDownloadsNotifier.isReady(model), isTrue);
         // Matches survive a restart: they are kept in preferences.
         final marks = (await SharedPreferences.getInstance()).getStringList(
@@ -308,7 +311,6 @@ void main() {
           marks!.where((m) => m.startsWith(dir.path.split(r'').first)),
           isNotEmpty,
         );
-        final file = await ModelStorage.modelFile(model.files.last.fileName);
         final original = await file.stat();
         await file.writeAsBytes(_gguf(8));
         await file.setLastModified(original.modified);
