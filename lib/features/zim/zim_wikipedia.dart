@@ -8,6 +8,7 @@ import '../../data/network/web_search/web_page_reader.dart';
 import '../../data/network/web_search/wikipedia_client.dart';
 import '../retrieval/domain/evidence.dart';
 import 'zim_archive.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// Offline Wikipedia from a Kiwix ZIM file the tester imported (tester
 /// answers 2026-10-07, item 9). It answers the same question as
@@ -27,7 +28,9 @@ class ZimWikipedia {
 
   Future<ZimArchive> _open() async {
     if (_closed) return Future.error(StateError('Offline Wikipedia is closed'));
-    final opening = _opening ??= ZimArchive.open(path);
+    // The import verifies the whole-file MD5 once before publishing; ordinary
+    // reads must not rescan a large archive every time it is opened.
+    final opening = _opening ??= ZimArchive.open(path, verifyChecksum: false);
     try {
       return await opening;
     } catch (_) {
@@ -51,7 +54,9 @@ class ZimWikipedia {
     _closed = true;
     try {
       await (await _opening)?.close();
-    } catch (_) {}
+    } catch (e, st) {
+      quietFailure('zim_wikipedia:56', e, st);
+    }
   }
 
   Future<SearchResult?> article(String title) async {

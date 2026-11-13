@@ -165,10 +165,10 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
-          AppDesign.md,
-          AppDesign.xs,
-          AppDesign.md,
-          AppDesign.md,
+          AppSpace.phonePage,
+          AppSpace.xs,
+          AppSpace.phonePage,
+          AppSpace.md,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -208,7 +208,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: AppSpace.sm),
                 Expanded(
                   child: _Pill(
                     key: const Key('preset-pill'),
@@ -224,7 +224,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                           preset.emoji,
                           style: const TextStyle(fontSize: 12),
                         ),
-                        const SizedBox(width: AppDesign.xs),
+                        const SizedBox(width: AppSpace.xs),
                         Flexible(
                           child: Text(
                             preset.name,
@@ -239,7 +239,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: AppSpace.sm),
                 Expanded(
                   child: _Pill(
                     key: const Key('think-pill'),
@@ -258,7 +258,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                               ? c.accent
                               : c.textMuted,
                         ),
-                        const SizedBox(width: AppDesign.xs),
+                        const SizedBox(width: AppSpace.xs),
                         Flexible(
                           child: BlurSwitcher(
                             child: Text(
@@ -283,7 +283,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: AppSpace.sm),
                 Expanded(
                   child: _Pill(
                     key: const Key('web-pill'),
@@ -299,7 +299,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                               ? c.info
                               : c.textMuted,
                         ),
-                        const SizedBox(width: AppDesign.xs),
+                        const SizedBox(width: AppSpace.xs),
                         Flexible(
                           child: BlurSwitcher(
                             child: Text(
@@ -330,7 +330,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                   ? null
                   : Padding(
                       key: ValueKey(voice.error),
-                      padding: const EdgeInsets.only(top: AppDesign.xs),
+                      padding: const EdgeInsets.only(top: AppSpace.xs),
                       child: Text(
                         voice.error!,
                         style: context.text.mono.copyWith(color: c.warning),
@@ -345,13 +345,13 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const SizedBox(height: AppDesign.sm),
+                        const SizedBox(height: AppSpace.sm),
                         AttachmentChips(
                           attachments: widget.attachments,
                           onRemove: busy ? null : widget.onRemoveAttachment,
                         ),
                         if (!busy && widget.onQuickPrompt != null) ...[
-                          const SizedBox(height: AppDesign.sm),
+                          const SizedBox(height: AppSpace.sm),
                           SizedBox(
                             height: 32,
                             child: ListView(
@@ -394,7 +394,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
               builder: (context, value, _) =>
                   _Grows(child: _suggestions(context, value, shortcuts, busy)),
             ),
-            const SizedBox(height: AppDesign.sm),
+            const SizedBox(height: AppSpace.sm),
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -479,7 +479,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                     ),
                   ),
                 ),
-                const SizedBox(width: AppDesign.sm),
+                const SizedBox(width: AppSpace.sm),
                 ValueListenableBuilder<TextEditingValue>(
                   valueListenable: widget.controller,
                   builder: (_, value, _) {
@@ -532,7 +532,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
       ];
       return Padding(
         key: const ValueKey('reader'),
-        padding: const EdgeInsets.only(top: AppDesign.sm),
+        padding: const EdgeInsets.only(top: AppSpace.sm),
         child: SizedBox(
           height: 32,
           child: ListView(
@@ -575,7 +575,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
         GoalSpecialization.looksLikeGoal(value.text)) {
       return Padding(
         key: const ValueKey('goal'),
-        padding: const EdgeInsets.only(top: AppDesign.sm),
+        padding: const EdgeInsets.only(top: AppSpace.sm),
         child: Align(
           alignment: Alignment.centerLeft,
           child: ActionChip(
@@ -628,7 +628,7 @@ class _Pill extends StatelessWidget {
           child: InkWell(
             onTap: onTap == null ? null : () => onTap!(context),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 7),
+              padding: const EdgeInsets.all(AppSpace.sm),
               child: AnimatedOpacity(
                 opacity: onTap == null ? 0.6 : 1,
                 duration: motion.fade(AppMotion.fadeIn),
@@ -670,7 +670,7 @@ class _Cascade extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(right: AppDesign.xs),
+    padding: const EdgeInsets.only(right: AppSpace.xs),
     child: SpringEntrance(
       delay: SpringEntrance.cascade(index),
       from: const Offset(0, 8),

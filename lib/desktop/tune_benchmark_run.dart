@@ -107,7 +107,7 @@ class TuneBenchmarkRun implements TuneRunner {
       (engine.metrics['contextSize'] as num?)?.toInt() ?? s.contextSize,
     );
     if (limit < 256) throw StateError('context');
-    // Quick (Optimize, one run per setup): a 1K-token long prompt and one
+    // Quick Optimize samples: a 1K-token long prompt and one
     // warm-up per load. A 26B MoE with experts in RAM reads ~24 prompt
     // tokens/s, so 4K twice took six minutes a setup (2026-10-28).
     final prompts = {
@@ -119,7 +119,9 @@ class TuneBenchmarkRun implements TuneRunner {
     };
     final classes = <String, dynamic>{},
         outputs = <String>[],
-        rates = <double>[];
+        texts = <String>[],
+        rates = <double>[],
+        latencies = <double>[];
     Map<String, dynamic> effective = {};
     final steps = prompts.length * repetitions + (quick ? 1 : prompts.length);
     var done = 0;
@@ -150,7 +152,9 @@ class TuneBenchmarkRun implements TuneRunner {
       }
       final rounds = <Map<String, dynamic>>[];
       for (var i = 0; i < repetitions && !cancelled; i++) {
+        final elapsed = Stopwatch()..start();
         final output = await _generate(s, prompt);
+        elapsed.stop();
         if (cancelled) return const TuneMeasurement(0, '');
         final m = engine.metrics;
         final rate = (m['tokensPerSecond'] as num?)?.toDouble() ?? 0;
@@ -158,18 +162,29 @@ class TuneBenchmarkRun implements TuneRunner {
           throw StateError('measurement');
         }
         final ttft = (m['firstTokenMs'] as num?)?.toDouble() ?? 0;
+        // Native decode rate excludes the first token; add its full TTFT
+        // (including begin/template work) for a measured end-to-end score.
+        final first = (m['firstTokenFromBeginMs'] as num?)?.toDouble() ?? ttft;
+        final tokens = (m['tokens'] as num?)?.toInt() ?? 0;
+        latencies.add(
+          first > 0 && tokens > 1
+              ? first / 1000 + (tokens - 1) / rate
+              : elapsed.elapsedMicroseconds / 1000000,
+        );
         // The bridge's own prompt-reading time (no prompt cache here, so
         // every prompt token is read); the first-token time otherwise.
         final prefillMs = (m['prefillMs'] as num?)?.toDouble() ?? 0;
         final reading = prefillMs > 0 ? prefillMs : ttft;
         final hash = benchmarkOutputHash(output);
         outputs.add(hash);
+        texts.add(output);
         rates.add(rate);
         effective = Map<String, dynamic>.from(
           (m['effective'] as Map?) ?? (m['effectiveSettings'] as Map?) ?? {},
         );
         rounds.add({
           'tokensPerSecond': rate,
+          'elapsedSeconds': latencies.last,
           'firstTokenMs': ttft,
           'promptTokensPerSecond':
               m['promptTokensPerSecond'] ??
@@ -198,6 +213,8 @@ class TuneBenchmarkRun implements TuneRunner {
       'modelFile': p.basename(model.localPath ?? model.fileName),
       'sizeBytes': model.sizeBytes,
       'sha256': model.sha256,
+      'quant': model.quantLabel,
+      'nativeLibrary': engine.metrics['nativeLibrary'],
       'draftFile': draftFile == null ? null : p.basename(draftFile!),
       'backend': engine.metrics['backend'],
       'effective': effective,
@@ -230,7 +247,11 @@ class TuneBenchmarkRun implements TuneRunner {
     return TuneMeasurement(
       math.exp(rates.map(math.log).reduce((a, b) => a + b) / rates.length),
       stableOutput ? receipt.json['outputHash'] as String : '',
+      outputs: texts,
       relativeNoise: noise,
+      workloadRate: latencies.every((s) => s > 0)
+          ? repetitions / latencies.reduce((a, b) => a + b)
+          : 0,
       prefillTokensPerSecond: prefill,
       prefillNoise: prefill > 0
           ? (prefillRates.last - prefillRates.first) / prefill

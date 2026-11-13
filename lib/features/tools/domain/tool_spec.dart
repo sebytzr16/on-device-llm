@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// A typed tool the model may call (roadmap P2 "typed bounded tools"). The
 /// host owns the permission: a spec is only offered to the model when its
@@ -64,7 +65,9 @@ class ToolCall {
       final text = end.isEmpty ? arguments : arguments.trimRight() + end;
       try {
         if (jsonDecode(text) is Map) return text;
-      } catch (_) {}
+      } catch (e, st) {
+        quietFailure('tool_spec:67', e, st);
+      }
     }
     return null;
   }

@@ -1,5 +1,7 @@
+#include "memory_admission.h"
 #include "bridge.h"
 #include "load_policy.h"
+#include "prompt_store.h"
 #include "llama.h"
 #include "ggml-backend.h"
 #include "gguf.h"
@@ -49,6 +51,9 @@
 #endif
 using json = nlohmann::ordered_json;
 using Clock = std::chrono::steady_clock;
+// Inputs one embedding decode may carry as distinct sequences (audit E22);
+// the embedding context reserves exactly this many sequences.
+static constexpr int kEmbedBatchSeqs = 8;
 static std::atomic<int64_t> next_session{1};
 static std::mutex cancellation_mutex;
 static std::map<int64_t, std::shared_ptr<std::atomic<bool>>> cancellations;
@@ -151,11 +156,18 @@ struct Runtime {
     // held before another prompt replaced them, with their full state, so a
     // chat or client that comes back after a title, memory or other
     // request resumes instead of prefilling again. Least recently used
-    // goes first past `store_limit` bytes (settings.promptStoreMb).
+    // goes first past `store_limit` bytes (settings.promptStoreMb). An entry
+    // is charged before it is allocated and evicted before its state is
+    // copied, so the cap bounds peak memory too; a snapshot larger than the
+    // cap is never cached.
     // Recurrent/hybrid memories keep their rollback checkpoints with them.
     struct Stored {
         std::vector<llama_token> tokens; std::vector<uint8_t> state, head; std::vector<Checkpoint> marks; uint64_t used;
-        size_t bytes() const { size_t n = state.size() + head.size(); for (const auto & m : marks) n += m.data.size(); return n; }
+        size_t bytes() const {
+            size_t marks_bytes = 0;
+            for (const auto & m : marks) marks_bytes += m.data.size();
+            return od_prompt_store::entry_bytes(state.size(), head.size(), marks_bytes, tokens.size());
+        }
     };
     std::vector<Stored> store;
     size_t store_limit = 0; uint64_t store_clock = 0;
@@ -188,6 +200,12 @@ struct Runtime {
     mtmd_input_chunks * chunks = nullptr;
     bool media_pending = false;
     int media_tokens = 0;
+    // Metrics (od_info): the rendered prompt in KV positions (text is one
+    // position per token, a media chunk takes n_pos positions while it
+    // contributes n_tokens placeholders to the flat prompt), the positions
+    // its images occupy, and the positions context shift discarded. Photo
+    // turns clear `prompt`, so promptTokens cannot come from it (audit E26).
+    int prompt_positions = 0, media_positions = 0, shifted_positions = 0;
     struct MediaMeta { size_t idx; std::string id; size_t n_tokens; llama_pos n_pos; };
     std::vector<MediaMeta> media_meta;          // images inside `cached`
     std::vector<llama_token> media_flat;        // this turn's flattened prompt
@@ -226,6 +244,11 @@ struct Runtime {
     // LoRA adapters attached to the context (freed with the model).
     std::vector<llama_adapter_lora *> adapters;
     json adapter_report = json::array();
+    // What the chat context was loaded with: helper batches share its weights,
+    // so they take the same RoPE/YaRN, cache and attention parameters and the
+    // same adapters (audit E06).
+    llama_context_params context_params{};
+    std::vector<float> adapter_scales;
     // Speculative decoding with a draft model: the draft runs on the CPU,
     // proposes up to `draft_max` greedy tokens, the target verifies them in
     // one batch. Vocabularies are checked at load.
@@ -270,7 +293,11 @@ struct Runtime {
     std::string draft_name;
     float draft_p_min = 0;   // Stop drafting below this confidence
     llama_context * mtp_ctx = nullptr;
+    // MTP and DFlash share the common driver's capture/verify lifecycle.
     common_speculative_ptr mtp;
+    bool dflash = false;
+    int64_t dflash_features = 0;
+    int dflash_max = 0, dflash_block = 0;
     void reset() { if (backend_sampled && ctx) llama_set_sampler(ctx, 0, nullptr); backend_sampled = false; if (sampler) llama_sampler_free(sampler); if (grammar) llama_sampler_free(grammar); sampler = nullptr; grammar = nullptr; }
     void forget() { cached.clear(); media_meta.clear(); checkpoints.clear(); checkpoint_at.clear(); reused = 0; draft_cached.clear(); draft_queue.clear(); }
     void drop_chunks() { if (chunks) mtmd_input_chunks_free(chunks); chunks = nullptr; media_pending = false; }
@@ -282,10 +309,11 @@ struct Runtime {
         bitmaps.clear();
         if (mctx) mtmd_free(mctx);
         mctx = nullptr; vision_error.clear(); media_tokens = 0;
+        prompt_positions = media_positions = shifted_positions = 0;
         templates.reset(); template_error.clear(); template_probe_error.clear();
         mtp.reset();
         if (mtp_ctx) llama_free(mtp_ctx);
-        mtp_ctx = nullptr;
+        mtp_ctx = nullptr; dflash = false; dflash_features = 0; dflash_max = dflash_block = 0;
         if (draft_sampler) llama_sampler_free(draft_sampler);
         if (draft_ctx) llama_free(draft_ctx);
         if (draft_model) llama_model_free(draft_model);
@@ -295,6 +323,7 @@ struct Runtime {
         plain_ms = spec_ms = draft_ms = 0; plain_steps = spec_tokens = 0;
         // Adapters belong to the model and are released with it.
         adapters.clear(); adapter_report = json::array();
+        adapter_scales.clear(); context_params = llama_context_default_params();
         if (ctx) llama_free(ctx);
         if (model) llama_model_free(model);
         ctx = nullptr; model = nullptr; done = true; effective = json::object();
@@ -319,25 +348,38 @@ static void reset_mtp(Runtime * r) {
     if (!r->ctx || !r->model || !r->mtp_ctx) throw std::runtime_error("The MTP target or head context is missing.");
     llama_memory_clear(llama_get_memory(r->mtp_ctx), true);
     common_params_speculative spec;
-    spec.types = {COMMON_SPECULATIVE_TYPE_DRAFT_MTP};
+    spec.types = {r->dflash ? COMMON_SPECULATIVE_TYPE_DRAFT_DFLASH : COMMON_SPECULATIVE_TYPE_DRAFT_MTP};
     spec.draft.ctx_tgt = r->ctx;
     spec.draft.ctx_dft = r->mtp_ctx;
     spec.draft.n_max = r->draft_max;
     spec.draft.p_min = r->draft_p_min;
-    spec.draft.backend_sampling = true;
+    // DFlash consumes multiple output rows. Keep sampling on the host so
+    // the common driver can inspect each row without backend sampler state.
+    spec.draft.backend_sampling = !r->dflash;
     r->mtp.reset(common_speculative_init(spec, 1));
-    if (!r->mtp) throw std::runtime_error("The MTP draft driver could not be initialized.");
+    if (!r->mtp) throw std::runtime_error(r->dflash ? "OD_DFLASH_METADATA" : "The MTP draft driver could not be initialized.");
 }
 // The common driver owns hidden-state capture; no staging llama-ext API here.
 static int decode_target(Runtime * r, llama_batch batch) {
     if (!r->mtp || r->media_tokens) return llama_decode(r->ctx, batch);
-    common_batch mirror(r->ctx);
+    const int chunk = r->dflash ? (int)llama_n_ubatch(r->ctx) : batch.n_tokens;
     const auto base = llama_memory_seq_pos_max(llama_get_memory(r->ctx), 0) + 1;
-    for (int i = 0; i < batch.n_tokens; ++i)
-        mirror.add(batch.token[i], batch.pos ? batch.pos[i] : base + i, 0, batch.logits ? batch.logits[i] : i == batch.n_tokens - 1);
-    const int rc = llama_decode(r->ctx, batch);
-    if (rc != 0) return rc;
-    return common_speculative_process(r->mtp.get(), mirror) ? 0 : -1;
+    for (int offset = 0; offset < batch.n_tokens; offset += chunk) {
+        const int n = std::min(chunk, batch.n_tokens - offset);
+        common_batch mirror(r->ctx);
+        for (int i = offset; i < offset + n; ++i)
+            mirror.add(batch.token[i], batch.pos ? batch.pos[i] : base + i, 0, batch.logits ? batch.logits[i] : i == batch.n_tokens - 1);
+        auto part = batch;
+        part.n_tokens = n; part.token += offset;
+        if (part.pos) part.pos += offset;
+        if (part.n_seq_id) part.n_seq_id += offset;
+        if (part.seq_id) part.seq_id += offset;
+        if (part.logits) part.logits += offset;
+        const int rc = llama_decode(r->ctx, part);
+        if (rc != 0) return rc;
+        if (!common_speculative_process(r->mtp.get(), mirror)) return -1;
+    }
+    return 0;
 }
 static const char * released_message = "The model was unloaded because the app window closed.";
 static std::once_flag init_flag;
@@ -597,6 +639,22 @@ float od_load_progress(int64_t session) {
 void od_reset_cancel(void * h) { static_cast<Runtime *>(h)->cancelled->store(false, std::memory_order_relaxed); }
 int32_t od_cancelled(void * h) { return static_cast<Runtime *>(h)->cancelled->load(std::memory_order_relaxed); }
 const char * od_error(void * h) { return static_cast<Runtime *>(h)->error.c_str(); }
+// b12342: CPU has generic FP8 conversion/dot/FA kernels; CUDA has FA
+// instances. Other backend families must opt in only after gaining kernels.
+static bool supports_fp8_kv(ggml_backend_dev_t dev) {
+    const std::string name = ggml_backend_reg_name(ggml_backend_dev_backend_reg(dev));
+    if (name != "CPU" && name != "CUDA") return false;
+    // Ask the loaded backend too: CUDA builds may disable FA/type instances.
+    auto * ctx = ggml_init({ggml_tensor_overhead() * 8, nullptr, true});
+    if (!ctx) return false;
+    auto * q = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, 128, 1, 1, 1);
+    auto * k = ggml_new_tensor_4d(ctx, GGML_TYPE_F8_E4M3, 128, 256, 1, 1);
+    auto * v = ggml_new_tensor_4d(ctx, GGML_TYPE_F8_E4M3, 128, 256, 1, 1);
+    auto * fa = ggml_flash_attn_ext(ctx, q, k, v, nullptr, 1.0f, 0.0f, 0.0f);
+    const bool supported = ggml_backend_dev_supports_op(dev, fa);
+    ggml_free(ctx);
+    return supported;
+}
 const char * od_info(void * h) {
     auto * r = static_cast<Runtime *>(h);
     std::lock_guard<std::mutex> use(r->use);
@@ -606,12 +664,14 @@ const char * od_info(void * h) {
         auto dev = ggml_backend_dev_get(i);
         const auto type = ggml_backend_dev_type(dev);
         devices.push_back({{"backend", ggml_backend_reg_name(ggml_backend_dev_backend_reg(dev))},
+            {"supportsFp8Kv", supports_fp8_kv(dev)},
             {"description", ggml_backend_dev_description(dev)},
             {"gpu", type == GGML_BACKEND_DEVICE_TYPE_GPU || type == GGML_BACKEND_DEVICE_TYPE_IGPU}});
     }
-    r->info = json{{"abiVersion", 7}, {"devices", devices}, {"kernelCacheDir", kernel_cache_dir},
+    r->info = json{{"abiVersion", 7}, {"supportsDFlash", true},
+        {"supportsFp8Kv", r->effective.value("supportsFp8Kv", false)}, {"devices", devices}, {"kernelCacheDir", kernel_cache_dir},
         {"effectiveSettings", r->effective}, {"fallbackReason", r->fallback_reason},
-        {"backend", r->backend}, {"tokens", r->generated}, {"promptTokens", r->prompt.size()},
+        {"backend", r->backend}, {"tokens", r->generated}, {"promptTokens", r->prompt_positions},
         {"firstTokenMs", r->first_ms}, {"tokensPerSecond", seconds > 0 ? (r->generated - 1) / seconds : 0},
         {"beginMs", r->begin_ms}, {"prefillMs", r->prefill_ms}, {"checkpointMs", r->checkpoint_ms}, {"sampleMs", r->sample_ms},
         {"sampleCpuMs", r->sample_cpu_ms}, {"sampleCpuTokens", r->sample_cpu_tokens},
@@ -620,9 +680,10 @@ const char * od_info(void * h) {
         {"contextTrain", r->model ? llama_model_n_ctx_train(r->model) : 0},
         {"cachedPromptTokens", r->reused}, {"storedPromptTokens", r->store_restored},
         {"storedPrompts", r->store.size()}, {"backendSampling", r->backend_sampled}, {"thinkingTokens", r->think_tokens},
-        {"contextUsed", r->media_tokens ? r->media_tokens + r->generated : (int)r->prompt.size() + r->generated}, {"peakRssMb", peak_rss_mb()},
+        {"contextUsed", r->prompt_positions + r->generated - r->shifted_positions}, {"peakRssMb", peak_rss_mb()},
         {"supportsVision", r->mctx && mtmd_support_vision(r->mctx)}, {"visionError", r->vision_error},
         {"mediaMarker", mtmd_default_marker()}, {"mediaTokens", r->media_tokens},
+        {"mediaPositions", r->media_positions}, {"shiftedTokens", r->shifted_positions},
         {"released", r->released},
         {"supportsThinking", r->supports_thinking}, {"thinkingForcedOpen", r->forced_open && !r->parser_active},
         {"thinkingStartTag", r->parser_active ? std::string("<think>") : r->think_start},
@@ -638,17 +699,19 @@ const char * od_info(void * h) {
         // ABI 6
         {"finishReason", r->finish}, {"supportsTools", r->supports_tools}, {"toolFormat", r->tool_format},
         {"toolCalls", r->tool_calls}, {"toolContent", r->tool_content}, {"adapters", r->adapter_report},
-        {"mtp", (bool)r->mtp}, {"mtpAcceptRate", r->mtp && r->draft_proposed > 0 ? (double)r->draft_accepted / r->draft_proposed : 0.0},
+        {"speculationMode", r->dflash ? "dflash" : r->mtp ? "mtp" : r->draft_ctx ? "draft" : "off"},
+        {"mtp", (bool)r->mtp && !r->dflash}, {"mtpAcceptRate", r->mtp && !r->dflash && r->draft_proposed > 0 ? (double)r->draft_accepted / r->draft_proposed : 0.0},
         {"draftModel", r->draft_name}, {"draftProposed", r->draft_proposed}, {"draftAccepted", r->draft_accepted},
         {"draftRounds", r->draft_rounds}, {"draftMs", r->draft_ms}, {"specMs", r->spec_ms}, {"draftDisabled", r->draft_disabled}, {"draftReplays", r->draft_replays},
         // Tokens per ms of speculative rounds relative to plain steps this turn (0 when unmeasured).
+        // Both rates are per token: a plain step decodes and samples one token.
         {"draftSpeedup", r->spec_ms > 0 && r->plain_ms > 0 && r->plain_steps > 0
             ? ((double)r->spec_tokens / r->spec_ms) / ((double)r->plain_steps / r->plain_ms) : 0.0},
         {"draftAcceptRate", r->draft_proposed > 0 ? (double)r->draft_accepted / (double)r->draft_proposed : 0.0}}.dump();
     return r->info.c_str();
 }
 static ggml_type cache_type(const std::string & name) {
-    return name == "q8_0" ? GGML_TYPE_Q8_0 : name == "q4_0" ? GGML_TYPE_Q4_0 : name == "q5_0" ? GGML_TYPE_Q5_0
+    return name == "f8_e4m3" ? GGML_TYPE_F8_E4M3 : name == "q8_0" ? GGML_TYPE_Q8_0 : name == "q4_0" ? GGML_TYPE_Q4_0 : name == "q5_0" ? GGML_TYPE_Q5_0
         : name == "q5_1" ? GGML_TYPE_Q5_1 : name == "q4_1" ? GGML_TYPE_Q4_1 : name == "iq4_nl" ? GGML_TYPE_IQ4_NL
         : name == "bf16" ? GGML_TYPE_BF16 : name == "f32" ? GGML_TYPE_F32 : GGML_TYPE_F16;
 }
@@ -708,6 +771,9 @@ struct HeadMetadata {
     bool trunk = false;
     bool projection = false;
     bool only = false;
+    uint32_t embedding = 0;
+    uint32_t dflash_block = 0;
+    std::vector<int32_t> target_layers;
 };
 static HeadMetadata head_metadata(const std::string & path) {
     HeadMetadata h;
@@ -718,6 +784,18 @@ static HeadMetadata head_metadata(const std::string & path) {
     if (arch >= 0 && gguf_get_kv_type(meta, arch) == GGUF_TYPE_STRING) h.arch = gguf_get_val_str(meta, arch);
     const int blocks = gguf_find_key(meta, (h.arch + ".block_count").c_str());
     if (blocks >= 0 && gguf_get_kv_type(meta, blocks) == GGUF_TYPE_UINT32) h.blocks = gguf_get_val_u32(meta, blocks);
+    const int embedding = gguf_find_key(meta, (h.arch + ".embedding_length").c_str());
+    if (embedding >= 0 && gguf_get_kv_type(meta, embedding) == GGUF_TYPE_UINT32) h.embedding = gguf_get_val_u32(meta, embedding);
+    if (h.arch == "dflash") {
+        const int block = gguf_find_key(meta, "dflash.block_size");
+        if (block >= 0 && gguf_get_kv_type(meta, block) == GGUF_TYPE_UINT32) h.dflash_block = gguf_get_val_u32(meta, block);
+        const int layers = gguf_find_key(meta, "dflash.target_layers");
+        if (layers >= 0 && gguf_get_kv_type(meta, layers) == GGUF_TYPE_ARRAY && gguf_get_arr_type(meta, layers) == GGUF_TYPE_INT32) {
+            const size_t n = gguf_get_arr_n(meta, layers);
+            const auto * ids = static_cast<const int32_t *>(gguf_get_arr_data(meta, layers));
+            if (n <= 256) h.target_layers.assign(ids, ids + n);
+        }
+    }
     const int key = gguf_find_key(meta, (h.arch + ".nextn_predict_layers").c_str());
     if (key >= 0 && gguf_get_kv_type(meta, key) == GGUF_TYPE_UINT32) h.nextn = gguf_get_val_u32(meta, key);
     for (int64_t i = 0; i < gguf_get_n_tensors(meta); ++i) {
@@ -733,7 +811,7 @@ static bool is_mtp_sidecar(const std::string & path) { return head_metadata(path
 static void check_head(const std::string & path, const HeadMetadata & h, const std::string & target) {
     if (!h.only) return;
     if (h.arch == "gemma4-assistant" && target == "gemma4") return;
-    // b11972 nextn_flags permits missing trunk weights. Qwen35 MTP graphs use
+    // b12342 nextn_flags still permits missing trunk weights. Qwen35 MTP graphs use
     // this model's head weights and the common driver supplies target hidden rows.
     if ((h.arch == "qwen35" || h.arch == "qwen35moe") && target == h.arch && h.nextn == 1 && h.projection) return;
     throw std::runtime_error(path + " is only an MTP head for " + h.arch
@@ -758,6 +836,17 @@ static llama_context_params draft_context_params(Runtime * r, const llama_contex
     dc.n_ctx = cp.n_ctx; dc.n_batch = cp.n_batch; dc.n_ubatch = cp.n_ubatch;
     dc.n_threads = cp.n_threads; dc.n_threads_batch = cp.n_threads_batch;
     dc.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
+    // An autoregressive draft samples only its final row. DFlash overrides
+    // this for its parallel noise block below.
+    dc.n_outputs_max = dc.n_outputs_max_per_seq = 1;
+    if (r->dflash) {
+        // Block diffusion samples all noise positions in one physical batch.
+        dc.ctx_other = r->ctx;
+        const uint32_t outputs = r->dflash_block;
+        dc.n_batch = std::max(dc.n_batch, outputs);
+        dc.n_ubatch = std::max(dc.n_ubatch, outputs);
+        dc.n_outputs_max = dc.n_outputs_max_per_seq = outputs;
+    }
     return dc;
 }
 // A "Key:  123 kB" field of a /proc file ("/proc/meminfo", "MemAvailable:")
@@ -777,6 +866,20 @@ static int64_t file_bytes(const std::string & path) {
     if (path.empty()) return 0;
     std::ifstream f(path, std::ios::binary | std::ios::ate);
     return f ? (int64_t)f.tellg() : 0;
+}
+// Adapter tensors follow the base tensor placement. Reserve the full GGUF
+// plus buffer/alignment overhead in RAM and on each candidate card: this
+// deliberately overestimates mixed placement and includes host staging.
+static int64_t adapter_reserve(const json & s) {
+    int64_t bytes = 0;
+    if (!s.value("embedding", false) && s.contains("loraAdapters") && s["loraAdapters"].is_array()) {
+        for (const auto & a : s["loraAdapters"]) {
+            const std::string path = a.value("path", "");
+            if (!path.empty() && a.value("scale", 1.0f) != 0.0f)
+                bytes += file_bytes(path) + (64ll << 20);
+        }
+    }
+    return bytes;
 }
 static bool has_mtp_heads(const char * path) {
     gguf_init_params params{true, nullptr};
@@ -844,8 +947,8 @@ static int64_t measure(const char * path, const llama_model_params & mp, const l
         throw std::runtime_error(std::string(path) + " is only an MTP head; a decoder context cannot use it.");
     std::lock_guard<std::mutex> lock(measure_mutex);
     std::vector<ggml_backend_dev_t> devs;
-    uint32_t layers = 0, n_train = 0, experts = 0;
-    const auto data = common_get_device_memory_data(path, &mp, &cp, devs, layers, n_train, experts, GGML_LOG_LEVEL_ERROR);
+    uint32_t layers = 0, skipped_nextn = 0, n_train = 0, experts = 0;
+    const auto data = common_get_device_memory_data({path}, &mp, &cp, devs, layers, skipped_nextn, n_train, experts, GGML_LOG_LEVEL_ERROR);
     if (train) *train = n_train;
     if (layers_out) *layers_out = layers;
     int64_t bytes = 0, card = 0, weights = 0;
@@ -859,7 +962,7 @@ static int64_t measure(const char * path, const llama_model_params & mp, const l
         auto mc = cp;
         mc.ctx_type = LLAMA_CONTEXT_TYPE_MTP;
         mc.n_rs_seq = 0;
-        const auto extra = common_get_device_memory_data(path, &mp, &mc, devs, layers, n_train, experts, GGML_LOG_LEVEL_ERROR);
+        const auto extra = common_get_device_memory_data({path}, &mp, &mc, devs, layers, skipped_nextn, n_train, experts, GGML_LOG_LEVEL_ERROR);
         for (size_t i = 0; i < extra.size(); ++i) {
             const int64_t b = (int64_t)(extra[i].context + extra[i].compute);
             if (i < devs.size() && own_memory(devs[i])) card += b; else bytes += b;
@@ -867,6 +970,22 @@ static int64_t measure(const char * path, const llama_model_params & mp, const l
     }
     if (vram) *vram = card;
     return bytes;
+}
+// Canonical DFlash drafts may borrow token embeddings/output from the
+// target. The no-allocation graph must see that target too, even on the
+// estimator's unloaded runtime. Never measure it as an independent decoder.
+static int64_t measure_draft(Runtime * r, const char * target, const llama_model_params & mp,
+                             const llama_context_params & cp, const std::string & draft,
+                             const llama_model_params & dp, int64_t * vram = nullptr) {
+    auto dc = draft_context_params(r, cp);
+    if (!r->dflash) return measure(draft.c_str(), dp, dc, nullptr, vram);
+    auto tm = mp; tm.no_alloc = true; tm.load_mode = LLAMA_LOAD_MODE_NONE;
+    std::unique_ptr<llama_model, decltype(&llama_model_free)> model(llama_model_load_from_file(target, tm), llama_model_free);
+    if (!model) throw std::runtime_error("OD_DFLASH_METADATA");
+    std::unique_ptr<llama_context, decltype(&llama_free)> ctx(llama_init_from_model(model.get(), cp), llama_free);
+    if (!ctx) throw std::runtime_error("OD_DFLASH_METADATA");
+    dc.ctx_other = ctx.get();
+    return measure(draft.c_str(), dp, dc, nullptr, vram);
 }
 // Memory admission (report 2026-09-28): the saved context was used as
 // is, so a 64K context on Qwen3 1.7B asked for ~7 GiB of cache and Android
@@ -889,7 +1008,9 @@ static json admit(Runtime * r, const char * path, const json & s, const llama_mo
     }
     const auto started = Clock::now();
     // The projector's weights; its encoder buffers are small next to them.
-    const int64_t extra = file_bytes(mmproj) + sidecar;
+    const int64_t adapters = adapter_reserve(s);
+    const int64_t extra = file_bytes(mmproj) + sidecar + adapters + r->dflash_features;
+    const bool on_card = mp.n_gpu_layers > 0 && std::any_of(r->devices.begin(), r->devices.end(), own_memory);
     uint32_t train = 0;
     int64_t vram = 0, weights = 0;
     std::map<uint32_t, int64_t> vram_at;
@@ -898,8 +1019,8 @@ static json admit(Runtime * r, const char * path, const json & s, const llama_mo
         cp.n_ctx = n;
         int64_t bytes = measure(path, mp, cp, &train, &vram, nullptr, &weights) + extra;
         int64_t draft_vram = 0;
-        if (!draft.empty()) bytes += measure(draft.c_str(), dp, draft_context_params(r, cp), nullptr, &draft_vram);
-        vram_at[n] = vram + draft_vram;
+        if (!draft.empty()) bytes += measure_draft(r, path, mp, cp, draft, dp, &draft_vram);
+        vram_at[n] = vram + draft_vram + (on_card ? adapters + r->dflash_features : 0);
         return bytes;
     };
     uint32_t n = asked;
@@ -1028,6 +1149,8 @@ static json fit_gpu(Runtime * r, const char * path, const json & s, llama_model_
     r->split.assign(llama_max_devices(), 0.0f);
     r->overrides.assign(llama_max_tensor_buft_overrides(), llama_model_tensor_buft_override{nullptr, nullptr});
     std::vector<size_t> margins(llama_max_devices(), (size_t)std::clamp(s.value("vramReserveMb", 768), 0, 8192) << 20);
+    const int64_t adapters = adapter_reserve(s);
+    for (auto & margin : margins) margin += (size_t)adapters;
     margins[0] += (size_t)std::max<int64_t>(projector, 0);
     // Only parameters still at llama's defaults are changed, and a context
     // that is set (not 0) is kept: the RAM admission caps it afterwards.
@@ -1035,8 +1158,8 @@ static json fit_gpu(Runtime * r, const char * path, const json & s, llama_model_
     auto mc = cp;
     mc.ctx_type = LLAMA_CONTEXT_TYPE_MTP;
     mc.n_rs_seq = 0;
-    common_fit_extra_model extra{path, &mp, &mc, true};
-    const auto status = common_fit_params(path, &mp, &cp, r->split.data(), r->overrides.data(), margins.data(),
+    common_fit_extra_model extra{{path}, &mp, &mc, true};
+    const auto status = common_fit_params({path}, &mp, &cp, r->split.data(), r->overrides.data(), margins.data(),
                                           cp.n_ctx, mp.load_mtp ? &extra : nullptr, GGML_LOG_LEVEL_ERROR);
     if (status == COMMON_PARAMS_FIT_STATUS_ERROR) {
         // Unreadable here: the real load reports why.
@@ -1050,12 +1173,33 @@ static json fit_gpu(Runtime * r, const char * path, const json & s, llama_model_
 }
 // Loads the model, or with [estimate_only] stops after planning and returns
 // what the load would use (od_estimate).
-static json load_with(Runtime * r, const char * path, const json & s, const std::string & requested, bool estimate_only = false) {
+static json load_with(Runtime * r, const char * path, const json & config, const std::string & requested, bool estimate_only = false) {
+        auto s = config;
+        const std::string mode = s.value("speculationMode", "auto");
+        if (mode == "off") { s["draftModel"] = ""; s["mtp"] = false; }
+        if (mode == "mtp") s["mtp"] = true;
+        if (mode == "draft" || mode == "dflash") s["mtp"] = false;
         const auto target_meta = head_metadata(path);
+        if (target_meta.arch == "dflash" || target_meta.arch == "dflash-draft") throw std::runtime_error("OD_SPEC_MODE");
         if (target_meta.only) throw std::runtime_error(std::string(path) + " is only an MTP head for " + target_meta.arch + "; select a full target model.");
         const std::string selected_draft = s.value("embedding", false) ? "" : s.value("draftModel", "");
         // Validate before any measurement can build an ordinary decoder graph.
-        if (!selected_draft.empty()) check_head(selected_draft, head_metadata(selected_draft), target_meta.arch);
+        const auto draft_meta = selected_draft.empty() ? HeadMetadata{} : head_metadata(selected_draft);
+        r->dflash = draft_meta.arch == "dflash";
+        r->dflash_features = 0;
+        if (draft_meta.arch == "dflash-draft") throw std::runtime_error("OD_DFLASH_FORMAT");
+        if ((mode == "draft" || mode == "dflash") && selected_draft.empty()) throw std::runtime_error("OD_DRAFT_REQUIRED");
+        if ((mode == "dflash" && !r->dflash) || (mode == "draft" && (r->dflash || draft_meta.only))
+            || (mode == "mtp" && !selected_draft.empty() && !draft_meta.only)) throw std::runtime_error("OD_SPEC_MODE");
+        if (!selected_draft.empty()) check_head(selected_draft, draft_meta, target_meta.arch);
+        if (r->dflash) {
+            if (draft_meta.dflash_block < 2 || draft_meta.dflash_block > 512 || draft_meta.target_layers.empty()
+                || target_meta.embedding == 0 || draft_meta.embedding != target_meta.embedding || std::any_of(draft_meta.target_layers.begin(), draft_meta.target_layers.end(),
+                    [&](int32_t id) { return id < 0 || (uint32_t)id >= target_meta.blocks; })) throw std::runtime_error("OD_DFLASH_METADATA");
+            r->dflash_block = draft_meta.dflash_block;
+            r->dflash_max = std::min<int>(std::clamp(s.value("draftMaxTokens", 6), 1, 32), draft_meta.dflash_block - 1);
+            s["draftMaxTokens"] = r->dflash_max;
+        }
         auto mp = llama_model_default_params();
         const bool use_mmap = s.value("useMmap", true), use_mlock = s.value("useMlock", false);
         // Newer llama.cpp folds mmap and mlock into one load mode.
@@ -1074,7 +1218,7 @@ static json load_with(Runtime * r, const char * path, const json & s, const std:
         }
         mp.progress_callback = loading_callback;
         mp.progress_callback_user_data = r->cancelled.get();
-        r->devices.clear(); r->backend = "CPU"; r->fallback_reason.clear();
+        r->devices.clear(); r->backend = "CPU"; r->fallback_reason = s.value("speculationFallback", "");
         std::string skipped;
         if (requested != "cpu" && s.value("nGpuLayers", 999) > 0) {
             std::vector<ggml_backend_dev_t> candidates;
@@ -1130,6 +1274,12 @@ static json load_with(Runtime * r, const char * path, const json & s, const std:
         r->embedding = s.value("embedding", false);
         mp.load_mtp = !r->embedding && s.value("mtp", false) && s.value("draftModel", "").empty() && has_mtp_heads(path);
         auto cp = llama_context_default_params();
+        // App units match upstream --moe-cache-mib; C API takes bytes.
+        if (s.contains("moeCacheSizeMb")) cp.moe_cache_size = (size_t)std::clamp<int64_t>(s.value("moeCacheSizeMb", int64_t(0)), 0, int64_t(1) << 30) * 1024 * 1024;
+        if (s.contains("moeCacheCpuShare")) {
+            const float share = s.value("moeCacheCpuShare", 0.0f);
+            cp.moe_cache_cpu_share = std::isfinite(share) ? std::clamp(share, 0.0f, 1.0f) : 0.0f;
+        }
         cp.offload_kqv = s.value("offloadKv", true);
         cp.swa_full = s.value("swaFull", false);
         cp.abort_callback = cancelled_callback;
@@ -1145,14 +1295,23 @@ static json load_with(Runtime * r, const char * path, const json & s, const std:
             cp.embeddings = true;
             cp.pooling_type = LLAMA_POOLING_TYPE_UNSPECIFIED;
             r->batch = (int)cp.n_ctx;
+            // Several inputs may ride one decode as distinct sequences over
+            // the shared unified window (audit E22); the batch is still
+            // bounded by n_batch, and od_embed clears the memory between
+            // batches, so an item alone can use the whole context.
+            cp.n_seq_max = std::max<int>(cp.n_seq_max, kEmbedBatchSeqs);
+            cp.kv_unified = true;
         }
         cp.n_batch = r->batch;
         cp.n_ubatch = std::clamp(s.value("effectiveMicroBatchSize", std::min(r->batch, 128)), 32, r->batch);
         // An encoder attends both ways, so one input must fit one micro-batch
         // (llama.cpp asserts it); photos alone are ~280 tokens.
         if (r->embedding) cp.n_ubatch = r->batch;
-        // Zero or less = auto: the physical cores (od_cpu_cores).
-        auto threads = [](int asked) { return std::clamp(asked > 0 ? asked : od_cpu_cores(), 1, 16); };
+        // Zero or less = auto: the physical cores (od_cpu_cores). The upper
+        // bound follows the detected core count instead of a fixed 16.
+        auto threads = [](int asked) {
+          return std::clamp(asked > 0 ? asked : od_cpu_cores(), 1, od_cpu_cores());
+        };
         // The app's automatic count assumes the GPU it asked for; a CPU load
         // (no GPU found) decodes on every physical core instead.
         cp.n_threads = threads(on_cpu && s.value("threadsAuto", false) ? 0 : s.value("effectiveThreads", 4));
@@ -1161,11 +1320,33 @@ static json load_with(Runtime * r, const char * path, const json & s, const std:
         cp.n_threads_batch = threads(s.value("effectiveBatchThreads", (int)cp.n_threads));
         cp.flash_attn_type = s.value("flashAttention", true) ? LLAMA_FLASH_ATTN_TYPE_AUTO : LLAMA_FLASH_ATTN_TYPE_DISABLED;
         // Separate K and V cache types (ABI 6): "vCacheType" empty = same as K.
-        const auto kv = s.value("kvCacheType", "fp16");
+        auto kv = s.value("kvCacheType", "fp16");
         auto vv = s.value("vCacheType", ""); if (vv.empty()) vv = kv;
+        // Gate before fit/measurement as those also create contexts. Conservatively
+        // exclude MLA families and the direct cache consumers rejected upstream.
+        const std::set<std::string> no_fp8_arch = {"deepseek2", "deepseek2-ocr", "deepseek32", "deepseek4", "deepseek41",
+            "bailingmoe3", "kimi-linear", "kimi-k3", "kimi-k31", "xing4_0",
+            "glm-dsa", "glm5-next", "dots3note", "mistral-large4", "hy_v4", "minimax-m3", "qwen4exp", "dflash"};
+        bool fp8_backend = true;
+        for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+            auto dev = ggml_backend_dev_get(i);
+            if (ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_CPU) fp8_backend &= supports_fp8_kv(dev);
+        }
+        for (auto dev : r->devices) if (dev) fp8_backend &= supports_fp8_kv(dev);
+        const bool fp8_supported = fp8_backend && no_fp8_arch.count(target_meta.arch) == 0 && !r->dflash;
+        std::string kv_fallback;
+        if (!fp8_supported && (kv == "f8_e4m3" || vv == "f8_e4m3")) {
+            kv_fallback = "FP8 E4M3 KV cache is unsupported for the selected backend, architecture or DFlash pipeline; using q8_0.";
+            if (kv == "f8_e4m3") kv = "q8_0";
+            if (vv == "f8_e4m3") vv = "q8_0";
+            std::fprintf(stderr, "odllm: %s\n", kv_fallback.c_str());
+            if (!r->fallback_reason.empty()) r->fallback_reason += " ";
+            r->fallback_reason += kv_fallback;
+        }
         cp.type_k = cache_type(kv); cp.type_v = cache_type(vv);
         // A quantized V cache needs flash attention; a quantized K alone does not.
         if (cp.type_v != GGML_TYPE_F16 && cp.type_v != GGML_TYPE_F32 && cp.type_v != GGML_TYPE_BF16) cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+        if (cp.type_k == GGML_TYPE_F8_E4M3) cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
         // RoPE / YaRN (ABI 6): "model" keeps the GGUF's values; the others
         // override the scaling type and, when non-zero, base/scale/yarn.
         const std::string rope = s.value("ropeScaling", "model");
@@ -1210,7 +1391,13 @@ static json load_with(Runtime * r, const char * path, const json & s, const std:
         dp.load_mtp = sidecar;
         // A head reads the target's hidden rows every step: it follows the
         // target onto the card unless draftGpuLayers places it (0 = default).
-        if (sidecar && dp.n_gpu_layers == 0 && mp.n_gpu_layers > 0) dp.n_gpu_layers = 999;
+        // A DFlash drafter reads the target's features every round too; on
+        // the CPU it cost more than it saved (owner 2026-11-12: Nemotron
+        // Bolt 41 tok/s with DFlash on the CPU, 58 plain, 60 on the card).
+        if ((sidecar || r->dflash) && dp.n_gpu_layers == 0 && mp.n_gpu_layers > 0) {
+            dp.n_gpu_layers = 999;
+            dp.devices = mp.devices; dp.main_gpu = mp.main_gpu; dp.split_mode = mp.split_mode;
+        }
         // Recurrent state snapshots per draft position (as llama-server sets
         // them; llama ignores them for models without recurrent layers): a
         // rejected draft is dropped with seq_rm instead of a state copy,
@@ -1229,15 +1416,14 @@ static json load_with(Runtime * r, const char * path, const json & s, const std:
             cp.n_outputs_max = limits.total;
             cp.n_outputs_max_per_seq = limits.per_seq;
         }
-        const int64_t sidecar_bytes = sidecar ? file_bytes(draft) + (64ll << 20) : 0;
-        // A draft on the card: its weights, KV and compute buffers as llama
-        // plans them at the target's context (0 = trained context, which can
-        // only overcount), so the fit leaves exactly that room.
-        int64_t draft_card = 0;
-        if (!sidecar && !draft.empty() && dp.n_gpu_layers > 0) {
-            measure(draft.c_str(), dp, draft_context_params(r, cp), nullptr, &draft_card);
-            draft_card = std::max(draft_card, file_bytes(draft));
+        if (r->dflash) {
+            cp.n_ubatch = std::max<uint32_t>(cp.n_ubatch, r->dflash_block);
+            cp.n_batch = std::max(cp.n_batch, cp.n_ubatch);
+            // Host gather plus target extraction/transfer buffers, with graph
+            // headroom. Reserve on both RAM and VRAM conservatively.
+            r->dflash_features = (64ll << 20) + 2ll * cp.n_ubatch * target_meta.embedding * draft_meta.target_layers.size() * sizeof(float);
         }
+        const int64_t sidecar_bytes = sidecar ? file_bytes(draft) + (64ll << 20) : 0;
         // Vision projector placement (projectorDevice auto | gpu | cpu). Auto
         // keeps it on the GPU when the whole model still fits there with it,
         // else puts it on the CPU when that lets every layer onto the card
@@ -1248,45 +1434,83 @@ static json load_with(Runtime * r, const char * path, const json & s, const std:
         bool projector_gpu = !mmproj.empty() && projector_choice != "cpu";
         json admission = json::object();
         if (!r->embedding) {
-            const int64_t others = (dp.n_gpu_layers > 0 ? sidecar_bytes : 0) + draft_card;
-            const auto mp0 = mp;
-            const auto cp0 = cp;
-            admission = fit_gpu(r, path, s, mp, cp, (projector_gpu ? file_bytes(mmproj) : 0) + others);
-            if (projector_gpu && projector_choice == "auto" && admission.value("gpuFit", "") == "fit") {
-                uint32_t blocks = 0;
-                gguf_arch(path, nullptr, nullptr, &blocks);
-                // n_gpu_layers counts the output layer too.
-                auto whole = [&](const llama_model_params & p, const json & fit) {
-                    return blocks > 0 && fit.value("gpuFit", "") == "fit" && !fit.value("gpuExpertsOnCpu", false)
-                        && p.n_gpu_layers >= (int32_t)blocks + 1;
-                };
-                if (!whole(mp, admission)) {
-                    // The fit writes into r->split and r->overrides; a rejected
-                    // second fit gives the first one's values back.
-                    const auto split = r->split;
-                    const auto overrides = r->overrides;
-                    auto mp1 = mp0;
-                    auto cp1 = cp0;
-                    json alt = fit_gpu(r, path, s, mp1, cp1, others);
-                    if (whole(mp1, alt)) {
-                        mp = mp1; cp = cp1; admission = alt; projector_gpu = false;
-                    } else {
-                        r->split = split; r->overrides = overrides;
-                        if (mp.tensor_split) mp.tensor_split = r->split.data();
-                        if (mp.tensor_buft_overrides) mp.tensor_buft_overrides = r->overrides.data();
-                    }
+            const uint32_t context_requested = cp.n_ctx;
+            std::string context_cap;
+            // Use the same trained length and scaling exceptions as admit(),
+            // before either GPU fit budgets the target's cache.
+            if (s.value("memoryGuard", true) && rope != "linear" && rope != "yarn") {
+                uint32_t train = 0;
+                try { measure(path, mp, cp, &train); } catch (const std::exception &) { train = 0; }
+                if (train > 0 && cp.n_ctx > train) {
+                    cp.n_ctx = train;
+                    context_cap = "train";
                 }
             }
-            // A projector or MTP head the fit put on the card is in its VRAM
-            // budget, not the RAM's (as the estimate below counts them):
-            // counting it twice refused Gemma 4 26B A4B (1.4 GB of them) on
-            // a 32 GB PC that LM Studio loads.
-            const bool on_card = mp.n_gpu_layers > 0 && own_memory(r->devices.empty() ? nullptr : r->devices[mp.split_mode == LLAMA_SPLIT_MODE_NONE ? mp.main_gpu : 0]);
-            admission.update(admit(r, path, s, mp, cp, sidecar ? "" : draft, dp, projector_gpu && on_card ? "" : mmproj,
-                on_card && dp.n_gpu_layers > 0 ? 0 : sidecar_bytes));
+            const auto requested_mp = mp;
+            // One retry after RAM admission, starting from the user's layer
+            // request so layers removed by the first fit can return to the GPU.
+            for (int attempt = 0; attempt < 2; ++attempt) {
+                mp = requested_mp;
+                projector_gpu = !mmproj.empty() && projector_choice != "cpu";
+                // Recompute the draft's VRAM reserve at this context too.
+                int64_t draft_card = 0;
+                if (!sidecar && !draft.empty() && dp.n_gpu_layers > 0) {
+                    measure_draft(r, path, mp, cp, draft, dp, &draft_card);
+                    draft_card = std::max(draft_card, file_bytes(draft));
+                }
+                const int64_t others = (dp.n_gpu_layers > 0 ? sidecar_bytes : 0) + draft_card + r->dflash_features;
+                const auto mp0 = mp;
+                const auto cp0 = cp;
+                admission = fit_gpu(r, path, s, mp, cp, (projector_gpu ? file_bytes(mmproj) : 0) + others);
+                if (projector_gpu && projector_choice == "auto" && admission.value("gpuFit", "") == "fit") {
+                    uint32_t blocks = 0;
+                    gguf_arch(path, nullptr, nullptr, &blocks);
+                    // n_gpu_layers counts the output layer too.
+                    auto whole = [&](const llama_model_params & p, const json & fit) {
+                        return blocks > 0 && fit.value("gpuFit", "") == "fit" && !fit.value("gpuExpertsOnCpu", false)
+                            && p.n_gpu_layers >= (int32_t)blocks + 1;
+                    };
+                    if (!whole(mp, admission)) {
+                        // The fit writes into r->split and r->overrides; a rejected
+                        // second fit gives the first one's values back.
+                        const auto split = r->split;
+                        const auto overrides = r->overrides;
+                        auto mp1 = mp0;
+                        auto cp1 = cp0;
+                        json alt = fit_gpu(r, path, s, mp1, cp1, others);
+                        if (whole(mp1, alt)) {
+                            mp = mp1; cp = cp1; admission = alt; projector_gpu = false;
+                        } else {
+                            r->split = split; r->overrides = overrides;
+                            if (mp.tensor_split) mp.tensor_split = r->split.data();
+                            if (mp.tensor_buft_overrides) mp.tensor_buft_overrides = r->overrides.data();
+                        }
+                    }
+                }
+                // A projector or MTP head the fit put on the card is in its VRAM
+                // budget, not the RAM's (as the estimate below counts them):
+                // counting it twice refused Gemma 4 26B A4B (1.4 GB of them) on
+                // a 32 GB PC that LM Studio loads.
+                const bool on_card = mp.n_gpu_layers > 0 && own_memory(r->devices.empty() ? nullptr : r->devices[mp.split_mode == LLAMA_SPLIT_MODE_NONE ? mp.main_gpu : 0]);
+                admission.update(admit(r, path, s, mp, cp, sidecar ? "" : draft, dp, projector_gpu && on_card ? "" : mmproj,
+                    on_card && dp.n_gpu_layers > 0 ? 0 : sidecar_bytes));
+                if (!admission.value("contextCap", "").empty()) context_cap = admission.value("contextCap", "");
+                if (cp.n_ctx >= cp0.n_ctx) break;
+            }
+            admission["contextRequested"] = context_requested;
+            admission["contextCap"] = context_cap;
         }
         // Without layers on a GPU the projector runs on the CPU too.
         projector_gpu = projector_gpu && mp.n_gpu_layers > 0;
+        admission["supportsDFlash"] = true;
+        admission["supportsFp8Kv"] = fp8_supported;
+        admission["kvCacheFallbackReason"] = kv_fallback;
+        admission["kvCacheType"] = kv;
+        admission["vCacheType"] = vv;
+        admission["moeCacheSizeMb"] = cp.moe_cache_size >> 20;
+        admission["moeCacheCpuShare"] = cp.moe_cache_cpu_share;
+        admission["speculationMode"] = r->dflash ? "dflash" : sidecar || mp.load_mtp ? "mtp" : !draft.empty() ? "draft" : "off";
+        admission["dflashReserveMb"] = r->dflash_features >> 20;
         admission["projectorDevice"] = mmproj.empty() ? "" : projector_gpu ? "gpu" : "cpu";
         admission.update({{"useMmap", use_mmap}, {"useMlock", use_mlock}, {"mainGpu", mp.main_gpu},
             {"splitMode", mp.split_mode == LLAMA_SPLIT_MODE_NONE ? "none" : mp.split_mode == LLAMA_SPLIT_MODE_ROW ? "row" : "layer"},
@@ -1298,7 +1522,9 @@ static json load_with(Runtime * r, const char * path, const json & s, const std:
             uint32_t layers = 0;
             int64_t vram = 0;
             int64_t host_weights = 0;
-            int64_t ram = measure(path, mp, cp, nullptr, &vram, &layers, &host_weights);
+            int64_t ram = measure(path, mp, cp, nullptr, &vram, &layers, &host_weights) + adapter_reserve(s) + r->dflash_features;
+            if (mp.n_gpu_layers > 0) vram += r->dflash_features;
+            if (mp.n_gpu_layers > 0 && std::any_of(r->devices.begin(), r->devices.end(), own_memory)) vram += adapter_reserve(s);
             // The projector goes where the placement above put it; the draft
             // model is counted as admission counts it.
             const bool on_card = mp.n_gpu_layers > 0 && own_memory(r->devices.empty() ? nullptr : r->devices[mp.split_mode == LLAMA_SPLIT_MODE_NONE ? mp.main_gpu : 0]);
@@ -1306,7 +1532,7 @@ static json load_with(Runtime * r, const char * path, const json & s, const std:
             (on_card && projector_gpu ? vram : ram) += file_bytes(mmproj);
             if (!draft.empty() && !sidecar) {
                 int64_t draft_vram = 0;
-                ram += measure(draft.c_str(), dp, draft_context_params(r, cp), nullptr, &draft_vram);
+                ram += measure_draft(r, path, mp, cp, draft, dp, &draft_vram);
                 vram += draft_vram;
             }
             admission["contextSize"] = cp.n_ctx;
@@ -1385,6 +1611,8 @@ static json load_with(Runtime * r, const char * path, const json & s, const std:
         }
         r->ctx = llama_init_from_model(r->model, cp);
         if (!r->ctx) throw std::runtime_error("Cannot allocate context. Reduce context size, use FP16 cache, or choose a smaller model.");
+        // The accepted parameters and scales are kept for helper contexts.
+        r->context_params = cp; r->adapter_scales = scales;
         if (!r->adapters.empty() && llama_set_adapters_lora(r->ctx, r->adapters.data(), r->adapters.size(), scales.data()) != 0)
             throw std::runtime_error("The LoRA adapters could not be applied to this model.");
         r->adapter_report = adapter_report;
@@ -1410,6 +1638,10 @@ static json load_with(Runtime * r, const char * path, const json & s, const std:
             // the projector's own maximum on a photo; on a phone every image
             // token costs an encoder pass and a prefill token, so cap it.
             if (!r->embedding || s.contains("imageMaxTokens")) vp.image_max_tokens = std::clamp(s.value("imageMaxTokens", 1024), 64, 16384);
+            // Load cancellation: stop projector initialization when the
+            // session is cancelled, matching the model/context loads (audit E21).
+            vp.progress_callback = loading_callback;
+            vp.progress_callback_user_data = r->cancelled.get();
             r->mctx = mtmd_init_from_file(mmproj.c_str(), r->model, vp);
             if (!r->mctx) r->vision_error = "The vision projector could not be loaded (wrong file for this model, or out of memory).";
             else if (!mtmd_support_vision(r->mctx) && !(r->embedding && mtmd_support_audio(r->mctx))) { mtmd_free(r->mctx); r->mctx = nullptr; r->vision_error = "This projector has no image encoder."; }
@@ -1432,14 +1664,17 @@ static json load_with(Runtime * r, const char * path, const json & s, const std:
             const auto why = draft_incompatible(r->model, r->draft_model);
             if (!why.empty()) throw std::runtime_error("Speculative decoding is off: " + why + ".");
             const auto dc = draft_context_params(r, cp);
-            r->draft_ctx = llama_init_from_model(r->draft_model, dc);
-            if (!r->draft_ctx) throw std::runtime_error("Cannot allocate the draft model's context. Reduce context size or turn speculative decoding off.");
+            auto * draft_ctx = llama_init_from_model(r->draft_model, dc);
+            if (r->dflash) r->mtp_ctx = draft_ctx; else r->draft_ctx = draft_ctx;
+            if (!draft_ctx) throw std::runtime_error("Cannot allocate the draft model's context. Reduce context size or turn speculative decoding off.");
             r->draft_max = std::clamp(s.value("draftMaxTokens", 6), 1, 32);
             // Only recurrent state cannot drop a rejected tail; a sliding
             // window cache can, so it is not snapshot every round.
             r->draft_needs_checkpoints = llama_model_is_recurrent(r->draft_model) || llama_model_is_hybrid(r->draft_model);
-            r->draft_sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
-            llama_sampler_chain_add(r->draft_sampler, llama_sampler_init_greedy());
+            if (!r->dflash) {
+                r->draft_sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
+                llama_sampler_chain_add(r->draft_sampler, llama_sampler_init_greedy());
+            }
             char buf[256];
             r->draft_name = llama_model_meta_val_str(r->draft_model, "general.name", buf, sizeof buf) >= 0 ? buf : draft.substr(draft.find_last_of("/\\") + 1);
         }
@@ -1505,7 +1740,9 @@ static json load_with(Runtime * r, const char * path, const json & s, const std:
             r->draft_p_min = std::clamp(s.value("draftMinP", 0.0f), 0.0f, 1.0f);
             reset_mtp(r);
         }
-        r->effective["mtp"] = (bool)r->mtp;
+        if (r->dflash) reset_mtp(r);
+        r->effective["mtp"] = (bool)r->mtp && !r->dflash;
+        r->effective["speculationMode"] = r->dflash ? "dflash" : r->mtp ? "mtp" : r->draft_ctx ? "draft" : "off";
         r->effective["draftMaxTokens"] = r->draft_max;
         r->effective["draftMinP"] = r->draft_p_min;
         r->forget();
@@ -1514,16 +1751,58 @@ static json load_with(Runtime * r, const char * path, const json & s, const std:
 static mtmd_input_chunks * tokenize_media(Runtime * r, const std::string & text, const std::vector<std::string> & images, int & n_pos);
 // One pooled, L2-normalised vector from the last decode, cut to [dims]
 // (Matryoshka: EmbeddingGemma 2 is trained for 768/512/256/128) and
-// normalised again so cosine similarity stays a dot product.
-static std::vector<float> pooled(Runtime * r, int last, int dims) {
+// normalised again so cosine similarity stays a dot product. [seq] is the
+// sequence the vector is pooled for and [last] its last batch row (only used
+// by last-token pooling; the pooled policies answer per sequence).
+static std::vector<float> pooled_seq(Runtime * r, llama_seq_id seq, int last, int dims) {
     const int n_out = llama_model_n_embd_out(r->model);
     const float * embd = llama_pooling_type(r->ctx) == LLAMA_POOLING_TYPE_NONE
         ? llama_get_embeddings_ith(r->ctx, last)
-        : llama_get_embeddings_seq(r->ctx, 0);
+        : llama_get_embeddings_seq(r->ctx, seq);
     if (!embd) throw std::runtime_error("The model produced no embedding.");
     const int n = dims > 0 ? std::min(dims, n_out) : n_out;
     std::vector<float> out((size_t)n);
     common_embd_normalize(embd, out.data(), n, 2);
+    return out;
+}
+static std::vector<float> pooled(Runtime * r, int last, int dims) {
+    return pooled_seq(r, 0, last, dims);
+}
+// Several texts in ONE decode, each on its own sequence: an encoder never
+// mixes sequences, and the pooling step then answers one vector per sequence.
+// The memory is cleared first, so every sequence starts at position 0 and a
+// later batch never reads this one. [items] must fit n_batch in total.
+static std::vector<std::vector<float>> pooled_batch(Runtime * r, const std::vector<std::vector<llama_token>> & items, int dims) {
+    int total = 0;
+    for (const auto & tokens : items) total += (int)tokens.size();
+    llama_batch batch = llama_batch_init(total, 0, (int)items.size());
+    std::vector<int> last(items.size(), -1);
+    int row = 0;
+    for (size_t s = 0; s < items.size(); ++s) {
+        for (size_t i = 0; i < items[s].size(); ++i) {
+            batch.token[row] = items[s][i];
+            batch.pos[row] = (llama_pos)i;
+            batch.n_seq_id[row] = 1;
+            batch.seq_id[row][0] = (llama_seq_id)s;
+            batch.logits[row] = false;
+            last[s] = row;
+            ++row;
+        }
+    }
+    batch.n_tokens = row;
+    for (const int at : last) if (at >= 0) batch.logits[at] = true;
+    llama_memory_clear(llama_get_memory(r->ctx), true);
+    const int rc = llama_decode(r->ctx, batch);
+    if (rc != 0) { llama_batch_free(batch); throw std::runtime_error("Embedding batch decode failed."); }
+    std::vector<std::vector<float>> out;
+    out.reserve(items.size());
+    try {
+        for (size_t s = 0; s < items.size(); ++s) out.push_back(pooled_seq(r, (llama_seq_id)s, last[s], dims));
+    } catch (...) {
+        llama_batch_free(batch);
+        throw;
+    }
+    llama_batch_free(batch);
     return out;
 }
 // A text with photos or recordings (ABI 7): the projector encodes each
@@ -1652,15 +1931,16 @@ static std::vector<float> rank_pair(Runtime * r, const std::string & query, cons
     const int n = std::max(1, (int)llama_model_n_cls_out(r->model));
     return std::vector<float>(out, out + n);
 }
-// Embeds every item of request.texts with the loaded embedding model: one
-// item per decode, truncated to the context, pooled by the model's policy
-// and L2-normalised so cosine similarity is a dot product. An item is a
-// string, or (ABI 7) {"text": "...", "media": ["/path.jpg", "/note.wav"]}
-// for photos and recordings through the loaded projector. Optional
-// request.dims cuts every vector to its leading dimensions (Matryoshka).
-// Returns {"dim": n, "vectors": [[...], ...]} or null (see od_error).
-// With a reranker loaded, request.pairs ([{"query", "document"}, ...])
-// returns {"labels": [...], "scores": [[raw outputs], ...]} instead
+// Embeds every item of request.texts with the loaded embedding model,
+// truncated to the context, pooled by the model's policy and L2-normalised so
+// cosine similarity is a dot product. Text items that fit n_batch share one
+// decode as distinct sequences (audit E22); a media item is decoded alone. An
+// item is a string, or (ABI 7) {"text": "...", "media": ["/path.jpg",
+// "/note.wav"]} for photos and recordings through the loaded projector.
+// Optional request.dims cuts every vector to its leading dimensions
+// (Matryoshka). Returns {"dim": n, "vectors": [[...], ...]} or null (see
+// od_error). With a reranker loaded, request.pairs ([{"query", "document"},
+// ...]) returns {"labels": [...], "scores": [[raw outputs], ...]} instead
 // (optional request.instruction: see rank_pair).
 const char * od_embed(void * h, const char * request) {
     auto * r = static_cast<Runtime *>(h);
@@ -1702,15 +1982,63 @@ const char * od_embed(void * h, const char * request) {
         }
         json vectors = json::array();
         int dim = 0;
+        // A few texts ride one decode as distinct sequences when they fit
+        // n_batch (audit E22): an encoder never mixes sequences and the
+        // pooling step answers one vector per sequence, so this makes the
+        // same vectors with less per-call overhead. Any failure keeps the
+        // old one-decode-per-text path.
+        // Encoders need the whole batch in one micro-batch, so n_ubatch bounds it.
+        const int n_batch = std::max(1, std::min({n_ctx, (int)llama_n_batch(r->ctx), (int)llama_n_ubatch(r->ctx)}));
+        bool batching = true;
+        std::vector<std::vector<llama_token>> pending;
+        int pending_tokens = 0;
+        const auto embed_one = [&](std::vector<llama_token> & tokens) {
+            llama_memory_clear(llama_get_memory(r->ctx), true);
+            if (llama_decode(r->ctx, llama_batch_get_one(tokens.data(), (int)tokens.size())) != 0) throw std::runtime_error("Embedding decode failed.");
+            return pooled(r, (int)tokens.size() - 1, dims);
+        };
+        const auto flush = [&]() {
+            if (pending.empty()) return;
+            if (batching && pending.size() > 1) {
+                try {
+                    for (auto & v : pooled_batch(r, pending, dims)) {
+                        dim = (int)v.size();
+                        vectors.push_back(v);
+                    }
+                    pending.clear();
+                    pending_tokens = 0;
+                    return;
+                } catch (const std::exception &) {
+                    if (r->cancelled->load(std::memory_order_relaxed)) throw;
+                    // A model, bridge or memory module that cannot take
+                    // several sequences still gets its vectors, one by one.
+                    batching = false;
+                }
+            }
+            for (auto & tokens : pending) {
+                if (r->cancelled->load(std::memory_order_relaxed)) throw std::runtime_error("Embedding cancelled.");
+                auto v = embed_one(tokens);
+                dim = (int)v.size();
+                vectors.push_back(v);
+            }
+            pending.clear();
+            pending_tokens = 0;
+        };
         for (const auto & item : req.at("texts")) {
             if (r->cancelled->load(std::memory_order_relaxed)) throw std::runtime_error("Embedding cancelled.");
-            std::vector<float> v;
             std::string text;
             if (item.is_object()) {
                 std::vector<std::string> media;
                 for (const auto & m : item.value("media", json::array())) media.push_back(m.get<std::string>());
                 text = item.value("text", std::string());
-                if (!media.empty()) { v = embed_media(r, text, media, dims); vectors.push_back(v); dim = (int)v.size(); continue; }
+                if (!media.empty()) {
+                    // A photo or recording pools one whole sequence of its own.
+                    flush();
+                    auto v = embed_media(r, text, media, dims);
+                    dim = (int)v.size();
+                    vectors.push_back(v);
+                    continue;
+                }
             } else {
                 text = item.get<std::string>();
             }
@@ -1720,12 +2048,11 @@ const char * od_embed(void * h, const char * request) {
             int n = llama_tokenize(vocab, text.data(), text.size(), tokens.data(), count, true, false);
             if (n <= 0) throw std::runtime_error("Tokenization failed.");
             tokens.resize((size_t)std::min(n, n_ctx));
-            llama_memory_clear(llama_get_memory(r->ctx), true);
-            if (llama_decode(r->ctx, llama_batch_get_one(tokens.data(), (int)tokens.size())) != 0) throw std::runtime_error("Embedding decode failed.");
-            v = pooled(r, (int)tokens.size() - 1, dims);
-            dim = (int)v.size();
-            vectors.push_back(v);
+            if (!pending.empty() && (pending_tokens + (int)tokens.size() > n_batch || (int)pending.size() >= kEmbedBatchSeqs)) flush();
+            pending_tokens += (int)tokens.size();
+            pending.push_back(std::move(tokens));
         }
+        flush();
         if (dim == 0) dim = dims > 0 ? std::min(dims, llama_model_n_embd_out(r->model)) : llama_model_n_embd_out(r->model);
         r->embedded = json{{"dim", dim}, {"vectors", vectors}}.dump();
         return r->embedded.c_str();
@@ -1764,8 +2091,10 @@ const char * od_adapter_info(void * h, const char * path) {
 // RAM free now. An empty path returns the devices alone. A scratch runtime
 // plans it, so the handle's loaded model is untouched.
 const char * od_estimate(void * h, const char * path, const char * settings) {
+    MemoryAdmission memory_admission;
     auto * r = static_cast<Runtime *>(h);
     try {
+        memory_admission.check();
         auto s = settings && *settings ? json::parse(settings) : json::object();
         json out = json::object();
         if (path && *path) {
@@ -1780,6 +2109,7 @@ const char * od_estimate(void * h, const char * path, const char * settings) {
             size_t free = 0, total = 0;
             ggml_backend_dev_memory(dev, &free, &total);
             devices.push_back({{"name", ggml_backend_dev_name(dev)}, {"description", ggml_backend_dev_description(dev)},
+                {"supportsFp8Kv", supports_fp8_kv(dev)},
                 {"backend", ggml_backend_reg_name(ggml_backend_dev_backend_reg(dev))},
                 {"type", type == GGML_BACKEND_DEVICE_TYPE_GPU ? "gpu" : type == GGML_BACKEND_DEVICE_TYPE_IGPU ? "igpu"
                     : type == GGML_BACKEND_DEVICE_TYPE_CPU ? "cpu" : "accel"},
@@ -1802,6 +2132,7 @@ const char * od_estimate(void * h, const char * path, const char * settings) {
     }
 }
 int32_t od_load(void * h, const char * path, const char * settings) {
+    MemoryAdmission memory_admission;
     auto * r = static_cast<Runtime *>(h);
     std::lock_guard<std::mutex> use(r->use);
     struct FinishProgress {
@@ -1809,6 +2140,7 @@ int32_t od_load(void * h, const char * path, const char * settings) {
         ~FinishProgress() { progress.store(-1.0f, std::memory_order_relaxed); }
     } finish{*r->progress};
     try {
+        memory_admission.check();
         if (r->released) throw std::runtime_error(released_message);
         r->unload(); r->error.clear(); r->prompt.clear(); r->generated = 0; r->trimmed = 0; r->first_ms = 0;
         r->progress->store(0.0f, std::memory_order_relaxed);
@@ -1816,7 +2148,22 @@ int32_t od_load(void * h, const char * path, const char * settings) {
         const std::string requested = s.value("backend", "auto");
         if (requested == "qnn") throw std::runtime_error("QNN is not integrated in this build. Select Auto or CPU.");
         try {
-            load_with(r, path, s, requested);
+            try {
+                load_with(r, path, s, requested);
+            } catch (const std::exception & e) {
+                const std::string reason = e.what();
+                const bool speculation_error = reason.find("OD_DRAFT_REQUIRED") != std::string::npos
+                    || reason.find("OD_DFLASH_") != std::string::npos
+                    || reason.find("OD_SPEC_MODE") != std::string::npos
+                    || reason.find("Speculative decoding is off:") != std::string::npos
+                    || reason.find("draft model could not be loaded") != std::string::npos
+                    || reason.find("draft model's context") != std::string::npos;
+                if (!speculation_error || r->cancelled->load(std::memory_order_relaxed)) throw;
+                r->unload();
+                s["speculationMode"] = "off"; s["draftModel"] = ""; s["mtp"] = false;
+                load_with(r, path, s, requested);
+                r->fallback_reason = "Speculative decoding disabled: " + reason + " Using normal decoding.";
+            }
         } catch (const std::exception & e) {
             // A GPU driver can reject shaders while the device is enumerated or
             // the context is created (Adreno + Vulkan does). With Auto we retry
@@ -2073,7 +2420,10 @@ static void reuse_media_prefix(Runtime * r, bool enabled) {
     r->media_meta.clear();
     for (const auto & m : r->media_meta_next) if (m.idx + m.n_tokens <= keep) r->media_meta.push_back(m);
     r->checkpoints.erase(std::remove_if(r->checkpoints.begin(), r->checkpoints.end(), [&](const Runtime::Checkpoint & c) { return c.pos > keep_pos; }), r->checkpoints.end());
-    r->media_keep = keep; r->media_keep_pos = keep_pos; r->reused = (int)keep; r->cursor = 0;
+    r->media_keep = keep; r->media_keep_pos = keep_pos;
+    // cachedPromptTokens is in KV positions, like promptTokens: the flat
+    // prefix can be shorter or longer than the positions its images take.
+    r->reused = (int)keep_pos; r->cursor = 0;
     r->media_checkpoint_at = -1;
     // The draft never sees photo turns (speculation is off with media).
     if (r->draft_ctx) { llama_memory_clear(llama_get_memory(r->draft_ctx), true); r->draft_cached.clear(); r->draft_queue.clear(); }
@@ -2186,15 +2536,13 @@ static int shared_prefix(const std::vector<llama_token> & a, const std::vector<l
 static void trim_store(Runtime * r, const std::vector<llama_token> * pin = nullptr) {
     size_t total = 0;
     for (const auto & s : r->store) total += s.bytes();
+    auto used = [&](size_t i) { return r->store[i].used; };
+    auto pinned = [&](size_t i) { return pin && r->store[i].tokens == *pin; };
     while (total > r->store_limit && !r->store.empty()) {
-        auto oldest = r->store.end();
-        for (auto it = r->store.begin(); it != r->store.end(); ++it) {
-            if (pin && it->tokens == *pin) continue;
-            if (oldest == r->store.end() || it->used < oldest->used) oldest = it;
-        }
-        if (oldest == r->store.end()) break;
-        total -= oldest->bytes();
-        r->store.erase(oldest);
+        const int oldest = od_prompt_store::lru_victim(r->store.size(), used, pinned);
+        if (oldest < 0) break;
+        total -= r->store[(size_t)oldest].bytes();
+        r->store.erase(r->store.begin() + oldest);
     }
 }
 // Saves the resident sequence before a new prompt replaces it, with the
@@ -2209,16 +2557,46 @@ static void store_resident(Runtime * r, const std::vector<llama_token> * pin = n
     }), r->store.end());
     const size_t size = llama_state_seq_get_size(r->ctx, 0);
     const size_t head = r->mtp_ctx ? llama_state_seq_get_size(r->mtp_ctx, 0) : 0;
-    if (size == 0 || size + head > r->store_limit) return;
-    Runtime::Stored s{r->cached, std::vector<uint8_t>(size), std::vector<uint8_t>(head), r->checkpoints, ++r->store_clock};
+    size_t marks = 0;
+    for (const auto & checkpoint : r->checkpoints) marks += checkpoint.data.size();
+    const size_t entry = od_prompt_store::entry_bytes(size, head, marks, r->cached.size());
+    // Charge the whole entry, checkpoints and token ids included, and make room
+    // before allocating its state: evicting after the copy would hold the old
+    // entries and the new snapshot at once, above the cap. The store is only a
+    // cache, so a copy that cannot join the process-wide allocation
+    // transaction now, or that the live host budget cannot take, is skipped
+    // rather than waited for behind an unrelated long allocation.
+    if (size == 0 || !od_prompt_store::admits(r->store_limit, entry)) return;
+    MemoryAdmission admission(false);
+    if (!admission.held()) return;
+    if (entry > MemoryAdmission::host_budget()) return;
+    size_t total = 0;
+    for (const auto & s : r->store) total += s.bytes();
+    auto used = [&](size_t i) { return r->store[i].used; };
+    auto pinned = [&](size_t i) { return pin && r->store[i].tokens == *pin; };
+    while (!od_prompt_store::fits(r->store_limit, total, entry)) {
+        const int oldest = od_prompt_store::lru_victim(r->store.size(), used, pinned);
+        if (oldest < 0) return;
+        total -= r->store[(size_t)oldest].bytes();
+        r->store.erase(r->store.begin() + oldest);
+    }
+    Runtime::Stored s{r->cached, std::vector<uint8_t>(size), std::vector<uint8_t>(head), r->checkpoints, 0};
     if (s.bytes() > r->store_limit) return;
     if (llama_state_seq_get_data(r->ctx, s.state.data(), size, 0) != size) return;
     if (head && llama_state_seq_get_data(r->mtp_ctx, s.head.data(), head, 0) != head) return;
+    s.used = ++r->store_clock;
     r->store.push_back(std::move(s));
-    trim_store(r, pin);
 }
 // Decides how much of the resident sequence survives for the new prompt.
 static void reuse_prefix(Runtime * r, bool enabled) {
+    // Stored target snapshots do not contain DFlash's injected draft KV.
+    // Replay prefill to capture every target feature for each new prompt.
+    if (r->dflash) {
+        llama_memory_clear(llama_get_memory(r->ctx), true);
+        reset_mtp(r); r->forget(); r->store.clear();
+        r->store_restored = r->cursor = r->reused = 0;
+        return;
+    }
     auto mem = llama_get_memory(r->ctx);
     const int limit = (int)r->prompt.size() - 1;
     int keep = enabled ? shared_prefix(r->cached, r->prompt, limit) : 0;
@@ -2494,6 +2872,29 @@ static std::string json_grammar_fallback(const common_chat_params & params, cons
         throw std::runtime_error(std::string("The JSON schema could not be turned into a grammar: ") + e.what());
     }
 }
+// Reasoning-budget tracking shared by the chat context and helper sequences
+// (audit E08): the block is recognised from the emitted text with the model's
+// own delimiters, so the budget only counts thinking.
+static void track_reasoning(const std::string & start, const std::vector<std::string> & ends,
+                            const std::string & piece, int & tokens, int & counted, bool & in_think, std::string & tail) {
+    tail += piece;
+    const std::string opening = start.empty() ? "<think>" : start;
+    if (!in_think && tail.find(opening) != std::string::npos) { in_think = true; tail.clear(); ++counted; }
+    else if (in_think) {
+        ++tokens; ++counted;
+        bool closed = ends.empty() && tail.find("</think>") != std::string::npos;
+        for (const auto & end : ends) closed = closed || tail.find(end) != std::string::npos;
+        if (closed) { in_think = false; tail.clear(); }
+    }
+    if (tail.size() > 64) tail.erase(0, tail.size() - 64);
+}
+// What the model sees when its reasoning budget is spent: a closing sentence
+// (a bare tag left small models reasoning on, owner, 2026-09-24) and the
+// template's own end tag. Helper sequences write the same hand-off (audit E08).
+static std::string reasoning_handoff(const std::vector<std::string> & ends) {
+    return "\n\nConsidering the limited time by the user, I have to give the solution based on the thinking directly now.\n"
+        + (ends.empty() ? std::string("</think>") : ends.front()) + "\n\n";
+}
 #include "side_batch.inc"
 
 // Drops [steps] of the oldest exchanges after the system prompt, but
@@ -2574,6 +2975,7 @@ int32_t od_begin(void * h, const char * request) {
         if (s.contains("stopSequences") && s["stopSequences"].is_array())
             for (const auto & st : s["stopSequences"]) if (st.is_string() && !st.get<std::string>().empty()) r->stops.push_back(st.get<std::string>());
         r->drop_chunks(); r->media_tokens = 0;
+        r->prompt_positions = r->media_positions = r->shifted_positions = 0;
         std::vector<std::string> images;
         common_chat_params chat_params;
         // The cut is searched (doubling, then halving) instead of dropping
@@ -2623,6 +3025,9 @@ int32_t od_begin(void * h, const char * request) {
                     : "Message plus response budget exceeds context. Shorten the message or reduce max tokens.");
             }
         }
+        // Rendered prompt size in KV positions, not flat tokens: tokenization
+        // returns the media position count for a photo turn (audit E26).
+        r->prompt_positions = prompt_count;
         // Trim and stop end at the context limit; shift can reclaim KV space.
         // The reasoning ends at its budget, or where only the answer's room
         // (plus the hand-off) is left: an unlimited budget still leaves the
@@ -2636,6 +3041,10 @@ int32_t od_begin(void * h, const char * request) {
         }
         if (!images.empty()) {
             reuse_media_prefix(r, s.value("promptCache", true));
+            // Positions the image/audio chunks take, apart from the text
+            // tokens sharing the rendered prompt (audit E26).
+            for (const auto & m : r->media_meta_next) r->media_positions += (int)m.n_pos;
+            r->media_positions = std::min(r->media_positions, r->prompt_positions);
             r->media_pending = true;
             if (r->needs_checkpoints) {
                 // Same rule as the text path: checkpoint where the next turn's
@@ -2738,7 +3147,12 @@ int32_t od_begin(void * h, const char * request) {
 #else
         const bool backend_sampling = s.value("backendSampling", true);    // RTX 3070: +2.4% plain, +1.6% MTP, same tokens
 #endif
-        r->backend_sampled = backend_sampling && r->sampler_offloadable && llama_set_sampler(r->ctx, 0, r->sampler);
+        // Verification samples rows sequentially, accepting each token before
+        // applying history-dependent samplers to the next row. A backend
+        // sampler runs the whole batch before those accepts and can consume
+        // RNG state for rejected rows. Use host sampling for every spec mode.
+        r->backend_sampled = backend_sampling && !r->draft_ctx && !r->mtp
+            && r->sampler_offloadable && llama_set_sampler(r->ctx, 0, r->sampler);
         // reuse_prefix set the cursor to the first token that still needs evaluating.
         r->pending = -1; r->done = false; r->started = Clock::now();
         return 0;
@@ -2762,20 +3176,10 @@ static bool out_of_room(const Runtime * r) {
 // Text produced this step goes through the reasoning-budget tracker and the
 // stop scanner. Returns false when a stop sequence ended the answer.
 static bool emit_piece(Runtime * r, const std::string & piece, llama_token token = LLAMA_TOKEN_NULL) {
-    if (r->think_budget > 0) {
+    if (r->think_budget > 0)
         // Track the reasoning block from the emitted text so the budget only
         // counts thinking; models that open the block themselves included.
-        r->tail += piece;
-        const std::string start = r->think_start.empty() ? "<think>" : r->think_start;
-        if (!r->in_think && r->tail.find(start) != std::string::npos) { r->in_think = true; r->tail.clear(); ++r->reasoning; }
-        else if (r->in_think) {
-            ++r->think_tokens; ++r->reasoning;
-            bool closed = r->think_ends.empty() && r->tail.find("</think>") != std::string::npos;
-            for (const auto & end : r->think_ends) closed = closed || r->tail.find(end) != std::string::npos;
-            if (closed) { r->in_think = false; r->tail.clear(); }
-        }
-        if (r->tail.size() > 64) r->tail.erase(0, r->tail.size() - 64);
-    }
+        track_reasoning(r->think_start, r->think_ends, piece, r->think_tokens, r->reasoning, r->in_think, r->tail);
     // [held] is always a suffix of [generated_text], so a stop found in one
     // is cut from both by the same amount.
     r->held += piece;
@@ -2890,6 +3294,9 @@ static bool make_context_room(Runtime * r, int required) {
     }
     r->cached.erase(r->cached.begin() + keep, r->cached.begin() + keep + discard);
     r->checkpoints.clear();
+    // od_info reports the positions still resident, so a shifted turn must
+    // not keep counting what this dropped from the KV cache (audit E26).
+    r->shifted_positions += discard;
     return true;
 }
 // Decodes [tokens] into the target one batch at a time and records them.
@@ -2940,6 +3347,7 @@ static bool propose(Runtime * r, llama_token last, int limit, std::vector<llama_
         // Verification re-evaluates the draft against the target's hidden rows.
         if (!llama_memory_seq_rm(llama_get_memory(r->mtp_ctx), 0, dp.pos0, -1))
             throw std::runtime_error("Generation decode failed.");
+        if ((int)out.size() > limit) out.resize(limit);
         return !out.empty();
     }
     if (!r->draft_model || !r->draft_ctx || !r->draft_sampler) return false;
@@ -2952,14 +3360,18 @@ static bool propose(Runtime * r, llama_token last, int limit, std::vector<llama_
     // proposal, which a recurrent draft cannot recover with seq_rm alone.
     r->draft_undo_pos = (int)r->draft_cached.size();
     r->draft_undo = r->draft_needs_checkpoints ? partial_state(r->draft_ctx) : std::vector<uint8_t>{};
-    for (size_t i = 0; i < q.size(); i += (size_t)r->batch) {
-        int n = std::min((int)(q.size() - i), r->batch);
+    // The draft context may accept fewer tokens than the target batch.
+    const int draft_batch = std::max(1, (int)llama_n_batch(r->draft_ctx));
+    for (size_t i = 0; i < q.size(); i += (size_t)draft_batch) {
+        if (r->cancelled->load(std::memory_order_relaxed)) throw std::runtime_error("Generation cancelled.");
+        int n = std::min((int)(q.size() - i), draft_batch);
         if (llama_decode(r->draft_ctx, llama_batch_get_one(q.data() + i, n)) != 0) return fail_draft();
     }
     for (auto t : q) r->draft_cached.push_back(t);
     q.clear();
     const auto * vocab = llama_model_get_vocab(r->draft_model);
     for (int i = 0; i < limit; ++i) {
+        if (r->cancelled->load(std::memory_order_relaxed)) throw std::runtime_error("Generation cancelled.");
         llama_token t = llama_sampler_sample(r->draft_sampler, r->draft_ctx, -1);
         if (t < 0 || t >= llama_vocab_n_tokens(vocab) || llama_vocab_is_eog(vocab, t)) break;
         if (r->draft_p_min > 0) {
@@ -2979,6 +3391,9 @@ int32_t od_step(void * h, uint8_t * output, int32_t capacity, int32_t * length) 
     std::lock_guard<std::mutex> use(r->use);
     try {
         if (r->released) throw std::runtime_error(released_message);
+        if (r->cancelled->load(std::memory_order_relaxed)) {
+            r->finish = "cancelled"; r->done = true; return 2;
+        }
         if (r->flush_only) {
             // The answer ended with text still held back for a possible stop
             // sequence: send it, then report the end.
@@ -3029,8 +3444,7 @@ int32_t od_step(void * h, uint8_t * output, int32_t capacity, int32_t * length) 
             // ("Wait, I need to check…" in every Qwen3.5 0.8B goal step on
             // the phone, 2026-09-24). Qwen's recommended hand-off sentence
             // before the tag makes them answer.
-            std::string close = "\n\nConsidering the limited time by the user, I have to give the solution based on the thinking directly now.\n"
-                + (r->think_ends.empty() ? std::string("</think>") : r->think_ends.front()) + "\n\n";
+            std::string close = reasoning_handoff(r->think_ends);
             auto tokens = tokenize(vocab, close, false);
             if (tokens.empty()) throw std::runtime_error("Cannot close the reasoning block.");
             if (r->grammar) {
@@ -3070,7 +3484,7 @@ int32_t od_step(void * h, uint8_t * output, int32_t capacity, int32_t * length) 
         const auto step_started = Clock::now();
         if ((r->draft_ctx || r->mtp) && r->draft_max > 0 && !r->draft_disabled && r->plain_steps >= Runtime::draft_warm
             && r->pending >= 0 && room > 0 && !r->media_tokens
-            && (!r->mtp || (int)r->cached.size() + r->draft_max + 1 < (int)llama_n_ctx(r->ctx))
+            && (!r->mtp || (int)r->cached.size() + (r->dflash ? r->dflash_block : r->draft_max + 1) < (int)llama_n_ctx(r->ctx))
             && propose(r, (llama_token)r->pending, std::min(r->draft_max, room), drafts)) {
             // Speculative round: the target verifies [pending, d0, d1, ...] in
             // one decode and every draft token it would have sampled itself is
@@ -3152,8 +3566,10 @@ int32_t od_step(void * h, uint8_t * output, int32_t capacity, int32_t * length) 
             if (r->draft_rounds >= settle + (r->mtp ? Runtime::mtp_probe : Runtime::draft_probe)) {
                 const bool missing = !r->mtp && r->draft_proposed > 0 && (double)r->draft_accepted / (double)r->draft_proposed < Runtime::draft_floor;
                 const double margin = r->mtp ? Runtime::mtp_margin : 1.0;
-                const bool slower = r->plain_ms > 0 && r->spec_ms > 0
-                    && (double)r->spec_tokens / r->spec_ms < margin * (double)r->plain_steps / r->plain_ms;
+                // Both intervals are one decode plus the tokens sampled from
+                // it, so compare milliseconds per token.
+                const bool slower = r->plain_ms > 0 && r->spec_ms > 0 && r->plain_steps > 0 && r->spec_tokens > 0
+                    && r->spec_ms / (double)r->spec_tokens > (r->plain_ms / (double)r->plain_steps) / margin;
                 if (missing || slower) {
                     r->draft_disabled = true;
                     ++r->draft_losses;
@@ -3162,17 +3578,23 @@ int32_t od_step(void * h, uint8_t * output, int32_t capacity, int32_t * length) 
                 }
             }
         } else {
-            if (r->pending >= 0) {
+            const bool decoded = r->pending >= 0;
+            if (decoded) {
                 auto token = (llama_token)r->pending;
                 auto batch = llama_batch_get_one(&token, 1);
                 if (decode_target(r, batch) != 0) { r->forget(); throw std::runtime_error("Generation decode failed."); }
                 r->cached.push_back(token); r->pending = -1;
                 if (r->draft_ctx) r->draft_queue.push_back(token);
-                // A plain step: decode + sample of one token, the yardstick
-                // speculative rounds are measured against.
-                if (r->draft_ctx || r->mtp) { r->plain_ms += std::chrono::duration<double, std::milli>(Clock::now() - step_started).count(); ++r->plain_steps; }
             }
             auto token = sample(r, -1);
+            // A plain step is the yardstick for a speculative round: both are
+            // one decode plus the tokens sampled from it, so sampling is
+            // inside the measured interval here too (a CPU sampler used to be
+            // left out and made speculation look slower than it is).
+            if (decoded && (r->draft_ctx || r->mtp)) {
+                r->plain_ms += std::chrono::duration<double, std::milli>(Clock::now() - step_started).count();
+                ++r->plain_steps;
+            }
             accepted.push_back(token);
             if (llama_vocab_is_eog(vocab, token)) eog = true; else r->pending = token;
         }

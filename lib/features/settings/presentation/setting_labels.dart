@@ -7,6 +7,7 @@ extension SettingSpecLabels on SettingSpec {
   String labelIn(AppLocalizations t) =>
       t.localeName == 'en' &&
           key != 'mtp' &&
+          key != 'speculationMode' &&
           !SettingSpec.nativeKeys.contains(key)
       ? label
       : switch (key) {
@@ -89,6 +90,8 @@ extension SettingSpecLabels on SettingSpec {
           'offloadKv' => t.nativeSetOffloadKv,
           'swaFull' => t.nativeSetSwaFull,
           'nCpuMoe' => t.nativeSetNCpuMoe,
+          'moeCacheSizeMb' => t.nativeSetMoeCacheSizeMb,
+          'moeCacheCpuShare' => t.nativeSetMoeCacheCpuShare,
           'projectorDevice' => t.projectorDevice,
           'visionEnabled' => t.settingLabelVisionEnabled,
           'expertsUsed' => t.nativeSetExpertsUsed,
@@ -101,6 +104,7 @@ extension SettingSpecLabels on SettingSpec {
           'vCacheType' => t.settingLabelVCacheType,
           'ropeScaling' => t.settingLabelRopeScaling,
           'draftModelId' => t.settingLabelDraftModelId,
+          'speculationMode' => t.desktopSpeculationMode,
           'mtp' => t.desktopMtpLabel,
           'searchAgain' => t.searchAgainSetting,
           'wikipediaLookup' => t.wikipediaLookupSetting,
@@ -124,6 +128,12 @@ String settingGroupLabel(String group, AppLocalizations t) => switch (group) {
 
 String? nativeSettingOption(AppLocalizations t, String key, String value) =>
     switch ((key, value)) {
+      ('kvCacheType' || 'vCacheType', 'f8_e4m3') => t.kvFp8E4m3,
+      ('speculationMode', 'auto') => t.desktopLoadSettingsAuto,
+      ('speculationMode', 'off') => t.desktopMtpHeadOff,
+      ('speculationMode', 'mtp') => t.desktopMtpLabel,
+      ('speculationMode', 'draft') => t.desktopDraftModel,
+      ('speculationMode', 'dflash') => t.desktopDFlash,
       ('agentWebAccess', 'askOnce') => t.agentWebAskOnce,
       ('agentWebAccess', 'alwaysAllow') => t.agentWebAlwaysAllow,
       ('agentWebAccess', 'never') => t.agentWebNever,

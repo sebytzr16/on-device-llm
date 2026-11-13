@@ -12,6 +12,7 @@ import '../core/motion/blur_switcher.dart';
 import '../core/motion/pressable.dart';
 import '../features/chat/presentation/providers/chat_provider.dart';
 import '../features/models/domain/entities/model_info.dart';
+import '../features/models/presentation/widgets/model_categories.dart';
 import '../features/models/presentation/providers/model_manager_provider.dart';
 import '../features/settings/presentation/providers/settings_provider.dart';
 import 'desktop_app.dart';
@@ -125,6 +126,8 @@ class ModelPickerChip extends ConsumerWidget {
         .where(
           (m) =>
               m.isDownloaded &&
+              // Draft/DFlash files, embedders and projectors cannot chat.
+              modelCategory(m.fileName) == ModelCategory.llm &&
               desktopModelVisible(
                 m,
                 advanced: ref.watch(desktopPreferencesProvider).advanced,
@@ -181,9 +184,8 @@ class ModelPickerChip extends ConsumerWidget {
         if (loaded != null)
           MenuItemButton(
             leadingIcon: const Icon(Icons.eject_outlined, size: 16),
-            onPressed: busy
-                ? null
-                : () => ref.read(modelManagerProvider.notifier).unloadModel(),
+            onPressed: () =>
+                ref.read(modelManagerProvider.notifier).unloadModel(),
             child: Text(context.l10n.desktopEject),
           ),
         MenuItemButton(

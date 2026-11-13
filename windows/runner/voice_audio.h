@@ -3,6 +3,8 @@
 
 #include <windows.h>
 #include <mmsystem.h>
+#include <audioclient.h>
+#include <wrl/client.h>
 
 #include <array>
 #include <deque>
@@ -29,6 +31,9 @@ class VoiceAudio {
   };
   void StartMic(const Value* args, std::unique_ptr<Result> result);
   void StopMic();
+  bool StartCommunicationsMic();
+  bool AecActive();
+  void PollCapture();
   bool LoadWav(const std::string& path);
   void EmitFrame(const char* bytes);
   void PlayNext();
@@ -41,6 +46,12 @@ class VoiceAudio {
   std::unique_ptr<flutter::EventChannel<Value>> events_;
   std::unique_ptr<flutter::EventSink<Value>> sink_;
   HWAVEIN input_ = nullptr;
+  bool conversation_ = false;
+  bool aec_reference_set_ = false;
+  Microsoft::WRL::ComPtr<IAudioClient2> capture_audio_;
+  Microsoft::WRL::ComPtr<IAudioCaptureClient> capture_client_;
+  std::array<char, 1024> capture_frame_{};
+  size_t capture_bytes_ = 0;
   // 16 × 32 ms: a platform-thread stall up to about half a second loses
   // no microphone audio (P3-30).
   std::array<WAVEHDR, 16> input_headers_{};

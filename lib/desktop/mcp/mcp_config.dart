@@ -11,6 +11,7 @@ enum McpProblem {
   timeout,
   unavailable,
   denied,
+  batchArgs,
 }
 
 class McpException implements Exception {

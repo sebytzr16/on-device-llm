@@ -1192,6 +1192,72 @@ abstract class AppLocalizations {
   /// **'Packages, models and voices, with their licences'**
   String get openSourceLicencesHint;
 
+  /// No description provided for @checkForUpdates.
+  ///
+  /// In en, this message translates to:
+  /// **'Check for updates'**
+  String get checkForUpdates;
+
+  /// No description provided for @updateCheckHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Asks the public GitHub Releases API for the latest version. No account or device identifier is sent.'**
+  String get updateCheckHint;
+
+  /// No description provided for @checkingForUpdates.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking for updates…'**
+  String get checkingForUpdates;
+
+  /// No description provided for @updateUpToDate.
+  ///
+  /// In en, this message translates to:
+  /// **'You have the latest version ({version}).'**
+  String updateUpToDate(String version);
+
+  /// No description provided for @updateAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Version {version} is available.'**
+  String updateAvailable(String version);
+
+  /// No description provided for @updateCurrentVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'You are on {current}.'**
+  String updateCurrentVersion(String current);
+
+  /// No description provided for @updateReleaseNotesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What’s new in {version}'**
+  String updateReleaseNotesTitle(String version);
+
+  /// No description provided for @updateOpenReleasePage.
+  ///
+  /// In en, this message translates to:
+  /// **'Open release page'**
+  String get updateOpenReleasePage;
+
+  /// No description provided for @updateNoReleaseNotes.
+  ///
+  /// In en, this message translates to:
+  /// **'This release has no notes.'**
+  String get updateNoReleaseNotes;
+
+  /// No description provided for @updateCheckOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'You appear to be offline. Check your connection and try again.'**
+  String get updateCheckOffline;
+
+  /// No description provided for @updateCheckFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not check for updates. Check your connection and try again.'**
+  String get updateCheckFailed;
+
   /// No description provided for @resetQuestion.
   ///
   /// In en, this message translates to:
@@ -1407,6 +1473,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Skip for now'**
   String get skipForNow;
+
+  /// No description provided for @onboardingSaveFailedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save onboarding choice'**
+  String get onboardingSaveFailedTitle;
+
+  /// No description provided for @onboardingSaveFailedBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Your onboarding completion could not be saved. You can retry, or continue for this session only (you will see onboarding again next time).'**
+  String get onboardingSaveFailedBody;
+
+  /// No description provided for @onboardingContinueSession.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue for this session'**
+  String get onboardingContinueSession;
 
   /// No description provided for @verifyingSha.
   ///
@@ -2134,6 +2218,18 @@ abstract class AppLocalizations {
   /// **'Delete {model} from this app and free {size}? Your chats will be kept.'**
   String removeModelHint(Object model, Object size);
 
+  /// No description provided for @deleteModelQuestion.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this model?'**
+  String get deleteModelQuestion;
+
+  /// No description provided for @deleteModelHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Permanently delete {model} from this app and free {size}? This cannot be undone. Your chats will be kept.'**
+  String deleteModelHint(Object model, Object size);
+
   /// No description provided for @browseHf.
   ///
   /// In en, this message translates to:
@@ -2197,7 +2293,7 @@ abstract class AppLocalizations {
   /// No description provided for @availableToDownload.
   ///
   /// In en, this message translates to:
-  /// **'Available to download'**
+  /// **'Recommended'**
   String get availableToDownload;
 
   /// No description provided for @everythingOnPhone.
@@ -3640,6 +3736,30 @@ abstract class AppLocalizations {
   /// **'Restore failed: {error}'**
   String backupRestoreFailed(String error);
 
+  /// No description provided for @startupFailedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Startup failed'**
+  String get startupFailedTitle;
+
+  /// No description provided for @startupFailedBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The database could not be opened. Retry, or export the database and its recovery files. Reset starts an empty database and keeps a local safety copy. Exports contain private data; store them securely.'**
+  String get startupFailedBody;
+
+  /// No description provided for @startupRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get startupRetry;
+
+  /// No description provided for @startupCopyDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy details'**
+  String get startupCopyDetails;
+
   /// No description provided for @backupTitle.
   ///
   /// In en, this message translates to:
@@ -3675,6 +3795,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Restore backup'**
   String get backupRestoreBackup;
+
+  /// No description provided for @backupSaveToFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Save to file'**
+  String get backupSaveToFile;
+
+  /// No description provided for @backupShareAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Share'**
+  String get backupShareAction;
+
+  /// No description provided for @backupSavedToFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Encrypted backup saved to file. Keep the password safe; it cannot be recovered.'**
+  String get backupSavedToFile;
+
+  /// No description provided for @backupSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to save backup: {error}'**
+  String backupSaveFailed(String error);
+
+  /// No description provided for @backupPasswordMinLength.
+  ///
+  /// In en, this message translates to:
+  /// **'At least {minLength} characters'**
+  String backupPasswordMinLength(Object minLength);
+
+  /// No description provided for @backupPasswordsMatch.
+  ///
+  /// In en, this message translates to:
+  /// **'Passwords match'**
+  String get backupPasswordsMatch;
 
   /// No description provided for @uiRemoteProfilePageDeleteConnection.
   ///
@@ -4135,7 +4291,7 @@ abstract class AppLocalizations {
   /// No description provided for @supportCheckHint.
   ///
   /// In en, this message translates to:
-  /// **'A small model (Qwen3 Reranker 0.6B) reads the closest source passage before a sentence is flagged, so a correct sentence in other words is not called unsupported. A separate download; it runs for a few seconds after an answer from sources.'**
+  /// **'A small model (Qwen3 Reranker 0.6B, English, French and Spanish) reads the closest source passage for each sentence: a correct sentence in other words is not called unsupported, and a sentence its passage does not state is marked Not backed even when the words match. A separate download; it runs for a few seconds after an answer from sources.'**
   String get supportCheckHint;
 
   /// No description provided for @uiHfSearchPageSearchHuggingFace.
@@ -4167,6 +4323,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Not addable here'**
   String get uiHfSearchPageNotAddableHere;
+
+  /// No description provided for @imageDiscoverFilesError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load files. Try again.'**
+  String get imageDiscoverFilesError;
+
+  /// No description provided for @imageDiscoverTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Discover image & video models'**
+  String get imageDiscoverTitle;
+
+  /// No description provided for @imageDiscoverFilterImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Showing text-to-image models'**
+  String get imageDiscoverFilterImage;
+
+  /// No description provided for @imageDiscoverFilterVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'Showing text-to-video models'**
+  String get imageDiscoverFilterVideo;
+
+  /// No description provided for @imageDiscoverSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Model name, e.g. SDXL, Flux, SVD'**
+  String get imageDiscoverSearchHint;
+
+  /// No description provided for @imageDiscoverIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Public diffusion repositories (GGUF and Diffusers), most downloaded first. Each file is verified against the Hub\'s SHA-256. Pick a weight to add it to your library.'**
+  String get imageDiscoverIntro;
+
+  /// No description provided for @imageDiscoverEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No diffusion repositories match.'**
+  String get imageDiscoverEmpty;
+
+  /// No description provided for @imageDiscoverNoFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'No diffusion weights (GGUF or safetensors) in this repository.'**
+  String get imageDiscoverNoFiles;
 
   /// No description provided for @uiBenchmarkDialogBenchmarkCopied.
   ///
@@ -6182,6 +6386,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Too large for this device'**
   String get fitTooLarge;
+
+  /// No description provided for @ternaryVulkanCpuNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'This model type runs on the processor with the Vulkan engine; the CUDA engine runs it on the graphics card.'**
+  String get ternaryVulkanCpuNotice;
 
   /// No description provided for @configApplyNote.
   ///
@@ -8300,6 +8510,18 @@ abstract class AppLocalizations {
   /// **'In a conversation, interrupt by speaking. The answer then sounds like a phone call. Off: clear sound, click to interrupt.'**
   String get talkOverHintPc;
 
+  /// No description provided for @conversationHearsAudioTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Let the model hear your voice'**
+  String get conversationHearsAudioTitle;
+
+  /// No description provided for @conversationHearsAudioHint.
+  ///
+  /// In en, this message translates to:
+  /// **'When the chat model can listen (Gemma 4 E2B/E4B), it gets your recording as well as the text.'**
+  String get conversationHearsAudioHint;
+
   /// No description provided for @spokenLengthTitle.
   ///
   /// In en, this message translates to:
@@ -8363,13 +8585,13 @@ abstract class AppLocalizations {
   /// No description provided for @listeningModelHint.
   ///
   /// In en, this message translates to:
-  /// **'Parakeet v3 heard every test phrase on the phone and answers faster than Whisper; it also understands French and Spanish better. It is a separate download and uses more memory while you talk. Parakeet TDT 0.6B v3 by NVIDIA, CC BY 4.0.'**
+  /// **'Parakeet Ultra heard every test phrase on the phone and answers faster than Whisper; it also understands French and Spanish better. It is a separate download and uses more memory while you talk. Parakeet Ultra by Moondream, based on NVIDIA\'s Parakeet TDT 0.6B v3, CC BY 4.0.'**
   String get listeningModelHint;
 
   /// No description provided for @listeningModelHintPc.
   ///
   /// In en, this message translates to:
-  /// **'Parakeet v3 heard every test phrase and answers faster than Whisper; it also understands French and Spanish better. It is a separate download and uses more memory while you talk. Parakeet TDT 0.6B v3 by NVIDIA, CC BY 4.0.'**
+  /// **'Parakeet Ultra heard every test phrase and answers faster than Whisper; it also understands French and Spanish better. It is a separate download and uses more memory while you talk. Parakeet Ultra by Moondream, based on NVIDIA\'s Parakeet TDT 0.6B v3, CC BY 4.0.'**
   String get listeningModelHintPc;
 
   /// No description provided for @listeningWhisper.
@@ -8381,8 +8603,20 @@ abstract class AppLocalizations {
   /// No description provided for @listeningParakeet.
   ///
   /// In en, this message translates to:
-  /// **'Parakeet v3'**
+  /// **'Parakeet Ultra'**
   String get listeningParakeet;
+
+  /// No description provided for @liveCaptionsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Live captions (Nemotron streaming)'**
+  String get liveCaptionsTitle;
+
+  /// No description provided for @liveCaptionsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Shows your words as you speak, in 25 languages. 475 MB.'**
+  String get liveCaptionsHint;
 
   /// No description provided for @voiceUnpacking.
   ///
@@ -8552,6 +8786,12 @@ abstract class AppLocalizations {
   /// **'Interrupt'**
   String get convInterrupt;
 
+  /// No description provided for @convSynthesisFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Speech synthesis failed. Falling back to system voice.'**
+  String get convSynthesisFailed;
+
   /// No description provided for @actionEvent.
   ///
   /// In en, this message translates to:
@@ -8611,6 +8851,156 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Confirmed at {time}'**
   String actionConfirmedAt(String time);
+
+  /// No description provided for @actionExpand.
+  ///
+  /// In en, this message translates to:
+  /// **'Show details'**
+  String get actionExpand;
+
+  /// No description provided for @actionCollapse.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide details'**
+  String get actionCollapse;
+
+  /// No description provided for @actionSaveButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get actionSaveButton;
+
+  /// No description provided for @actionShareButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Share'**
+  String get actionShareButton;
+
+  /// No description provided for @actionEventTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get actionEventTitle;
+
+  /// No description provided for @actionEventStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Start'**
+  String get actionEventStart;
+
+  /// No description provided for @actionEventEnd.
+  ///
+  /// In en, this message translates to:
+  /// **'End'**
+  String get actionEventEnd;
+
+  /// No description provided for @actionEventLocation.
+  ///
+  /// In en, this message translates to:
+  /// **'Location'**
+  String get actionEventLocation;
+
+  /// No description provided for @actionEventNotes.
+  ///
+  /// In en, this message translates to:
+  /// **'Notes'**
+  String get actionEventNotes;
+
+  /// No description provided for @actionEventAllDay.
+  ///
+  /// In en, this message translates to:
+  /// **'All day'**
+  String get actionEventAllDay;
+
+  /// No description provided for @actionReminderText.
+  ///
+  /// In en, this message translates to:
+  /// **'Reminder'**
+  String get actionReminderText;
+
+  /// No description provided for @actionReminderWhen.
+  ///
+  /// In en, this message translates to:
+  /// **'When'**
+  String get actionReminderWhen;
+
+  /// No description provided for @actionAlarmTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Time'**
+  String get actionAlarmTime;
+
+  /// No description provided for @actionAlarmLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Label'**
+  String get actionAlarmLabel;
+
+  /// No description provided for @actionAlarmDays.
+  ///
+  /// In en, this message translates to:
+  /// **'Repeats'**
+  String get actionAlarmDays;
+
+  /// No description provided for @actionTimerDuration.
+  ///
+  /// In en, this message translates to:
+  /// **'Duration'**
+  String get actionTimerDuration;
+
+  /// No description provided for @actionTimerLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Label'**
+  String get actionTimerLabel;
+
+  /// No description provided for @actionMessageTo.
+  ///
+  /// In en, this message translates to:
+  /// **'To'**
+  String get actionMessageTo;
+
+  /// No description provided for @actionMessageSubject.
+  ///
+  /// In en, this message translates to:
+  /// **'Subject'**
+  String get actionMessageSubject;
+
+  /// No description provided for @actionMessageBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Message'**
+  String get actionMessageBody;
+
+  /// No description provided for @actionMessageChannel.
+  ///
+  /// In en, this message translates to:
+  /// **'Via'**
+  String get actionMessageChannel;
+
+  /// No description provided for @actionFileName.
+  ///
+  /// In en, this message translates to:
+  /// **'File name'**
+  String get actionFileName;
+
+  /// No description provided for @actionFileFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'Format'**
+  String get actionFileFormat;
+
+  /// No description provided for @actionFileContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Content'**
+  String get actionFileContent;
+
+  /// No description provided for @actionHtmlEscapedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'HTML content shown as source (not rendered).'**
+  String get actionHtmlEscapedNotice;
 
   /// No description provided for @goalAwaitingActions.
   ///
@@ -8960,6 +9350,24 @@ abstract class AppLocalizations {
   /// **'Load a model first: phones and apps get answers from the model loaded here.'**
   String get desktopServerNeedsModel;
 
+  /// No description provided for @hostPairFingerprint.
+  ///
+  /// In en, this message translates to:
+  /// **'Server fingerprint'**
+  String get hostPairFingerprint;
+
+  /// No description provided for @remotePairFingerprintMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Compare this fingerprint with the one shown next to the pairing code on the host device:\n\n{fingerprint}\n\nContinue only if they match exactly.'**
+  String remotePairFingerprintMessage(String fingerprint);
+
+  /// No description provided for @remotePairFingerprintConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'It matches'**
+  String get remotePairFingerprintConfirm;
+
   /// No description provided for @hostPairCode.
   ///
   /// In en, this message translates to:
@@ -9107,7 +9515,7 @@ abstract class AppLocalizations {
   /// No description provided for @desktopCatalog.
   ///
   /// In en, this message translates to:
-  /// **'Available to download'**
+  /// **'Recommended'**
   String get desktopCatalog;
 
   /// No description provided for @desktopLoad.
@@ -10483,6 +10891,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The MCP server returned non-text content (image, audio or resource); this chat tool result includes text only.'**
   String get mcpUnsupportedContent;
+
+  /// No description provided for @mcpBatchArgsError.
+  ///
+  /// In en, this message translates to:
+  /// **'Windows batch file arguments must not contain & | < > ^ % or \".'**
+  String get mcpBatchArgsError;
 
   /// No description provided for @structuredFormatText.
   ///
@@ -12030,8 +12444,20 @@ abstract class AppLocalizations {
   /// No description provided for @desktopOptimizeKept.
   ///
   /// In en, this message translates to:
-  /// **'The optimized settings were not faster, so the current ones were kept.'**
+  /// **'No acceptable setup was measurably faster (more than 3% beyond measurement noise), so the current settings were kept.'**
   String get desktopOptimizeKept;
+
+  /// No description provided for @desktopOptimizeKeptOutput.
+  ///
+  /// In en, this message translates to:
+  /// **'Tested answers differed too much from the baseline, so the current settings were kept.'**
+  String get desktopOptimizeKeptOutput;
+
+  /// No description provided for @desktopOptimizeKeptBaseline.
+  ///
+  /// In en, this message translates to:
+  /// **'Your current settings could not be measured reliably, so the tested settings could not be compared with their answers; the current ones were kept.'**
+  String get desktopOptimizeKeptBaseline;
 
   /// No description provided for @desktopOptimizeRates.
   ///
@@ -12435,6 +12861,84 @@ abstract class AppLocalizations {
   /// **'Clean up'**
   String get imageCleanUp;
 
+  /// No description provided for @imageAddModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Add model'**
+  String get imageAddModel;
+
+  /// No description provided for @imageRemoveModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove model'**
+  String get imageRemoveModel;
+
+  /// No description provided for @imageImportTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add an image or video model'**
+  String get imageImportTitle;
+
+  /// No description provided for @imageImportRepo.
+  ///
+  /// In en, this message translates to:
+  /// **'Hugging Face repository'**
+  String get imageImportRepo;
+
+  /// No description provided for @imageImportRepoHint.
+  ///
+  /// In en, this message translates to:
+  /// **'owner/repository'**
+  String get imageImportRepoHint;
+
+  /// No description provided for @imageImportFind.
+  ///
+  /// In en, this message translates to:
+  /// **'Find files'**
+  String get imageImportFind;
+
+  /// No description provided for @imageImportMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Mode'**
+  String get imageImportMode;
+
+  /// No description provided for @imageModeImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Image'**
+  String get imageModeImage;
+
+  /// No description provided for @imageImportFile.
+  ///
+  /// In en, this message translates to:
+  /// **'File'**
+  String get imageImportFile;
+
+  /// No description provided for @imageImportNoSupported.
+  ///
+  /// In en, this message translates to:
+  /// **'No .gguf or .safetensors file supported by stable-diffusion.cpp was found in this repository.'**
+  String get imageImportNoSupported;
+
+  /// No description provided for @imageImportUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'{file} is not supported. Choose a .gguf or .safetensors file that stable-diffusion.cpp can load.'**
+  String imageImportUnsupported(String file);
+
+  /// No description provided for @imageImportDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download and add'**
+  String get imageImportDownload;
+
+  /// No description provided for @imageImportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not add the model: {error}'**
+  String imageImportFailed(String error);
+
   /// No description provided for @reasoningThinking.
   ///
   /// In en, this message translates to:
@@ -12748,6 +13252,18 @@ abstract class AppLocalizations {
   /// **'[OCR limit {limit}: {skipped} scanned pages skipped. Text layers were still read.]'**
   String documentScanOcrLimit(String limit, String skipped);
 
+  /// No description provided for @documentEpubFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Package layout was incomplete; chapters were read in file order.'**
+  String get documentEpubFallback;
+
+  /// No description provided for @documentImagesOmitted.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} image(s) not extracted'**
+  String documentImagesOmitted(num count);
+
   /// No description provided for @documentScanUnreadable.
   ///
   /// In en, this message translates to:
@@ -12771,6 +13287,90 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **' (OCR; {confidence}; review for errors)'**
   String documentScanQuality(String confidence);
+
+  /// No description provided for @documentTextRecognitionFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Text recognition failed; the photo is available for visual search.'**
+  String get documentTextRecognitionFailed;
+
+  /// No description provided for @documentMediaNotTranscribed.
+  ///
+  /// In en, this message translates to:
+  /// **'Media is searchable, but its facts cannot be used until a transcript or caption is available.'**
+  String get documentMediaNotTranscribed;
+
+  /// No description provided for @documentTextLimitReached.
+  ///
+  /// In en, this message translates to:
+  /// **'Text reached the extraction limit; part of the document may be missing.'**
+  String get documentTextLimitReached;
+
+  /// No description provided for @voiceDictationUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Dictation unavailable: {error}'**
+  String voiceDictationUnavailable(Object error);
+
+  /// No description provided for @voiceDictationFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Dictation failed: {error}'**
+  String voiceDictationFailed(Object error);
+
+  /// No description provided for @voiceOfflineDictationUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'On-device dictation is unavailable. Install an offline speech service and language pack. No network recognizer was started.'**
+  String get voiceOfflineDictationUnavailable;
+
+  /// No description provided for @voiceOfflineRecognitionFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'On-device dictation failed. Check the offline language pack in the phone\'s speech settings. No network recognizer was started.'**
+  String get voiceOfflineRecognitionFailed;
+
+  /// No description provided for @voiceErrorNoMatch.
+  ///
+  /// In en, this message translates to:
+  /// **'No speech recognised.'**
+  String get voiceErrorNoMatch;
+
+  /// No description provided for @voiceErrorSpeechTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'No speech heard.'**
+  String get voiceErrorSpeechTimeout;
+
+  /// No description provided for @voiceErrorPermission.
+  ///
+  /// In en, this message translates to:
+  /// **'Microphone permission is needed for dictation.'**
+  String get voiceErrorPermission;
+
+  /// No description provided for @voiceErrorLanguageUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'On-device recognition has no language pack installed. Install one in the phone\'s speech settings, or allow the network recognizer.'**
+  String get voiceErrorLanguageUnavailable;
+
+  /// No description provided for @voiceErrorNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'The recognizer needs a network and none is available.'**
+  String get voiceErrorNetwork;
+
+  /// No description provided for @voiceErrorUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Dictation error ({code}).'**
+  String voiceErrorUnknown(Object code);
+
+  /// No description provided for @voiceCodeOmitted.
+  ///
+  /// In en, this message translates to:
+  /// **'code omitted'**
+  String get voiceCodeOmitted;
 
   /// No description provided for @mtpNeedsTarget.
   ///
@@ -12921,6 +13521,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'DiffusionGemma supports text chat only.'**
   String get dgTextOnly;
+
+  /// No description provided for @dgFixedSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'DiffusionGemma runs in its own host: it honours context, GPU layers, threads and seed only. The settings disabled here are fixed by its engine.'**
+  String get dgFixedSettings;
+
+  /// No description provided for @dgNoContinuation.
+  ///
+  /// In en, this message translates to:
+  /// **'DiffusionGemma cannot continue a partial answer; send the question again for a new one.'**
+  String get dgNoContinuation;
 
   /// No description provided for @hostPairValidUntil.
   ///
@@ -13309,13 +13921,13 @@ abstract class AppLocalizations {
   /// No description provided for @readingVoiceHint.
   ///
   /// In en, this message translates to:
-  /// **'Compare Kokoro and Supertonic 2 in English, French and Spanish. Download the selected voice below. Supertonic 2 weights: OpenRAIL-M; code: MIT.'**
+  /// **'Compare Kokoro and Supertonic 3 in English, French and Spanish. Download the selected voice below. Supertonic 3 weights: OpenRAIL-M; code: MIT.'**
   String get readingVoiceHint;
 
   /// No description provided for @supertonicSpeakingPack.
   ///
   /// In en, this message translates to:
-  /// **'Speaking (Supertonic 2)'**
+  /// **'Speaking (Supertonic 3)'**
   String get supertonicSpeakingPack;
 
   /// No description provided for @supertonicSpeaker.
@@ -14279,6 +14891,72 @@ abstract class AppLocalizations {
   /// **'{detail}\nChat model \"{model}\" is loaded and may be using GPU memory. Eject \"{model}\" from the model selector, then retry.'**
   String imageChatModelMemoryRecovery(String detail, String model);
 
+  /// No description provided for @chatImageNeedsDesktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Drawing pictures needs the desktop app. This phone can chat and search, but image generation runs on the PC.'**
+  String get chatImageNeedsDesktop;
+
+  /// No description provided for @chatImageNoModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Download Qwen-Image 2.1 fast from Create before generating an image.'**
+  String get chatImageNoModel;
+
+  /// No description provided for @chatImageWrongModel.
+  ///
+  /// In en, this message translates to:
+  /// **'The model selected in Create makes video. Choose an image model in Create first.'**
+  String get chatImageWrongModel;
+
+  /// No description provided for @chatImagePreparing.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading the image model…'**
+  String get chatImagePreparing;
+
+  /// No description provided for @chatImageDrawing.
+  ///
+  /// In en, this message translates to:
+  /// **'Drawing the picture: step {step} of {total}…'**
+  String chatImageDrawing(int step, int total);
+
+  /// No description provided for @generatedImageName.
+  ///
+  /// In en, this message translates to:
+  /// **'Generated image'**
+  String get generatedImageName;
+
+  /// No description provided for @chatImageEditNeedsPicture.
+  ///
+  /// In en, this message translates to:
+  /// **'Editing a picture needs a picture model, not a video model.'**
+  String get chatImageEditNeedsPicture;
+
+  /// No description provided for @chatImageNoPictureToEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'There is no picture in this chat to edit. Attach one or ask for a new picture first.'**
+  String get chatImageNoPictureToEdit;
+
+  /// No description provided for @chatImageEditing.
+  ///
+  /// In en, this message translates to:
+  /// **'Editing the picture: step {step} of {total}…'**
+  String chatImageEditing(int step, int total);
+
+  /// No description provided for @editedImageName.
+  ///
+  /// In en, this message translates to:
+  /// **'Edited image'**
+  String get editedImageName;
+
+  /// No description provided for @chatImageAnswer.
+  ///
+  /// In en, this message translates to:
+  /// **'Here is the picture you asked for.'**
+  String get chatImageAnswer;
+
   /// No description provided for @modelDownloadLicenseNotice.
   ///
   /// In en, this message translates to:
@@ -14458,6 +15136,66 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Hardware changes apply on the next model load.'**
   String get hardwareNextLoad;
+
+  /// No description provided for @detectedHardware.
+  ///
+  /// In en, this message translates to:
+  /// **'Detected hardware'**
+  String get detectedHardware;
+
+  /// No description provided for @detectedHardwareCpu.
+  ///
+  /// In en, this message translates to:
+  /// **'CPU'**
+  String get detectedHardwareCpu;
+
+  /// No description provided for @detectedHardwareCpuUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown CPU'**
+  String get detectedHardwareCpuUnknown;
+
+  /// No description provided for @detectedHardwareRam.
+  ///
+  /// In en, this message translates to:
+  /// **'RAM'**
+  String get detectedHardwareRam;
+
+  /// No description provided for @detectedHardwareGpu.
+  ///
+  /// In en, this message translates to:
+  /// **'GPU'**
+  String get detectedHardwareGpu;
+
+  /// No description provided for @detectedHardwareNone.
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get detectedHardwareNone;
+
+  /// No description provided for @detectedHardwareGpuUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown GPU'**
+  String get detectedHardwareGpuUnknown;
+
+  /// No description provided for @detectedHardwareVram.
+  ///
+  /// In en, this message translates to:
+  /// **'VRAM'**
+  String get detectedHardwareVram;
+
+  /// No description provided for @detectedHardwareBackend.
+  ///
+  /// In en, this message translates to:
+  /// **'Backend'**
+  String get detectedHardwareBackend;
+
+  /// No description provided for @detectedHardwareUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get detectedHardwareUnknown;
 
   /// No description provided for @searchRegionCanadaEnglish.
   ///
@@ -15115,6 +15853,18 @@ abstract class AppLocalizations {
   /// **'Could not access history: {error}'**
   String historyFailed(String error);
 
+  /// No description provided for @historyDamaged.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} saved comparison(s) cannot be read and are hidden.'**
+  String historyDamaged(int count);
+
+  /// No description provided for @historyRepair.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove them'**
+  String get historyRepair;
+
   /// No description provided for @historyReadOnly.
   ///
   /// In en, this message translates to:
@@ -15240,6 +15990,426 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Restore removed ({count})'**
   String modelRestoreRemoved(int count);
+
+  /// No description provided for @desktopSpeculationMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Speculative decoding'**
+  String get desktopSpeculationMode;
+
+  /// No description provided for @desktopDraftModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Draft model'**
+  String get desktopDraftModel;
+
+  /// No description provided for @desktopDFlash.
+  ///
+  /// In en, this message translates to:
+  /// **'DFlash (block diffusion)'**
+  String get desktopDFlash;
+
+  /// No description provided for @desktopDFlashUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This native library does not support DFlash.'**
+  String get desktopDFlashUnavailable;
+
+  /// No description provided for @desktopDraftRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a draft GGUF model.'**
+  String get desktopDraftRequired;
+
+  /// No description provided for @desktopDraftBrowse.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse for a draft GGUF…'**
+  String get desktopDraftBrowse;
+
+  /// No description provided for @desktopDraftModeMismatch.
+  ///
+  /// In en, this message translates to:
+  /// **'This GGUF does not match the selected speculative decoding mode.'**
+  String get desktopDraftModeMismatch;
+
+  /// No description provided for @desktopDFlashConvert.
+  ///
+  /// In en, this message translates to:
+  /// **'This dflash-draft GGUF uses a different format. Reconvert it with the pinned llama.cpp converter and its target model; the supported architecture is dflash.'**
+  String get desktopDFlashConvert;
+
+  /// No description provided for @desktopDFlashInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'This DFlash draft has invalid metadata or does not match the target model’s dimensions and layers.'**
+  String get desktopDFlashInvalid;
+
+  /// No description provided for @hostPairedDevices.
+  ///
+  /// In en, this message translates to:
+  /// **'Paired devices'**
+  String get hostPairedDevices;
+
+  /// No description provided for @hostRevokeDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Revoke'**
+  String get hostRevokeDevice;
+
+  /// No description provided for @hostLegacyDevices.
+  ///
+  /// In en, this message translates to:
+  /// **'Legacy shared token'**
+  String get hostLegacyDevices;
+
+  /// No description provided for @hostLegacyDevicesHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Revoke access for all devices using the old shared token. Pair them again to give each device its own token.'**
+  String get hostLegacyDevicesHint;
+
+  /// No description provided for @mcpExecutableReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Review executable access'**
+  String get mcpExecutableReview;
+
+  /// No description provided for @mcpEnableExecutable.
+  ///
+  /// In en, this message translates to:
+  /// **'Trust and enable'**
+  String get mcpEnableExecutable;
+
+  /// No description provided for @mcpExecutableWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable only a trusted preinstalled executable using its absolute path. Direct launches of npx, npm, uvx, uv, pip and common shell wrappers are blocked. This server runs outside an OS sandbox: it can read or change files outside its dedicated working directory and access the network. Enabling it is an exception to the app’s strict no-server, file-access and network rules. Review the command, arguments and environment below. Configuration changes require approval again.'**
+  String get mcpExecutableWarning;
+
+  /// No description provided for @hostTlsIdentityError.
+  ///
+  /// In en, this message translates to:
+  /// **'The host TLS identity is unavailable. Restore secure storage before hosting again. Resetting the identity requires revoking all devices and pairing them again.'**
+  String get hostTlsIdentityError;
+
+  /// No description provided for @hostResetIdentity.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset identity'**
+  String get hostResetIdentity;
+
+  /// No description provided for @hostResetIdentityConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Create a new host identity? Every paired device is revoked and must pair again.'**
+  String get hostResetIdentityConfirm;
+
+  /// No description provided for @startupExport.
+  ///
+  /// In en, this message translates to:
+  /// **'Export database files'**
+  String get startupExport;
+
+  /// No description provided for @startupResetTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset database?'**
+  String get startupResetTitle;
+
+  /// No description provided for @startupResetBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This removes chats, knowledge and memories from the active database. A local safety copy is kept. Export the database files first to keep a separate copy.'**
+  String get startupResetBody;
+
+  /// No description provided for @deviceEncryptionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Encrypt data on this device'**
+  String get deviceEncryptionTitle;
+
+  /// No description provided for @deviceEncryptionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Protects chats, memory, knowledge, drafts, attachments, cached vectors and saved Goals. Restart the app to apply chat database encryption changes. Off by default. Back up first; losing secure storage can make encrypted data unreadable.'**
+  String get deviceEncryptionHint;
+
+  /// No description provided for @deviceEncryptionWorking.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrating local files… Keep the app open.'**
+  String get deviceEncryptionWorking;
+
+  /// No description provided for @deviceEncryptionFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The change could not finish. Existing files were retained. Retry to finish the migration; do not reset app data.'**
+  String get deviceEncryptionFailed;
+
+  /// No description provided for @deviceEncryptionRecovery.
+  ///
+  /// In en, this message translates to:
+  /// **'Encrypted data could not be opened. Restore access to this device’s secure storage or restore a password-protected backup. Keep the original files; do not reset app data. No data was deleted.'**
+  String get deviceEncryptionRecovery;
+
+  /// No description provided for @deviceEncryptionDoneOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Encryption is on for files. Restart the app to encrypt chats, memory and knowledge.'**
+  String get deviceEncryptionDoneOn;
+
+  /// No description provided for @deviceEncryptionDoneOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Encryption is off for files. Restart the app to decrypt chats, memory and knowledge.'**
+  String get deviceEncryptionDoneOff;
+
+  /// No description provided for @deviceEncryptionRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry migration'**
+  String get deviceEncryptionRetry;
+
+  /// No description provided for @engineVersionsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Engine versions'**
+  String get engineVersionsTitle;
+
+  /// No description provided for @engineLlamaCppBuild.
+  ///
+  /// In en, this message translates to:
+  /// **'llama.cpp build'**
+  String get engineLlamaCppBuild;
+
+  /// No description provided for @engineSdCppRevision.
+  ///
+  /// In en, this message translates to:
+  /// **'stable-diffusion.cpp revision'**
+  String get engineSdCppRevision;
+
+  /// No description provided for @engineCudaRuntime.
+  ///
+  /// In en, this message translates to:
+  /// **'CUDA runtime'**
+  String get engineCudaRuntime;
+
+  /// No description provided for @engineNvidiaDriver.
+  ///
+  /// In en, this message translates to:
+  /// **'NVIDIA driver'**
+  String get engineNvidiaDriver;
+
+  /// No description provided for @engineNotDetected.
+  ///
+  /// In en, this message translates to:
+  /// **'Not detected'**
+  String get engineNotDetected;
+
+  /// No description provided for @engineCheckUpdates.
+  ///
+  /// In en, this message translates to:
+  /// **'Check for engine updates'**
+  String get engineCheckUpdates;
+
+  /// No description provided for @engineChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking…'**
+  String get engineChecking;
+
+  /// No description provided for @engineUpToDate.
+  ///
+  /// In en, this message translates to:
+  /// **'{name}: up to date'**
+  String engineUpToDate(String name);
+
+  /// No description provided for @engineNewerAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Newer {name} available: {latest} (bundled {bundled}) - it arrives with the next app update'**
+  String engineNewerAvailable(String name, String latest, String bundled);
+
+  /// No description provided for @engineUpdateUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'{name}: could not compare versions'**
+  String engineUpdateUnknown(String name);
+
+  /// No description provided for @engineUpdateOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'{name}: could not reach GitHub (offline?)'**
+  String engineUpdateOffline(String name);
+
+  /// No description provided for @engineDriverOk.
+  ///
+  /// In en, this message translates to:
+  /// **'Driver {driver} supports CUDA {major} (needs {required} or newer)'**
+  String engineDriverOk(String driver, String major, String required);
+
+  /// No description provided for @engineDriverTooOld.
+  ///
+  /// In en, this message translates to:
+  /// **'Driver {driver} is older than the {required} that CUDA {major} needs'**
+  String engineDriverTooOld(String driver, String major, String required);
+
+  /// No description provided for @engineCudaNote.
+  ///
+  /// In en, this message translates to:
+  /// **'CUDA runtime updates come with app updates.'**
+  String get engineCudaNote;
+
+  /// No description provided for @desktopCompareDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get desktopCompareDone;
+
+  /// No description provided for @desktopCompareFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get desktopCompareFailed;
+
+  /// No description provided for @desktopOptimizeKeptNoise.
+  ///
+  /// In en, this message translates to:
+  /// **'Measurements were unstable, so no speedup could be verified. Current settings kept; try Optimize again when the device is idle.'**
+  String get desktopOptimizeKeptNoise;
+
+  /// No description provided for @imageModelReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready'**
+  String get imageModelReady;
+
+  /// No description provided for @imageModelDownloaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded'**
+  String get imageModelDownloaded;
+
+  /// No description provided for @imageModelPartial.
+  ///
+  /// In en, this message translates to:
+  /// **'Partially downloaded'**
+  String get imageModelPartial;
+
+  /// No description provided for @imageModelNotDownloaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Not downloaded'**
+  String get imageModelNotDownloaded;
+
+  /// No description provided for @imageMissingFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Missing: {files}'**
+  String imageMissingFiles(String files);
+
+  /// No description provided for @imageCompanionsUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'This file holds only the diffusion model; it needs a compatible text encoder and VAE. Import a supported Qwen-Image 2.1, Wan 2.2 5B or LTX-2.3 model.'**
+  String get imageCompanionsUnknown;
+
+  /// No description provided for @imageDownloadRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Download the missing files for {model} in Create before generating an image.'**
+  String imageDownloadRequired(String model);
+
+  /// No description provided for @projectFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Project folder'**
+  String get projectFolder;
+
+  /// No description provided for @projectFolderPick.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose folder'**
+  String get projectFolderPick;
+
+  /// No description provided for @projectFolderClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Detach folder'**
+  String get projectFolderClear;
+
+  /// No description provided for @projectFileDiff.
+  ///
+  /// In en, this message translates to:
+  /// **'Change diff'**
+  String get projectFileDiff;
+
+  /// No description provided for @projectFileApprove.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve'**
+  String get projectFileApprove;
+
+  /// No description provided for @projectFileReject.
+  ///
+  /// In en, this message translates to:
+  /// **'Reject'**
+  String get projectFileReject;
+
+  /// No description provided for @projectFileAllowChat.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow edits in this chat'**
+  String get projectFileAllowChat;
+
+  /// No description provided for @projectFileUndo.
+  ///
+  /// In en, this message translates to:
+  /// **'Undo'**
+  String get projectFileUndo;
+
+  /// No description provided for @projectFileUndone.
+  ///
+  /// In en, this message translates to:
+  /// **'Change undone'**
+  String get projectFileUndone;
+
+  /// No description provided for @projectFileFinished.
+  ///
+  /// In en, this message translates to:
+  /// **'Review finished'**
+  String get projectFileFinished;
+
+  /// No description provided for @attachmentDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Details'**
+  String get attachmentDetails;
+
+  /// No description provided for @kvFp8E4m3.
+  ///
+  /// In en, this message translates to:
+  /// **'FP8 E4M3 (supported backends)'**
+  String get kvFp8E4m3;
+
+  /// No description provided for @nativeSetMoeCacheSizeMb.
+  ///
+  /// In en, this message translates to:
+  /// **'MoE device cache (MiB, 0 = disabled)'**
+  String get nativeSetMoeCacheSizeMb;
+
+  /// No description provided for @nativeSetMoeCacheCpuShare.
+  ///
+  /// In en, this message translates to:
+  /// **'MoE cache misses computed on CPU (0–1)'**
+  String get nativeSetMoeCacheCpuShare;
+
+  /// No description provided for @kvCacheFp8.
+  ///
+  /// In en, this message translates to:
+  /// **'FP8'**
+  String get kvCacheFp8;
 }
 
 class _AppLocalizationsDelegate

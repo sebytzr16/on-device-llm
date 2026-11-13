@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show QueryRow;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -149,17 +150,61 @@ class CompareHistoryStore {
       [cap],
     );
   });
-  Future<List<HistoryEntry>> list() async => [
-    for (final row
-        in await database
-            .customSelect(
-              'SELECT payload FROM compare_history ORDER BY created_at DESC, id DESC',
-            )
-            .get())
-      HistoryEntry.fromJson(
-        jsonDecode(row.read<String>('payload')) as Map<String, dynamic>,
-      ),
-  ];
+  Future<List<HistoryEntry>> list() async {
+    final out = <HistoryEntry>[];
+    for (final row in await _rows()) {
+      try {
+        out.add(_decode(row));
+      } on FormatException {
+        // An interrupted or damaged payload must not hide the other results.
+      } on TypeError {
+        // Ignore invalid metadata from an older/corrupt row.
+      }
+    }
+    return out;
+  }
+
+  /// Payload rows that cannot be decoded, newest first: an interrupted
+  /// write or a damaged database. [list] skips them, so one bad row no
+  /// longer hides every valid comparison; the page offers to remove them.
+  Future<List<String>> damagedIds() async {
+    final out = <String>[];
+    for (final row in await _rows()) {
+      try {
+        _decode(row);
+      } on FormatException {
+        out.add(row.read<String>('id'));
+      } on TypeError {
+        out.add(row.read<String>('id'));
+      }
+    }
+    return out;
+  }
+
+  /// Removes the rows whose payload cannot be decoded and says how many
+  /// went, leaving every readable comparison in place.
+  Future<int> repair() async {
+    final ids = await damagedIds();
+    for (final id in ids) {
+      await database.customStatement(
+        'DELETE FROM compare_history WHERE id = ?',
+        [id],
+      );
+    }
+    return ids.length;
+  }
+
+  Future<List<QueryRow>> _rows() => database
+      .customSelect(
+        'SELECT id, payload FROM compare_history '
+        'ORDER BY created_at DESC, id DESC',
+      )
+      .get();
+
+  static HistoryEntry _decode(QueryRow row) => HistoryEntry.fromJson(
+    jsonDecode(row.read<String>('payload')) as Map<String, dynamic>,
+  );
+
   Future<void> delete(String id) => database.customStatement(
     'DELETE FROM compare_history WHERE id = ?',
     [id],
@@ -186,4 +231,12 @@ final compareHistoryStoreProvider = Provider<CompareHistoryStore>(
 );
 final compareHistoryProvider = FutureProvider<List<HistoryEntry>>(
   (ref) => ref.watch(compareHistoryStoreProvider).list(),
+);
+
+/// Saved comparisons whose payload cannot be read. [CompareHistoryStore.list]
+/// hides them, so the count only exists to offer the user a remove action.
+final compareHistoryDamagedProvider = FutureProvider<int>(
+  (ref) async => (await ref.watch(
+    compareHistoryStoreProvider,
+  )).damagedIds().then((ids) => ids.length),
 );

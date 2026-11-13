@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/storage/prefs_rescue.dart';
 import '../../domain/entities/model_info.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 const _kRetiredKey = 'retired_model_names_v1';
 
@@ -49,7 +50,9 @@ class RetiredModelNamesNotifier extends Notifier<Map<String, String>> {
     try {
       _prefs ??= await SharedPreferences.getInstance();
       await _prefs!.setString(_kRetiredKey, jsonEncode(next));
-    } catch (_) {}
+    } catch (e, st) {
+      quietFailure('retired_model_names:52', e, st);
+    }
   }
 }
 

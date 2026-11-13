@@ -2,24 +2,78 @@ part of 'llama_engine.dart';
 
 // A second worker owns all side calls; main decode never waits for a helper
 // step. Close is acknowledged before model reload/unload (owner, 2026-11-02).
-class _SideClient {
+
+/// What a helper batch client was opened with. The native context fixes the
+/// per-sequence window and the sequence count at opening, so a later agent
+/// configuration needs a new client (audit E07).
+class SideConfig {
+  const SideConfig({required this.sequences, required this.contextSize});
+
+  final int sequences, contextSize;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SideConfig &&
+      other.sequences == sequences &&
+      other.contextSize == contextSize;
+
+  @override
+  int get hashCode => Object.hash(sequences, contextSize);
+
+  @override
+  String toString() => 'SideConfig($sequences streams, $contextSize tokens)';
+}
+
+/// The helper batch client behind [LlamaEngine.generateSide].
+abstract class HelperBatch {
+  SideConfig get config;
+  int get count;
+  Stream<String> generate(
+    String id,
+    String request,
+    void Function()? onStarted,
+  );
+  void cancel(String id);
+
+  /// Completes when no helper stream is still open.
+  Future<void> get drained;
+  Future<void> close();
+}
+
+class _SideClient implements HelperBatch {
+  @override
+  final SideConfig config;
   final ReceivePort events = ReceivePort();
   final Map<String, Map<String, dynamic>> metrics;
   final outputs = <String, StreamController<List<int>>>{};
   final starts = <String, void Function()>{};
   final ready = Completer<void>(), closed = Completer<void>();
   SendPort? commands;
+  Completer<void>? _idle;
+  @override
   int get count => outputs.length;
-  _SideClient(this.metrics);
+  _SideClient(this.config, this.metrics);
+
+  @override
+  Future<void> get drained {
+    if (outputs.isEmpty) return Future.value();
+    return (_idle ??= Completer<void>()).future;
+  }
+
+  void _checkIdle() {
+    final idle = _idle;
+    if (outputs.isNotEmpty || idle == null) return;
+    _idle = null;
+    idle.complete();
+  }
 
   static Future<_SideClient> open(
     int address,
     String library,
     Map<String, Map<String, dynamic>> metrics,
-    int sequences,
-    int contextSize,
+    SideConfig config,
   ) async {
-    final client = _SideClient(metrics);
+    final client = _SideClient(config, metrics);
     client.events.listen((dynamic event) {
       if (event is SendPort) {
         client.commands = event;
@@ -58,12 +112,20 @@ class _SideClient {
           output?.addError(StateError('${e['error']}'));
         }
         unawaited(output?.close());
+        client._checkIdle();
       }
     });
+    final arguments = <Object>[
+      client.events.sendPort,
+      address,
+      library,
+      config.sequences,
+      config.contextSize,
+    ];
     try {
       await Isolate.spawn(
         llamaSideWorker,
-        [client.events.sendPort, address, library, sequences, contextSize],
+        arguments,
         onError: client.events.sendPort,
         onExit: client.events.sendPort,
       );
@@ -83,10 +145,12 @@ class _SideClient {
     }
     outputs.clear();
     starts.clear();
+    _checkIdle();
     if (!closed.isCompleted) closed.complete();
     events.close();
   }
 
+  @override
   Stream<String> generate(
     String id,
     String request,
@@ -103,7 +167,9 @@ class _SideClient {
         .transform(ThinkingTagNormalizer());
   }
 
+  @override
   void cancel(String id) => commands?.send({'type': 'cancel', 'id': id});
+  @override
   Future<void> close() async {
     if (closed.isCompleted) return;
     commands?.send({'type': 'close'});

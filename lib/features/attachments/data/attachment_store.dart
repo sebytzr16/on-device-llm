@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../../../core/storage/device_encryption.dart';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -13,7 +14,9 @@ import 'package:uuid/uuid.dart';
 import '../domain/attachment.dart';
 import '../domain/document_text.dart';
 import '../domain/scan_options.dart';
+import '../domain/image_decoder.dart';
 import 'on_device_ocr.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// Brings a picked file into the app: copies it under the app's documents
 /// directory, normalises photos to PNG at a size vision models accept, and
@@ -22,6 +25,11 @@ class AttachmentStore {
   /// Longest edge for photos handed to a vision model. Qwen3.5 and Gemma 4
   /// tile larger images into more tokens than a phone context should spend.
   static const maxImageEdge = 1536;
+
+  /// Longest edge kept for OCR/rescan of an imported photo. The original is
+  /// retained below this edge so small print stays readable; only truly huge
+  /// images are downscaled, which keeps decode memory bounded.
+  static const maxOcrEdge = 2400;
   static const maxDocumentBytes = 64 * 1024 * 1024;
 
   static const imageExtensions = {
@@ -48,6 +56,26 @@ class AttachmentStore {
   static bool isImageName(String name) =>
       imageExtensions.contains(p.extension(name).toLowerCase());
 
+  /// Keeps a picture made by the chat's generate_image tool next to the
+  /// imported attachments and returns it as an image attachment.
+  static Future<Attachment> saveGenerated(
+    Uint8List png, {
+    String name = 'picture.png',
+  }) async {
+    final id = const Uuid().v4();
+    final dir = await directory();
+    final file = File(p.join(dir.path, '$id.png'));
+    await file.writeAsBytes(png, flush: true);
+    return Attachment(
+      id: id,
+      kind: AttachmentKind.image,
+      name: name,
+      mime: 'image/png',
+      path: file.path,
+      sizeBytes: png.length,
+    );
+  }
+
   /// Imports a file from [sourcePath] (or [bytes] when the picker only gives
   /// bytes). Images become PNG; documents keep their bytes and gain [text].
   static Future<Attachment> import({
@@ -65,7 +93,8 @@ class AttachmentStore {
     if (bytes == null && await File(sourcePath!).length() > maxDocumentBytes) {
       throw FormatException(t.documentTooLarge);
     }
-    final data = bytes ?? await File(sourcePath!).readAsBytes();
+    final data =
+        bytes ?? await DeviceEncryption.instance.read(File(sourcePath!));
     if (data.length > maxDocumentBytes) {
       throw FormatException(t.documentTooLarge);
     }
@@ -75,7 +104,7 @@ class AttachmentStore {
       final file = File(
         p.join(dir.path, '$id${p.extension(name).toLowerCase()}'),
       );
-      await file.writeAsBytes(data, flush: true);
+      await DeviceEncryption.instance.write(file, data);
       return Attachment(
         id: id,
         kind: isImageName(name) || _looksLikeImage(data)
@@ -88,23 +117,41 @@ class AttachmentStore {
       );
     }
     if (isImageName(name) || _looksLikeImage(data)) {
-      final png = await normaliseImage(data, localeCode: localeCode);
-      final file = File(p.join(dir.path, '$id.png'));
-      await file.writeAsBytes(png, flush: true);
+      // The stored file is the copy handed to a vision model. OCR reads the
+      // bounded original instead, because downscaling before recognition
+      // destroys the fine print OCR needs; that copy only has to outlive
+      // recognition, so it lives in the temporary directory and is deleted
+      // afterwards. One import therefore leaves exactly one file behind.
+      final vision = await normaliseImage(data, localeCode: localeCode);
+      final visionFile = File(p.join(dir.path, '$id-vision.png'));
+      await DeviceEncryption.instance.write(visionFile, vision);
+      final ocrSource = await normaliseImage(
+        data,
+        localeCode: localeCode,
+        maxEdge: maxOcrEdge,
+      );
       String? recognized;
       double? confidence;
       String? ocrNotice;
+      File? ocrFile;
       try {
-        final read = await OnDeviceOcr.recognize(file.path, scanOptions);
+        final temp = await getTemporaryDirectory();
+        ocrFile = File(p.join(temp.path, 'ocr-$id.png'));
+        await ocrFile.writeAsBytes(ocrSource, flush: true);
+        final read = await OnDeviceOcr.recognize(ocrFile.path, scanOptions);
         recognized = read.text.trim();
         confidence = read.confidence;
       } catch (error) {
         ocrNotice = error is OcrUnavailable
             ? t.documentOcrUnavailable
             : t.documentOcrFailed('$error');
+      } finally {
+        if (ocrFile != null && await ocrFile.exists()) {
+          await ocrFile.delete();
+        }
       }
       if (cancelled?.call() == true) {
-        await file.delete();
+        await visionFile.delete();
         throw const ScanCancelled();
       }
       return Attachment(
@@ -112,8 +159,8 @@ class AttachmentStore {
         kind: AttachmentKind.image,
         name: name,
         mime: 'image/png',
-        path: file.path,
-        sizeBytes: png.length,
+        path: visionFile.path,
+        sizeBytes: vision.length,
         text: recognized == null || recognized.isEmpty ? null : recognized,
         ocrConfidence: confidence,
         error: ocrNotice,
@@ -122,7 +169,7 @@ class AttachmentStore {
     final file = File(
       p.join(dir.path, '$id${p.extension(name).toLowerCase()}'),
     );
-    await file.writeAsBytes(data, flush: true);
+    await DeviceEncryption.instance.write(file, data);
     String? text, error;
     try {
       text = (await DocumentText.extract(
@@ -178,30 +225,13 @@ class AttachmentStore {
   static Future<Uint8List> normaliseImage(
     Uint8List data, {
     String localeCode = '',
+    int maxEdge = maxImageEdge,
   }) async {
-    final buffer = await ui.ImmutableBuffer.fromUint8List(data);
-    final descriptor = await ui.ImageDescriptor.encoded(buffer);
-    final w = descriptor.width, h = descriptor.height;
-    final scale = w > h ? maxImageEdge / w : maxImageEdge / h;
-    final codec = scale < 1
-        ? await descriptor.instantiateCodec(
-            targetWidth: (w * scale).round(),
-            targetHeight: (h * scale).round(),
-          )
-        : await descriptor.instantiateCodec();
-    final frame = await codec.getNextFrame();
-    try {
-      final png = await frame.image.toByteData(format: ui.ImageByteFormat.png);
-      if (png == null) {
-        throw FormatException(stringsFor(localeCode).documentImageEncoding);
-      }
-      return png.buffer.asUint8List();
-    } finally {
-      frame.image.dispose();
-      codec.dispose();
-      descriptor.dispose();
-      buffer.dispose();
-    }
+    return decodeAndBoundImage(
+      data,
+      maxEdge: maxEdge,
+      errorMessage: stringsFor(localeCode).documentImageEncoding,
+    );
   }
 
   /// Extract text layers first, then OCR pages with no text layer on-device.
@@ -219,8 +249,20 @@ class AttachmentStore {
       final settings = options ?? await ScanOptions.read();
       return await PdfTextScanner.scan(
         pages: doc.pages.length,
-        textLayer: (number) async =>
-            (await doc.pages[number - 1].loadText())?.fullText ?? '',
+        textLayer: (number) async {
+          final page = doc.pages[number - 1];
+          final text = (await page.loadText())?.fullText ?? '';
+          return PageLayer(
+            text,
+            coverage:
+                page.width.isFinite &&
+                    page.height.isFinite &&
+                    page.width > 0 &&
+                    page.height > 0
+                ? text.length / (page.width * page.height)
+                : 0,
+          );
+        },
         recognize: (number) => _ocrPdfPage(doc.pages[number - 1], settings),
         options: settings,
         maxCharacters: DocumentText.maxChars,
@@ -313,6 +355,8 @@ class AttachmentStore {
     try {
       final f = await ownedFile(a.path);
       if (f != null && await f.exists()) await f.delete();
-    } catch (_) {}
+    } catch (e, st) {
+      quietFailure('attachment_store:335', e, st);
+    }
   }
 }

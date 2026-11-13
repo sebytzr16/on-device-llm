@@ -50,6 +50,17 @@ class RemoteServerPage extends ConsumerWidget {
       if (PairingCode.normalize(code).isEmpty) break;
       try {
         final target = await PairingCode.tlsTarget(host.endpoint);
+        if (!context.mounted) return;
+        final confirmed = await confirmAction(
+          context,
+          title: t.hostPairFingerprint,
+          message: t.remotePairFingerprintMessage(
+            PairingCode.shortFingerprint(target.$2),
+          ),
+          confirmLabel: t.remotePairFingerprintConfirm,
+          confirmKey: const Key('pair-fingerprint-confirm'),
+        );
+        if (!confirmed || !context.mounted) return;
         final pairing = await PairingCode.redeem(
           target.$1,
           code,

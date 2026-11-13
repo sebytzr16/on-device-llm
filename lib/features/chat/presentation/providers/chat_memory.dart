@@ -66,17 +66,21 @@ mixin _ChatMemory on _ChatBase {
   }) async {
     try {
       final store = ref.read(memoryStoreProvider);
+      final generation = store.writeGeneration;
       final existing = await _activeMemoryFacts();
       final facts = UserMemory.explicitFacts(userMessage, existing: existing);
       if (!_alive || !ref.read(settingsProvider).memoryEnabled) return null;
-      return [
-        for (final fact in facts)
-          await store.add(
-            fact,
-            sourceChatId: chatId,
-            sourceMessageId: sourceMessageId,
-          ),
-      ];
+      final learned = <Memory>[];
+      for (final fact in facts) {
+        final row = await store.addIfCurrent(
+          fact,
+          generation: generation,
+          sourceChatId: chatId,
+          sourceMessageId: sourceMessageId,
+        );
+        if (row != null) learned.add(row);
+      }
+      return learned;
     } catch (_) {
       return null;
     }
@@ -227,6 +231,8 @@ mixin _ChatMemory on _ChatBase {
     bool Function()? allowed,
   }) async {
     try {
+      final store = ref.read(memoryStoreProvider);
+      final generation = store.writeGeneration;
       final known = await _activeMemoryFacts();
       if (allowed != null && !allowed()) return null;
       final raw = await engine
@@ -253,6 +259,7 @@ mixin _ChatMemory on _ChatBase {
         remainingFacts: remainingFacts,
         chatId: chatId,
         sourceMessageId: sourceMessageId,
+        generation: generation,
       );
     } catch (_) {
       return null;
@@ -261,7 +268,9 @@ mixin _ChatMemory on _ChatBase {
 
   /// Stores the facts in a model's [raw] notes that [userMessage] states,
   /// when memory (and, for a remote model, its profile's learning) is still
-  /// allowed.
+  /// allowed. [generation] is the memory-store write generation captured
+  /// before the model await; if the store was cleared or bulk-deleted while
+  /// extraction was in flight, the writes are dropped.
   Future<List<Memory>?> _storeFacts(
     String raw,
     InferenceSettings settings, {
@@ -269,6 +278,7 @@ mixin _ChatMemory on _ChatBase {
     required int remainingFacts,
     String? chatId,
     String? sourceMessageId,
+    required int generation,
   }) async {
     final facts = UserMemory.parseFacts(
       raw,
@@ -287,14 +297,17 @@ mixin _ChatMemory on _ChatBase {
       }
     }
     final store = ref.read(memoryStoreProvider);
-    return [
-      for (final f in facts.take(remainingFacts))
-        await store.add(
-          f,
-          sourceChatId: chatId,
-          sourceMessageId: sourceMessageId,
-        ),
-    ];
+    final learned = <Memory>[];
+    for (final fact in facts.take(remainingFacts)) {
+      final row = await store.addIfCurrent(
+        fact,
+        generation: generation,
+        sourceChatId: chatId,
+        sourceMessageId: sourceMessageId,
+      );
+      if (row != null) learned.add(row);
+    }
+    return learned;
   }
 
   /// A remote turn's background work: the chat title ([title]) and the
@@ -312,6 +325,8 @@ mixin _ChatMemory on _ChatBase {
   }) async {
     // The notes are read first and the switches checked after: turning
     // sharing off during that read must still keep them home.
+    final store = ref.read(memoryStoreProvider);
+    final generation = store.writeGeneration;
     var notes = const <String>[];
     if (memory != null && title && chatId != null) {
       notes = await _activeMemoryFacts();
@@ -376,6 +391,7 @@ mixin _ChatMemory on _ChatBase {
         remainingFacts: memory.remainingFacts,
         chatId: chatId,
         sourceMessageId: memory.sourceMessageId,
+        generation: generation,
       );
       if (learned != null &&
           learned.isNotEmpty &&

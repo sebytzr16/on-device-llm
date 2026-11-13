@@ -29,6 +29,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   int _step = 0;
   String? _selectedId;
   bool _acknowledged = false;
+  bool _completing = false;
 
   @override
   void dispose() {
@@ -36,7 +37,44 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     super.dispose();
   }
 
-  void _complete() => ref.read(onboardingDoneProvider.notifier).complete();
+  Future<void> _complete() async {
+    if (_completing) return;
+    setState(() => _completing = true);
+    try {
+      final ok = await ref.read(onboardingDoneProvider.notifier).complete();
+      if (!ok && mounted) {
+        await _showRetryDialog();
+      }
+    } finally {
+      if (mounted) setState(() => _completing = false);
+    }
+  }
+
+  Future<void> _showRetryDialog() async {
+    if (!mounted) return;
+    final l10n = context.l10n;
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.onboardingSaveFailedTitle),
+        content: Text(l10n.onboardingSaveFailedBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(l10n.onboardingContinueSession),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(l10n.retry),
+          ),
+        ],
+      ),
+    );
+    if (result == true && mounted) {
+      await _complete();
+    }
+  }
 
   void _go(int step) {
     setState(() => _step = step);
@@ -73,9 +111,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                AppDesign.xl,
-                AppDesign.sm,
-                AppDesign.md,
+                AppSpace.xl,
+                AppSpace.sm,
+                AppSpace.md,
                 0,
               ),
               child: Row(
@@ -90,7 +128,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       curve: SpringCurve(AppMotion.pop),
                       builder: (context, width, _) => AnimatedContainer(
                         duration: context.motion.fade(AppMotion.fadeIn),
-                        margin: const EdgeInsets.only(right: AppDesign.sm - 2),
+                        margin: const EdgeInsets.only(right: AppSpace.sm),
                         width: width.clamp(4.0, 30.0),
                         height: 6,
                         decoration: BoxDecoration(

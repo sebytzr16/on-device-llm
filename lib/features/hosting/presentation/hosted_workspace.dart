@@ -23,6 +23,85 @@ import '../../knowledge/knowledge_store.dart';
 import '../../../desktop/mcp/mcp_registry.dart';
 import '../../../core/platform/desktop_host.dart';
 
+/// Per-job settings requested by the client, limited to the host's policy.
+/// A client may narrow a host permission but never raise one: web/MCP
+/// privileges stay what the host owner configured, and only known
+/// non-permission keys are accepted.
+InferenceSettings hostedWorkspaceSettings(
+  InferenceSettings host,
+  Object? overrides,
+) {
+  final merged = <String, dynamic>{...host.toJson()};
+  final flags = {
+    'toolsEnabled': host.toolsEnabled,
+    'toolWeb': host.toolWeb,
+    'toolCalculator': host.toolCalculator,
+    'toolDocuments': host.toolDocuments,
+    'toolActions': host.toolActions,
+    'toolHelper': host.toolHelper,
+  };
+  if (overrides is Map) {
+    for (final entry in overrides.entries) {
+      final key = entry.key;
+      if (key is! String) continue;
+      final value = entry.value;
+      if (flags.containsKey(key)) {
+        // False can always be requested; true only when the host allows it.
+        if (value is bool && (!value || flags[key] == true)) {
+          merged[key] = value;
+        }
+        continue;
+      }
+      if (key == 'webMode') {
+        final mode = _named(WebMode.values, value);
+        if (mode != null && mode.index <= host.webMode.index) {
+          merged[key] = value;
+        }
+        continue;
+      }
+      if (key == 'agentWebAccess') {
+        final access = _named(AgentWebAccess.values, value);
+        if (access != null &&
+            _webRank(access) <= _webRank(host.agentWebAccess)) {
+          merged[key] = value;
+        }
+        continue;
+      }
+      if (_workspaceOverrides.contains(key)) merged[key] = value;
+    }
+  }
+  return InferenceSettings.fromJson(merged).copyWith(remoteEnabled: false);
+}
+
+/// Non-permission per-job settings; no `agent*` wildcard, so a future
+/// permission key cannot become a client override by accident.
+const _workspaceOverrides = {
+  'helperModelId',
+  'toolMaxRounds',
+  'agentMaxTokens',
+  'agentTemperature',
+  'agentTopP',
+  'agentMinP',
+  'agentTopK',
+  'agentRepeatPenalty',
+  'agentContextSize',
+  'agentMaxConcurrent',
+  'agentTimeoutSeconds',
+  'agentThinking',
+  'agentToolRounds',
+  'agentInstructions',
+  'agentInputBudget',
+};
+
+T? _named<T extends Enum>(List<T> values, Object? raw) =>
+    raw is String ? values.where((v) => v.name == raw).firstOrNull : null;
+
+int _webRank(AgentWebAccess access) => switch (access) {
+  AgentWebAccess.never => 0,
+  AgentWebAccess.askOnce => 1,
+  AgentWebAccess.alwaysAllow => 2,
+};
+
 WorkspaceApi hostedWorkspace({
   required Ref ref,
   required int Function() port,
@@ -52,28 +131,10 @@ WorkspaceApi hostedWorkspace({
           input['model'] is String && (input['model'] as String).isNotEmpty
           ? input['model'] as String
           : primaryModel;
-      final overrides = input['settings'];
-      final base = hostSettings();
-      final settings = InferenceSettings.fromJson({
-        ...base.toJson(),
-        if (overrides is Map)
-          for (final entry in overrides.entries)
-            if (entry.key is String &&
-                ((entry.key as String).startsWith('agent') ||
-                    const {
-                      'toolsEnabled',
-                      'toolHelper',
-                      'helperModelId',
-                      'toolWeb',
-                      'toolCalculator',
-                      'toolDocuments',
-                      'webSearchEnabled',
-                      'webMode',
-                      'toolMaxRounds',
-                      'toolActions',
-                    }.contains(entry.key)))
-              entry.key as String: entry.value,
-      }).copyWith(remoteEnabled: false);
+      final settings = hostedWorkspaceSettings(
+        hostSettings(),
+        input['settings'],
+      );
       final files = <File>[];
       final client = RemoteEngine();
       final localSettings = settings.copyWith(
@@ -138,7 +199,7 @@ WorkspaceApi hostedWorkspace({
       final reader = ref.read(webPageReaderProvider);
       helper.beginTurn();
       try {
-        final messages = api.decodeMessages(
+        final messages = await api.decodeMessages(
           job,
           input['messages'],
           vision: vision(model),
@@ -202,6 +263,9 @@ WorkspaceApi hostedWorkspace({
               question,
               (settings.contextSize ~/ 2).clamp(1024, 32000),
               embedder: ref.read(textEmbedderProvider),
+              owner: 'workspace:${job.id}',
+              // Hosted uploads are temporary: never persist their vectors.
+              persistVectors: false,
             );
             messages[index]['content'] =
                 '${messages[index]['content']}\n\n'

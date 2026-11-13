@@ -8,7 +8,7 @@ import '../../../../inference/remote/remote_provider.dart';
 
 export '../../../../core/motion/motion_choice.dart' show MotionChoice;
 
-enum KvCacheType { fp16, q8_0, q4_0 }
+enum KvCacheType { fp16, q8_0, q4_0, f8_e4m3 }
 
 /// Web retrieval policy (roadmap WEB-01). `auto` retrieves when the message
 /// pastes a link, asks to search, or looks time-sensitive; `always` researches
@@ -89,6 +89,7 @@ class InferenceSettings {
         : 0,
     promptStoreMb: 0,
     mtp: false,
+    speculationMode: 'off',
     draftModelId: '',
     responseFormat: ResponseFormat.text,
     grammar: '',
@@ -228,6 +229,12 @@ class InferenceSettings {
   final bool swaFull;
   final int nCpuMoe;
 
+  /// Device expert cache in MiB; zero disables the experimental upstream cache.
+  final int moeCacheSizeMb;
+
+  /// Fraction of cache misses computed on CPU (0 = upload all misses).
+  final double moeCacheCpuShare;
+
   /// Experts per token for a mixture-of-experts model; -1 keeps the model's.
   final int expertsUsed;
 
@@ -239,6 +246,9 @@ class InferenceSettings {
 
   final bool flashAttention;
   final bool mtp;
+
+  /// Auto preserves profiles saved before the desktop mode selector.
+  final String speculationMode;
   final double temperature;
   final double topP;
   final double minP;
@@ -307,6 +317,11 @@ class InferenceSettings {
   /// API keys by profile id. Session state: never serialised with the rest
   /// of the settings — the notifier keeps them in the platform keystore.
   final Map<String, String> remoteApiKeys;
+
+  /// Custom request-header values by profile id. Session state too: the
+  /// notifier keeps them in the platform keystore, never in the settings
+  /// JSON or a backup.
+  final Map<String, Map<String, String>> remoteHeaders;
   final bool remoteWebResearch;
   final bool remoteVision;
   final bool remoteDocuments;
@@ -352,6 +367,11 @@ class InferenceSettings {
   /// full-quality sound, the microphone rests while the answer plays.
   final bool talkOver;
 
+  /// Conversation: send the utterance's recording itself with the transcript
+  /// when the loaded model can hear audio (Gemma 4 E2B/E4B and other llama.cpp
+  /// audio projectors). Models without audio keep the text-only turn.
+  final bool conversationHearsAudio;
+
   /// Conversation: the most sentences a spoken answer keeps (0: all of
   /// it). Lists are never cut (tester, 2026-10-19: the length is a choice).
   final int spokenSentences;
@@ -365,9 +385,10 @@ class InferenceSettings {
   final String conversationModelId;
 
   /// The on-device listening model: '' is Whisper base (in the voice
-  /// pack), 'parakeet-v3' is Parakeet TDT 0.6B v3, an optional download
-  /// that is more accurate in French and Spanish. Whisper is used while
-  /// Parakeet is not downloaded.
+  /// pack), 'parakeet-v3' is Parakeet (Ultra once downloaded, else the v3
+  /// files a user already has), an optional download that is more accurate
+  /// in French and Spanish. Whisper is used while Parakeet is not
+  /// downloaded.
   final String listeningModel;
 
   /// UI language (FX-15): '' follows the phone, else a supported code.
@@ -508,7 +529,8 @@ class InferenceSettings {
   // ----- Speculative decoding -----
 
   /// Catalog id of a smaller model with the same vocabulary that drafts
-  /// tokens for the main one; '' = off.
+  /// tokens for the main one, or draft:<path> for an external GGUF.
+  /// An empty id retains automatic desktop MTP discovery in Auto/MTP mode.
   final String draftModelId;
   final int draftMaxTokens;
 
@@ -546,6 +568,8 @@ class InferenceSettings {
     this.offloadKv = true,
     this.swaFull = false,
     this.nCpuMoe = -1,
+    this.moeCacheSizeMb = 0,
+    this.moeCacheCpuShare = 0.0,
     this.expertsUsed = -1,
     this.draftGpuLayers = 0,
     this.keepTokens = 0,
@@ -554,6 +578,7 @@ class InferenceSettings {
 
     this.flashAttention = true,
     this.mtp = false,
+    this.speculationMode = 'auto',
     this.temperature = 0.7,
     this.topP = 0.95,
     this.minP = 0.05,
@@ -580,6 +605,7 @@ class InferenceSettings {
     this.remoteProfiles = const [],
     this.remoteProfileId = '',
     this.remoteApiKeys = const {},
+    this.remoteHeaders = const {},
     this.remoteWebResearch = true,
     this.remoteVision = true,
     this.remoteDocuments = true,
@@ -595,6 +621,7 @@ class InferenceSettings {
     this.readingVoice = 'kokoro',
     this.supertonicSid = 0,
     this.talkOver = false,
+    this.conversationHearsAudio = true,
     this.spokenSentences = 3,
     this.readingSpeed = 1.0,
     this.conversationModelId = '',
@@ -694,6 +721,8 @@ class InferenceSettings {
     // cores with or without a GPU: Qwen3.6 35B A3B with experts in RAM on a
     // 3070 decodes at 31 tok/s at 8 threads against 27 at 4; a model fully on
     // the card is the same at both (2026-10-29).
+    // Follow the real core count, but keep the conservative auto default
+    // capped at 16 (audit E18: explicit cpuThreads stay uncapped).
     if (DesktopHost.active) return CpuCores.desktop.clamp(1, 16);
     final gpu =
         (backend == GpuBackend.opencl ||
@@ -706,11 +735,13 @@ class InferenceSettings {
   }
 
   /// Desktop avoids SMT contention; phone prefill still uses every core.
+  /// The desktop auto batch count follows the (capped) thread count and is
+  /// never clamped below it; phone uses every logical core.
   int get effectiveBatchThreads => batchThreads > 0
       ? batchThreads
-      : (DesktopHost.active ? CpuCores.desktop : CpuCores.logical()).clamp(
-          effectiveThreads,
-          16,
+      : (DesktopHost.active ? effectiveThreads : CpuCores.logical()).clamp(
+          1,
+          DesktopHost.active ? 16 : CpuCores.logical(),
         );
 
   int get effectiveGpuLayers => backend == GpuBackend.cpu ? 0 : nGpuLayers;
@@ -770,7 +801,7 @@ class InferenceSettings {
       id: 'legacy',
       name: 'Remote server',
       providerId: RemoteProvider.guess(Uri.tryParse(url.trim())).id,
-      baseUrl: url.substring(0, url.length.clamp(0, 2000)),
+      baseUrl: RemoteProfile.sanitizeBaseUrl(url),
       model: j['remoteModel'] is String
           ? (j['remoteModel'] as String).substring(
               0,
@@ -804,11 +835,14 @@ class InferenceSettings {
     'offloadKv',
     'swaFull',
     'nCpuMoe',
+    'moeCacheSizeMb',
+    'moeCacheCpuShare',
     'expertsUsed',
     'draftGpuLayers',
 
     'flashAttention',
     'mtp',
+    'speculationMode',
     'kvCacheType',
     'vCacheType',
     'ropeScaling',
@@ -846,6 +880,8 @@ class InferenceSettings {
     bool? offloadKv,
     bool? swaFull,
     int? nCpuMoe,
+    int? moeCacheSizeMb,
+    double? moeCacheCpuShare,
     int? expertsUsed,
     int? draftGpuLayers,
     int? keepTokens,
@@ -854,6 +890,7 @@ class InferenceSettings {
 
     bool? flashAttention,
     bool? mtp,
+    String? speculationMode,
     double? temperature,
     double? topP,
     double? minP,
@@ -881,6 +918,7 @@ class InferenceSettings {
     List<RemoteProfile>? remoteProfiles,
     String? remoteProfileId,
     Map<String, String>? remoteApiKeys,
+    Map<String, Map<String, String>>? remoteHeaders,
     bool? remoteWebResearch,
     bool? remoteVision,
     bool? remoteDocuments,
@@ -896,6 +934,7 @@ class InferenceSettings {
     String? readingVoice,
     int? supertonicSid,
     bool? talkOver,
+    bool? conversationHearsAudio,
     int? spokenSentences,
     double? readingSpeed,
     String? conversationModelId,
@@ -987,6 +1026,8 @@ class InferenceSettings {
           if (offloadKv != null) 'offloadKv',
           if (swaFull != null) 'swaFull',
           if (nCpuMoe != null) 'nCpuMoe',
+          if (moeCacheSizeMb != null) 'moeCacheSizeMb',
+          if (moeCacheCpuShare != null) 'moeCacheCpuShare',
           if (expertsUsed != null) 'expertsUsed',
           if (draftGpuLayers != null) 'draftGpuLayers',
           if (keepTokens != null) 'keepTokens',
@@ -995,6 +1036,7 @@ class InferenceSettings {
 
           if (flashAttention != null) 'flashAttention',
           if (mtp != null) 'mtp',
+          if (speculationMode != null) 'speculationMode',
           if (temperature != null) 'temperature',
           if (topP != null) 'topP',
           if (minP != null) 'minP',
@@ -1034,6 +1076,7 @@ class InferenceSettings {
           if (readingVoice != null) 'readingVoice',
           if (supertonicSid != null) 'supertonicSid',
           if (talkOver != null) 'talkOver',
+          if (conversationHearsAudio != null) 'conversationHearsAudio',
           if (spokenSentences != null) 'spokenSentences',
           if (readingSpeed != null) 'readingSpeed',
           if (conversationModelId != null) 'conversationModelId',
@@ -1121,6 +1164,8 @@ class InferenceSettings {
     offloadKv: offloadKv ?? this.offloadKv,
     swaFull: swaFull ?? this.swaFull,
     nCpuMoe: nCpuMoe ?? this.nCpuMoe,
+    moeCacheSizeMb: moeCacheSizeMb ?? this.moeCacheSizeMb,
+    moeCacheCpuShare: moeCacheCpuShare ?? this.moeCacheCpuShare,
     expertsUsed: expertsUsed ?? this.expertsUsed,
     draftGpuLayers: draftGpuLayers ?? this.draftGpuLayers,
     keepTokens: keepTokens ?? this.keepTokens,
@@ -1129,6 +1174,7 @@ class InferenceSettings {
 
     flashAttention: flashAttention ?? this.flashAttention,
     mtp: mtp ?? this.mtp,
+    speculationMode: speculationMode ?? this.speculationMode,
     temperature: temperature ?? this.temperature,
     topP: topP ?? this.topP,
     minP: minP ?? this.minP,
@@ -1156,6 +1202,7 @@ class InferenceSettings {
     remoteProfiles: remoteProfiles ?? this.remoteProfiles,
     remoteProfileId: remoteProfileId ?? this.remoteProfileId,
     remoteApiKeys: remoteApiKeys ?? this.remoteApiKeys,
+    remoteHeaders: remoteHeaders ?? this.remoteHeaders,
     remoteWebResearch: remoteWebResearch ?? this.remoteWebResearch,
     remoteVision: remoteVision ?? this.remoteVision,
     remoteDocuments: remoteDocuments ?? this.remoteDocuments,
@@ -1173,9 +1220,13 @@ class InferenceSettings {
     readAloud: readAloud ?? this.readAloud,
     naturalVoice: naturalVoice ?? this.naturalVoice,
     kokoroSid: kokoroSid ?? this.kokoroSid,
-    readingVoice: readingVoice ?? this.readingVoice,
+    readingVoice: readingVoice == null
+        ? this.readingVoice
+        : readingVoiceFor(readingVoice),
     supertonicSid: supertonicSid ?? this.supertonicSid,
     talkOver: talkOver ?? this.talkOver,
+    conversationHearsAudio:
+        conversationHearsAudio ?? this.conversationHearsAudio,
     spokenSentences: spokenSentences ?? this.spokenSentences,
     readingSpeed: readingSpeed ?? this.readingSpeed,
     conversationModelId: conversationModelId ?? this.conversationModelId,
@@ -1275,6 +1326,8 @@ class InferenceSettings {
     'offloadKv': offloadKv,
     'swaFull': swaFull,
     'nCpuMoe': nCpuMoe,
+    'moeCacheSizeMb': moeCacheSizeMb,
+    'moeCacheCpuShare': moeCacheCpuShare,
     'expertsUsed': expertsUsed,
     'draftGpuLayers': draftGpuLayers,
     'keepTokens': keepTokens,
@@ -1283,6 +1336,7 @@ class InferenceSettings {
 
     'flashAttention': flashAttention,
     'mtp': mtp,
+    'speculationMode': speculationMode,
     'temperature': temperature,
     'topP': topP,
     'minP': minP,
@@ -1325,6 +1379,7 @@ class InferenceSettings {
     'readingVoice': readingVoice,
     'supertonicSid': supertonicSid,
     'talkOver': talkOver,
+    'conversationHearsAudio': conversationHearsAudio,
     'spokenSentences': spokenSentences,
     'readingSpeed': readingSpeed,
     'conversationModelId': conversationModelId,
@@ -1416,7 +1471,16 @@ class InferenceSettings {
     };
   }
 
+  /// The reading voice a saved id selects: 'supertonic-3' and the older
+  /// saved 'supertonic-2' both mean Supertonic; any other choice is Kokoro.
+  static String readingVoiceFor(String id) =>
+      id == 'supertonic-2' || id == 'supertonic-3' ? 'supertonic-3' : 'kokoro';
+
   factory InferenceSettings.fromJson(Map<String, dynamic> j) {
+    // Thread counts follow the real core count instead of a fixed 16 ceiling.
+    final int threadCap = DesktopHost.active
+        ? CpuCores.desktop
+        : CpuCores.logical();
     int integer(String key, int fallback, int low, int high) {
       final v = j[key];
       return v is num && v.isFinite ? v.toInt().clamp(low, high) : fallback;
@@ -1481,8 +1545,8 @@ class InferenceSettings {
           const ['auto', 'avx512', 'avx2', 'compat'].contains(j['cpuVariant'])
           ? j['cpuVariant'] as String
           : 'auto',
-      cpuThreads: integer('cpuThreads', 0, 0, 16),
-      batchThreads: integer('batchThreads', 0, 0, 16),
+      cpuThreads: integer('cpuThreads', 0, 0, threadCap),
+      batchThreads: integer('batchThreads', 0, 0, threadCap),
       vramReserveMb: integer('vramReserveMb', 768, 0, 8192),
       draftMinP: number('draftMinP', 0, 0, 1),
       promptStoreMb: integer('promptStoreMb', -1, -1, 65536),
@@ -1496,6 +1560,8 @@ class InferenceSettings {
       offloadKv: boolean('offloadKv', true),
       swaFull: boolean('swaFull', false),
       nCpuMoe: integer('nCpuMoe', -1, -1, 4096),
+      moeCacheSizeMb: integer('moeCacheSizeMb', 0, 0, 1 << 30),
+      moeCacheCpuShare: number('moeCacheCpuShare', 0.0, 0.0, 1.0),
       expertsUsed: integer('expertsUsed', -1, -1, 256),
       draftGpuLayers: integer('draftGpuLayers', 0, 0, 999),
       keepTokens: integer('keepTokens', 0, 0, maxContext),
@@ -1506,6 +1572,16 @@ class InferenceSettings {
 
       flashAttention: boolean('flashAttention', true),
       mtp: boolean('mtp', false),
+      speculationMode:
+          const [
+            'auto',
+            'off',
+            'mtp',
+            'draft',
+            'dflash',
+          ].contains(j['speculationMode'])
+          ? j['speculationMode'] as String
+          : 'auto',
       temperature: number('temperature', .7, 0, 2),
       topP: number('topP', .95, 0, 1),
       minP: number('minP', .05, 0, 1),
@@ -1571,10 +1647,9 @@ class InferenceSettings {
       naturalVoice: boolean('naturalVoice', true),
       kokoroSid: integer('kokoroSid', -1, -1, 53),
       supertonicSid: integer('supertonicSid', 0, 0, 9),
-      readingVoice: text('readingVoice', 32) == 'supertonic-2'
-          ? 'supertonic-2'
-          : 'kokoro',
+      readingVoice: readingVoiceFor(text('readingVoice', 32)),
       talkOver: boolean('talkOver', false),
+      conversationHearsAudio: boolean('conversationHearsAudio', true),
       spokenSentences: integer('spokenSentences', 3, 0, 20),
       readingSpeed: number('readingSpeed', 1.0, .6, 1.6),
       conversationModelId: text('conversationModelId', 200),

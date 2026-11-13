@@ -157,5 +157,26 @@ void main() {
       await store.save(entry(1));
       expect((await store.list()).single.id, 'item-1');
     });
+    test('skips malformed rows and reports damaged ids', () async {
+      await store.save(entry(1));
+      await store.save(entry(2));
+      // A malformed row inserted after the last save (the cap of 2 would
+      // otherwise prune it as the oldest).
+      await db.customStatement(
+        'INSERT INTO compare_history (id, created_at, payload) VALUES (?, ?, ?)',
+        ['bad-row', 0, 'not valid json'],
+      );
+      // The malformed row should not hide the valid ones.
+      final list = await store.list();
+      expect(list.map((e) => e.id), ['item-2', 'item-1']);
+      // damagedIds should report the bad row.
+      final damaged = await store.damagedIds();
+      expect(damaged, ['bad-row']);
+      // repair should remove the bad row.
+      final removed = await store.repair();
+      expect(removed, 1);
+      expect(await store.damagedIds(), isEmpty);
+      expect((await store.list()).map((e) => e.id), ['item-2', 'item-1']);
+    });
   });
 }

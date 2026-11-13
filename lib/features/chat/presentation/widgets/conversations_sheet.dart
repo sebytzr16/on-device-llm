@@ -78,8 +78,8 @@ class _WorkspaceRow extends StatelessWidget {
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(
-          horizontal: AppDesign.md,
-          vertical: AppDesign.sm + 2,
+          horizontal: AppSpace.md,
+          vertical: AppSpace.sm,
         ),
         child: Row(
           children: [
@@ -92,7 +92,7 @@ class _WorkspaceRow extends StatelessWidget {
               ),
               child: Icon(icon, size: 18, color: c.accent),
             ),
-            const SizedBox(width: AppDesign.md),
+            const SizedBox(width: AppSpace.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -134,10 +134,10 @@ class _SectionLabel extends StatelessWidget {
     this.text, {
     this.trailing,
     this.padding = const EdgeInsets.fromLTRB(
-      AppDesign.xl,
-      AppDesign.lg,
-      AppDesign.xl,
-      AppDesign.sm,
+      AppSpace.xl,
+      AppSpace.lg,
+      AppSpace.xl,
+      AppSpace.sm,
     ),
   });
 
@@ -155,10 +155,10 @@ class _SectionLabel extends StatelessWidget {
         children: [
           Text(text.toUpperCase(), style: style),
           if (trailing != null) ...[
-            const SizedBox(width: AppDesign.sm),
+            const SizedBox(width: AppSpace.sm),
             Text(trailing!, style: style.copyWith(color: c.textFaint)),
           ],
-          const SizedBox(width: AppDesign.sm),
+          const SizedBox(width: AppSpace.sm),
           Expanded(child: Divider(color: c.hairline, height: 1)),
         ],
       ),
@@ -382,7 +382,7 @@ class _ConversationsSheetState extends ConsumerState<ConversationsSheet> {
     final workspace = ref.watch(conversationWorkspaceProvider);
     final projects = workspace.projects.length;
     final workspaceCard = Container(
-      margin: const EdgeInsets.symmetric(horizontal: AppDesign.lg),
+      margin: const EdgeInsets.symmetric(horizontal: AppSpace.lg),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: c.surfaceRaised,
@@ -422,10 +422,10 @@ class _ConversationsSheetState extends ConsumerState<ConversationsSheet> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(
-              AppDesign.lg,
-              AppDesign.lg,
-              AppDesign.lg,
-              AppDesign.sm,
+              AppSpace.lg,
+              AppSpace.lg,
+              AppSpace.lg,
+              AppSpace.sm,
             ),
             child: TextField(
               key: const Key('chat-search'),
@@ -452,7 +452,7 @@ class _ConversationsSheetState extends ConsumerState<ConversationsSheet> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppDesign.lg),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpace.lg),
             child: Row(
               children: [
                 // Equal halves with tight padding, and labels that shrink
@@ -475,7 +475,7 @@ class _ConversationsSheetState extends ConsumerState<ConversationsSheet> {
                           },
                   ),
                 ),
-                const SizedBox(width: AppDesign.sm),
+                const SizedBox(width: AppSpace.sm),
                 Expanded(
                   child: OutlinedButton.icon(
                     key: const Key('drawer-new-temporary'),
@@ -548,13 +548,13 @@ class _ConversationsSheetState extends ConsumerState<ConversationsSheet> {
                               key: const Key('folder-bar'),
                               scrollDirection: Axis.horizontal,
                               padding: const EdgeInsets.symmetric(
-                                horizontal: AppDesign.lg,
+                                horizontal: AppSpace.lg,
                               ),
                               children: [
                                 for (final f in [null, ...folders])
                                   Padding(
                                     padding: const EdgeInsets.only(
-                                      right: AppDesign.xs,
+                                      right: AppSpace.xs,
                                     ),
                                     child: ChoiceChip(
                                       label: Text(f ?? context.l10n.all),
@@ -592,7 +592,7 @@ class _ConversationsSheetState extends ConsumerState<ConversationsSheet> {
                     return CustomScrollView(
                       slivers: [
                         SliverPadding(
-                          padding: const EdgeInsets.only(bottom: AppDesign.lg),
+                          padding: const EdgeInsets.only(bottom: AppSpace.lg),
                           sliver: SliverMainAxisGroup(
                             slivers: [
                               SliverList.list(
@@ -605,10 +605,10 @@ class _ConversationsSheetState extends ConsumerState<ConversationsSheet> {
                                     context.l10n.conversations,
                                     trailing: '${filtered.length}',
                                     padding: const EdgeInsets.fromLTRB(
-                                      AppDesign.xl,
-                                      AppDesign.xl,
-                                      AppDesign.xl,
-                                      AppDesign.sm,
+                                      AppSpace.xl,
+                                      AppSpace.xl,
+                                      AppSpace.xl,
+                                      AppSpace.sm,
                                     ),
                                   ),
                                   ?folderBar,
@@ -618,10 +618,10 @@ class _ConversationsSheetState extends ConsumerState<ConversationsSheet> {
                                 SliverToBoxAdapter(
                                   child: Padding(
                                     padding: const EdgeInsets.fromLTRB(
-                                      AppDesign.xl,
-                                      AppDesign.md,
-                                      AppDesign.xl,
-                                      AppDesign.xs,
+                                      AppSpace.xl,
+                                      AppSpace.md,
+                                      AppSpace.xl,
+                                      AppSpace.xs,
                                     ),
                                     child: Text(
                                       g.label,
@@ -636,7 +636,7 @@ class _ConversationsSheetState extends ConsumerState<ConversationsSheet> {
                                 SliverList.separated(
                                   itemCount: g.chats.length,
                                   separatorBuilder: (context, index) =>
-                                      const SizedBox(height: AppDesign.md),
+                                      const SizedBox(height: AppSpace.md),
                                   itemBuilder: (context, index) {
                                     final i = index;
                                     final chat = g.chats[index];
@@ -697,13 +697,13 @@ class _ConversationsSheetState extends ConsumerState<ConversationsSheet> {
           Divider(color: c.hairline),
           Padding(
             padding: const EdgeInsets.symmetric(
-              horizontal: AppDesign.xl,
-              vertical: AppDesign.md,
+              horizontal: AppSpace.xl,
+              vertical: AppSpace.md,
             ),
             child: Row(
               children: [
                 Icon(Icons.lock_outline, size: 14, color: c.textFaint),
-                const SizedBox(width: AppDesign.sm),
+                const SizedBox(width: AppSpace.sm),
                 Expanded(
                   child: Text(
                     context.l10n.storedOnDevice,
@@ -795,7 +795,7 @@ class _ChatRow extends StatelessWidget {
       },
       background: Container(
         alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: AppDesign.xl),
+        padding: const EdgeInsets.only(right: AppSpace.xl),
         color: c.danger.fade(0.15),
         child: Icon(Icons.delete_outline, color: c.danger),
       ),
@@ -806,10 +806,10 @@ class _ChatRow extends StatelessWidget {
           onLongPress: enabled ? (onOrganise ?? onDelete) : null,
           child: Container(
             padding: const EdgeInsets.only(
-              left: AppDesign.xl,
-              right: AppDesign.xs,
-              top: AppDesign.sm,
-              bottom: AppDesign.sm,
+              left: AppSpace.xl,
+              right: AppSpace.xs,
+              top: AppSpace.sm,
+              bottom: AppSpace.sm,
             ),
             decoration: BoxDecoration(
               border: Border(
@@ -830,7 +830,7 @@ class _ChatRow extends StatelessWidget {
                           if (chat.pinned)
                             Padding(
                               padding: const EdgeInsets.only(
-                                right: AppDesign.xs,
+                                right: AppSpace.xs,
                               ),
                               child: Icon(
                                 Icons.push_pin,
@@ -896,12 +896,12 @@ class _Empty extends StatelessWidget {
     final c = context.colors;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(AppDesign.xl),
+        padding: const EdgeInsets.all(AppSpace.xl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: 28, color: c.textFaint),
-            const SizedBox(height: AppDesign.md),
+            const SizedBox(height: AppSpace.md),
             Text(
               text,
               textAlign: TextAlign.center,
@@ -989,7 +989,4 @@ class _Snippet extends StatelessWidget {
   }
 }
 
-const _compactButton = EdgeInsets.symmetric(
-  horizontal: AppDesign.md,
-  vertical: 10,
-);
+const _compactButton = EdgeInsets.all(AppSpace.md);

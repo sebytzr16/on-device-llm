@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import '../../../../core/design/app_design.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/platform/device_info.dart';
 import '../../../../core/platform/desktop_host.dart';
 import '../../../../core/providers/shared_providers.dart';
+import '../../../../inference/ffi/llama_bindings.dart';
 import '../../../settings/domain/entities/inference_settings.dart';
+import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../../data/storage/gguf_metadata.dart';
 import '../../domain/entities/model_catalog.dart';
 import '../../domain/entities/model_info.dart';
@@ -149,24 +152,59 @@ class ModelCapabilityBadges extends ConsumerWidget {
         ? null
         : ref.watch(modelDeviceMemoryProvider).asData?.value;
     final t = context.l10n;
-    final fit = m == null || !showFit ? ModelFit.unknown : modelFit(memory, m);
-    final gap = dense ? 4.0 : 6.0;
-    ModelTag tag(String label) => ModelTag(label, dense: dense);
-    return Wrap(
-      spacing: gap,
-      runSpacing: gap,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        if (facts.tools) tag(t.modelCapabilityTools),
-        if (facts.vision) tag(t.modelCapabilityVision),
-        if (facts.thinking) tag(t.modelCapabilityThinking),
-        if (facts.draft) tag(t.modelCapabilityDraft),
-        if (facts.embedding) tag(t.modelCapabilityEmbedding),
-        if (facts.contextLength case final count? when count > 0)
-          tag(t.modelContextTokens('$count')),
-        // An unknown fit draws nothing, so it must not take a gap either.
-        if (fit != ModelFit.unknown) FitBadge(fit),
-      ],
+    final fit = m == null || !showFit
+        ? ModelFit.unknown
+        : modelFit(
+            memory,
+            m,
+            // The loaded bridge names the backend when there is one;
+            // otherwise the selected backend does.
+            backend:
+                LlamaBindings.windowsGpuOf(
+                  ref.watch(llamaEngineProvider).library,
+                ) ??
+                ref.watch(settingsProvider.select((s) => s.backend)).name,
+            fileType: metadata?.fileType,
+          );
+    Widget tag(String label, IconData icon) => Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpace.sm,
+        vertical: AppSpace.xs,
+      ),
+      decoration: BoxDecoration(
+        color: context.colors.surfaceRaised,
+        borderRadius: AppDesign.radius(AppDesign.rFull),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: context.colors.textMuted),
+          const SizedBox(width: AppSpace.xs),
+          Text(label, style: context.text.caption),
+        ],
+      ),
+    );
+    final badges = <Widget>[
+      if (facts.tools) tag(t.modelCapabilityTools, Icons.build_outlined),
+      if (facts.vision) tag(t.modelCapabilityVision, Icons.visibility_outlined),
+      if (facts.thinking)
+        tag(t.modelCapabilityThinking, Icons.psychology_outlined),
+      if (facts.draft) tag(t.modelCapabilityDraft, Icons.bolt_outlined),
+      if (facts.embedding) tag(t.modelCapabilityEmbedding, Icons.data_array),
+      if (fit != ModelFit.unknown) FitBadge(fit),
+    ];
+    if (badges.isEmpty) return const SizedBox.shrink();
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < badges.length; i++) ...[
+            if (i > 0) const SizedBox(width: AppSpace.row),
+            badges[i],
+          ],
+        ],
+      ),
     );
   }
 }

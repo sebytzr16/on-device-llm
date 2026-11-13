@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../features/settings/presentation/widgets/device_encryption_setting.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +10,7 @@ import '../core/island/status_island.dart';
 import '../core/l10n/l10n.dart';
 import '../core/motion/motion.dart';
 import '../core/platform/device_info.dart';
+import '../core/design/text_scaler.dart';
 import '../features/chat/presentation/providers/chat_provider.dart';
 import '../features/goals/presentation/goals_page.dart';
 import 'projects_page.dart';
@@ -88,8 +90,9 @@ class DesktopApp extends ConsumerWidget {
       },
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
-          textScaler: TextScaler.linear(
-            MediaQuery.of(context).textScaler.scale(1) * textScale,
+          textScaler: ComposedTextScaler(
+            MediaQuery.of(context).textScaler,
+            textScale,
           ),
         ),
         child: MotionScope(
@@ -97,6 +100,7 @@ class DesktopApp extends ConsumerWidget {
           child: Stack(
             children: [
               child ?? const SizedBox.shrink(),
+              const EncryptionRecoveryNotice(),
               // Shared pages report through the island; on the desktop it
               // drops in just under the title bar.
               MediaQuery(
@@ -390,10 +394,10 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                                 DesktopSection.settings =>
                                   const DesktopSettingsPanel(),
                                 DesktopSection.imageGen => _CreatePage(),
-                                // Milestone 2 gives these their own desktop
-                                // layouts; until then the shared pages sit in
-                                // a reading-width column.
+                                // Goals has its own two-pane desktop layout and
+                                // uses the whole window (owner 2026-11-12).
                                 DesktopSection.goals => const _EmbeddedPage(
+                                  wide: true,
                                   child: GoalsPage(),
                                 ),
                                 DesktopSection.projects =>
@@ -451,7 +455,10 @@ class _ContentPanel extends StatelessWidget {
 /// it reads as one of the window's pages rather than a phone screen.
 class _EmbeddedPage extends StatelessWidget {
   final Widget child;
-  const _EmbeddedPage({required this.child});
+
+  /// Fills the window instead of a reading-width column.
+  final bool wide;
+  const _EmbeddedPage({required this.child, this.wide = false});
 
   @override
   Widget build(BuildContext context) {
@@ -472,8 +479,8 @@ class _EmbeddedPage extends StatelessWidget {
       ),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            maxWidth: DesktopTheme.readingWidth,
+          constraints: BoxConstraints(
+            maxWidth: wide ? double.infinity : DesktopTheme.readingWidth,
           ),
           child: Navigator(
             onGenerateRoute: (_) => MaterialPageRoute(builder: (_) => child),
@@ -525,16 +532,10 @@ class _CreatePage extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       Padding(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(context.l10n.desktopCreateTitle, style: context.text.headline),
-            Text(
-              context.l10n.desktopCreateExplanation,
-              style: context.text.small,
-            ),
-          ],
+        padding: const EdgeInsets.all(AppSpace.desktopPage),
+        child: AppPageHeader(
+          title: context.l10n.desktopCreateTitle,
+          subtitle: context.l10n.desktopCreateExplanation,
         ),
       ),
       const Expanded(child: DesktopImageGenPage()),

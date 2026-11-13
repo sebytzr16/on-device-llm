@@ -165,7 +165,7 @@ void main() {
         kokoro: KokoroVoice.byLanguage['en']!.first,
       );
       final sentences = <String>[];
-      speaker.onSentence = sentences.add;
+      speaker.onSentence = (s, _) => sentences.add(s);
       speaker.add('First sentence here. Second one.');
       await pumpEventQueue();
       voice.pending[0].complete(_audio());

@@ -31,7 +31,7 @@ void main() {}
 ```
 | a | b |
 ''';
-    final s = VoiceNotifier.speakable(md);
+    final s = VoiceNotifier.speakableForTts(md);
     expect(s, isNot(contains('#')));
     expect(s, isNot(contains('**')));
     expect(s, isNot(contains('```')));

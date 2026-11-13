@@ -31,7 +31,12 @@ class DeveloperLogBuffer extends ChangeNotifier {
     final message = StringBuffer(record.message);
     if (record.error != null) message.write('\n${record.error}');
     if (record.stackTrace != null) message.write('\n${record.stackTrace}');
-    final lines = message.toString().split('\n');
+    // A blank line (an empty stack trace) is no entry of its own; it showed
+    // as a bare WARNING row (owner 2026-11-12).
+    final lines = message
+        .toString()
+        .split('\n')
+        .where((line) => line.trim().isNotEmpty);
     for (final line in lines) {
       _entries.append(
         DeveloperLogEntry(

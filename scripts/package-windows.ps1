@@ -4,7 +4,8 @@ param(
   [switch]$Cuda,
   [switch]$Vulkan,
   [switch]$All,
-  [switch]$DryRun
+  [switch]$DryRun,
+  [switch]$RequireSignature
 )
 
 $ErrorActionPreference = 'Stop'
@@ -54,6 +55,34 @@ function Find-Iscc {
   return $null
 }
 
+function Find-SignTool {
+  # Prefer PATH, then the newest Windows SDK installation.
+  $command = Get-Command signtool.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($command) { return $command.Source }
+  foreach ($kitsRoot in @("${env:ProgramFiles(x86)}\Windows Kits\10\bin", "${env:ProgramFiles}\Windows Kits\10\bin")) {
+    if (-not $kitsRoot -or -not (Test-Path -LiteralPath $kitsRoot)) { continue }
+    $versions = Get-ChildItem -LiteralPath $kitsRoot -Directory -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -match '^\d+(\.\d+)+$' } |
+      Sort-Object { [version]$_.Name } -Descending
+    foreach ($version in $versions) {
+      $candidate = Join-Path $version.FullName 'x64\signtool.exe'
+      if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+    }
+  }
+  return $null
+}
+
+function Invoke-SignFile {
+  param([string]$SignTool, [string]$Thumbprint, [string]$TimestampUrl, [string]$FilePath)
+  $arguments = @('sign', '/sha1', $Thumbprint, '/fd', 'SHA256')
+  if ($TimestampUrl) { $arguments += @('/tr', $TimestampUrl, '/td', 'SHA256') }
+  $arguments += $FilePath
+  & $SignTool @arguments
+  if ($LASTEXITCODE -ne 0) { throw "Signing failed for $FilePath." }
+  & $SignTool verify /pa /v $FilePath
+  if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $FilePath." }
+}
+
 Push-Location -LiteralPath $projectRoot
 try {
   $manifest = Get-Content -LiteralPath 'pubspec.yaml' -Raw
@@ -72,6 +101,11 @@ try {
   $installerPath = "$outputDir/$baseName-setup.exe"
   $releaseDir = 'build/windows/x64/runner/Release'
   $iscc = Find-Iscc
+  # Optional publisher signing (S21). ODL_SIGN_CERT is the thumbprint of the
+  # owner's code-signing certificate in the current user's store.
+  $signThumbprint = $env:ODL_SIGN_CERT
+  $signTimestampUrl = $env:ODL_SIGN_TIMESTAMP_URL
+  $signConfigured = -not [string]::IsNullOrWhiteSpace($signThumbprint)
 
   Write-Output "Version: $version ($variant)"
   Write-Output 'Plan: powershell -File scripts/build-windows-native.ps1'
@@ -92,7 +126,21 @@ try {
     Write-Output 'ISCC: not found in Program Files, Program Files (x86), LOCALAPPDATA\Programs or PATH; installer will be skipped'
   }
   Write-Output 'Plan: print SHA-256 for each generated output'
+  if ($signConfigured) {
+    Write-Output "Plan: signtool sign and verify bundled app binaries and the installer with certificate $signThumbprint"
+    if ($signTimestampUrl) { Write-Output "Plan: timestamp signatures with $signTimestampUrl" }
+  } else {
+    Write-Output 'Sign: ODL_SIGN_CERT is not set; outputs stay unsigned'
+  }
   if ($DryRun) { return }
+  if ($RequireSignature -and -not $signConfigured) {
+    throw '-RequireSignature requires ODL_SIGN_CERT (the code-signing certificate thumbprint).'
+  }
+  $signtool = $null
+  if ($signConfigured) {
+    $signtool = Find-SignTool
+    if (-not $signtool) { throw 'signtool.exe not found; install the Windows SDK or add signtool to PATH.' }
+  }
   $vcRuntime = @(Find-VcRuntime)
 
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows-native.ps1
@@ -176,6 +224,21 @@ try {
     throw 'Vulkan bundle is missing ondevice_llm_vulkan.dll.'
   }
 
+  if ($signConfigured) {
+    # Sign before the engine manifest and ZIP so their hashes cover signed bytes.
+    # Third-party DLLs keep their own vendor signatures.
+    $signFiles = @(
+      (Join-Path $bundleDir 'ondevice_llm.exe'),
+      (Join-Path $bundleDir 'ondevice_sd.dll'),
+      (Join-Path $bundleDir 'diffusiongemma/dg_host.exe')
+    ) + @(Get-ChildItem -LiteralPath $bundleDir -Filter 'ondevice_llm*.dll' -File | ForEach-Object { $_.FullName })
+    foreach ($file in $signFiles) {
+      if (Test-Path -LiteralPath $file -PathType Leaf) {
+        Invoke-SignFile -SignTool $signtool -Thumbprint $signThumbprint -TimestampUrl $signTimestampUrl -FilePath $file
+      }
+    }
+  }
+
   & (Join-Path $PSScriptRoot 'write-engine-manifest.ps1') -Dir $bundleDir
   $engineManifest = Get-Content -LiteralPath (Join-Path $bundleDir 'engine-manifest.json') -Raw | ConvertFrom-Json
   $manifestDir = Join-Path $stageDir 'manifests'
@@ -207,6 +270,9 @@ try {
       "/DOutputBaseName=$baseName-setup" 'windows/installer/ondevice_llm.iss'
     if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
     if (-not (Test-Path -LiteralPath $installerPath)) { throw 'Inno Setup did not produce the expected installer.' }
+    if ($signConfigured) {
+      Invoke-SignFile -SignTool $signtool -Thumbprint $signThumbprint -TimestampUrl $signTimestampUrl -FilePath (Join-Path $projectRoot $installerPath)
+    }
     $outputs += $installerPath
   }
   Write-Output "Bundle retained for inspection: $bundleDir"

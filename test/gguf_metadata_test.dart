@@ -172,6 +172,43 @@ void main() {
     },
   );
 
+  test(
+    'memory metadata reads GQA dimensions and aligned weight bytes',
+    () async {
+      final out = BytesBuilder()..add(ascii.encode('GGUF'));
+      _u32(out, 3);
+      _u64(out, 1);
+      _u64(out, 8);
+      _kvString(out, 'general.architecture', 'llama');
+      _kvUint32(out, 'general.alignment', 64);
+      _kvUint32(out, 'llama.block_count', 32);
+      _kvUint32(out, 'llama.embedding_length', 4096);
+      _kvUint32(out, 'llama.attention.head_count', 32);
+      _kvUint32(out, 'llama.attention.head_count_kv', 8);
+      _kvUint32(out, 'llama.attention.key_length', 128);
+      _kvUint32(out, 'llama.attention.value_length', 256);
+      _string(out, 'blk.0.attn_norm.weight');
+      _u32(out, 1);
+      _u64(out, 16);
+      _u32(out, 0);
+      _u64(out, 0);
+      out.add(List.filled((64 - out.length % 64) % 64, 0));
+      out.add(List.filled(64, 0));
+      final dir = await Directory.systemTemp.createTemp('gguf-memory-');
+      addTearDown(() => dir.delete(recursive: true));
+      final file = File('${dir.path}/memory.gguf');
+      await file.writeAsBytes(out.takeBytes());
+      final metadata = await GgufMetadata.inspect(file.path);
+      expect(metadata.weightsBytes, 64);
+      expect(metadata.embeddingLength, 4096);
+      expect(metadata.headCount, 32);
+      expect(metadata.kvHeadCount, 8);
+      expect(metadata.keyLength, 128);
+      expect(metadata.valueLength, 256);
+      expect(GgufMetadata.cached(file.path), same(metadata));
+    },
+  );
+
   test('unsafe declared metadata sizes are rejected', () async {
     final out = BytesBuilder()..add(ascii.encode('GGUF'));
     _u32(out, 3);

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
@@ -44,13 +45,27 @@ class McpRegistry extends ChangeNotifier {
   final _disabledServers = <String>{},
       _disabledTools = <String>{},
       _allowed = <String>{};
+  final _approvedExecutables = <String, String>{};
   McpConfirmation? confirm;
   Object? error;
   bool loaded = false, _disposed = false;
   Future<void> _writes = Future.value();
   String _raw = '{"mcpServers": {}}';
   String get raw => _raw;
-  bool serverEnabled(String name) => !_disabledServers.contains(name);
+
+  /// Bind approvals to the configuration without writing a second copy of
+  /// its secret-bearing env/args into the permissions file.
+  String get _configDigest => sha256.convert(utf8.encode(_raw)).toString();
+  String _identity(McpServerConfig config) =>
+      sha256.convert(utf8.encode(jsonEncode(config.toJson()))).toString();
+  bool serverEnabled(String name) {
+    final config = servers[name]?.config;
+    return !_disabledServers.contains(name) &&
+        config != null &&
+        (config.command == null ||
+            _approvedExecutables[name] == _identity(config));
+  }
+
   bool toolEnabled(String name) => !_disabledTools.contains(name);
   bool alwaysAllowed(String name) => _allowed.contains(name);
   void _changed() {
@@ -73,12 +88,17 @@ class McpRegistry extends ChangeNotifier {
       }
       final parsed = McpServerConfig.parse(_raw);
       final prefs = await _file('mcp-permissions.json');
+      var legacyConfig = false;
       if (await prefs.exists()) {
         final j = jsonDecode(await prefs.readAsString()) as Map;
+        _approvedExecutables.addAll(
+          Map<String, String>.from(j['approvedExecutables'] ?? {}),
+        );
         _disabledServers.addAll(List<String>.from(j['disabledServers'] ?? []));
         _disabledTools.addAll(List<String>.from(j['disabledTools'] ?? []));
+        legacyConfig = j.containsKey('config');
         // External edits to mcp.json must invalidate executable/URL trust too.
-        if (j['config'] == _raw) {
+        if (j['configDigest'] == _configDigest) {
           _allowed.addAll(List<String>.from(j['allowedTools'] ?? []));
         }
       }
@@ -88,6 +108,9 @@ class McpRegistry extends ChangeNotifier {
       }
       loaded = true;
       _changed();
+      // An older build kept the whole raw config, secrets included, here.
+      // Rewrite the file without it.
+      if (legacyConfig) await _preferences();
       await Future.wait(servers.keys.toList().map(restart));
     } catch (e) {
       error = e;
@@ -108,10 +131,11 @@ class McpRegistry extends ChangeNotifier {
   Future<void> _preferences() => _write(
     'mcp-permissions.json',
     jsonEncode({
+      'approvedExecutables': _approvedExecutables,
       'disabledServers': _disabledServers.toList(),
       'disabledTools': _disabledTools.toList(),
       'allowedTools': _allowed.toList(),
-      'config': _raw,
+      'configDigest': _configDigest,
     }),
   );
   Future<void> saveConfig(String raw) => _saveConfig(raw);
@@ -120,7 +144,10 @@ class McpRegistry extends ChangeNotifier {
     final parsed = McpServerConfig.parse(raw);
     await _write('mcp.json', raw);
     // Changes to executable/URL invalidate trust, including old tool grants.
-    if (clearApprovals) _allowed.clear();
+    if (clearApprovals) {
+      _allowed.clear();
+      _approvedExecutables.clear();
+    }
     _raw = raw;
     await _preferences();
     final old = servers.values.toList();
@@ -178,10 +205,34 @@ class McpRegistry extends ChangeNotifier {
     };
   }
 
-  Future<void> enableServer(String name, bool enabled) async {
+  Future<void> enableServer(
+    String name,
+    bool enabled, {
+    bool reviewed = false,
+  }) async {
+    final config = servers[name]!.config;
+    if (enabled && config.command != null && !reviewed) {
+      throw const McpException(McpProblem.denied);
+    }
+    final previousApproval = _approvedExecutables[name];
+    final wasDisabled = _disabledServers.contains(name);
+    if (enabled && config.command != null) {
+      _approvedExecutables[name] = _identity(config);
+    }
+    if (!enabled) _approvedExecutables.remove(name);
     enabled ? _disabledServers.remove(name) : _disabledServers.add(name);
+    try {
+      await _preferences();
+    } catch (_) {
+      if (previousApproval == null) {
+        _approvedExecutables.remove(name);
+      } else {
+        _approvedExecutables[name] = previousApproval;
+      }
+      wasDisabled ? _disabledServers.add(name) : _disabledServers.remove(name);
+      rethrow;
+    }
     _changed();
-    await _preferences();
     await restart(name);
   }
 
@@ -227,7 +278,13 @@ class McpRegistry extends ChangeNotifier {
           ? HttpMcpTransport(state.config.url!)
           : await StdioMcpTransport.start(
               state.config,
-              log: (line) => Logger('MCP.$name').info(line),
+              approved: true,
+              workingDirectory: Directory(
+                '${(await directory()).path}/mcp-work/${_identity(state.config)}',
+              ),
+              // MCP stderr is not logged by default (S11). Enable only when
+              // developer/debug logging is explicitly turned on.
+              log: null,
             );
       client = McpClient(
         transport,
@@ -323,7 +380,8 @@ class McpRegistry extends ChangeNotifier {
         throw const McpException(McpProblem.unavailable);
       }
       final client = server.client;
-      if (!_allowed.contains(call.name)) {
+      final needsRemoteConfirmation = confirmation != null;
+      if (!_allowed.contains(call.name) || needsRemoteConfirmation) {
         final choice =
             await ((confirmation ?? confirm)?.call(server.config.name, call) ??
                     Future.value(McpConsent.deny))

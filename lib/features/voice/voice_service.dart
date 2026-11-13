@@ -80,9 +80,8 @@ class VoiceNotifier extends Notifier<VoiceState> {
   void Function()? _whisperDone;
   int _listenEpoch = 0;
 
-  /// Kokoro read-out: the sentences and the one playing, for pause/resume.
-  List<String> _sentences = const [];
-  int _sentence = 0;
+  /// Kokoro read-out: character offset in _spokenText for pause/resume.
+  int _kokoroOffset = 0;
 
   /// Bounded utterances preserve every character and break at sentences.
   static List<String> chunks(String text, {int limit = 3000}) {
@@ -133,13 +132,15 @@ class VoiceNotifier extends Notifier<VoiceState> {
   }
 
   /// Markdown → speakable text: no code fences, links become their label,
-  /// emphasis and headings lose their markers, citations disappear.
-  static String speakable(String markdown) => markdown
-      .replaceAll(RegExp(r'```[\s\S]*?```'), ' code omitted. ')
+  /// emphasis and headings lose their markers. Citations are kept for UI
+  /// display; use [speakableForTts] for speech synthesis.
+  static String speakable(
+    String markdown, {
+    String codeOmitted = 'code omitted',
+  }) => markdown
+      .replaceAll(RegExp(r'```[\s\S]*?```'), ' $codeOmitted. ')
       .replaceAllMapped(RegExp(r'`([^`]*)`'), (m) => m.group(1)!)
       .replaceAllMapped(RegExp(r'\[([^\]]+)\]\([^)]*\)'), (m) => m.group(1)!)
-      // With the space before it: "today [1]." must not read "today .".
-      .replaceAll(RegExp(r'\s*\[\d+(?:\s*,\s*\d+)*\]'), '')
       .replaceAll(RegExp(r'^#{1,6}\s*', multiLine: true), '')
       .replaceAll(RegExp(r'^\s*[-*+]\s+', multiLine: true), '')
       .replaceAll(RegExp(r'[*_~]{1,3}'), '')
@@ -156,9 +157,20 @@ class VoiceNotifier extends Notifier<VoiceState> {
       .replaceAll(RegExp(r'\n{2,}'), '\n')
       .trim();
 
+  /// Markdown → speakable text for TTS: same as [speakable] but also strips
+  /// citation markers like [1], [2, 3] so they are not read aloud.
+  static String speakableForTts(
+    String markdown, {
+    String codeOmitted = 'code omitted',
+  }) => speakable(
+    markdown,
+    codeOmitted: codeOmitted,
+  ).replaceAll(RegExp(r'\s*\[\d+(?:\s*,\s*\d+)*\]'), '');
+
   Future<bool> _initStt() async {
     if (_sttReady) return true;
     _stt ??= SpeechToText();
+    final t = stringsFor(ref.read(settingsProvider).localeCode);
     try {
       _sttReady = await _stt!.initialize(
         onError: (e) {
@@ -179,27 +191,27 @@ class VoiceNotifier extends Notifier<VoiceState> {
       _sttReady = false;
       state = state.copyWith(
         available: false,
-        error: 'Dictation unavailable: $e',
+        error: t.voiceDictationUnavailable(e),
       );
     }
     if (!_sttReady) state = state.copyWith(available: false);
     return _sttReady;
   }
 
-  static String _explain(String code) => switch (code) {
-    'offline_unavailable' =>
-      'On-device dictation is unavailable. Install an offline speech service and language pack. No network recognizer was started.',
-    'offline_recognition_failed' =>
-      'On-device dictation failed. Check the offline language pack in the phone\'s speech settings. No network recognizer was started.',
-    'error_no_match' => 'No speech recognised.',
-    'error_speech_timeout' => 'No speech heard.',
-    'error_permission' ||
-    'error_audio' => 'Microphone permission is needed for dictation.',
-    'error_language_unavailable' || 'error_language_not_supported' =>
-      'On-device recognition has no language pack installed. Install one in the phone\'s speech settings, or allow the network recognizer.',
-    'error_network' => 'The recognizer needs a network and none is available.',
-    _ => 'Dictation error ($code).',
-  };
+  String _explain(String code) {
+    final t = stringsFor(ref.read(settingsProvider).localeCode);
+    return switch (code) {
+      'offline_unavailable' => t.voiceOfflineDictationUnavailable,
+      'offline_recognition_failed' => t.voiceOfflineRecognitionFailed,
+      'error_no_match' => t.voiceErrorNoMatch,
+      'error_speech_timeout' => t.voiceErrorSpeechTimeout,
+      'error_permission' || 'error_audio' => t.voiceErrorPermission,
+      'error_language_unavailable' ||
+      'error_language_not_supported' => t.voiceErrorLanguageUnavailable,
+      'error_network' => t.voiceErrorNetwork,
+      _ => t.voiceErrorUnknown(code),
+    };
+  }
 
   String _speechError(String code) {
     if (DesktopHost.active &&
@@ -260,7 +272,7 @@ class VoiceNotifier extends Notifier<VoiceState> {
             if (isFinal) onFinal?.call(text);
           },
           onError: (code) {
-            if (!_alive) return;
+            if (!_alive || epoch != _listenEpoch) return;
             state = state.copyWith(
               listening: false,
               error: code == 'cancelled' ? null : _explain(code),
@@ -269,7 +281,7 @@ class VoiceNotifier extends Notifier<VoiceState> {
           },
         );
       } on PlatformException catch (e) {
-        if (_alive) {
+        if (_alive && epoch == _listenEpoch) {
           state = state.copyWith(
             listening: false,
             error: e.code == 'cancelled' ? null : _explain(e.code),
@@ -277,7 +289,7 @@ class VoiceNotifier extends Notifier<VoiceState> {
           );
         }
       } on MissingPluginException {
-        if (_alive) {
+        if (_alive && epoch == _listenEpoch) {
           state = state.copyWith(
             listening: false,
             error: _explain('offline_unavailable'),
@@ -302,7 +314,7 @@ class VoiceNotifier extends Notifier<VoiceState> {
     try {
       await _stt!.listen(
         onResult: (r) {
-          if (!_alive) return;
+          if (!_alive || epoch != _listenEpoch) return;
           state = state.copyWith(partial: r.recognizedWords);
           onText(r.recognizedWords);
           if (r.finalResult) {
@@ -320,7 +332,13 @@ class VoiceNotifier extends Notifier<VoiceState> {
         ),
       );
     } catch (e) {
-      state = state.copyWith(listening: false, error: 'Dictation failed: $e');
+      if (_alive && epoch == _listenEpoch) {
+        final t = stringsFor(ref.read(settingsProvider).localeCode);
+        state = state.copyWith(
+          listening: false,
+          error: t.voiceDictationFailed(e),
+        );
+      }
     }
   }
 
@@ -339,11 +357,11 @@ class VoiceNotifier extends Notifier<VoiceState> {
   /// The voice for the app language and the chosen speaker.
   KokoroVoice kokoroVoice() {
     final s = ref.read(settingsProvider);
-    if (s.readingVoice == VoiceModels.supertonic.id) {
+    if (VoiceModels.isSupertonic(s.readingVoice)) {
       return KokoroVoice(
         s.supertonicSid,
-        voiceLanguage(s.localeCode),
-        'Supertonic 2',
+        VoiceModels.supertonicLanguage(voiceLanguage(s.localeCode)),
+        'Supertonic 3',
       );
     }
     return KokoroVoice.forLanguage(
@@ -397,6 +415,14 @@ class VoiceNotifier extends Notifier<VoiceState> {
         state = state.copyWith(partial: all);
         onText(all);
         if (identical(_whisper, listener)) idle(const Duration(seconds: 20));
+      },
+      onError: (e) {
+        if (!_alive) return;
+        final t = stringsFor(ref.read(settingsProvider).localeCode);
+        state = state.copyWith(
+          listening: false,
+          error: t.voiceDictationFailed(e),
+        );
       },
     );
     _whisperDone = () {
@@ -496,7 +522,15 @@ class VoiceNotifier extends Notifier<VoiceState> {
       return pauseSpeaking();
     }
     if (state.paused && id == state.speakingId) return resumeSpeaking();
-    final text = speakable(markdown);
+    final t = stringsFor(ref.read(settingsProvider).localeCode);
+    final heard = speakableForTts(markdown, codeOmitted: t.voiceCodeOmitted);
+    if (heard.isEmpty) return;
+    // Supertonic understands <laugh>, <breath> and <sigh>; the other engines
+    // would read them out.
+    final supertonic =
+        _naturalSpeaking() &&
+        VoiceModels.isSupertonic(ref.read(settingsProvider).readingVoice);
+    final text = supertonic ? heard : stripSoundTags(heard);
     if (text.isEmpty) return;
     _speechEpoch++;
     await _stopTts();
@@ -504,8 +538,7 @@ class VoiceNotifier extends Notifier<VoiceState> {
     _rate = rate ?? 0.5 * ref.read(settingsProvider).readingSpeed;
     if (_naturalSpeaking()) {
       _spokenText = text;
-      _sentences = KokoroSpeaker.sentences(text);
-      _sentence = 0;
+      _kokoroOffset = 0;
       state = state.copyWith(
         speaking: true,
         paused: false,
@@ -599,7 +632,7 @@ class VoiceNotifier extends Notifier<VoiceState> {
     }
   }
 
-  /// Kokoro from sentence [_sentence]; falls back to the system voice when
+  /// Kokoro from [_kokoroOffset]; falls back to the system voice when
   /// synthesis fails.
   void _readKokoro() {
     final epoch = _speechEpoch;
@@ -610,10 +643,9 @@ class VoiceNotifier extends Notifier<VoiceState> {
     speaker
       ..kokoro = kokoroVoice()
       ..speed = (_rate / 0.5).clamp(0.6, 1.6)
-      ..onSentence = (s) {
+      ..onSentence = (s, endOffset) {
         if (epoch != _speechEpoch) return;
-        final at = _sentences.indexOf(s, _sentence);
-        if (at >= 0) _sentence = at;
+        _kokoroOffset = endOffset;
       }
       ..onIdle = () {
         if (!_alive || epoch != _speechEpoch) return;
@@ -625,16 +657,15 @@ class VoiceNotifier extends Notifier<VoiceState> {
       }
       ..onError = (e) {
         if (!_alive || epoch != _speechEpoch) return;
-        // The system voice takes over from the start of the sentence.
+        // The system voice takes over from the current offset.
         _speechEpoch++;
         unawaited(speaker.stop());
-        final from = _sentences.skip(_sentence).join(' ');
-        _sentences = const [];
+        final from = stripSoundTags(_spokenText.substring(_kokoroOffset));
         _spokenText = from;
-        _position = 0;
+        _kokoroOffset = 0;
         unawaited(_initTts().then((_) => _read()));
       };
-    speaker.add(_sentences.skip(_sentence).join('\n'));
+    speaker.queueFullText(_spokenText, _kokoroOffset);
   }
 
   Future<void> _stopTts() async {
@@ -653,19 +684,15 @@ class VoiceNotifier extends Notifier<VoiceState> {
   Future<void> resumeSpeaking() async {
     if (!state.paused || _spokenText.isEmpty) return;
     state = state.copyWith(speaking: true, paused: false);
-    if (_sentences.isNotEmpty) {
-      _speechEpoch++;
-      _readKokoro();
-      return;
-    }
-    await _read();
+    _speechEpoch++;
+    _readKokoro();
   }
 
   Future<void> stopSpeaking() async {
     _speechEpoch++;
     _spokenText = '';
     _position = 0;
-    _sentences = const [];
+    _kokoroOffset = 0;
     await _stopTts();
     await _kokoro?.stop();
     if (_alive) {
@@ -693,10 +720,17 @@ final sherpaVoiceProvider = Provider<SherpaVoice>((ref) {
     for (final pack in VoiceModels.all) {
       final was = before?.of(pack).status == VoicePackStatus.ready;
       final isReady = now.of(pack).status == VoicePackStatus.ready;
-      // Gone, or Parakeet just arrived: the listener picks again.
+      final wasLegacy = before?.of(pack).legacy ?? false;
+      final nowLegacy = now.of(pack).legacy;
+      // Gone, the older Supertonic 2 files replaced by Supertonic 3, or
+      // Parakeet just arrived: the worker picks again.
       if ((was && !isReady) ||
-          (!was && isReady && pack.id == VoiceModels.parakeet.id)) {
-        voice.releasePack(speaking: pack.unpackTo != null);
+          (wasLegacy != nowLegacy) ||
+          (!was &&
+              isReady &&
+              (pack.id == VoiceModels.parakeetUltra.id ||
+                  pack.id == VoiceModels.parakeet.id))) {
+        voice.releasePack(speaking: !VoiceModels.hears(pack));
       }
     }
   });

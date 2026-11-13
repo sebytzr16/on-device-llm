@@ -1,4 +1,6 @@
 import 'dart:convert';
+
+import '../../../core/platform/cpu_cores.dart';
 import '../../../core/platform/desktop_host.dart';
 import 'entities/inference_settings.dart';
 
@@ -35,6 +37,8 @@ class SettingSpec {
         'cpuVariant',
         'vramReserveMb',
         'mtp',
+        'speculationMode',
+        'draftModelId',
         'chatTemplate',
       }.contains(key);
   bool get available => DesktopHost.active || !desktopOnly;
@@ -64,6 +68,8 @@ class SettingSpec {
     'offloadKv',
     'swaFull',
     'nCpuMoe',
+    'moeCacheSizeMb',
+    'moeCacheCpuShare',
     'expertsUsed',
     'projectorDevice',
     'draftGpuLayers',
@@ -75,7 +81,7 @@ class SettingSpec {
   };
 
   /// Inference overrides only; profiles cannot change privacy or credentials.
-  static const all = <SettingSpec>[
+  static final all = <SettingSpec>[
     SettingSpec(
       key: 'projectorDevice',
       label: 'Vision projector',
@@ -135,6 +141,22 @@ class SettingSpec {
       kind: SettingKind.integer,
       min: -1,
       max: 4096,
+    ),
+    SettingSpec(
+      key: 'moeCacheSizeMb',
+      label: 'MoE device cache (MiB, 0 = disabled)',
+      group: groupHardware,
+      kind: SettingKind.integer,
+      min: 0,
+      max: 1 << 30,
+    ),
+    SettingSpec(
+      key: 'moeCacheCpuShare',
+      label: 'MoE cache misses computed on CPU (0–1)',
+      group: groupHardware,
+      kind: SettingKind.number,
+      min: 0,
+      max: 1,
     ),
     SettingSpec(
       key: 'expertsUsed',
@@ -756,7 +778,8 @@ class SettingSpec {
       group: groupHardware,
       kind: SettingKind.integer,
       min: 0,
-      max: 16,
+      // Follow the real core count instead of a fixed 16-thread ceiling.
+      max: CpuCores.desktop,
     ),
     SettingSpec(
       key: 'batchThreads',
@@ -764,7 +787,8 @@ class SettingSpec {
       group: groupHardware,
       kind: SettingKind.integer,
       min: 0,
-      max: 16,
+      // Follow the real core count instead of a fixed 16-thread ceiling.
+      max: CpuCores.desktop,
     ),
     SettingSpec(
       key: 'vramReserveMb',
@@ -785,14 +809,14 @@ class SettingSpec {
       label: 'K cache type',
       group: groupHardware,
       kind: SettingKind.choice,
-      options: ['fp16', 'q8_0', 'q4_0'],
+      options: ['fp16', 'q8_0', 'q4_0', 'f8_e4m3'],
     ),
     SettingSpec(
       key: 'vCacheType',
       label: 'V cache type (empty = same as K)',
       group: groupHardware,
       kind: SettingKind.choice,
-      options: ['', 'fp16', 'q8_0', 'q4_0'],
+      options: ['', 'fp16', 'q8_0', 'q4_0', 'f8_e4m3'],
     ),
     SettingSpec(
       key: 'ropeScaling',
@@ -806,6 +830,13 @@ class SettingSpec {
       label: 'Prompt template',
       group: groupHardware,
       kind: SettingKind.text,
+    ),
+    SettingSpec(
+      key: 'speculationMode',
+      label: 'Speculative decoding',
+      group: groupHardware,
+      kind: SettingKind.choice,
+      options: ['auto', 'off', 'mtp', 'draft', 'dflash'],
     ),
     SettingSpec(
       key: 'mtp',
@@ -881,6 +912,7 @@ class SettingSpec {
         final limit = switch (key) {
           'systemPrompt' => 16000,
           'chatTemplate' => 128000,
+          'draftModelId' => 1024,
           'jsonSchema' || 'grammar' => 32000,
           _ => 200,
         };

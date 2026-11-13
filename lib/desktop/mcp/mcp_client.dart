@@ -1,14 +1,53 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:path/path.dart' as p;
 
 import '../../core/platform/child_process_job.dart';
 import 'mcp_config.dart';
 
 abstract class McpTransport {
+  /// Largest message or SSE event accepted from a server before decoding.
+  static const maxMessageBytes = 4 * 1024 * 1024;
   Stream<Map<String, dynamic>> get messages;
   Future<void> send(Map<String, dynamic> message);
   Future<void> close();
+}
+
+/// Splits UTF-8 [bytes] into lines while bounding the buffered bytes of one
+/// line, so a broken server cannot make the client buffer without limit.
+Stream<String> mcpLines(Stream<List<int>> bytes) async* {
+  final pending = BytesBuilder(copy: false);
+  void add(List<int> part) {
+    if (pending.length + part.length > McpTransport.maxMessageBytes) {
+      throw const McpException(McpProblem.protocol);
+    }
+    pending.add(part);
+  }
+
+  await for (final chunk in bytes) {
+    var start = 0;
+    for (var i = 0; i < chunk.length; i++) {
+      if (chunk[i] != 0x0a) continue;
+      add(chunk.sublist(start, i));
+      yield _decodeLine(pending.takeBytes());
+      start = i + 1;
+    }
+    if (start < chunk.length) add(chunk.sublist(start));
+  }
+  if (pending.length > 0) yield _decodeLine(pending.takeBytes());
+}
+
+String _decodeLine(Uint8List bytes) {
+  var end = bytes.length;
+  if (end > 0 && bytes[end - 1] == 0x0d) end--;
+  try {
+    return utf8.decode(bytes.sublist(0, end));
+  } on FormatException {
+    throw const McpException(McpProblem.protocol);
+  }
 }
 
 class StdioMcpTransport implements McpTransport {
@@ -18,18 +57,15 @@ class StdioMcpTransport implements McpTransport {
   bool _closing = false;
   Future<void> _sends = Future.value();
   StdioMcpTransport._(this._process, void Function(String) log) {
-    _stdout = _process.stdout
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen((line) {
-          try {
-            final message = jsonDecode(line);
-            if (message is! Map) throw const FormatException();
-            _messages.add(Map<String, dynamic>.from(message));
-          } catch (_) {
-            _messages.addError(const McpException(McpProblem.protocol));
-          }
-        }, onError: _messages.addError);
+    _stdout = mcpLines(_process.stdout).listen((line) {
+      try {
+        final message = jsonDecode(line);
+        if (message is! Map) throw const FormatException();
+        _messages.add(Map<String, dynamic>.from(message));
+      } catch (_) {
+        _messages.addError(const McpException(McpProblem.protocol));
+      }
+    }, onError: _messages.addError);
     _stderr = _process.stderr
         .transform(const Utf8Decoder(allowMalformed: true))
         .transform(const LineSplitter())
@@ -46,16 +82,77 @@ class StdioMcpTransport implements McpTransport {
   static Future<StdioMcpTransport> start(
     McpServerConfig config, {
     void Function(String)? log,
+    bool approved = false,
+    Directory? workingDirectory,
   }) async {
+    if (!approved || workingDirectory == null) {
+      throw const McpException(McpProblem.denied);
+    }
+    final command = config.command!;
+    // No PATH search, package downloaders or shell command wrappers at launch.
+    final executable = p.basenameWithoutExtension(command).toLowerCase();
+    if (!p.isAbsolute(command) ||
+        !await File(command).exists() ||
+        const [
+          'npx',
+          'npm',
+          'uvx',
+          'uv',
+          'pip',
+          'pip3',
+          'cmd',
+          'powershell',
+          'pwsh',
+          'sh',
+          'bash',
+          'wscript',
+          'cscript',
+        ].contains(executable) ||
+        (Platform.isWindows && !command.toLowerCase().endsWith('.exe'))) {
+      throw const McpException(McpProblem.config);
+    }
+    await workingDirectory.create(recursive: true);
+    final resolvedCommand = Platform.isWindows
+        ? resolveWindowsCommand(config.command!, config.env)
+        : config.command!;
+    if (Platform.isWindows) {
+      validateWindowsBatchArgs(resolvedCommand, config.args);
+    }
     final process = await Process.start(
-      Platform.isWindows
-          ? resolveWindowsCommand(config.command!, config.env)
-          : config.command!,
+      resolvedCommand,
       config.args,
-      environment: config.env,
+      workingDirectory: workingDirectory.absolute.path,
+      includeParentEnvironment: false,
+      environment: launchEnvironment(
+        config.env,
+        workingDirectory.absolute.path,
+      ),
     );
     ChildProcessJob.adopt(process);
+    // Stderr is not logged by default (S11). Pass a logger only when
+    // developer/debug logging is explicitly enabled.
     return StdioMcpTransport._(process, log ?? (_) {});
+  }
+
+  /// Only OS bootstrap variables and explicitly configured server values.
+  /// Redirect home/temp to the dedicated root; cwd is not an OS sandbox.
+  static Map<String, String> launchEnvironment(
+    Map<String, String> configured,
+    String root, {
+    Map<String, String>? system,
+  }) {
+    final base = system ?? Platform.environment;
+    return {
+      for (final e in base.entries)
+        if (const ['SYSTEMROOT', 'WINDIR'].contains(e.key.toUpperCase()))
+          e.key: e.value,
+      ...configured,
+      'HOME': root,
+      'USERPROFILE': root,
+      'TMP': root,
+      'TEMP': root,
+      'TMPDIR': root,
+    };
   }
 
   /// mcp.json files say "npx" or "uvx"; on Windows those are npx.cmd and
@@ -92,6 +189,24 @@ class StdioMcpTransport implements McpTransport {
       }
     }
     return command;
+  }
+
+  /// Validates args for Windows batch file targets (.cmd/.bat).
+  /// Rejects args containing shell metacharacters that cmd.exe would interpret.
+  static void validateWindowsBatchArgs(
+    String resolvedCommand,
+    List<String> args,
+  ) {
+    final isBatch =
+        resolvedCommand.toLowerCase().endsWith('.cmd') ||
+        resolvedCommand.toLowerCase().endsWith('.bat');
+    if (!isBatch) return;
+    final forbidden = RegExp(r'[&|<>^%]|"');
+    for (final arg in args) {
+      if (forbidden.hasMatch(arg)) {
+        throw const McpException(McpProblem.batchArgs);
+      }
+    }
   }
 
   @override
@@ -173,21 +288,39 @@ class HttpMcpTransport implements McpTransport {
 
     if (response.headers.contentType?.mimeType == 'text/event-stream') {
       final data = <String>[];
-      await for (final line
-          in response.transform(utf8.decoder).transform(const LineSplitter())) {
+      var eventBytes = 0, responseBytes = 0;
+      await for (final line in mcpLines(response)) {
+        responseBytes += utf8.encode(line).length + 1;
+        if (responseBytes > McpTransport.maxMessageBytes) {
+          throw const McpException(McpProblem.protocol);
+        }
         if (line.isEmpty) {
           if (data.isNotEmpty) {
             final complete = emit(data.join('\n'));
             data.clear();
+            eventBytes = 0;
             if (complete) break;
           }
         } else if (line.startsWith('data:')) {
-          data.add(line.substring(5).replaceFirst(RegExp(r'^ '), ''));
+          final value = line.substring(5).replaceFirst(RegExp(r'^ '), '');
+          eventBytes += utf8.encode(value).length + 1;
+          if (eventBytes > McpTransport.maxMessageBytes) {
+            throw const McpException(McpProblem.protocol);
+          }
+          data.add(value);
         }
       }
       if (data.isNotEmpty) emit(data.join('\n'));
     } else {
-      emit(await utf8.decoder.bind(response).join());
+      // Bound the body before decoding it, not after joining it all.
+      final body = BytesBuilder(copy: false);
+      await for (final chunk in response) {
+        if (body.length + chunk.length > McpTransport.maxMessageBytes) {
+          throw const McpException(McpProblem.protocol);
+        }
+        body.add(chunk);
+      }
+      emit(utf8.decode(body.takeBytes()));
     }
   }
 

@@ -1,3 +1,4 @@
+import '../../features/settings/domain/entities/inference_settings.dart';
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -45,6 +46,22 @@ final llamaEstimatorProvider = Provider<LlamaEngine>((ref) {
   );
   ref.onDispose(engine.dispose);
   return engine;
+});
+
+/// Detected hardware info from the native probe: CPU name, cores, RAM, GPU(s),
+/// VRAM, and backend. Used on the desktop Hardware settings page.
+final detectedHardwareProvider = FutureProvider<Map<String, dynamic>?>((
+  ref,
+) async {
+  try {
+    // An estimate without a model path reports every backend device with
+    // its memory, plus installed and free RAM; nothing is loaded.
+    return await ref
+        .read(llamaEstimatorProvider)
+        .estimate(modelPath: '', settings: const InferenceSettings());
+  } catch (_) {
+    return null;
+  }
 });
 
 /// A second native runtime for the knowledge library's embedding model

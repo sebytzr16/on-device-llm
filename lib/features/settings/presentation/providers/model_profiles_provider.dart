@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/storage/prefs_rescue.dart';
 
 import '../../domain/settings_scope.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 const _kProfilesKey = 'model_profiles_v1';
 const _kThinkingOffKey = 'thinking_off_profiles_2026_09_28';
@@ -81,7 +82,9 @@ class ModelProfilesNotifier
       try {
         _prefs ??= await SharedPreferences.getInstance();
         await _prefs!.setString(_kProfilesKey, encoded);
-      } catch (_) {}
+      } catch (e, st) {
+        quietFailure('model_profiles_provider:84', e, st);
+      }
     });
     await _writes;
   }

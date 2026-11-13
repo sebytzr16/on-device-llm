@@ -1,3 +1,4 @@
+import '../../core/utils/memory_admission.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
@@ -8,23 +9,19 @@ import 'package:ffi/ffi.dart';
 
 import '../../data/storage/model_file_leases.dart';
 import '../ffi/sd_bindings.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// Frames from a generation: one for a picture, several for a video, each
 /// packed RGBA of [width] × [height].
 class SdResult {
   final Uint8List rgba;
   final int width, height, frames, fps;
-
-  /// Names the video the worker still holds natively, so [SdEngine.saveVideo]
-  /// sends no frames back (P3-15); 0 when none.
-  final int videoId;
   const SdResult(
     this.rgba,
     this.width,
     this.height, {
     this.frames = 1,
     this.fps = 0,
-    this.videoId = 0,
   });
 
   int get frameBytes => width * height * 4;
@@ -133,7 +130,13 @@ class SdEngine {
 
   Future<Object?> _call(String op, List<Object?> args) {
     final epoch = _epoch;
-    final next = _tail.then((_) => _dispatch(op, args, epoch));
+    // Only allocating ops join the app-wide admission queue: a long
+    // generation must never block other engines' loads.
+    final next = _tail.then(
+      (_) => op == 'load' || op == 'upscale'
+          ? MemoryAdmission.shared.run(() => _dispatch(op, args, epoch))
+          : _dispatch(op, args, epoch),
+    );
     _tail = next.then((_) {}, onError: (Object _, StackTrace _) {});
     return next;
   }
@@ -200,14 +203,21 @@ class SdEngine {
 
   /// A picture, or a video when [video] is true. [request] is the bridge's
   /// JSON request (prompt, width, height, steps, cfgScale, seed, frames…).
-  /// [init] is an optional RGBA starting picture for a video.
+  /// [init] is an optional RGBA starting picture for a video. With [edit],
+  /// a picture is drawn from [init] (image to image): the request's
+  /// `strength` (0 to 1) says how far it may move away from it, and its
+  /// width and height should match [init].
   Future<SdResult> generate(
     Map<String, Object> request, {
     bool video = false,
+    bool edit = false,
     SdResult? init,
     void Function(int step, int total)? onProgress,
   }) async {
     if (!isLoaded) throw StateError('No model loaded');
+    if (edit && (video || init == null)) {
+      throw ArgumentError('An edit needs a starting picture and no video');
+    }
     final progress = onProgress == null
         ? null
         : NativeCallable<SdProgressFn>.listener(
@@ -215,7 +225,7 @@ class SdEngine {
           );
     try {
       final reply =
-          await _call(video ? 'video' : 'image', [
+          await _call(video ? 'video' : (edit ? 'edit' : 'image'), [
                 jsonEncode(request),
                 progress?.nativeFunction.address ?? 0,
                 init == null
@@ -231,7 +241,6 @@ class SdEngine {
         h as int,
         n as int,
         fps as int,
-        ...,
       ] = reply;
       return SdResult(
         data.materialize().asUint8List(),
@@ -239,27 +248,16 @@ class SdEngine {
         h,
         frames: n,
         fps: fps,
-        videoId: reply.length > 5 ? reply[5] as int : 0,
       );
     } finally {
       progress?.close();
     }
   }
 
-  /// Writes a video's frames to an MJPG .avi at [path].
+  /// Writes a video's frames to an MJPG .avi at [path]. The frames are sent
+  /// from Dart, so the native worker never has to retain a copy for export
+  /// (E12: a generated video is not kept as three copies).
   Future<void> saveVideo(String path, SdResult video) async {
-    if (video.videoId != 0) {
-      final saved = await _call('save', [
-        path,
-        null,
-        video.width,
-        video.height,
-        video.frames,
-        video.fps,
-        video.videoId,
-      ]);
-      if (saved == true) return;
-    }
     await _call('save', [
       path,
       TransferableTypedData.fromList([video.rgba]),
@@ -310,7 +308,9 @@ class SdEngine {
     if (_worker != null) {
       try {
         await _call('destroy', const []);
-      } catch (_) {}
+      } catch (e, st) {
+        quietFailure('sd_engine:303', e, st);
+      }
     }
     _isolate?.kill();
     _replies?.close();
@@ -376,16 +376,6 @@ void _main(SendPort replies) {
   });
 }
 
-// Worker isolate only: the last video's native frames, kept until the next
-// generation, load or destroy so saving it copies nothing (P3-15).
-Pointer<Uint8> _lastVideo = nullptr;
-int _lastVideoId = 0;
-
-void _dropLastVideo(SdBindings b) {
-  if (_lastVideo != nullptr) b.freeImage(_lastVideo);
-  _lastVideo = nullptr;
-}
-
 Object? _run(
   SdBindings b,
   Pointer<Void> Function() ctx,
@@ -405,7 +395,6 @@ Object? _run(
 
   switch (m[1]) {
     case 'load':
-      _dropLastVideo(b);
       ensureCtx();
       return using((arena) {
         final ok = b.load(
@@ -418,9 +407,9 @@ Object? _run(
         if (ok == 0) throw StateError(lastError('Could not load the model'));
         return ctx().address;
       });
-    case 'image' || 'video':
+    case 'image' || 'video' || 'edit':
       final video = m[1] == 'video';
-      _dropLastVideo(b);
+      final edit = m[1] == 'edit';
       return using((arena) {
         final request = (m[2] as String).toNativeUtf8(allocator: arena);
         final cb = Pointer<NativeFunction<SdProgressFn>>.fromAddress(
@@ -447,11 +436,22 @@ Object? _run(
                 out + 2,
                 out + 3,
               )
+            : edit
+            ? b.img2img(
+                ctx(),
+                request,
+                init,
+                m[5] as int,
+                m[6] as int,
+                cb,
+                nullptr,
+                out,
+                out + 1,
+              )
             : b.txt2img(ctx(), request, cb, nullptr, out, out + 1);
         if (pixels == nullptr) {
           throw StateError(lastError('Generation failed'));
         }
-        var keep = false;
         try {
           final frames = video ? out[2] : 1;
           final bytes = out[0] * out[1] * 4 * frames;
@@ -461,36 +461,14 @@ Object? _run(
             out[1],
             frames,
             video ? out[3] : 0,
-            if (video) ++_lastVideoId,
           ];
-          keep = video;
           return reply;
         } finally {
-          if (keep) {
-            _lastVideo = pixels;
-          } else {
-            b.freeImage(pixels);
-          }
+          // E12: frames live only in Dart; saving sends them back.
+          b.freeImage(pixels);
         }
       });
     case 'save':
-      if (m[3] == null) {
-        // The held video, or false when it was replaced: the caller sends
-        // its frames instead.
-        if (_lastVideo == nullptr || m[8] != _lastVideoId) return false;
-        return using((arena) {
-          final ok = b.saveVideo(
-            (m[2] as String).toNativeUtf8(allocator: arena),
-            _lastVideo,
-            m[4] as int,
-            m[5] as int,
-            m[6] as int,
-            m[7] as int,
-          );
-          if (ok == 0) throw StateError('Could not save the video');
-          return true;
-        });
-      }
       return using((arena) {
         final bytes = (m[3] as TransferableTypedData)
             .materialize()
@@ -543,7 +521,6 @@ Object? _run(
         }
       });
     case 'destroy':
-      _dropLastVideo(b);
       if (ctx() != nullptr) b.destroy(ctx());
       setCtx(nullptr);
       return null;

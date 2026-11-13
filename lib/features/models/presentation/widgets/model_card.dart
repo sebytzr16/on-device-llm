@@ -1,6 +1,7 @@
 import '../screens/model_details_page.dart';
 import 'model_capabilities.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/design/app_design.dart';
 import '../../../../core/platform/device_info.dart';
@@ -13,7 +14,7 @@ import '../../../../desktop/model_tune_section.dart';
 
 /// One model in the library, in any of its lifecycle states: idle,
 /// downloading, verifying, paused/failed, downloaded (optionally active).
-class ModelCard extends StatelessWidget {
+class ModelCard extends ConsumerWidget {
   final ModelInfo model;
   final DownloadProgress? progress;
   final DeviceMemory? memory;
@@ -70,7 +71,7 @@ class ModelCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
     final status = progress?.status;
     final downloading =
@@ -87,6 +88,9 @@ class ModelCard extends StatelessWidget {
     final analyzing =
         preparing && !downloading && !verifying && !interrupted && !visionBusy;
     final meta = catalogMeta[model.id];
+    final metadata = model.localPath == null
+        ? null
+        : ref.watch(modelMetadataProvider(model.localPath!)).asData?.value;
     final error = progress?.error;
     return Card(
       shape: RoundedRectangleBorder(
@@ -94,7 +98,7 @@ class ModelCard extends StatelessWidget {
         side: BorderSide(color: active ? c.accent.fade(0.55) : c.hairline),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppDesign.lg),
+        padding: const EdgeInsets.all(AppSpace.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -110,35 +114,40 @@ class ModelCard extends StatelessWidget {
                   ),
                 ),
                 if (active || helperActive) ...[
-                  const SizedBox(width: AppDesign.sm),
+                  const SizedBox(width: AppSpace.sm),
                   ModelTag(
                     active
-                        ? context.l10n.active
+                        ? context.l10n.desktopLoaded
                         : context.l10n.helperLoadedBadge,
                     color: c.accent,
                   ),
                 ],
               ],
             ),
-            const SizedBox(height: AppDesign.sm + 2),
+            const SizedBox(height: AppSpace.sm),
             if (active && helperStreams > 0)
               Text(
                 context.l10n.helperStreams(helperStreams),
                 style: context.text.small,
               ),
-            ModelTagRow(model: model, memory: memory),
+            ModelTagRow(
+              model: model,
+              memory: memory,
+              contextLength: metadata?.contextLength,
+              benchmarkSummary: benchmarkSummary,
+            ),
             ModelCapabilityBadges(model: model, showFit: false),
             if (meta != null) ...[
-              const SizedBox(height: AppDesign.sm + 2),
+              const SizedBox(height: AppSpace.sm),
               Text(meta.blurb, style: context.text.bodyMuted),
             ],
-            const SizedBox(height: AppDesign.sm),
+            const SizedBox(height: AppSpace.sm),
             Text(
               context.l10n.licenseLabel(model.license),
               style: context.text.mono.copyWith(color: c.textFaint),
             ),
             if (downloading || verifying || analyzing) ...[
-              const SizedBox(height: AppDesign.lg),
+              const SizedBox(height: AppSpace.lg),
               ClipRRect(
                 borderRadius: AppDesign.radius(AppDesign.rFull),
                 child: LinearProgressIndicator(
@@ -146,7 +155,7 @@ class ModelCard extends StatelessWidget {
                   minHeight: 4,
                 ),
               ),
-              const SizedBox(height: AppDesign.sm),
+              const SizedBox(height: AppSpace.sm),
               Text(
                 verifying
                     ? context.l10n.verifyingSha
@@ -161,13 +170,13 @@ class ModelCard extends StatelessWidget {
               ),
             ],
             if (error != null) ...[
-              const SizedBox(height: AppDesign.md),
+              const SizedBox(height: AppSpace.md),
               Text(
                 error,
                 style: context.text.bodyMuted.copyWith(color: c.danger),
               ),
             ],
-            const SizedBox(height: AppDesign.lg),
+            const SizedBox(height: AppSpace.lg),
             // One clear main action per state; secondary actions sit in a
             // quiet row below it, all the same width.
             if (downloading)
@@ -202,6 +211,7 @@ class ModelCard extends StatelessWidget {
                   // Use model stays the loudest button on the page.
                   Expanded(
                     child: FilledButton.tonalIcon(
+                      style: appTonalButtonStyle(context),
                       onPressed: onDownload,
                       icon: Icon(
                         interrupted ? Icons.refresh : Icons.download_outlined,
@@ -218,7 +228,7 @@ class ModelCard extends StatelessWidget {
                   // Any entry that is not downloaded can leave the list:
                   // catalog rows are hidden (Restore brings them back).
                   if (onRemoveEntry != null) ...[
-                    const SizedBox(width: AppDesign.sm),
+                    const SizedBox(width: AppSpace.sm),
                     Expanded(
                       child: OutlinedButton.icon(
                         key: Key('remove-entry-${model.id}'),
@@ -243,14 +253,8 @@ class ModelCard extends StatelessWidget {
                   // other downloaded model's loads it.
                   Expanded(
                     child: active || helperActive
-                        ? OutlinedButton.icon(
+                        ? FilledButton.icon(
                             key: Key('unload-${model.id}'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: c.danger,
-                              side: BorderSide(
-                                color: busy ? c.hairline : c.danger,
-                              ),
-                            ),
                             onPressed: busy ? null : onUnload,
                             icon: const Icon(Icons.eject_outlined, size: 18),
                             label: Text(
@@ -258,7 +262,8 @@ class ModelCard extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                             ),
                           )
-                        : FilledButton.icon(
+                        : FilledButton.tonalIcon(
+                            style: appTonalButtonStyle(context),
                             onPressed: busy ? null : onLoad,
                             icon: const Icon(Icons.play_arrow, size: 18),
                             label: Text(
@@ -268,12 +273,12 @@ class ModelCard extends StatelessWidget {
                           ),
                   ),
                   if (visionReady != null) ...[
-                    const SizedBox(width: AppDesign.sm),
+                    const SizedBox(width: AppSpace.sm),
                     Expanded(child: _visionAction(context)),
                   ],
                 ],
               ),
-              const SizedBox(height: AppDesign.xs),
+              const SizedBox(height: AppSpace.xs),
               Row(
                 children: [
                   Expanded(
@@ -383,7 +388,7 @@ class _QuietAction extends StatelessWidget {
       onPressed: onPressed,
       style: TextButton.styleFrom(
         foregroundColor: tone,
-        padding: const EdgeInsets.symmetric(vertical: AppDesign.sm),
+        padding: const EdgeInsets.symmetric(vertical: AppSpace.sm),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

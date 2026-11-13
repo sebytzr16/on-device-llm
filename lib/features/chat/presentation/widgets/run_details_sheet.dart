@@ -208,7 +208,7 @@ class _RunDetailsSheet extends StatelessWidget {
     Widget table(String title, List<(String, String)> rows) => rows.isEmpty
         ? const SizedBox.shrink()
         : Padding(
-            padding: const EdgeInsets.only(top: AppDesign.lg),
+            padding: const EdgeInsets.only(top: AppSpace.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -216,7 +216,7 @@ class _RunDetailsSheet extends StatelessWidget {
                   title,
                   style: context.text.label.copyWith(color: c.textMuted),
                 ),
-                const SizedBox(height: AppDesign.xs),
+                const SizedBox(height: AppSpace.xs),
                 for (final (k, v) in rows)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2),

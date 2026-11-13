@@ -10,6 +10,7 @@ import '../../core/utils/inference_admission.dart';
 
 import 'sherpa_voice.dart';
 import 'voice_models.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 final _log = Logger('voice');
 
@@ -22,6 +23,16 @@ String voiceLanguage(String localeCode) {
   return const {'en', 'fr', 'es'}.contains(code) ? code : 'en';
 }
 
+/// Sound tags Supertonic understands inside the text. Kokoro and the
+/// system voice would read them out, so they are removed there.
+String stripSoundTags(String text) => text
+    .replaceAll(
+      RegExp(r'<\s*(?:laugh|breath|sigh)\s*>', caseSensitive: false),
+      ' ',
+    )
+    .replaceAll(RegExp(r'[ \t]{2,}'), ' ')
+    .trim();
+
 /// Microphone → Silero VAD → Whisper. Emits the level for the orb, the
 /// start of speech (for barge-in), running captions while the user talks
 /// and the final text when they pause.
@@ -33,8 +44,18 @@ class WhisperListener {
   final void Function(String text)? onPartial;
   final void Function(String text)? onFinal;
 
+  /// The final text with the utterance's own 16 kHz samples, for a caller
+  /// that sends the recording to a model that can hear it. Supplied instead
+  /// of [onFinal] (a listener with both would deliver every utterance once).
+  final void Function(String text, Float32List samples)? onFinalUtterance;
+
   /// A detected utterance that held no words (noise, an echo, a cough).
   final void Function()? onDropped;
+
+  /// Stream error or unexpected close: the microphone failed or the
+  /// conversion produced malformed data. The listener stops and the
+  /// caller should surface a recoverable error.
+  final void Function(Object error)? onError;
 
   /// Pause that ends an utterance.
   final double endSilence;
@@ -49,20 +70,40 @@ class WhisperListener {
     this.onSpeechStart,
     this.onPartial,
     this.onFinal,
+    this.onFinalUtterance,
     this.onDropped,
+    this.onError,
     this.endSilence = 0.7,
     this.captionAll = false,
     this.listeningPaths = VoiceModels.listeningPaths,
+    this.liveCaptionPaths = VoiceModels.liveCaptionPaths,
+    this.detector,
   });
 
   final Future<ListeningPaths?> Function() listeningPaths;
 
-  SpeechDetector? _vad;
+  /// The streaming captions pack's files, or null when it is not
+  /// installed: captions then keep reading the last seconds with the
+  /// listening model. The final text is the same either way.
+  final Future<LiveCaptionPaths?> Function() liveCaptionPaths;
+
+  /// Voice-activity detection: Silero from the listening pack unless a
+  /// test supplies its own (the native model cannot load there).
+  final VoiceDetector? detector;
+
+  VoiceDetector? _vad;
   StreamSubscription<Float32List>? _frames;
   final _speech = <Float32List>[];
   final _preroll = ListQueue<Float32List>();
   var _inSpeech = false, _partialBusy = false, _framesSincePartial = 0;
   var _epoch = 0;
+
+  /// The streaming captions of the current utterance, its text so far and
+  /// when it was last shown.
+  LiveCaption? _live;
+  LiveCaptionPaths? _livePaths;
+  var _liveText = '', _liveSession = 0;
+  DateTime? _liveShownAt;
 
   /// Bumped by [stop] and [discard]: a transcription from before is not
   /// delivered (audit C6).
@@ -76,6 +117,10 @@ class WhisperListener {
 
   /// A running caption every ~1.3 s of new speech.
   static const partialEveryFrames = 40;
+
+  /// Streaming captions are shown at most this often, so a word-by-word
+  /// model does not redraw the caption on every frame.
+  static const livePartialEvery = Duration(milliseconds: 200);
 
   /// Speech that goes on this long is sent as it stands (Whisper reads 30 s
   /// at most): 28 s of 32 ms frames.
@@ -101,6 +146,7 @@ class WhisperListener {
     _speech.clear();
     _preroll.clear();
     _inSpeech = false;
+    _closeLive();
   }
 
   /// False when the models are missing or the microphone was refused.
@@ -109,13 +155,34 @@ class WhisperListener {
     final session = _session;
     final paths = await listeningPaths();
     if (session != _session || paths == null) return false;
-    _vad ??= SpeechDetector.create(paths.vad, minSilence: endSilence);
+    LiveCaptionPaths? live;
+    try {
+      live = await liveCaptionPaths();
+    } catch (e) {
+      _log.warning('Live captions unavailable', e);
+    }
+    if (session != _session) return false;
+    _livePaths = live;
+    _vad ??=
+        detector ?? SpeechDetector.create(paths.vad, minSilence: endSilence);
     unawaited(
       voice.warmListening(language).catchError((Object e) {
         _log.warning('Whisper did not load', e);
       }),
     );
-    _frames = VoiceAudioChannel.frames().listen(_onFrame);
+    _frames = VoiceAudioChannel.frames().listen(
+      _onFrame,
+      onError: (Object e) {
+        _log.warning('Microphone stream error', e);
+        unawaited(stop());
+        onError?.call(e);
+      },
+      onDone: () {
+        _log.info('Microphone stream closed');
+        unawaited(stop());
+        onError?.call(StateError('Microphone stream closed unexpectedly'));
+      },
+    );
     bool started;
     try {
       started = await VoiceAudioChannel.startMic();
@@ -137,22 +204,50 @@ class WhisperListener {
     _frames = null;
     try {
       await VoiceAudioChannel.stopMic();
-    } catch (_) {}
+    } catch (e, st) {
+      quietFailure('voice_pipeline:158', e, st);
+    }
     _vad?.reset();
     _speech.clear();
     _preroll.clear();
     _inSpeech = false;
+    _closeLive();
   }
 
   /// Ends listening without losing the words still being said: the
   /// utterance in progress is transcribed and delivered before the
   /// microphone stops.
   Future<void> finish() async {
-    if (_inSpeech) _send(_join(_speech));
+    // Freeze frame ingestion first: cancel the microphone stream so no
+    // new frames can arrive and start another utterance while we drain.
+    await _frames?.cancel();
+    _frames = null;
+    try {
+      await VoiceAudioChannel.stopMic();
+    } catch (e, st) {
+      quietFailure('voice_pipeline:175', e, st);
+    }
+
+    // Capture the final speech buffer (if any) before clearing state.
+    Float32List? finalSpeech;
+    if (_inSpeech) {
+      finalSpeech = _join(_speech);
+    }
     _inSpeech = false;
     _speech.clear();
+    _preroll.clear();
+    _vad?.reset();
+    _closeLive();
+
+    // Send the captured speech for transcription and wait for it.
+    if (finalSpeech != null) {
+      _send(finalSpeech);
+    }
     await _finals;
-    await stop();
+
+    // Now fully stop: increment session/epoch to invalidate any stragglers.
+    _epoch++;
+    _session++;
   }
 
   /// Drops what was heard so far (the assistant's own echo, a cancelled
@@ -163,9 +258,11 @@ class WhisperListener {
     _vad?.reset();
     _speech.clear();
     _inSpeech = false;
+    _closeLive();
   }
 
   void dispose() {
+    _closeLive();
     unawaited(stop());
     _vad?.dispose();
     _vad = null;
@@ -184,10 +281,14 @@ class WhisperListener {
         ..addAll(_preroll);
       _framesSincePartial = 0;
       onSpeechStart?.call();
+      _startLive();
     }
     if (_inSpeech) {
       _speech.add(frame);
-      if (++_framesSincePartial >= partialEveryFrames &&
+      final live = _live;
+      if (live != null) {
+        _liveCaption(live, frame);
+      } else if (++_framesSincePartial >= partialEveryFrames &&
           !_partialBusy &&
           onPartial != null) {
         _framesSincePartial = 0;
@@ -199,6 +300,7 @@ class WhisperListener {
         _preroll.removeFirst();
       }
     }
+    if (finished.isNotEmpty) _closeLive();
     for (final segment in finished) {
       final heard = heardAudio(segment, _speech);
       _inSpeech = false;
@@ -211,7 +313,67 @@ class WhisperListener {
       vad.reset();
       _inSpeech = false;
       _speech.clear();
+      _closeLive();
       _send(heard);
+    }
+  }
+
+  /// Opens the streaming captions for the utterance that just started and
+  /// feeds them what the microphone heard so far ([_preroll]). Without the
+  /// pack, or if it fails, the listening model captions instead.
+  void _startLive() {
+    _closeLive();
+    final paths = _livePaths;
+    if (paths == null || onPartial == null) return;
+    try {
+      final live = voice.startLiveCaption(paths);
+      if (live == null) return;
+      _live = live;
+      _liveText = '';
+      _liveSession = _session;
+      _liveShownAt = null;
+      for (final frame in _speech) {
+        live.accept(frame);
+      }
+    } catch (e) {
+      // The streaming model cannot load: the listening model captions.
+      _log.warning('Live captions did not start', e);
+      _closeLive();
+    }
+  }
+
+  /// Feeds one frame to the streaming caption and shows its text when it
+  /// changed (at most every [livePartialEvery]).
+  void _liveCaption(LiveCaption live, Float32List frame) {
+    String text;
+    try {
+      text = live.accept(frame);
+    } catch (e) {
+      // The streaming model failed mid-utterance: the rest of this one
+      // keeps the listening model's captions.
+      _log.warning('Live caption failed', e);
+      _closeLive();
+      return;
+    }
+    if (text.isEmpty || text == _liveText || _liveSession != _session) return;
+    final now = DateTime.now();
+    final shown = _liveShownAt;
+    if (shown != null && now.difference(shown) < livePartialEvery) return;
+    _liveText = text;
+    _liveShownAt = now;
+    onPartial?.call(text);
+  }
+
+  void _closeLive() {
+    final live = _live;
+    _live = null;
+    _liveText = '';
+    _liveShownAt = null;
+    if (live == null) return;
+    try {
+      live.close();
+    } catch (e, st) {
+      quietFailure('voice_pipeline:live', e, st);
     }
   }
 
@@ -254,7 +416,12 @@ class WhisperListener {
     }
     if (!running || session != _session) return;
     if (text.isNotEmpty) {
-      onFinal?.call(text);
+      final utterance = onFinalUtterance;
+      if (utterance != null) {
+        utterance(text, samples);
+      } else {
+        onFinal?.call(text);
+      }
     } else {
       onDropped?.call();
     }
@@ -292,22 +459,83 @@ class WhisperListener {
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
     t = _collapseRepeats(t);
-    final lower = t.toLowerCase().replaceAll(RegExp(r'[.!?,]'), '').trim();
+    final plain = _plain(t);
+
+    // Known hallucination phrases that appear on silence/noise. Only drop
+    // when the transcript IS the phrase (or trivially extends it), not when
+    // the phrase appears inside a legitimate request (e.g. "Translate
+    // 'thank you for watching' into French").
     const invented = [
       'thank you for watching',
       'thanks for watching',
       'please subscribe',
       'sous-titres réalisés par',
+      'sous-titres réalisés par la communauté d\'amara.org',
       'sous-titrage',
       'merci d\'avoir regardé',
       'subtítulos realizados por',
+      'subtítulos realizados por la comunidad de amara.org',
       'gracias por ver',
       'amara.org',
     ];
-    if (invented.any(lower.contains)) return '';
+    // Drop if the transcript matches an invented phrase exactly, or only
+    // adds trailing punctuation/whitespace. Also drop very short transcripts
+    // that are just the phrase plus a word or two of noise.
+    for (final phrase in invented) {
+      final known = _plain(phrase);
+      if (plain == known) return '';
+      // Allow a few extra noise words after the phrase (e.g. "thanks for watching .")
+      // but not a full sentence continuing from it.
+      if (plain.startsWith(known) &&
+          plain.length <= known.length + 10 &&
+          !RegExp(
+            r'\p{L}{3,}',
+            unicode: true,
+          ).hasMatch(plain.substring(known.length).trim())) {
+        return '';
+      }
+    }
     if (RegExp(r'^[\s.…,!?-]*$').hasMatch(t)) t = '';
     return t;
   }
+
+  /// Case-, punctuation-, accent- and whitespace-insensitive form used to
+  /// compare a transcript with a known Whisper invention.
+  static String _plain(String text) {
+    var s = text.toLowerCase();
+    for (final entry in _accents.entries) {
+      s = s.replaceAll(entry.key, entry.value);
+    }
+    return s.replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), ' ').trim();
+  }
+
+  static const _accents = {
+    'à': 'a',
+    'á': 'a',
+    'â': 'a',
+    'ã': 'a',
+    'ä': 'a',
+    'å': 'a',
+    'ç': 'c',
+    'è': 'e',
+    'é': 'e',
+    'ê': 'e',
+    'ë': 'e',
+    'ì': 'i',
+    'í': 'i',
+    'î': 'i',
+    'ï': 'i',
+    'ñ': 'n',
+    'ò': 'o',
+    'ó': 'o',
+    'ô': 'o',
+    'õ': 'o',
+    'ö': 'o',
+    'ù': 'u',
+    'ú': 'u',
+    'û': 'u',
+    'ü': 'u',
+  };
 
   /// Whisper's runaway loops on noise ("Okay, okay, okay…" seventeen times
   /// on the phone): a word or a phrase of up to four repeated four times or
@@ -356,7 +584,9 @@ class KokoroSpeaker {
   double speed;
 
   /// A sentence started playing (for captions and read-aloud position).
-  void Function(String sentence)? onSentence;
+  /// The [endOffset] is the character position in the original full text
+  /// where this piece ends, for precise pause/resume tracking.
+  void Function(String sentence, int endOffset)? onSentence;
 
   /// Sound is coming out (true) or stopped (false): false only at a real
   /// gap between sentences or at the end.
@@ -400,7 +630,17 @@ class KokoroSpeaker {
   /// The epoch of the loop that plays, or null.
   int? _runFor;
 
-  bool get busy => _runFor == _epoch || _queue.isNotEmpty || _ahead.isNotEmpty;
+  /// Pieces of the full text with their absolute offsets (A15), waiting
+  /// for a synthesizer slot. When non-empty, _fill takes from here instead
+  /// of _queue, so at most [maxAhead] are ever synthesized ahead of the
+  /// one playing.
+  final _fullTextPieces = <_Pending>[];
+
+  bool get busy =>
+      _runFor == _epoch ||
+      _queue.isNotEmpty ||
+      _ahead.isNotEmpty ||
+      _fullTextPieces.isNotEmpty;
 
   /// Stops at once and returns what was not heard to the end (the sentence
   /// cut off first), for a resume after a false interruption.
@@ -432,6 +672,56 @@ class KokoroSpeaker {
     }
   }
 
+  /// Queues the full text for read-aloud, splitting once with precise
+  /// character offsets for pause/resume tracking. [startOffset] is the
+  /// character position in [fullText] to resume from.
+  void queueFullText(String fullText, int startOffset) {
+    // Split the suffix from startOffset using the same logic as add().
+    final suffix = fullText.substring(startOffset);
+    final parts = sentences(suffix, max: pieceMax);
+    // First piece gets firstMax limit if starting fresh.
+    if (_runFor != _epoch &&
+        _queue.isEmpty &&
+        _ahead.isEmpty &&
+        _fullTextPieces.isEmpty &&
+        parts.isNotEmpty) {
+      parts.replaceRange(0, 1, sentences(parts.first, max: firstMax));
+    }
+    // Compute absolute offsets in the original fullText by locating each
+    // piece in the remaining text (accounts for any delimiter: space, newline).
+    var searchStart = 0;
+    final pending = <_Pending>[];
+    for (final part in parts) {
+      final found = suffix.indexOf(part, searchStart);
+      if (found < 0) {
+        // Fallback: approximate with length + single space.
+        searchStart += part.length;
+        if (searchStart < suffix.length && suffix[searchStart] == ' ')
+          searchStart++;
+      } else {
+        searchStart = found + part.length;
+      }
+      final absoluteEnd = startOffset + searchStart;
+      pending.add(_Pending(part, absoluteEnd - part.length, absoluteEnd));
+    }
+    _queue.clear();
+    _ahead.clear();
+    _inFlight.clear();
+    _fullTextPieces.clear();
+    _fullTextPieces.addAll(pending);
+    if (pending.isNotEmpty) {
+      _interactiveLease ??= InferenceAdmission.shared.hold();
+    }
+    _wake?.complete();
+    _wake = null;
+    if (_runFor != _epoch &&
+        (_queue.isNotEmpty ||
+            _ahead.isNotEmpty ||
+            _fullTextPieces.isNotEmpty)) {
+      unawaited(_run());
+    }
+  }
+
   /// Pieces given to the synthesizer, in order, not yet to the player.
   final _ahead = <_Piece>[];
 
@@ -442,6 +732,19 @@ class KokoroSpeaker {
   Completer<void>? _wake;
 
   void _fill() {
+    // Pre-computed pieces with offsets (full-text read-aloud): synthesized
+    // here, so no more than maxAhead are ever ahead of the one playing.
+    while (_ahead.length < maxAhead && _fullTextPieces.isNotEmpty) {
+      final piece = _fullTextPieces.removeAt(0);
+      _ahead.add(
+        _synth(
+          piece.text,
+          startOffset: piece.startOffset,
+          endOffset: piece.endOffset,
+        ),
+      );
+    }
+    // Fall back to streaming queue (conversation).
     while (_ahead.length < maxAhead && _queue.isNotEmpty) {
       _ahead.add(_synth(_queue.removeAt(0)));
     }
@@ -450,6 +753,7 @@ class KokoroSpeaker {
   Future<void> stop() async {
     _epoch++;
     _queue.clear();
+    _fullTextPieces.clear();
     _inFlight.clear();
     _ahead.clear();
     _releaseAdmission();
@@ -462,14 +766,21 @@ class KokoroSpeaker {
     }
     try {
       await VoiceAudioChannel.stopPlayback();
-    } catch (_) {}
+    } catch (e, st) {
+      quietFailure('voice_pipeline:642', e, st);
+    }
   }
 
   /// Sound is coming out (between onPlaying true and false).
   var _sounding = false;
 
-  _Piece _synth(String text) {
-    final piece = _Piece(text, _epoch);
+  _Piece _synth(String text, {int startOffset = 0, int endOffset = 0}) {
+    final piece = _Piece(
+      text,
+      _epoch,
+      startOffset: startOffset,
+      endOffset: endOffset,
+    );
     _inFlight.add(text);
     final before = _chain;
     final done = Completer<void>();
@@ -480,7 +791,9 @@ class KokoroSpeaker {
         // A stopped answer's pieces are dropped without a call.
         if (piece.gen == _epoch) {
           piece.audio = await voice.synthesize(
-            text,
+            voice.readingVoice == VoiceModels.supertonic.id
+                ? text
+                : stripSoundTags(text),
             voice: kokoro,
             speed: speed,
           );
@@ -507,7 +820,7 @@ class KokoroSpeaker {
   }
 
   void _starts(_Piece piece) {
-    onSentence?.call(piece.text);
+    onSentence?.call(piece.text, piece.endOffset);
     onAudio?.call(piece.audio!);
     if (!_sounding) {
       _sounding = true;
@@ -628,13 +941,37 @@ class KokoroSpeaker {
   }
 }
 
+/// A piece of a full text queued for read-aloud (A15): its text and where
+/// it sits in that text, waiting for a synthesizer slot.
+class _Pending {
+  final String text;
+
+  /// Start and end offsets of [text] in the original full text.
+  final int startOffset;
+  final int endOffset;
+
+  const _Pending(this.text, this.startOffset, this.endOffset);
+}
+
 /// A sentence on its way to the speaker.
 class _Piece {
   final String text;
 
   /// The [KokoroSpeaker] epoch it belongs to: stale after a stop.
   final int gen;
-  _Piece(this.text, this.gen);
+
+  /// Start offset of this piece in the original full text.
+  final int startOffset;
+
+  /// End offset of this piece in the original full text.
+  final int endOffset;
+
+  _Piece(
+    this.text,
+    this.gen, {
+    required this.startOffset,
+    required this.endOffset,
+  });
 
   SpeechAudio? audio;
   var ready = false;

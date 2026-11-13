@@ -16,7 +16,7 @@ class DocumentPassages {
     if (text.length < minChars || !_isQuestion(question)) return text;
     final query = EvidenceRanker.terms(question);
     if (query.isEmpty) return text;
-    final chunks = EvidenceRanker.chunk(text, sourceIndex: 0);
+    final chunks = EvidenceRanker.chunkDocument(text, sourceIndex: 0);
     final ranked = EvidenceRanker.rank(
       question,
       chunks,
@@ -44,14 +44,22 @@ class DocumentPassages {
     int maxChars, {
     TextEmbedder? embedder,
     DocumentEmbeddingCache? cache,
+    String owner = '',
+    bool persistVectors = true,
   }) async {
-    final chunks = EvidenceRanker.chunk(text, sourceIndex: 0);
+    final chunks = EvidenceRanker.chunkDocument(text, sourceIndex: 0);
     if (chunks.length < 2) {
       final cut = text.substring(0, math.min(text.length, maxChars));
       return (text: cut, kept: 1, total: 1);
     }
     final scores =
-        await _semantic(chunks, request, embedder, cache ?? _cache) ??
+        await _semantic(
+          chunks,
+          request,
+          embedder,
+          cache ?? (persistVectors ? _cache : _memoryCache),
+          owner,
+        ) ??
         _lexical(chunks, request);
     final order = [for (var i = 1; i < chunks.length; i++) i]
       ..sort((a, b) => scores[b].compareTo(scores[a]));
@@ -78,11 +86,21 @@ class DocumentPassages {
 
   static final _cache = DocumentEmbeddingCache();
 
+  /// Memory-only cache: temporary and hosted work never writes vectors to
+  /// disk (audit S15).
+  static final _memoryCache = DocumentEmbeddingCache.memoryOnly();
+
+  /// The tag of a chat's attachment vectors, so chat deletion can drop
+  /// exactly its cached vectors (audit S14/S15).
+  static String cacheOwner(String? chatId) =>
+      DocumentEmbeddingCache.chatOwner(chatId ?? 'new');
+
   static Future<List<double>?> _semantic(
     List<EvidenceChunk> chunks,
     String request,
     TextEmbedder? embedder,
     DocumentEmbeddingCache cache,
+    String owner,
   ) async {
     if (embedder == null || request.trim().isEmpty) return null;
     try {
@@ -91,6 +109,7 @@ class DocumentPassages {
         embedder.modelId,
         texts,
         () => embedder.embedDocuments(texts),
+        owner: owner,
       );
       if (vectors == null) return null;
       final query = await embedder.embedQueries([request]);

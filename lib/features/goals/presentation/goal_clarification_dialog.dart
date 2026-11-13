@@ -42,13 +42,13 @@ class _GoalClarificationDialogState extends State<GoalClarificationDialog> {
           children: [
             Text(t.goalQuestionsHint),
             for (final q in widget.questions) ...[
-              const SizedBox(height: AppDesign.md),
+              const SizedBox(height: AppSpace.md),
               Text(q.question, style: Theme.of(context).textTheme.titleMedium),
               if (q.options.isNotEmpty) ...[
-                const SizedBox(height: AppDesign.md),
+                const SizedBox(height: AppSpace.md),
                 Wrap(
-                  spacing: AppDesign.sm,
-                  runSpacing: AppDesign.xs,
+                  spacing: AppSpace.sm,
+                  runSpacing: AppSpace.xs,
                   children: [
                     for (final option in q.options)
                       ChoiceChip(
@@ -61,7 +61,7 @@ class _GoalClarificationDialogState extends State<GoalClarificationDialog> {
                   ],
                 ),
               ],
-              const SizedBox(height: AppDesign.md),
+              const SizedBox(height: AppSpace.md),
               TextField(
                 key: Key('goal-answer-${q.id}'),
                 controller: _answers[q.id],

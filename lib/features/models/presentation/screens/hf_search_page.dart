@@ -16,10 +16,27 @@ import '../providers/hf_repository_provider.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/motion/motion.dart';
 
+/// A diffusion weight selected from the image/video discovery screen.
+class HfImageSearchResult {
+  final HfImagePipeline pipeline;
+  final HfRepoFiles files;
+  final HfFile file;
+
+  const HfImageSearchResult({
+    required this.pipeline,
+    required this.files,
+    required this.file,
+  });
+}
+
 /// Models > Search Hugging Face (FX-12): find any public GGUF repository,
 /// pick a quantization, and add it to the library with its verified digest.
+/// When [imagePipeline] is set, the same screen searches only image or video
+/// generation models and returns the selected diffusion weight to its caller.
 class HfSearchPage extends ConsumerStatefulWidget {
-  const HfSearchPage({super.key});
+  final HfImagePipeline? imagePipeline;
+
+  const HfSearchPage({super.key, this.imagePipeline});
   @override
   ConsumerState<HfSearchPage> createState() => _HfSearchPageState();
 }
@@ -30,6 +47,14 @@ class _HfSearchPageState extends ConsumerState<HfSearchPage> {
   List<HfRepo>? _results;
   String? _error;
   bool _searching = false;
+  int _searchVersion = 0;
+  late HfImagePipeline? _pipeline;
+
+  @override
+  void initState() {
+    super.initState();
+    _pipeline = widget.imagePipeline;
+  }
 
   @override
   void dispose() {
@@ -40,12 +65,16 @@ class _HfSearchPageState extends ConsumerState<HfSearchPage> {
 
   void _onChanged(String q) {
     _debounce?.cancel();
+    _searchVersion++;
+    setState(() => _searching = false);
     _debounce = Timer(const Duration(milliseconds: 400), () => _search(q));
   }
 
   Future<void> _search(String q) async {
+    final version = ++_searchVersion;
+    final pipeline = _pipeline;
     if (q.trim().length < 2) {
-      setState(() => _results = null);
+      if (mounted) setState(() => _results = null);
       return;
     }
     setState(() {
@@ -53,25 +82,59 @@ class _HfSearchPageState extends ConsumerState<HfSearchPage> {
       _error = null;
     });
     try {
-      final r = await ref.read(hfRepositoryProvider).search(q);
-      if (mounted && _query.text == q) setState(() => _results = r);
+      final repository = ref.read(hfRepositoryProvider);
+      final r = pipeline == null
+          ? await repository.search(q)
+          : await repository.searchImageGeneration(q, pipeline: pipeline);
+      if (mounted && _query.text == q && version == _searchVersion) {
+        setState(() => _results = r);
+      }
     } catch (e) {
-      if (mounted) {
-        setState(() => _error = '$e'.replaceFirst('FormatException: ', ''));
+      if (mounted && version == _searchVersion) {
+        setState(
+          () => _error = pipeline == null
+              ? '$e'.replaceFirst('FormatException: ', '')
+              : context.l10n.desktopHfSearchError,
+        );
       }
     } finally {
-      if (mounted) setState(() => _searching = false);
+      if (mounted && version == _searchVersion) {
+        setState(() => _searching = false);
+      }
+    }
+  }
+
+  void _setPipeline(HfImagePipeline pipeline) {
+    if (_pipeline == pipeline) return;
+    _debounce?.cancel();
+    _searchVersion++;
+    setState(() {
+      _pipeline = pipeline;
+      _results = null;
+      _error = null;
+      _searching = false;
+    });
+    if (_query.text.trim().length >= 2) {
+      unawaited(_search(_query.text));
     }
   }
 
   Future<void> _open(HfRepo repo) async {
     setState(() => _error = null);
+    final pipeline = _pipeline;
     final HfRepoFiles files;
     try {
-      files = await ref.read(hfRepositoryProvider).files(repo.id);
+      final repository = ref.read(hfRepositoryProvider);
+      files = pipeline == null
+          ? await repository.files(repo.id)
+          : await repository.imageGenerationFiles(repo.id);
     } catch (e) {
       if (mounted) {
-        setState(() => _error = '$e'.replaceFirst('FormatException: ', ''));
+        setState(
+          () => _error = pipeline == null
+              ? '$e'.replaceFirst('FormatException: ', '')
+              : context.l10n.imageDiscoverFilesError,
+        );
       }
       return;
     }
@@ -80,9 +143,17 @@ class _HfSearchPageState extends ConsumerState<HfSearchPage> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (context) => _FilesSheet(files: files),
+      builder: (context) =>
+          _FilesSheet(files: files, imageGeneration: pipeline != null),
     );
     if (picked == null || !mounted) return;
+    if (pipeline != null) {
+      Navigator.pop(
+        context,
+        HfImageSearchResult(pipeline: pipeline, files: files, file: picked),
+      );
+      return;
+    }
     final family = HuggingFace.guessFamily(repo.id);
     final model = HuggingFace.modelFor(files, picked, family);
     await ref.read(modelManagerProvider.notifier).save(model);
@@ -105,18 +176,68 @@ class _HfSearchPageState extends ConsumerState<HfSearchPage> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final library = ref.watch(modelManagerProvider).catalog;
+    final pipeline = _pipeline;
+    final library = pipeline == null
+        ? ref.watch(modelManagerProvider).catalog
+        : const <ModelInfo>[];
     return Scaffold(
-      appBar: AppBar(title: Text(context.l10n.uiHfSearchPageSearchHuggingFace)),
+      appBar: AppBar(
+        title: Text(
+          pipeline == null
+              ? context.l10n.uiHfSearchPageSearchHuggingFace
+              : context.l10n.imageDiscoverTitle,
+        ),
+      ),
       body: SafeArea(
         child: Column(
           children: [
+            if (pipeline != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpace.phonePage,
+                  AppSpace.sm,
+                  AppSpace.phonePage,
+                  0,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: SegmentedButton<HfImagePipeline>(
+                        segments: [
+                          ButtonSegment(
+                            value: HfImagePipeline.textToImage,
+                            label: Text(context.l10n.imageModeImage),
+                            icon: const Icon(Icons.image_outlined, size: 18),
+                          ),
+                          ButtonSegment(
+                            value: HfImagePipeline.textToVideo,
+                            label: Text(context.l10n.imageVideo),
+                            icon: const Icon(Icons.movie_outlined, size: 18),
+                          ),
+                        ],
+                        selected: {pipeline},
+                        onSelectionChanged: (value) =>
+                            _setPipeline(value.single),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpace.row),
+                    Text(
+                      pipeline == HfImagePipeline.textToImage
+                          ? context.l10n.imageDiscoverFilterImage
+                          : context.l10n.imageDiscoverFilterVideo,
+                      style: context.text.small.copyWith(color: c.textMuted),
+                    ),
+                  ],
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                AppDesign.lg,
-                AppDesign.sm,
-                AppDesign.lg,
-                AppDesign.sm,
+                AppSpace.phonePage,
+                AppSpace.sm,
+                AppSpace.phonePage,
+                AppSpace.sm,
               ),
               child: TextField(
                 key: const Key('hf-query'),
@@ -125,11 +246,13 @@ class _HfSearchPageState extends ConsumerState<HfSearchPage> {
                 onChanged: _onChanged,
                 onSubmitted: _search,
                 decoration: InputDecoration(
-                  hintText: context.l10n.uiHfSearchPageModelNameEGQwen34B,
+                  hintText: pipeline == null
+                      ? context.l10n.uiHfSearchPageModelNameEGQwen34B
+                      : context.l10n.imageDiscoverSearchHint,
                   prefixIcon: const Icon(Icons.search, size: 18),
                   suffixIcon: _searching
                       ? const Padding(
-                          padding: EdgeInsets.all(AppDesign.md),
+                          padding: EdgeInsets.all(AppSpace.md),
                           child: SizedBox.square(
                             dimension: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
@@ -141,7 +264,9 @@ class _HfSearchPageState extends ConsumerState<HfSearchPage> {
             ),
             if (_error != null)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppDesign.lg),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpace.phonePage,
+                ),
                 child: Text(
                   _error!,
                   style: context.text.bodyMuted.copyWith(color: c.danger),
@@ -150,16 +275,20 @@ class _HfSearchPageState extends ConsumerState<HfSearchPage> {
             Expanded(
               child: _results == null
                   ? Padding(
-                      padding: const EdgeInsets.all(AppDesign.xl),
+                      padding: const EdgeInsets.all(AppSpace.phonePage),
                       child: Text(
-                        context.l10n.hfIntro,
+                        pipeline == null
+                            ? context.l10n.hfIntro
+                            : context.l10n.imageDiscoverIntro,
                         style: context.text.bodyMuted,
                       ),
                     )
                   : _results!.isEmpty
                   ? Center(
                       child: Text(
-                        context.l10n.uiHfSearchPageNoGGUFRepositoriesMatch,
+                        pipeline == null
+                            ? context.l10n.uiHfSearchPageNoGGUFRepositoriesMatch
+                            : context.l10n.imageDiscoverEmpty,
                         style: context.text.bodyMuted,
                       ),
                     )
@@ -218,13 +347,16 @@ class _HfSearchPageState extends ConsumerState<HfSearchPage> {
 
 class _FilesSheet extends StatelessWidget {
   final HfRepoFiles files;
-  const _FilesSheet({required this.files});
+  final bool imageGeneration;
+  const _FilesSheet({required this.files, this.imageGeneration = false});
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final usable = files.models;
-    final other = files.files.where((f) => f.isProjector).toList();
+    final usable = imageGeneration ? files.imageModels : files.models;
+    final other = imageGeneration
+        ? const <HfFile>[]
+        : files.files.where((f) => f.isProjector).toList();
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.7,
@@ -252,12 +384,14 @@ class _FilesSheet extends StatelessWidget {
                           contextLength: files.contextLength,
                           showFit: false,
                         ),
-                        HfModelCard(files: files),
+                        if (!imageGeneration) HfModelCard(files: files),
                         if (usable.isEmpty)
                           Text(
-                            context
-                                .l10n
-                                .uiHfSearchPageNoSingleFileGGUFWeightsIn,
+                            imageGeneration
+                                ? context.l10n.imageDiscoverNoFiles
+                                : context
+                                      .l10n
+                                      .uiHfSearchPageNoSingleFileGGUFWeightsIn,
                             style: context.text.bodyMuted,
                           ),
                       ],
@@ -265,7 +399,7 @@ class _FilesSheet extends StatelessWidget {
                     SliverList.separated(
                       itemCount: usable.length,
                       separatorBuilder: (context, index) =>
-                          const SizedBox(height: AppDesign.md),
+                          const SizedBox(height: AppSpace.md),
                       itemBuilder: (context, index) {
                         final f = usable[index];
                         return ListTile(
@@ -278,17 +412,20 @@ class _FilesSheet extends StatelessWidget {
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              ModelCapabilityBadges(
-                                model: HuggingFace.modelFor(
-                                  files,
-                                  f,
-                                  HuggingFace.guessFamily(files.repo),
+                              if (!imageGeneration)
+                                ModelCapabilityBadges(
+                                  model: HuggingFace.modelFor(
+                                    files,
+                                    f,
+                                    HuggingFace.guessFamily(files.repo),
+                                  ),
+                                  tags: files.tags,
+                                  contextLength: files.contextLength,
                                 ),
-                                tags: files.tags,
-                                contextLength: files.contextLength,
-                              ),
                               Text(
-                                '${ModelQuantization.tagOf(f.name) ?? f.quantization.name.toUpperCase()} · ${(files.totalSize(f) / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB',
+                                imageGeneration
+                                    ? _gb(files.totalSize(f))
+                                    : '${ModelQuantization.tagOf(f.name) ?? f.quantization.name.toUpperCase()} · ${_gb(files.totalSize(f))}',
                                 style: context.text.mono.copyWith(
                                   color: c.textFaint,
                                 ),
@@ -308,7 +445,7 @@ class _FilesSheet extends StatelessWidget {
                         slivers: [
                           SliverList.list(
                             children: [
-                              const SizedBox(height: AppDesign.md),
+                              const SizedBox(height: AppSpace.md),
                               Text(
                                 context.l10n.uiHfSearchPageNotAddableHere,
                                 style: context.text.label.copyWith(
@@ -320,7 +457,7 @@ class _FilesSheet extends StatelessWidget {
                           SliverList.separated(
                             itemCount: other.length,
                             separatorBuilder: (context, index) =>
-                                const SizedBox(height: AppDesign.md),
+                                const SizedBox(height: AppSpace.md),
                             itemBuilder: (context, index) {
                               final f = other[index];
                               return ListTile(
@@ -347,3 +484,6 @@ class _FilesSheet extends StatelessWidget {
     );
   }
 }
+
+String _gb(int bytes) =>
+    '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';

@@ -3,6 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/design/app_design.dart';
+import '../../../../core/design/app_dialog.dart';
+import '../../../../core/island/status_island.dart';
+import '../../../../data/storage/model_file_leases.dart';
+import '../../domain/entities/model_info.dart';
+import 'model_tags.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/platform/desktop_host.dart';
 import '../../../../data/storage/model_storage.dart';
@@ -16,7 +21,7 @@ ModelCategory modelCategory(String name, {GgufMetadata? metadata}) {
   final n = name.toLowerCase();
   if (metadata?.isMtpOnly == true ||
       RegExp(
-        r'(^|[-_./ ])(mtp|draft)([-_./ ]|$)|gemma4-assistant',
+        r'(^|[-_./ ])(mtp|draft|dflash)([-_./ ]|$)|gemma4-assistant',
       ).hasMatch(n)) {
     return ModelCategory.draft;
   }
@@ -37,7 +42,7 @@ ModelCategory modelCategory(String name, {GgufMetadata? metadata}) {
     return ModelCategory.speech;
   }
   if (RegExp(
-        r'flux|stable-diffusion|sdxl|esrgan|vae|wan2|ltx|hunyuan',
+        r'flux|stable-diffusion|sdxl|esrgan|vae|wan2|ltx|hunyuan|qwen[-_]?image|umt5|t5xxl',
       ).hasMatch(n) ||
       n.endsWith('.safetensors') ||
       n.endsWith('.pth')) {
@@ -175,20 +180,38 @@ final modelCategoryFilesProvider = FutureProvider.autoDispose
 
 class ModelInventoryList extends ConsumerWidget {
   final ModelCategory? category;
-  const ModelInventoryList({super.key, this.category});
+
+  /// Shows nothing at all when the category has no files (the All view
+  /// stacks every category).
+  final bool hideEmpty;
+
+  /// Shown above the files when there are any.
+  final Widget? header;
+  const ModelInventoryList({
+    super.key,
+    this.category,
+    this.hideEmpty = false,
+    this.header,
+  });
   @override
   Widget build(BuildContext context, WidgetRef ref) => ref
       .watch(modelCategoryFilesProvider(category))
       .when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => hideEmpty
+            ? const SizedBox.shrink()
+            : const Center(child: CircularProgressIndicator()),
         error: (error, _) => Text('$error'),
-        data: (files) => Column(
-          children: [
-            if (files.isEmpty) Text(context.l10n.modelCategoryEmpty),
-            for (final file in files)
-              _InventoryRow(file: file, category: category),
-          ],
-        ),
+        data: (files) => hideEmpty && files.isEmpty
+            ? const SizedBox.shrink()
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ?header,
+                  if (files.isEmpty) Text(context.l10n.modelCategoryEmpty),
+                  for (final file in files)
+                    _InventoryRow(file: file, category: category),
+                ],
+              ),
       );
 }
 
@@ -207,7 +230,73 @@ class _InventoryRow extends ConsumerWidget {
       leading: const Icon(Icons.insert_drive_file_outlined),
       title: Text(file.uri.pathSegments.last),
       subtitle: SelectableText(file.path),
-      trailing: Text(modelCategoryLabel(context.l10n, kind)),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(modelCategoryLabel(context.l10n, kind)),
+          const SizedBox(width: AppDesign.sm),
+          IconButton(
+            key: ValueKey('inventory-delete-${file.path}'),
+            tooltip: context.l10n.delete,
+            icon: const Icon(Icons.delete_outline),
+            onPressed: () => deleteModelFile(context, ref, file),
+          ),
+        ],
+      ),
     );
+  }
+}
+
+/// Deletes one model file after asking (owner 2026-11-12: every Models
+/// category can delete). A chat model the app manages is deleted through
+/// the model manager, so its profile and projector go with it; any other
+/// file (draft, MTP head, embedding, reranker, projector, speech) is
+/// removed while no loaded model holds it.
+Future<void> deleteModelFile(
+  BuildContext context,
+  WidgetRef ref,
+  File file,
+) async {
+  final t = context.l10n;
+  final name = file.uri.pathSegments.last;
+  var size = 0;
+  try {
+    size = await file.length();
+  } catch (_) {}
+  if (!context.mounted) return;
+  final ok = await confirmAction(
+    context,
+    title: t.deleteModelQuestion,
+    message: t.deleteModelHint(name, bytesLabel(size)),
+    confirmLabel: t.delete,
+    destructive: true,
+    confirmKey: const Key('inventory-delete-confirm'),
+  );
+  if (!ok || !context.mounted) return;
+  try {
+    final key = file.absolute.path.toLowerCase();
+    ModelInfo? owner;
+    for (final m in ref.read(modelManagerProvider).catalog) {
+      if (m.isDownloaded &&
+          m.localPath != null &&
+          File(m.localPath!).absolute.path.toLowerCase() == key) {
+        owner = m;
+      }
+    }
+    if (owner != null) {
+      await ref.read(modelManagerProvider.notifier).deleteModel(owner);
+    } else {
+      final guard = ModelFileLeases.instance.beginMutation([file.path]);
+      try {
+        if (await file.exists()) await file.delete();
+      } finally {
+        guard.release();
+      }
+    }
+    ref.invalidate(modelInventoryFilesProvider);
+  } catch (e) {
+    if (context.mounted) {
+      showIslandToast(context, '$e', tone: IslandTone.error);
+    }
   }
 }

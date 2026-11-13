@@ -11,6 +11,7 @@ import 'package:html/dom.dart';
 import 'package:html/parser.dart' as html;
 
 import 'news_feed_parser.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// Only ordinary public HTTP(S) pages are readable. Every redirect and the
 /// address used for the actual connection are checked, including DNS answers.
@@ -612,7 +613,9 @@ class WebPageReader {
     for (final s in scripts) {
       try {
         visit(jsonDecode(s.trim()));
-      } catch (_) {}
+      } catch (e, st) {
+        quietFailure('web_page_reader:615', e, st);
+      }
     }
     return best;
   }

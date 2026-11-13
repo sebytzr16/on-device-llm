@@ -23,23 +23,23 @@ class AppTheme {
       AccentChoice.blue =>
         dark
             ? (const Color(0xFF6FA8FF), const Color(0xFF3F79D6))
-            : (const Color(0xFF2B5CBF), const Color(0xFF1F4A9E)),
+            : (const Color(0xFF0A1E4C), const Color(0xFF14306E)),
       AccentChoice.green =>
         dark
             ? (const Color(0xFF58C27D), const Color(0xFF2F9A57))
-            : (const Color(0xFF16713A), const Color(0xFF156A36)),
+            : (const Color(0xFF02240F), const Color(0xFF06381A)),
       AccentChoice.rose =>
         dark
             ? (const Color(0xFFF07A9A), const Color(0xFFC94F70))
-            : (const Color(0xFFAE2F53), const Color(0xFF962B49)),
+            : (const Color(0xFF3E0A19), const Color(0xFF5E1328)),
       AccentChoice.violet =>
         dark
             ? (const Color(0xFFB08CFF), const Color(0xFF7F5AD6))
-            : (const Color(0xFF6A46C7), const Color(0xFF50339B)),
+            : (const Color(0xFF23134A), const Color(0xFF38216E)),
       AccentChoice.teal =>
         dark
             ? (const Color(0xFF4FC8C0), const Color(0xFF2B9C95))
-            : (const Color(0xFF126C65), const Color(0xFF156A65)),
+            : (const Color(0xFF022621), const Color(0xFF053A35)),
       AccentChoice.amber => (base.accent, base.accentDeep),
     };
     return base.copyWith(

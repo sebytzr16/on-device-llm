@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// What another app shared to OnDevice LLM: text (often a link), an
 /// optional subject (a page title, an email subject) and files already
@@ -111,12 +112,16 @@ class ShareInbox {
       parents.add(file.parent.path);
       try {
         if (await file.exists()) await file.delete();
-      } on FileSystemException catch (_) {}
+      } on FileSystemException catch (e, st) {
+        quietFailure('share_inbox:114', e, st);
+      }
     }
     for (final path in parents) {
       try {
         await Directory(path).delete();
-      } on FileSystemException catch (_) {}
+      } on FileSystemException catch (e, st) {
+        quietFailure('share_inbox:119', e, st);
+      }
     }
   }
 

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
@@ -163,6 +164,9 @@ class AdaptersNotifier extends Notifier<AdaptersState> {
       if (_alive) {
         state = state.copyWith(adapters: adapters, attachments: attachments);
       }
+    } on MissingPluginException {
+      // Platform channel not available (e.g. in tests); treat as empty manifest.
+      if (_alive) state = const AdaptersState();
     } catch (e) {
       if (_alive) state = state.copyWith(error: 'Adapter list unreadable: $e');
     }
@@ -317,6 +321,9 @@ class AdaptersNotifier extends Notifier<AdaptersState> {
 
   /// File paths and scales the engine needs for [modelId].
   Future<List<({String path, double scale})>> resolved(String modelId) async {
+    // If no attachments are configured for this model, avoid the manifest
+    // load (which needs path_provider) and return immediately.
+    if (state.of(modelId).isEmpty) return const [];
     await ready;
     final out = <({String path, double scale})>[];
     for (final att in state.of(modelId)) {

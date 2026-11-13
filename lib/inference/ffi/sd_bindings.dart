@@ -29,6 +29,21 @@ class SdBindings {
     Pointer<Int32>,
   )
   txt2img;
+
+  /// od_sd_img2img: [txt2img]'s arguments with the RGBA starting picture and
+  /// its size after the request.
+  late final Pointer<Uint8> Function(
+    Pointer<Void>,
+    Pointer<Utf8>,
+    Pointer<Uint8>,
+    int,
+    int,
+    Pointer<NativeFunction<SdProgressFn>>,
+    Pointer<Void>,
+    Pointer<Int32>,
+    Pointer<Int32>,
+  )
+  img2img;
   late final Pointer<Uint8> Function(
     Pointer<Void>,
     Pointer<Utf8>,
@@ -130,6 +145,31 @@ class SdBindings {
             Pointer<Int32>,
           )
         >('od_sd_txt2img');
+    img2img = lib
+        .lookupFunction<
+          Pointer<Uint8> Function(
+            Pointer<Void>,
+            Pointer<Utf8>,
+            Pointer<Uint8>,
+            Int32,
+            Int32,
+            Pointer<NativeFunction<SdProgressFn>>,
+            Pointer<Void>,
+            Pointer<Int32>,
+            Pointer<Int32>,
+          ),
+          Pointer<Uint8> Function(
+            Pointer<Void>,
+            Pointer<Utf8>,
+            Pointer<Uint8>,
+            int,
+            int,
+            Pointer<NativeFunction<SdProgressFn>>,
+            Pointer<Void>,
+            Pointer<Int32>,
+            Pointer<Int32>,
+          )
+        >('od_sd_img2img');
     txt2vid = lib
         .lookupFunction<
           Pointer<Uint8> Function(

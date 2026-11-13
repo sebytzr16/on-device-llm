@@ -1,21 +1,26 @@
 import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 class ChatProject {
   final String id, name, instructions, collection;
+  final String? folder;
   const ChatProject(
     this.id,
     this.name, {
     this.instructions = '',
     this.collection = '',
+    this.folder,
   });
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
     'instructions': instructions,
     'collection': collection,
+    'folder': folder,
   };
 }
 
@@ -64,6 +69,7 @@ class ConversationWorkspaceNotifier extends Notifier<ConversationWorkspace> {
                 p['name'],
                 instructions: p['instructions'] as String? ?? '',
                 collection: p['collection'] as String? ?? '',
+                folder: p['folder'] as String?,
               ),
         ],
         memberships: Map<String, String>.from(j['memberships'] as Map? ?? {}),
@@ -103,6 +109,7 @@ class ConversationWorkspaceNotifier extends Notifier<ConversationWorkspace> {
     required String name,
     String instructions = '',
     String collection = '',
+    String? folder,
   }) => _change((s) {
     if (name.trim().isEmpty ||
         name.length > 100 ||
@@ -113,11 +120,21 @@ class ConversationWorkspaceNotifier extends Notifier<ConversationWorkspace> {
     if (id == null && s.projects.length >= 32) {
       throw StateError('Project limit reached.');
     }
+    if (folder != null &&
+        folder.isNotEmpty &&
+        (!path.isAbsolute(folder) ||
+            folder.startsWith(r'\\') ||
+            folder.startsWith('//'))) {
+      throw const FormatException(
+        'Project folder must be an absolute local path.',
+      );
+    }
     final project = ChatProject(
       id ?? const Uuid().v4(),
       name.trim(),
       instructions: instructions.trim(),
       collection: collection.trim(),
+      folder: folder?.trim().isEmpty == true ? null : folder,
     );
     return ConversationWorkspace(
       projects: [...s.projects.where((p) => p.id != id), project],

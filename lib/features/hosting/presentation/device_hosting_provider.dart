@@ -24,8 +24,10 @@ import '../host_discovery.dart';
 import '../model_pool.dart';
 import '../pairing_code.dart';
 import '../hosting_tls.dart';
+import '../paired_devices.dart';
 import 'pool_options_provider.dart';
 import 'hosted_workspace.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// When the server stops itself to protect the phone. Off (null) by default
 /// for the battery; the thermal guard is always on at "severe".
@@ -39,13 +41,15 @@ class HostingGuards {
 }
 
 class DeviceHostingState {
+  final List<PairedDevice> pairedDevices;
+  final bool legacyTokenEnabled;
   final ServerUsage usage;
   final bool running;
   final bool starting;
   final String? endpoint;
   final String? token;
 
-  /// Six digits a nearby device trades for [token] (LAN servers only).
+  /// Six digits a nearby device trades for its own credential (LAN only).
   final String? pairCode;
   final String? pairingSecret, hostId;
   final String? fingerprint;
@@ -77,6 +81,8 @@ class DeviceHostingState {
   final Set<String> clients;
   final DevicePower? power;
   const DeviceHostingState({
+    this.pairedDevices = const [],
+    this.legacyTokenEnabled = true,
     this.usage = const ServerUsage(),
     this.running = false,
     this.starting = false,
@@ -153,6 +159,8 @@ class DeviceHostingState {
   }
 
   DeviceHostingState copyWith({
+    List<PairedDevice>? pairedDevices,
+    bool? legacyTokenEnabled,
     ServerUsage? usage,
     bool? running,
     bool? starting,
@@ -176,6 +184,8 @@ class DeviceHostingState {
     Set<String>? clients,
     DevicePower? power,
   }) => DeviceHostingState(
+    pairedDevices: pairedDevices ?? this.pairedDevices,
+    legacyTokenEnabled: legacyTokenEnabled ?? this.legacyTokenEnabled,
     usage: usage ?? this.usage,
     running: running ?? this.running,
     starting: starting ?? this.starting,
@@ -289,6 +299,9 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
       }
       final token = await readAccessToken();
       if (!_alive || lifecycle != _lifecycle) return;
+      final devices = await PairedDevices.load();
+      if (!_alive || lifecycle != _lifecycle) return;
+      final localToken = PairingCode.secret();
       final pairCode = lan ? PairingCode.generate() : null;
       final manager = ref.read(modelManagerProvider.notifier);
       final pool = DesktopHost.active ? _newPool(model, lifecycle) : null;
@@ -307,10 +320,20 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
         modelId: model.id,
         fallbackTemplate: model.family.fallbackTemplate,
         accessToken: token,
+        localAccessToken: localToken,
+        pairedDevices: devices,
+        onDevicesChanged: () {
+          if (_alive && lifecycle == _lifecycle) {
+            state = state.copyWith(
+              pairedDevices: devices.devices,
+              legacyTokenEnabled: devices.legacyEnabled,
+            );
+          }
+        },
         workspace: hostedWorkspace(
           ref: ref,
           port: () => _server!.port!,
-          token: token,
+          token: localToken,
           primaryModel: model.id,
           hostSettings: () => manager.servedSettings(model),
           vision: (id) => ref.read(modelManagerProvider).vision.contains(id),
@@ -336,13 +359,15 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
           );
         },
         router: pool,
-        // LlamaEngine supports an independent CPU vector worker on Android too.
+        // The vector worker is independent: CPU on Android, the chat's GPU
+        // policy on the desktop (audit E22).
         vectors: LocalServedVectorEngine(
           (id) => vectorFiles[id],
           availableModels: () => {
             for (final id in vectorFiles.keys)
               id: id == embeddingModel.id ? 'embedding' : 'rerank',
           },
+          placement: () => ref.read(settingsProvider),
         ),
         hasProjector: (id) =>
             ref.read(modelManagerProvider).vision.contains(id),
@@ -417,6 +442,8 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
           tls: lan,
         ),
         token: token,
+        pairedDevices: devices.devices,
+        legacyTokenEnabled: devices.legacyEnabled,
         fingerprint: tls?.fingerprint,
         pairCode: server.pairCode,
         pairingSecret: lan ? server.pairingSecret : null,
@@ -444,7 +471,9 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
         if (HostDiscovery.canAdvertise) {
           try {
             await HostDiscovery.stop();
-          } catch (_) {}
+          } catch (e, st) {
+            quietFailure('device_hosting_provider:471', e, st);
+          }
         }
         state = DeviceHostingState(error: _message(error));
       }
@@ -616,7 +645,10 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
     }
   }
 
-  static String _message(Object error) => switch (error) {
+  String _message(Object error) => switch (error) {
+    HostingTlsException() => stringsFor(
+      ref.read(settingsProvider).localeCode,
+    ).hostTlsIdentityError,
     StateError(:final message) => message,
     FormatException(:final message) => message,
     _ => '$error',
@@ -668,9 +700,37 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
     }
   }
 
+  Future<void> revokeDevice(String id) async {
+    final server = _server;
+    if (server == null) return;
+    await server.revokeDevice(id);
+    if (_alive && _server == server) {
+      state = state.copyWith(
+        pairedDevices: server.pairedDevices.devices,
+        legacyTokenEnabled: server.pairedDevices.legacyEnabled,
+      );
+    }
+  }
+
+  Future<void> resetHostIdentity() async {
+    await stop();
+    final devices = await PairedDevices.load();
+    for (final device in devices.devices) {
+      await devices.revoke(device.id);
+    }
+    // The shared token was trusted under the old identity: replace it too.
+    await _secure.delete(key: _tokenKey);
+    await HostingTls.reset();
+    await devices.allowNewLegacyToken();
+    if (_alive) {
+      state = const DeviceHostingState();
+    }
+  }
+
   Future<void> regenerateToken() async {
     await stop();
     await _secure.delete(key: _tokenKey);
+    await (await PairedDevices.load()).allowNewLegacyToken();
     state = const DeviceHostingState();
   }
 

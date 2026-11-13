@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/device/thermal.dart';
+import '../../desktop/benchmark_receipt.dart';
 import '../../core/providers/shared_providers.dart';
 import '../../inference/engine/text_engine.dart';
 import '../knowledge/knowledge_store.dart';
@@ -14,6 +15,7 @@ import '../settings/presentation/providers/settings_provider.dart';
 import '../tools/domain/tool_spec.dart';
 import '../tools/tool_runner.dart';
 import '../chat/domain/turn_prompts.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// One measured generation of the fixed prompt.
 class BenchmarkSample {
@@ -381,7 +383,9 @@ class BenchmarkNotifier extends Notifier<BenchmarkState> {
               ),
         },
       );
-    } catch (_) {}
+    } catch (e, st) {
+      quietFailure('benchmark:384', e, st);
+    }
   }
 
   Future<void> _save() async {
@@ -390,7 +394,9 @@ class BenchmarkNotifier extends Notifier<BenchmarkState> {
         _key,
         jsonEncode([for (final r in state.results.values) r.toJson()]),
       );
-    } catch (_) {}
+    } catch (e, st) {
+      quietFailure('benchmark:393', e, st);
+    }
   }
 
   /// The result of [from] now belongs to [to] (the catalog adopted a model
@@ -413,6 +419,51 @@ class BenchmarkNotifier extends Notifier<BenchmarkState> {
   /// prompt is evaluated), runs one greedy 128-token completion as warm-up
   /// and then [BenchmarkResult.samplesPerRun] measured ones, then the chat
   /// rows.
+  Future<void> _saveReceipt(
+    ModelInfo model,
+    BenchmarkResult result,
+    Map<String, dynamic> metrics,
+  ) async {
+    try {
+      final rounds = [
+        for (final s in result.samples)
+          <String, dynamic>{
+            'tokensPerSecond': s.decodeTps,
+            'firstTokenMs': s.prefillMs,
+            'promptTokensPerSecond': s.prefillMs > 0
+                ? s.promptTokens / (s.prefillMs / 1000)
+                : 0,
+            'promptTokens': s.promptTokens,
+            'generated': s.generated,
+            'peakRssMb': s.peakRssMb,
+          },
+      ];
+      final receipts = ref.read(benchmarkReceiptsProvider.notifier);
+      await receipts.ready;
+      await receipts.save(
+        BenchmarkReceipt({
+          'schemaVersion': 1,
+          'modelId': model.id,
+          'timestamp': result.runAt.toUtc().toIso8601String(),
+          'modelFile': model.fileName,
+          'sizeBytes': model.sizeBytes,
+          'sha256': model.sha256,
+          'quant': model.quantLabel,
+          'nativeLibrary': result.library,
+          'backend': result.backend,
+          'effective': {
+            'threads': result.threads,
+            'batchThreads': result.batchThreads,
+            'contextSize': result.contextSize,
+          },
+          'promptClasses': {'short': BenchmarkReceipt.statistics(rounds)},
+        }),
+      );
+    } catch (_) {
+      // History is a convenience; the result above is already saved.
+    }
+  }
+
   Future<BenchmarkResult?> run(ModelInfo model) async {
     if (state.running != null || ref.read(sessionBusyProvider)) {
       throw StateError('Wait for the current response or benchmark.');
@@ -511,6 +562,9 @@ class BenchmarkNotifier extends Notifier<BenchmarkState> {
         );
         await _save();
       }
+      // The history (shared with the desktop) lists receipts, so the phone's
+      // run is recorded there too (owner 2026-11-12: it never appeared).
+      await _saveReceipt(model, result, metrics);
       return result;
     } catch (e) {
       if (_alive) state = state.copyWith(error: '$e', clearRunning: true);

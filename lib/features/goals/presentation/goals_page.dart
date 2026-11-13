@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../../core/storage/device_encryption.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -6,12 +7,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import '../../../core/design/markdown_math.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/design/app_design.dart';
+import '../../../core/platform/form_factor.dart';
+import '../../../desktop/desktop_theme.dart';
+import '../../../desktop/developer_widgets.dart';
 import '../../../core/design/markdown_tables.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/utils/external_links.dart';
+import '../../../core/widgets/safe_markdown.dart';
 import '../../chat/presentation/providers/chat_provider.dart';
 import '../../models/domain/entities/model_catalog.dart';
 import '../../models/presentation/providers/model_manager_provider.dart';
@@ -30,10 +34,12 @@ import 'goal_evidence_page.dart';
 import '../../../core/island/status_island.dart';
 import '../../../core/motion/motion.dart';
 import '../../../core/design/app_dialog.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 part 'goal_tiles.dart';
 part 'goal_blocks.dart';
 part 'goal_history.dart';
+part 'goals_desktop.dart';
 
 /// How much work a goal may do before it pauses for the user.
 enum GoalBudget {
@@ -81,6 +87,8 @@ class GoalsPage extends ConsumerStatefulWidget {
 
 class _GoalsPageState extends ConsumerState<GoalsPage> {
   bool _showingQuestions = false;
+  String? _selectedHistory;
+  void _selectHistory(String? id) => setState(() => _selectedHistory = id);
   String? _questionPopupKey;
   late final _objective = TextEditingController(text: widget.initialObjective);
   final _criteria = TextEditingController();
@@ -147,7 +155,7 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
   Future<void> _loadDraft() async {
     final revision = _draftRevision;
     try {
-      final raw = (await SharedPreferences.getInstance()).getString(_draftKey);
+      final raw = await DeviceEncryption.instance.readGoal(_draftKey);
       if (raw == null || !mounted || revision != _draftRevision) return;
       final j = jsonDecode(raw) as Map<String, dynamic>;
       _restoringDraft = true;
@@ -204,11 +212,10 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
       'toolCalls': _toolCalls.text,
     });
     final write = _draftWrites.then((_) async {
-      final prefs = await SharedPreferences.getInstance();
       if (empty) {
-        await prefs.remove(_draftKey);
+        await DeviceEncryption.instance.removeGoal(_draftKey);
       } else {
-        await prefs.setString(_draftKey, data);
+        await DeviceEncryption.instance.writeGoal(_draftKey, data);
       }
     });
     _draftWrites = write.then((_) {}, onError: (Object _, StackTrace _) {});
@@ -300,7 +307,7 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
     _draftTimer?.cancel();
     _draftStarted = true;
     _draftWrites = _draftWrites.then((_) async {
-      await (await SharedPreferences.getInstance()).remove(_draftKey);
+      await DeviceEncryption.instance.removeGoal(_draftKey);
     });
     unawaited(ref.read(goalProvider.notifier).start(spec));
   }
@@ -317,6 +324,7 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
         }
       });
     }
+    if (context.isDesktop) return _desktop(context, goal);
     return Scaffold(
       appBar: AppBar(
         title: Text(context.l10n.goalsTitle),
@@ -378,7 +386,7 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                spacing: AppDesign.md,
+                spacing: AppSpace.md,
                 children: [
                   TextField(
                     key: const Key('goal-refine-objective'),
@@ -491,7 +499,7 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
     children: [
       Text(context.l10n.goalCompletionTarget, style: context.text.label),
       Wrap(
-        spacing: AppDesign.sm,
+        spacing: AppSpace.sm,
         children: [
           for (final value in [0.8, 0.85, 0.9, 1.0])
             ChoiceChip(
@@ -509,14 +517,16 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
     final settings = ref.watch(settingsProvider);
     final c = context.colors;
     return ListView(
-      padding: const EdgeInsets.all(AppDesign.xl),
+      padding: EdgeInsets.all(
+        context.isDesktop ? AppSpace.desktopPage : AppSpace.phonePage,
+      ),
       controller: _setupScroll,
       children: [
         Text(context.l10n.goalIntro, style: context.text.bodyMuted),
-        const SizedBox(height: AppDesign.xs),
+        const SizedBox(height: AppSpace.xs),
         const _GoalModelIndicator(),
         if (!settings.webSearchEnabled) ...[
-          const SizedBox(height: AppDesign.md),
+          const SizedBox(height: AppSpace.md),
           _Banner(
             icon: Icons.public_off_outlined,
             text: context.l10n.goalWebOff,
@@ -527,14 +537,14 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
         // every paragraph; Qwen3.5 0.8B stayed on the subject but cited
         // poorly and mixed figures. The tester found the same.
         if (_smallModel(ref) case final name?) ...[
-          const SizedBox(height: AppDesign.md),
+          const SizedBox(height: AppSpace.md),
           _Banner(
             icon: Icons.tips_and_updates_outlined,
             text: context.l10n.goalSmallModel(name),
             color: c.accent,
           ),
         ],
-        const SizedBox(height: AppDesign.lg),
+        const SizedBox(height: AppSpace.lg),
         TextField(
           key: const Key('goal-objective'),
           controller: _objective,
@@ -549,12 +559,12 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
             floatingLabelBehavior: FloatingLabelBehavior.always,
           ),
         ),
-        const SizedBox(height: AppDesign.lg),
+        const SizedBox(height: AppSpace.lg),
         Text(context.l10n.goalKindTitle, style: context.text.title),
-        const SizedBox(height: AppDesign.sm),
+        const SizedBox(height: AppSpace.row),
         Wrap(
-          spacing: AppDesign.sm,
-          runSpacing: AppDesign.sm,
+          spacing: AppSpace.sm,
+          runSpacing: AppSpace.sm,
           children: [
             for (final k in GoalSpecialization.values)
               ChoiceChip(
@@ -569,9 +579,9 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
               ),
           ],
         ),
-        const SizedBox(height: AppDesign.xs),
+        const SizedBox(height: AppSpace.xs),
         Text(_kind.descriptionIn(context.l10n), style: context.text.bodyMuted),
-        const SizedBox(height: AppDesign.md),
+        const SizedBox(height: AppSpace.md),
         TextField(
           controller: _criteria,
           maxLines: 3,
@@ -583,7 +593,7 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
             hintMaxLines: 3,
           ),
         ),
-        const SizedBox(height: AppDesign.md),
+        const SizedBox(height: AppSpace.md),
         TextField(
           key: const Key('goal-setup-guidance'),
           controller: _guidance,
@@ -594,16 +604,16 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
             hintText: context.l10n.goalSearchGuidanceHint,
           ),
         ),
-        const SizedBox(height: AppDesign.lg),
+        const SizedBox(height: AppSpace.lg),
         _guardrails(context),
-        const SizedBox(height: AppDesign.lg),
+        const SizedBox(height: AppSpace.lg),
         _coverageControl(context, _completionTarget, (v) {
           setState(() => _completionTarget = v);
           unawaited(_saveDraft());
         }),
-        const SizedBox(height: AppDesign.lg),
+        const SizedBox(height: AppSpace.lg),
         Text(context.l10n.goalBudgetTitle, style: context.text.title),
-        const SizedBox(height: AppDesign.sm),
+        const SizedBox(height: AppSpace.row),
         for (final b in GoalBudget.values)
           RadioListTile<GoalBudget>(
             key: Key('goal-budget-${b.name}'),
@@ -628,26 +638,27 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
         ],
         if (_budget == GoalBudget.unlimited)
           Padding(
-            padding: const EdgeInsets.only(top: AppDesign.sm),
+            padding: const EdgeInsets.only(top: AppSpace.sm),
             child: Text(
               context.l10n.goalKeepOpen,
               style: context.text.bodyMuted,
             ),
           ),
-        const SizedBox(height: AppDesign.xl),
+        const SizedBox(height: AppSpace.section),
         FilledButton.icon(
           key: const Key('goal-start'),
           onPressed: _start,
           icon: const Icon(Icons.flag_outlined),
           label: Text(context.l10n.goalStart),
         ),
-        _Watches(
-          onRunAgain: (objective) {
-            _objective.text = objective;
-            _setupScroll.glideTo(0, context.motion);
-          },
-        ),
-        const _PastGoals(),
+        if (!context.isDesktop)
+          _Watches(
+            onRunAgain: (objective) {
+              _objective.text = objective;
+              _setupScroll.glideTo(0, context.motion);
+            },
+          ),
+        if (!context.isDesktop) const _PastGoals(),
       ],
     );
   }
@@ -665,30 +676,30 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
         side: BorderSide(color: c.hairline),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppDesign.md),
+        padding: const EdgeInsets.all(AppSpace.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
                 Icon(Icons.shield_outlined, size: 18, color: c.accent),
-                const SizedBox(width: AppDesign.sm),
+                const SizedBox(width: AppSpace.sm),
                 Expanded(
                   child: Text(t.goalGuardrails, style: context.text.title),
                 ),
               ],
             ),
-            const SizedBox(height: AppDesign.sm),
+            const SizedBox(height: AppSpace.row),
             Text(t.goalSubjectTitle, style: context.text.label),
-            const SizedBox(height: AppDesign.xs),
+            const SizedBox(height: AppSpace.xs),
             Text(
               names.isEmpty ? t.goalSubjectNone : t.goalSubjectHint,
               style: context.text.small,
             ),
-            const SizedBox(height: AppDesign.sm),
+            const SizedBox(height: AppSpace.row),
             Wrap(
-              spacing: AppDesign.sm,
-              runSpacing: AppDesign.xs,
+              spacing: AppSpace.sm,
+              runSpacing: AppSpace.xs,
               children: [
                 for (final n in names)
                   InputChip(
@@ -720,7 +731,7 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
                   ),
               ],
             ),
-            const SizedBox(height: AppDesign.md),
+            const SizedBox(height: AppSpace.md),
             TextField(
               key: const Key('goal-rules'),
               controller: _rules,
@@ -739,7 +750,7 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
               child: ExpansionTile(
                 key: const Key('goal-builtin-rules'),
                 tilePadding: EdgeInsets.zero,
-                childrenPadding: const EdgeInsets.only(bottom: AppDesign.sm),
+                childrenPadding: const EdgeInsets.only(bottom: AppSpace.sm),
                 title: Text(t.goalRulesBuiltIn, style: context.text.label),
                 children: [
                   for (final r in [
@@ -751,12 +762,12 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
                     t.goalRuleCheck,
                   ])
                     Padding(
-                      padding: const EdgeInsets.only(bottom: AppDesign.xs),
+                      padding: const EdgeInsets.only(bottom: AppSpace.xs),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Icon(Icons.check, size: 16, color: c.success),
-                          const SizedBox(width: AppDesign.sm),
+                          const SizedBox(width: AppSpace.sm),
                           Expanded(
                             child: Text(r, style: context.text.bodyMuted),
                           ),
@@ -883,35 +894,37 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
     final details = _detailBlocks(context, goal, running: running);
     return ListView(
       key: const Key('goal-progress'),
-      padding: const EdgeInsets.all(AppDesign.xl),
+      padding: EdgeInsets.all(
+        context.isDesktop ? AppSpace.desktopPage : AppSpace.phonePage,
+      ),
       children: finished
           ? [
               ..._headerBlocks(context, goal, compact: true),
-              const SizedBox(height: AppDesign.sm),
+              const SizedBox(height: AppSpace.row),
               _statusRow(context, goal),
               ...report,
               ...actions,
-              const SizedBox(height: AppDesign.lg),
+              const SizedBox(height: AppSpace.lg),
               buttons,
-              const SizedBox(height: AppDesign.xl),
+              const SizedBox(height: AppSpace.section),
               Divider(color: context.colors.hairline),
-              const SizedBox(height: AppDesign.sm),
+              const SizedBox(height: AppSpace.row),
               Text(t.goalHowMade, style: context.text.title),
-              const SizedBox(height: AppDesign.sm),
+              const SizedBox(height: AppSpace.row),
               ..._statsBlocks(context, goal),
               ...criteria,
               ...details,
             ]
           : [
               ..._headerBlocks(context, goal),
-              const SizedBox(height: AppDesign.lg),
+              const SizedBox(height: AppSpace.lg),
               _statusRow(context, goal),
-              const SizedBox(height: AppDesign.sm),
+              const SizedBox(height: AppSpace.row),
               LinearProgressIndicator(value: _fraction(goal)),
-              const SizedBox(height: AppDesign.sm),
+              const SizedBox(height: AppSpace.row),
               ..._statsBlocks(context, goal),
               ...criteria,
-              const SizedBox(height: AppDesign.lg),
+              const SizedBox(height: AppSpace.lg),
               buttons,
               ...report,
               ...actions,

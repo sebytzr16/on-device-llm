@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'tool_spec.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// The names and argument names small models use for our tools when they
 /// do not copy the offered ones exactly: `web_search`, `google`, `open_url`,
@@ -62,6 +63,19 @@ class ToolAliases {
     'file_search': 'search_documents',
     'search_my_documents': 'search_documents',
     'search_collection': 'search_documents',
+    // generate_image
+    'draw': 'generate_image', 'draw_image': 'generate_image',
+    'paint': 'generate_image', 'paint_image': 'generate_image',
+    'sketch': 'generate_image', 'generate_picture': 'generate_image',
+    'create_image': 'generate_image', 'make_image': 'generate_image',
+    'image_generation': 'generate_image', 'text_to_image': 'generate_image',
+    'txt2img': 'generate_image',
+    // edit_image
+    'edit_picture': 'edit_image', 'modify_image': 'edit_image',
+    'modify_picture': 'edit_image', 'change_image': 'edit_image',
+    'img2img': 'edit_image', 'image_edit': 'edit_image',
+    'image_editing': 'edit_image', 'retouch_image': 'edit_image',
+    'transform_image': 'edit_image', 'edit_photo': 'edit_image',
   };
 
   /// The argument each tool cannot do without, and the other names models
@@ -143,6 +157,31 @@ class ToolAliases {
         'x',
       ],
     },
+    'edit_image': {
+      'prompt': [
+        'instruction',
+        'instructions',
+        'edit',
+        'change',
+        'description',
+        'text',
+        'query',
+        'input',
+      ],
+    },
+    'generate_image': {
+      'prompt': [
+        'description',
+        'desc',
+        'text',
+        'query',
+        'q',
+        'subject',
+        'input',
+        'picture',
+        'image',
+      ],
+    },
   };
 
   static const canonical = {
@@ -153,6 +192,8 @@ class ToolAliases {
     'find_in_page',
     'search_documents',
     'calculator',
+    'generate_image',
+    'edit_image',
   };
 
   /// The tool [raw] means: our own name, a known alias, or [raw] cleaned up
@@ -177,7 +218,9 @@ class ToolAliases {
       if (s.startsWith('{')) {
         try {
           return ToolAliases.args(tool, jsonDecode(s));
-        } catch (_) {}
+        } catch (e, st) {
+          quietFailure('tool_aliases:180', e, st);
+        }
       }
       if (wanted == null || s.isEmpty) return const {};
       return {wanted.keys.first: s};

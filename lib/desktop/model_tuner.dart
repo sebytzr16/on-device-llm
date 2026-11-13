@@ -14,6 +14,12 @@ class TuneMeasurement {
   final String outputHash;
   final double relativeNoise;
 
+  /// Text samples used only by Optimize; receipts retain hashes.
+  final List<String> outputs;
+
+  /// Inverse end-to-end latency for the fixed benchmark workload.
+  final double workloadRate;
+
   /// Prompt reading speed on a long prompt; 0 when not measured.
   final double prefillTokensPerSecond;
   final double prefillNoise;
@@ -21,6 +27,8 @@ class TuneMeasurement {
     this.tokensPerSecond,
     this.outputHash, {
     this.relativeNoise = 0,
+    this.outputs = const [],
+    this.workloadRate = 0,
     this.prefillTokensPerSecond = 0,
     this.prefillNoise = 0,
   });
@@ -62,7 +70,9 @@ class TuneReport {
 class ModelTuner {
   final TuneRunner runner;
   bool _cancelled = false;
-  ModelTuner(this.runner);
+  final bool endToEnd;
+  final double minimumGain;
+  ModelTuner(this.runner, {this.endToEnd = false, this.minimumGain = 0});
 
   void cancel() {
     _cancelled = true;
@@ -74,15 +84,19 @@ class ModelTuner {
   /// batch presets and llama.cpp's n_batch/n_ubatch, both permissive).
   static const prefillKnobs = {'batchSize', 'microBatchSize', 'batchThreads'};
 
-  static double _rate(TuneMeasurement m, bool prefill) =>
-      prefill ? m.prefillTokensPerSecond : m.tokensPerSecond;
+  double _rate(TuneMeasurement m, bool prefill) => endToEnd
+      ? m.workloadRate
+      : prefill
+      ? m.prefillTokensPerSecond
+      : m.tokensPerSecond;
 
-  static double _spread(List<TuneMeasurement> samples, [bool prefill = false]) {
+  double _spread(List<TuneMeasurement> samples, [bool prefill = false]) {
     final rates = samples.map((s) => _rate(s, prefill)).toList()..sort();
     final center = tuneMedian(rates);
     final spread = center > 0
         ? (rates.last - rates.first) / center
         : double.infinity;
+    if (endToEnd) return spread;
     return math.max(
       spread,
       samples
@@ -118,16 +132,14 @@ class ModelTuner {
     progress?.call('drift');
     final (aa, ab) = await rounds(current, current);
     if (_cancelled) return report(TuneStatus.cancelled);
-    final aaMedian = tuneMedian(aa.map((s) => s.tokensPerSecond));
+    final aaMedian = tuneMedian(aa.map((s) => _rate(s, false)));
     final drift = aaMedian > 0
-        ? (tuneMedian(ab.map((s) => s.tokensPerSecond)) / aaMedian - 1).abs()
+        ? (tuneMedian(ab.map((s) => _rate(s, false))) / aaMedian - 1).abs()
         : double.infinity;
     final driftNoise = math.max(_spread(aa), _spread(ab));
     // Prefill is judged only when every drift round measured it.
-    final prefillMeasured = [
-      ...aa,
-      ...ab,
-    ].every((s) => s.prefillTokensPerSecond > 0);
+    final prefillMeasured =
+        !endToEnd && [...aa, ...ab].every((s) => s.prefillTokensPerSecond > 0);
     final prefillDriftNoise = prefillMeasured
         ? math.max(_spread(aa, true), _spread(ab, true))
         : 0.0;
@@ -208,7 +220,9 @@ class ModelTuner {
         ).every((v) => v);
         final decision = !sameOutput
             ? TuneDecision.changesOutput
-            : gain.isFinite && gain > noise && stable
+            : gain.isFinite &&
+                  gain > math.max(noise, minimumGain) + 1e-9 &&
+                  stable
             ? TuneDecision.accepted
             : TuneDecision.noise;
         steps.add(TuneStep(entry.key, before, value, gain, noise, decision));

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../model_pool.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 const _kPoolKey = 'server_pool_v1';
 
@@ -43,7 +44,9 @@ class PoolOptionsNotifier extends Notifier<PoolOptions> {
         _kPoolKey,
         jsonEncode(options.toJson()),
       );
-    } catch (_) {}
+    } catch (e, st) {
+      quietFailure('pool_options_provider:46', e, st);
+    }
   }
 }
 

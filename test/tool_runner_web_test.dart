@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:logging/logging.dart';
 import 'package:ondevice_llm/core/errors/exceptions.dart';
 import 'package:ondevice_llm/data/local/database/app_database.dart';
 import 'package:ondevice_llm/features/knowledge/knowledge_store.dart';
@@ -638,5 +639,82 @@ void main() {
     ).run(_call('search_web', {'query': 'postgresql default port'}));
     expect(local.calls, 0);
     expect(phone.output, contains('Use read_url on a result'));
+  });
+
+  test(
+    'production logs contain only metadata, not arguments or results (S11)',
+    () async {
+      final logs = <String>[];
+      Logger.root.onRecord.listen((r) => logs.add(r.message));
+      Logger.root.level = Level.ALL;
+
+      final runner = ToolRunner(
+        scraper: _Search(),
+        reader: _Reader('Page content'),
+        settings: const InferenceSettings(
+          webMode: WebMode.auto,
+          toolsEnabled: true,
+        ),
+      );
+
+      // Test tool call logging doesn't include arguments
+      await runner.run(_call('search_web', {'query': 'secret password 12345'}));
+      // Give async time to log
+      await Future.delayed(Duration.zero);
+      final toolLog = logs.lastWhere(
+        (l) => l.startsWith('Tool search_web'),
+        orElse: () => '',
+      );
+      expect(toolLog, isNot(contains('secret password')));
+      expect(toolLog, isNot(contains('12345')));
+      final searchResultLog = logs.lastWhere(
+        (l) =>
+            l.contains('search_web returned') ||
+            l.contains('search_web failed'),
+        orElse: () => '',
+      );
+      expect(searchResultLog, isNotEmpty);
+      expect(searchResultLog, isNot(contains('secret password')));
+
+      // Test result logging doesn't include result content
+      await runner.run(_call('calculator', {'expression': 'secret * 2'}));
+      await Future.delayed(Duration.zero);
+      final resultLog = logs.lastWhere(
+        (l) =>
+            l.contains('calculator returned') ||
+            l.contains('calculator failed'),
+        orElse: () => '',
+      );
+      expect(resultLog, isNot(contains('secret')));
+      expect(resultLog, isNotEmpty);
+    },
+  );
+
+  test('verbose logging can be enabled for debugging (S11)', () async {
+    ToolRunner.setVerboseLogging(true);
+    try {
+      final logs = <String>[];
+      Logger.root.onRecord.listen((r) => logs.add(r.message));
+      Logger.root.level = Level.ALL;
+
+      final runner = ToolRunner(
+        scraper: _Search(),
+        reader: _Reader('Page content'),
+        settings: const InferenceSettings(
+          webMode: WebMode.auto,
+          toolsEnabled: true,
+        ),
+      );
+
+      await runner.run(_call('search_web', {'query': 'debug query'}));
+      await Future.delayed(Duration.zero);
+      final toolLog = logs.lastWhere(
+        (l) => l.startsWith('Tool search_web'),
+        orElse: () => '',
+      );
+      expect(toolLog, contains('debug query'));
+    } finally {
+      ToolRunner.setVerboseLogging(false);
+    }
   });
 }

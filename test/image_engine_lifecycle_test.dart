@@ -1,3 +1,4 @@
+import 'package:ondevice_llm/data/storage/model_storage.dart';
 import 'package:ondevice_llm/desktop/history_store.dart';
 import 'package:ondevice_llm/features/image_gen/domain/entities/image_gen_model.dart';
 import 'dart:async';
@@ -49,6 +50,16 @@ class _Engine extends SdEngine {
   }
 }
 
+/// Placeholder component files: loading needs them present (not verified).
+Future<void> _placeholderImageFiles() async {
+  for (final m in [...imageGenCatalog, ...upscalerTools]) {
+    for (final f in m.files) {
+      final file = await ModelStorage.modelFile(f.fileName);
+      if (!await file.exists()) await file.create(recursive: true);
+    }
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory root;
@@ -61,6 +72,7 @@ void main() {
     previousDesktop = DesktopHost.active;
     PathProviderPlatform.instance = _Paths(root.path);
     DesktopHost.active = false;
+    await _placeholderImageFiles();
   });
   tearDown(() async {
     PathProviderPlatform.instance = previousPaths;
@@ -173,7 +185,8 @@ void main() {
           if (op == 'load') return 123;
           if (op == 'save') {
             expect(engine.releases, 0);
-            expect(args.last, 42);
+            // The frames travel from Dart now, so the worker keeps no copy.
+            expect(args[1], isA<TransferableTypedData>());
             saving.complete();
             await permitSave.future;
             await File(args.first as String).writeAsBytes([1, 2, 3]);
@@ -187,7 +200,6 @@ void main() {
             1,
             2,
             16,
-            42,
           ];
         },
       );
@@ -215,6 +227,58 @@ void main() {
           container.read(desktopImageGenProvider).historyEntry?.id,
           item.id,
         );
+      } finally {
+        container.dispose();
+        await engine.dispose();
+      }
+    },
+  );
+
+  test(
+    'a saved video releases the Dart RGBA copy; only preview frames remain',
+    () async {
+      final saving = Completer<void>();
+      final permitSave = Completer<void>();
+      late _Engine engine;
+      engine = _Engine(
+        invoke: (op, args) async {
+          if (op == 'load') return 123;
+          if (op == 'save') {
+            expect(engine.releases, 0);
+            saving.complete();
+            await permitSave.future;
+            await File(args.first as String).writeAsBytes([1, 2, 3]);
+            return true;
+          }
+          return [
+            TransferableTypedData.fromList([
+              Uint8List.fromList([255, 0, 0, 255, 0, 255, 0, 255]),
+            ]),
+            1,
+            1,
+            2,
+            16,
+          ];
+        },
+      );
+      final container = containerFor(engine);
+      try {
+        final notifier = container.read(desktopImageGenProvider.notifier);
+        notifier.pageEntered();
+        notifier.selectModel(
+          imageGenCatalog.firstWhere((m) => m.kind == ImageGenKind.video),
+        );
+        final job = notifier.generate(_request);
+        await saving.future;
+        permitSave.complete();
+        await job;
+        await Future<void>.delayed(Duration.zero);
+        final result = container.read(desktopImageGenProvider).result;
+        expect(result, isNotNull);
+        // The video file is durable: the Dart RGBA copy is released, only the
+        // decoded preview frames stay in memory (E12: not three copies).
+        expect(result!.rgba, isEmpty);
+        expect(result.frames, 2);
       } finally {
         container.dispose();
         await engine.dispose();

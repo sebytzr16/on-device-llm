@@ -43,11 +43,25 @@ class NaturalVoiceSettings extends ConsumerWidget {
         if (s.naturalVoice) ...[
           const _ReadingVoiceTile(),
           const _VoiceDownloadRow(),
-          // Offered once the voice pack is in, or while Parakeet is.
+          // Offered once the voice pack is in, or while Parakeet is; the
+          // streaming captions are an optional download next to them.
           if (packs.of(VoiceModels.listening).status == VoicePackStatus.ready ||
-              packs.of(VoiceModels.parakeet).status != VoicePackStatus.missing)
+              packs.of(VoiceModels.parakeetUltra).status !=
+                  VoicePackStatus.missing ||
+              packs.of(VoiceModels.parakeet).status !=
+                  VoicePackStatus.missing) ...[
             const _ListeningModelTile(),
+            const _LiveCaptionTile(),
+          ],
           if (packs.canSpeakWith(s.readingVoice)) const _VoicePicker(),
+          SettingsSwitchRow(
+            key: const Key('conversation-hears-audio'),
+            secondary: const Icon(Icons.hearing_outlined),
+            title: Text(context.l10n.conversationHearsAudioTitle),
+            subtitle: Text(context.l10n.conversationHearsAudioHint),
+            value: s.conversationHearsAudio,
+            onChanged: (v) => n.update(s.copyWith(conversationHearsAudio: v)),
+          ),
           SettingsSwitchRow(
             key: const Key('talk-over'),
             secondary: const Icon(Icons.record_voice_over_outlined),
@@ -173,7 +187,7 @@ class _ReadingVoiceTile extends ConsumerWidget {
             children: [
               for (final (id, label) in [
                 ('kokoro', 'Kokoro'),
-                ('supertonic-2', 'Supertonic 2'),
+                (VoiceModels.supertonic.id, 'Supertonic 3'),
               ])
                 ChoiceChip(
                   key: Key('reading-$id'),
@@ -206,14 +220,15 @@ class _VoiceDownloadRow extends ConsumerWidget {
     final states = [for (final p in selectedPacks) packs.of(p)];
     final missing = [
       for (final p in selectedPacks)
-        if (packs.of(p).status != VoicePackStatus.ready) p,
+        if (packs.of(p).status != VoicePackStatus.ready || packs.of(p).legacy)
+          p,
     ];
     final total = selectedPacks.fold(0, (a, p) => a + p.sizeBytes);
     final received = selectedPacks.fold(
       0,
       (a, p) =>
           a +
-          (packs.of(p).status == VoicePackStatus.ready
+          (packs.of(p).status == VoicePackStatus.ready && !packs.of(p).legacy
               ? p.sizeBytes
               : packs.of(p).received),
     );
@@ -271,7 +286,7 @@ class _VoiceDownloadRow extends ConsumerWidget {
       key: const Key('voice-download'),
       leading: const Icon(Icons.download_for_offline_outlined),
       title: Text(
-        '${context.l10n.voiceListeningPack} · ${ref.watch(settingsProvider).readingVoice == VoiceModels.supertonic.id ? context.l10n.supertonicSpeakingPack : context.l10n.voiceSpeakingPack}',
+        '${context.l10n.voiceListeningPack} · ${VoiceModels.isSupertonic(ref.watch(settingsProvider).readingVoice) ? context.l10n.supertonicSpeakingPack : context.l10n.voiceSpeakingPack}',
       ),
       // The button sits under the title: a long label (French, large text)
       // must not squeeze the tile.
@@ -287,9 +302,9 @@ class _VoiceDownloadRow extends ConsumerWidget {
   }
 }
 
-/// Whisper base (in the voice pack) or Parakeet v3 (its own download).
-/// Parakeet is chosen only once it is downloaded; until then Whisper
-/// listens.
+/// Whisper base (in the voice pack) or Parakeet Ultra (its own download).
+/// A user who already downloaded Parakeet v3 keeps it until Ultra is in;
+/// Parakeet is chosen only once either is downloaded, else Whisper listens.
 class _ListeningModelTile extends ConsumerWidget {
   const _ListeningModelTile();
 
@@ -300,52 +315,79 @@ class _ListeningModelTile extends ConsumerWidget {
     final n = ref.read(settingsProvider.notifier);
     final packs = ref.watch(voiceModelsProvider);
     final notifier = ref.read(voiceModelsProvider.notifier);
-    const pack = VoiceModels.parakeet;
+    const pack = VoiceModels.parakeetUltra;
     final state = packs.of(pack);
-    final ready = state.status == VoicePackStatus.ready;
+    final legacy = packs.of(VoiceModels.parakeet);
+    final ultraReady = state.status == VoicePackStatus.ready;
+    final legacyReady = legacy.status == VoicePackStatus.ready;
+    final ready = ultraReady || legacyReady;
     final parakeet = ready && s.listeningModel == VoiceModels.parakeetSetting;
-    final Widget action = switch (state.status) {
-      VoicePackStatus.ready => TextButton.icon(
-        key: const Key('parakeet-remove'),
-        onPressed: () async {
-          await notifier.delete(pack);
-          await n.update(s.copyWith(listeningModel: ''));
-        },
-        icon: const Icon(Icons.delete_outline, size: 18),
-        label: Text(context.l10n.remove),
+    Future<void> remove() async {
+      if (ultraReady) await notifier.delete(pack);
+      if (legacyReady) await notifier.delete(VoiceModels.parakeet);
+      await n.update(s.copyWith(listeningModel: ''));
+    }
+
+    final download = FilledButton.tonalIcon(
+      key: const Key('parakeet-add'),
+      onPressed: () async {
+        await notifier.download(pack);
+        if (ref.read(voiceModelsProvider).of(pack).status ==
+            VoicePackStatus.ready) {
+          await n.update(
+            ref
+                .read(settingsProvider)
+                .copyWith(listeningModel: VoiceModels.parakeetSetting),
+          );
+        }
+      },
+      icon: Icon(
+        state.received > 0 || state.error != null
+            ? Icons.refresh
+            : Icons.download_outlined,
+        size: 18,
       ),
-      VoicePackStatus.downloading => OutlinedButton.icon(
+      label: Text(context.l10n.downloadMb(_mb(pack.sizeBytes))),
+    );
+    final Widget action;
+    if (state.status == VoicePackStatus.downloading) {
+      action = OutlinedButton.icon(
         key: const Key('parakeet-pause'),
         onPressed: () => notifier.pause(pack),
         icon: const Icon(Icons.pause, size: 18),
         label: Text('${(state.received * 100 / pack.sizeBytes).round()}%'),
-      ),
-      VoicePackStatus.unpacking => OutlinedButton(
+      );
+    } else if (state.status == VoicePackStatus.unpacking) {
+      action = OutlinedButton(
         onPressed: null,
         child: Text(context.l10n.voiceUnpacking),
-      ),
-      VoicePackStatus.missing => FilledButton.tonalIcon(
-        key: const Key('parakeet-add'),
-        onPressed: () async {
-          await notifier.download(pack);
-          if (ref.read(voiceModelsProvider).of(pack).status ==
-              VoicePackStatus.ready) {
-            await n.update(
-              ref
-                  .read(settingsProvider)
-                  .copyWith(listeningModel: VoiceModels.parakeetSetting),
-            );
-          }
-        },
-        icon: Icon(
-          state.received > 0 || state.error != null
-              ? Icons.refresh
-              : Icons.download_outlined,
-          size: 18,
-        ),
-        label: Text(context.l10n.downloadMb(_mb(pack.sizeBytes))),
-      ),
-    };
+      );
+    } else if (ultraReady) {
+      action = TextButton.icon(
+        key: const Key('parakeet-remove'),
+        onPressed: remove,
+        icon: const Icon(Icons.delete_outline, size: 18),
+        label: Text(context.l10n.remove),
+      );
+    } else if (legacyReady) {
+      // Ultra is not in yet: the v3 files still listen, and the download
+      // upgrades them.
+      action = Wrap(
+        spacing: AppDesign.xs,
+        children: [
+          TextButton.icon(
+            key: const Key('parakeet-remove'),
+            onPressed: remove,
+            icon: const Icon(Icons.delete_outline, size: 18),
+            label: Text(context.l10n.remove),
+          ),
+          download,
+        ],
+      );
+    } else {
+      action = download;
+    }
+    final error = state.error ?? legacy.error;
     return SettingsRow(
       key: const Key('listening-model'),
       leading: const Icon(Icons.hearing_outlined),
@@ -383,8 +425,72 @@ class _ListeningModelTile extends ConsumerWidget {
               action,
             ],
           ),
-          if (state.error != null)
-            Text(state.error!, style: TextStyle(color: c.warning)),
+          if (error != null) Text(error, style: TextStyle(color: c.warning)),
+        ],
+      ),
+    );
+  }
+}
+
+/// The optional streaming captions pack (Nemotron): running captions word
+/// by word while the user speaks, in the app's languages and more. Without
+/// it captions keep coming from the listening model, and the final text is
+/// the same either way.
+class _LiveCaptionTile extends ConsumerWidget {
+  const _LiveCaptionTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.colors;
+    final packs = ref.watch(voiceModelsProvider);
+    final notifier = ref.read(voiceModelsProvider.notifier);
+    const pack = VoiceModels.liveCaptions;
+    final state = packs.of(pack);
+    final Widget action;
+    if (state.status == VoicePackStatus.downloading) {
+      action = OutlinedButton.icon(
+        key: const Key('live-captions-pause'),
+        onPressed: () => notifier.pause(pack),
+        icon: const Icon(Icons.pause, size: 18),
+        label: Text('${(state.received * 100 / pack.sizeBytes).round()}%'),
+      );
+    } else if (state.status == VoicePackStatus.unpacking) {
+      action = OutlinedButton(
+        onPressed: null,
+        child: Text(context.l10n.voiceUnpacking),
+      );
+    } else if (state.status == VoicePackStatus.ready) {
+      action = TextButton.icon(
+        key: const Key('live-captions-remove'),
+        onPressed: () => notifier.delete(pack),
+        icon: const Icon(Icons.delete_outline, size: 18),
+        label: Text(context.l10n.remove),
+      );
+    } else {
+      action = FilledButton.tonalIcon(
+        key: const Key('live-captions-add'),
+        onPressed: () => notifier.download(pack),
+        icon: Icon(
+          state.received > 0 || state.error != null
+              ? Icons.refresh
+              : Icons.download_outlined,
+          size: 18,
+        ),
+        label: Text(context.l10n.downloadMb(_mb(pack.sizeBytes))),
+      );
+    }
+    final error = state.error;
+    return SettingsRow(
+      key: const Key('live-captions'),
+      leading: const Icon(Icons.subtitles_outlined),
+      title: Text(context.l10n.liveCaptionsTitle),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(context.l10n.liveCaptionsHint),
+          const SizedBox(height: AppDesign.xs),
+          action,
+          if (error != null) Text(error, style: TextStyle(color: c.warning)),
         ],
       ),
     );
@@ -400,7 +506,7 @@ class _VoicePicker extends ConsumerWidget {
     final s = ref.watch(settingsProvider);
     final n = ref.read(settingsProvider.notifier);
     final lang = voiceLanguage(s.localeCode);
-    final supertonic = s.readingVoice == VoiceModels.supertonic.id;
+    final supertonic = VoiceModels.isSupertonic(s.readingVoice);
     final voices = supertonic
         ? [
             for (var sid = 0; sid < 10; sid++)

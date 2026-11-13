@@ -1,6 +1,8 @@
 import 'package:ondevice_llm/desktop/history_store.dart';
+import 'package:ondevice_llm/core/design/app_design.dart';
 import 'package:drift/native.dart';
 import 'package:ondevice_llm/data/local/database/app_database.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -55,6 +57,12 @@ class _Manager extends ModelManagerNotifier {
   }
 
   @override
+  Future<void> unloadModel({bool ownsBusy = false}) async {
+    await ref.read(llamaEngineProvider).unload();
+    state = state.copyWith(clearLoaded: true);
+  }
+
+  @override
   Future<void> loadServed(
     ModelInfo info,
     LlamaEngine engine, {
@@ -102,8 +110,10 @@ class _Engine extends LlamaEngine {
   bool disposed = false;
   bool unloaded = false;
   String? config;
+  Object? failure;
   InferenceSettings? generatedSettings;
   final gate = Completer<void>();
+  final chunks = StreamController<String>.broadcast();
   final progress = StreamController<double?>.broadcast();
 
   _Engine(this.name, this.starts) {
@@ -129,7 +139,9 @@ class _Engine extends LlamaEngine {
     generatedSettings = settings;
     starts.add(name);
     yield '$name one';
+    yield* chunks.stream;
     await gate.future;
+    if (failure != null) throw failure!;
     if (!cancelled) yield ' two';
     busy = false;
   }
@@ -137,6 +149,7 @@ class _Engine extends LlamaEngine {
   @override
   void cancel() {
     cancelled = true;
+    if (!chunks.isClosed) unawaited(chunks.close());
     if (!gate.isCompleted) gate.complete();
   }
 
@@ -153,6 +166,7 @@ class _Engine extends LlamaEngine {
   }
 
   void finish() {
+    if (!chunks.isClosed) unawaited(chunks.close());
     if (!gate.isCompleted) gate.complete();
   }
 }
@@ -178,6 +192,7 @@ void main() {
     _Manager.residentAtLoad.clear();
     _Manager.residents.clear();
     chat = _Engine('chat', starts)..loaded = chatLoaded;
+    if (chatLoaded) _Manager.residents.add(chat);
     tester.view.physicalSize = const Size(1440, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -322,43 +337,123 @@ void main() {
     expect(created.every((e) => e.cancelled), isTrue);
   });
 
-  testWidgets('reuses the idle chat engine without disposing it', (
+  testWidgets('unloads chat and clears loaded state before sequential loads', (
     tester,
   ) async {
     await mount(tester, chatLoaded: true);
     await tester.tap(find.text(t.desktopCompareRun));
     await tester.pump();
-    expect(starts, ['chat']);
-    chat.finish();
-    await tester.pump();
-    await tester.pump();
-    expect(starts, ['chat', 'own0']);
-    created.single.finish();
-    await tester.pump();
+    expect(chat.unloaded, isTrue);
+    expect(starts, ['own0']);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(DesktopComparePage)),
+    );
+    expect(container.read(modelManagerProvider).loadedModelId, isNull);
+    await finishRun(tester);
+    expect(_Manager.residentAtLoad, everyElement(0));
+    expect(chat.disposed, isFalse);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
-    expect(chat.disposed, isFalse);
-    expect(chat.unloaded, isFalse);
-    addTearDown(() => expect(created.every((e) => e.disposed), isTrue));
   });
 
-  testWidgets('loads a separate copy while the chat engine is busy', (
-    tester,
-  ) async {
+  testWidgets('waits while chat is generating', (tester) async {
     await mount(tester, chatLoaded: true);
     chat.busy = true;
     await tester.tap(find.text(t.desktopCompareRun));
     await tester.pump();
-    expect(starts, ['own0']);
-    expect(chat.cancelled, isFalse);
+    expect(starts, isEmpty);
+    expect(chat.unloaded, isFalse);
+    expect(find.text(t.desktopCompareBusy), findsOneWidget);
+  });
+
+  testWidgets('cards show waiting, generating, done and failed outlines', (
+    tester,
+  ) async {
+    await mount(tester);
+    final context = tester.element(find.byType(DesktopComparePage));
+    Color outline(int index) =>
+        (tester
+                    .widget<DecoratedBox>(
+                      find.byKey(Key('desktopCompareCard$index')),
+                    )
+                    .decoration
+                as BoxDecoration)
+            .border!
+            .top
+            .color;
+    expect(outline(0), context.colors.hairline);
+    await tester.tap(find.text(t.desktopCompareRun));
+    await tester.pump();
+    expect(outline(0), context.colors.accent);
+    expect(outline(1), context.colors.hairline);
+    expect(find.text(t.desktopCompareDone), findsNothing);
     created[0].finish();
     await tester.pump();
     await tester.pump();
+    expect(outline(0), context.colors.success);
+    expect(find.text(t.desktopCompareDone), findsOneWidget);
+    expect(outline(1), context.colors.accent);
+    created[1].failure = StateError('generation failed');
     created[1].finish();
-    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(outline(1), context.colors.danger);
+    expect(find.text(t.desktopCompareFailed), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
-    expect(chat.disposed, isFalse);
+  });
+
+  testWidgets('each answer follows until scrolled up and resumes at bottom', (
+    tester,
+  ) async {
+    await mount(tester);
+    await tester.tap(find.text(t.desktopCompareParallel));
+    await tester.pump();
+    await tester.tap(find.text(t.desktopCompareRun));
+    await tester.pump();
+    String lines(int n) => List.generate(
+      n,
+      (i) => 'Line $i of a long streamed answer.\n\n',
+    ).join();
+    ScrollController scroll(int i) => tester
+        .widget<SingleChildScrollView>(
+          find.byKey(Key('desktopCompareAnswer$i')),
+        )
+        .controller!;
+    for (final e in created) {
+      e.chunks.add(lines(50));
+    }
+    await tester.pump();
+    await tester.pump();
+    for (var i = 0; i < 2; i++) {
+      expect(scroll(i).position.maxScrollExtent, greaterThan(0));
+      expect(scroll(i).position.extentAfter, lessThan(1));
+    }
+    await tester.drag(
+      find.byKey(const Key('desktopCompareAnswer0')),
+      const Offset(0, 300),
+    );
+    await tester.pumpAndSettle();
+    final offset = scroll(0).offset;
+    expect(scroll(0).position.extentAfter, greaterThan(32));
+    for (final e in created) {
+      e.chunks.add(lines(10));
+    }
+    await tester.pump();
+    await tester.pump();
+    expect(scroll(0).offset, closeTo(offset, 1));
+    expect(scroll(1).position.extentAfter, lessThan(1));
+    await tester.drag(
+      find.byKey(const Key('desktopCompareAnswer0')),
+      const Offset(0, -10000),
+    );
+    await tester.pumpAndSettle();
+    created[0].chunks.add(lines(5));
+    await tester.pump();
+    await tester.pump();
+    expect(scroll(0).position.extentAfter, lessThan(1));
+    await finishRun(tester);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
   });
 
   testWidgets('shows a readable memory load error', (tester) async {
@@ -474,28 +569,12 @@ void main() {
     },
   );
 
-  // C05: Compare does not borrow a reserved chat runtime
-  testWidgets('AUDIT: Compare does not borrow a reserved chat runtime', (
-    tester,
-  ) async {
+  testWidgets('reserved chat runtime prevents compare loading', (tester) async {
     await mount(tester, chatLoaded: true, chatReserved: true);
     await tester.tap(find.text(t.desktopCompareRun));
     await tester.pump();
-    final firstEngine = starts.first;
-    chat.finish();
-    await tester.pump();
-    await tester.pump();
-    for (final e in created) {
-      e.finish();
-    }
-    await tester.pump();
-    await tester.pumpWidget(const SizedBox());
-    await tester.pumpAndSettle();
-    expect(
-      firstEngine,
-      isNot('chat'),
-      reason:
-          'Chat owns the runtime while awaiting helpers even when native decoding is idle',
-    );
+    expect(starts, isEmpty);
+    expect(chat.unloaded, isFalse);
+    expect(find.text(t.desktopCompareBusy), findsOneWidget);
   });
 }

@@ -35,6 +35,9 @@ else()
   set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 endif()
 set(GGML_BACKEND_DL OFF CACHE BOOL "" FORCE)
+# Include FP8 pairs explicitly: an existing build tree can retain b11972's
+# cached list, and K/V are independently selectable in the app.
+set(GGML_CUDA_FA_QUANTS "f16-f16;q4_0-q4_0;q8_0-q8_0;bf16-bf16;f8_e4m3-f8_e4m3;f8_e4m3-f16;f16-f8_e4m3;f8_e4m3-q8_0;q8_0-f8_e4m3;f8_e4m3-q4_0;q4_0-f8_e4m3" CACHE STRING "App KV cache attention pairs" FORCE)
 option(ODLLM_KLEIDIAI "Build Arm KleidiAI CPU kernels (arm64 experiment)" OFF)
 if(ODLLM_KLEIDIAI)
   if(NOT ANDROID OR NOT CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")

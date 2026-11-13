@@ -4,6 +4,7 @@
 .tools/
 test-assets/
 native/llama.cpp/
+native/llama.cpp-b11972/
 ios/OnDeviceNative/OnDeviceNative.xcframework/
 artifacts/
 *.pyc

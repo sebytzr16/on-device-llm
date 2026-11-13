@@ -47,9 +47,7 @@ void main() {
     await tester.pumpWidget(_host(ModelCard(model: _qwen4b, memory: _phone)));
     for (final t in [
       'Qwen3.5 4B',
-      '4B',
-      'IQ4_NL',
-      '2.40 GB',
+      'qwen \u00b7 4B \u00b7 IQ4_NL \u00b7 2.40 GB',
       'Thinking',
       'Fits this device',
       'License · Apache-2.0',
@@ -140,7 +138,7 @@ void main() {
         ),
       ),
     );
-    expect(find.text('Active'), findsOneWidget);
+    expect(find.text('Loaded'), findsOneWidget);
     expect(find.text('Use model'), findsNothing);
     expect(find.text('Remove'), findsOneWidget);
     await tester.tap(find.byKey(Key('unload-${downloaded.id}')));

@@ -13,6 +13,7 @@ class BackupCipher {
   static const maxPlainBytes = 96 * 1024 * 1024;
   static const maxEncryptedBytes = maxPlainBytes + 52;
   static const maxFileBytes = 2 * 1024 * 1024 * 1024;
+  static const minPasswordLength = 12;
   static final _kdf = Pbkdf2.hmacSha256(iterations: 250000, bits: 256);
   static final _cipher = AesGcm.with256bits();
 
@@ -22,7 +23,8 @@ class BackupCipher {
     File output,
     String password,
   ) async {
-    if (password.length < 12 || await plain.length() > maxFileBytes) {
+    if (password.length < minPasswordLength ||
+        await plain.length() > maxFileBytes) {
       throw const FormatException('Invalid password or oversized backup.');
     }
     final random = Random.secure();
@@ -107,7 +109,7 @@ class BackupCipher {
   }
 
   static Future<Uint8List> encrypt(List<int> plain, String password) async {
-    if (password.length < 12) {
+    if (password.length < minPasswordLength) {
       throw const FormatException(
         'Use a backup password of at least 12 characters.',
       );

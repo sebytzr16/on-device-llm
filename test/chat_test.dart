@@ -1274,13 +1274,12 @@ void main() {
   });
 
   test(
-    'unloading the model clears the active model and blocks while busy',
+    'unloading the model clears the active model, even while busy',
     () async {
+      // Owner 2026-11-12: Eject must always work; it stops the answer first.
       final models = container.read(modelManagerProvider.notifier);
       expect(container.read(modelManagerProvider).loadedModelId, 'test');
       container.read(sessionBusyProvider.notifier).state = true;
-      await expectLater(models.unloadModel(), throwsStateError);
-      container.read(sessionBusyProvider.notifier).state = false;
       await models.unloadModel();
       expect(container.read(modelManagerProvider).loadedModelId, isNull);
     },
@@ -1418,9 +1417,11 @@ void main() {
     expect(SearchSteps.parseQueries('', fallback: 'the question'), [
       'the question',
     ]);
-    expect(SearchSteps.parseQueries('one\n' * 5, fallback: 'q'), [
-      'q',
-    ], reason: 'single words are not queries');
+    expect(
+      SearchSteps.parseQueries('one\n' * 5, fallback: 'q'),
+      ['q'],
+      reason: 'single words are not queries',
+    );
   });
 
   test('groundingNotice flags refusals, missing and bogus citations', () {

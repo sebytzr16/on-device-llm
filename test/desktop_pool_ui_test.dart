@@ -222,7 +222,7 @@ void main() {
     (tester) async {
       await show(tester, const DesktopModelsPage());
       expect(find.text('SERVING'), findsNWidgets(2));
-      expect(find.text('42 tok/s'), findsOneWidget);
+      expect(find.textContaining('42 tok/s'), findsOneWidget);
     },
   );
 }

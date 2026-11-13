@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/features/knowledge/document_embedding_cache.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   late Directory dir;
   late DocumentEmbeddingCache cache;
   var calls = 0;

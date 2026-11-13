@@ -28,6 +28,7 @@ import '../advanced_pages_2_test.dart' show TestModels, TestSettings;
 class DesktopTestChat extends ChatNotifier {
   final sent = <String>[];
   final sentAttachments = <List<Attachment>>[];
+  final sentAudio = <String?>[];
   bool accepts = true;
   int cancellations = 0;
 
@@ -50,6 +51,7 @@ class DesktopTestChat extends ChatNotifier {
     bool insertUser = true,
     ChatMessage? resume,
     List<Attachment> attachments = const [],
+    String? audioPath,
     ModelInfo? compareWith,
     String? reuseSourcesJson,
     String? parentId,
@@ -69,6 +71,7 @@ class DesktopTestChat extends ChatNotifier {
   }) async {
     sent.add(input);
     sentAttachments.add(attachments);
+    sentAudio.add(audioPath);
     return accepts;
   }
 }

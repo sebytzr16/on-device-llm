@@ -65,6 +65,10 @@ Future<void> main(List<String> args) async {
               'type': 'text',
               'text': switch (name) {
                 'echo' => arguments['text'],
+                'context' => jsonEncode({
+                  'cwd': Directory.current.path,
+                  'env': Platform.environment,
+                }),
                 'add' => '${(arguments['a'] as num) + (arguments['b'] as num)}',
                 _ => 'fixture error',
               },

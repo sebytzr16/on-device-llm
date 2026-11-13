@@ -1,3 +1,4 @@
+import 'package:ondevice_llm/data/storage/model_storage.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -26,6 +27,16 @@ class _Paths extends PathProviderPlatform {
   final String path;
   @override
   Future<String?> getApplicationSupportPath() async => path;
+}
+
+/// Placeholder component files: loading needs them present (not verified).
+Future<void> _placeholderImageFiles() async {
+  for (final m in [...imageGenCatalog, ...upscalerTools]) {
+    for (final f in m.files) {
+      final file = await ModelStorage.modelFile(f.fileName);
+      if (!await file.exists()) await file.create(recursive: true);
+    }
+  }
 }
 
 void main() {
@@ -69,6 +80,7 @@ void main() {
       final previousDesktop = DesktopHost.active;
       PathProviderPlatform.instance = _Paths(root.path);
       DesktopHost.active = false;
+      await _placeholderImageFiles();
       final calls = <String>[];
       final engine = SdEngine(
         invoke: (op, args) async {

@@ -45,6 +45,11 @@ class _RemoteProfilePageState extends ConsumerState<RemoteProfilePage> {
       .where((p) => p.id == widget.profileId)
       .firstOrNull;
 
+  Map<String, String> get _savedHeaders {
+    final s = ref.read(settingsProvider);
+    return s.remoteHeaders[widget.profileId] ?? (_profile?.headers ?? const {});
+  }
+
   @override
   void initState() {
     super.initState();
@@ -57,7 +62,7 @@ class _RemoteProfilePageState extends ConsumerState<RemoteProfilePage> {
     _model = TextEditingController(text: p.model);
     _limitModel = p.model.trim();
     _headers = TextEditingController(
-      text: RemoteProfile.formatHeaders(p.headers),
+      text: RemoteProfile.formatHeaders(_savedHeaders),
     );
     _perMinute = TextEditingController(
       text: p.limit.perMinute > 0 ? '${p.limit.perMinute}' : '',
@@ -114,7 +119,7 @@ class _RemoteProfilePageState extends ConsumerState<RemoteProfilePage> {
         RemoteProfile.formatHeaders(
               RemoteProfile.parseHeaders(_headers.text),
             ) !=
-            RemoteProfile.formatHeaders(p.headers) ||
+            RemoteProfile.formatHeaders(_savedHeaders) ||
         n(_perMinute) !=
             (p.limits[_model.text.trim()] ?? const RemoteLimit()).perMinute ||
         n(_perDay) !=
@@ -159,12 +164,13 @@ class _RemoteProfilePageState extends ConsumerState<RemoteProfilePage> {
     final n = ref.read(settingsProvider.notifier);
     final current = _profile;
     if (current == null) return;
+    final headers = RemoteProfile.parseHeaders(_headers.text);
     var next = current.copyWith(
       name: _name.text.trim(),
       providerId: providerId,
       baseUrl: _url.text.trim(),
       model: _model.text.trim(),
-      headers: RemoteProfile.parseHeaders(_headers.text),
+      headers: headers,
     );
     _limitDrafts[_limitModel] = _typedLimit;
     for (final e in _limitDrafts.entries) {
@@ -175,6 +181,7 @@ class _RemoteProfilePageState extends ConsumerState<RemoteProfilePage> {
         remoteProfiles: [
           for (final p in s.remoteProfiles) p.id == next.id ? next : p,
         ],
+        remoteHeaders: {...s.remoteHeaders, next.id: headers},
       ),
     );
     final key = _key.text.trim();

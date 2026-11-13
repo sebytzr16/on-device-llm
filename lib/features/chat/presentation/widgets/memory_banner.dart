@@ -23,12 +23,17 @@ class MemoryBanner extends ConsumerWidget {
     final first = learned.first.content;
     final more = learned.length - 1;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(AppDesign.lg, AppDesign.xs, 6, 0),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpace.phonePage,
+        AppSpace.xs,
+        AppSpace.sm,
+        0,
+      ),
       child: Row(
         key: const Key('memory-banner'),
         children: [
           Icon(Icons.psychology_alt_outlined, size: 14, color: c.accent),
-          const SizedBox(width: 6),
+          const SizedBox(width: AppSpace.sm),
           Expanded(
             child: Text(
               more > 0 ? t.rememberedMore(first, more) : t.rememberedOne(first),
@@ -82,7 +87,7 @@ Future<void> showLearnedDialog(
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
-        spacing: AppDesign.md,
+        spacing: AppSpace.md,
         children: [
           Text(t.memoryDialogHint, style: context.text.bodyMuted),
           TextField(
@@ -95,8 +100,10 @@ Future<void> showLearnedDialog(
         ],
       ),
       actions: [
-        FilledButton(
-          style: dangerButtonStyle(context.colors),
+        OutlinedButton(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: context.colors.danger,
+          ),
           key: const Key('memory-discard'),
           onPressed: () => Navigator.pop(context, 'discard'),
           child: Text(t.discard),

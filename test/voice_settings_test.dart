@@ -34,8 +34,9 @@ class _Models extends ModelManagerNotifier {
 }
 
 class _Packs extends VoiceModelsNotifier {
-  _Packs(this.ready);
+  _Packs(this.ready, {this.legacy = const {}});
   final Set<String> ready;
+  final Set<String> legacy;
   final downloaded = <VoicePack>[];
   final removed = <VoicePack>[];
 
@@ -62,6 +63,7 @@ class _Packs extends VoiceModelsNotifier {
     for (final p in VoiceModels.all)
       p.id: VoicePackState(
         ready.contains(p.id) ? VoicePackStatus.ready : VoicePackStatus.missing,
+        legacy: legacy.contains(p.id),
       ),
   });
 }
@@ -72,6 +74,7 @@ void main() {
   Future<ProviderContainer> pump(
     WidgetTester tester, {
     required Set<String> ready,
+    Set<String> legacy = const {},
     InferenceSettings settings = const InferenceSettings(),
   }) async {
     tester.view.physicalSize = const Size(412, 2400);
@@ -81,7 +84,7 @@ void main() {
       overrides: [
         settingsProvider.overrideWith(() => _Settings(settings)),
         modelManagerProvider.overrideWith(_Models.new),
-        voiceModelsProvider.overrideWith(() => _Packs(ready)),
+        voiceModelsProvider.overrideWith(() => _Packs(ready, legacy: legacy)),
       ],
     );
     addTearDown(container.dispose);
@@ -103,7 +106,7 @@ void main() {
   testWidgets('Parakeet is offered as a download and chosen only when there', (
     tester,
   ) async {
-    await pump(
+    final container = await pump(
       tester,
       ready: {VoiceModels.listening.id, VoiceModels.speaking.id},
     );
@@ -120,6 +123,12 @@ void main() {
           .selected,
       isTrue,
     );
+    // The download offered is Parakeet Ultra, not the older v3 pack.
+    await tester.ensureVisible(find.byKey(const Key('parakeet-add')));
+    await tester.tap(find.byKey(const Key('parakeet-add')));
+    await tester.pump();
+    final packs = container.read(voiceModelsProvider.notifier) as _Packs;
+    expect(packs.downloaded, [VoiceModels.parakeetUltra]);
   });
 
   testWidgets('a downloaded Parakeet can be picked', (tester) async {
@@ -128,7 +137,7 @@ void main() {
       ready: {
         VoiceModels.listening.id,
         VoiceModels.speaking.id,
-        VoiceModels.parakeet.id,
+        VoiceModels.parakeetUltra.id,
       },
     );
     expect(find.byKey(const Key('parakeet-remove')), findsOneWidget);
@@ -146,6 +155,32 @@ void main() {
     );
   });
 
+  testWidgets('Parakeet v3 files keep working and offer the Ultra upgrade', (
+    tester,
+  ) async {
+    final container = await pump(
+      tester,
+      ready: {
+        VoiceModels.listening.id,
+        VoiceModels.speaking.id,
+        VoiceModels.parakeet.id,
+      },
+    );
+    // The old v3 files listen already, and Ultra is the download offered.
+    final chip = tester.widget<ChoiceChip>(
+      find.byKey(const Key('listening-parakeet')),
+    );
+    expect(chip.onSelected, isNotNull, reason: 'v3 files are installed');
+    expect(find.byKey(const Key('parakeet-add')), findsOneWidget);
+    expect(find.byKey(const Key('parakeet-remove')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('listening-parakeet')));
+    await tester.pump();
+    expect(
+      container.read(settingsProvider).listeningModel,
+      VoiceModels.parakeetSetting,
+    );
+  });
+
   testWidgets(
     'selecting missing Supertonic offers its download and preserves Kokoro',
     (tester) async {
@@ -159,10 +194,10 @@ void main() {
             .selected,
         isTrue,
       );
-      await tester.tap(find.byKey(const Key('reading-supertonic-2')));
+      await tester.tap(find.byKey(const Key('reading-supertonic-3')));
       await tester.pump();
-      expect(container.read(settingsProvider).readingVoice, 'supertonic-2');
-      expect(find.textContaining('Supertonic 2'), findsWidgets);
+      expect(container.read(settingsProvider).readingVoice, 'supertonic-3');
+      expect(find.textContaining('Supertonic 3'), findsWidgets);
       expect(find.byKey(const Key('voice-add')), findsOneWidget);
       expect(find.byKey(const Key('kokoro-voice')), findsNothing);
       await tester.ensureVisible(find.byKey(const Key('voice-add')));
@@ -193,6 +228,31 @@ void main() {
       await tester.pump();
       expect(container.read(settingsProvider).readingVoice, 'kokoro');
       expect(find.text('Heart'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'a Supertonic 2 folder speaks while the row offers Supertonic 3',
+    (tester) async {
+      final container = await pump(
+        tester,
+        ready: {
+          VoiceModels.listening.id,
+          VoiceModels.speaking.id,
+          VoiceModels.supertonic.id,
+        },
+        legacy: {VoiceModels.supertonic.id},
+        settings: const InferenceSettings(readingVoice: 'supertonic-3'),
+      );
+      // The old folder still speaks ...
+      expect(
+        container.read(voiceModelsProvider).canSpeakWith('supertonic-3'),
+        isTrue,
+      );
+      expect(find.byKey(const Key('kokoro-voice')), findsOneWidget);
+      // ... and the download row still offers Supertonic 3.
+      expect(find.byKey(const Key('voice-add')), findsOneWidget);
+      expect(find.byKey(const Key('voice-remove')), findsNothing);
     },
   );
 }

@@ -225,7 +225,7 @@ void main() {
         connector: (_) async => transport = FakeMcpTransport(),
       );
       await registry.saveConfig(
-        '{"mcpServers":{"fixture":{"command":"fake"}}}',
+        '{"mcpServers":{"fixture":{"url":"http://localhost:1/mcp"}}}',
       );
     });
     tearDown(() async {
@@ -325,6 +325,34 @@ void main() {
       expect(restored.alwaysAllowed(call.name), false);
       restored.dispose();
     });
+    test('remote confirmation required even for always-allowed tools', () async {
+      // Set up always-allowed locally
+      registry.confirm = (_, _) async => McpConsent.always;
+      await run();
+      expect(registry.alwaysAllowed(call.name), true);
+      registry.confirm = (_, _) async =>
+          throw StateError('local confirm must not be called');
+
+      // Simulate a remote call with its own confirmation callback
+      var remotePrompted = false;
+      final remoteConfirmation = (String server, ToolCall call) async {
+        remotePrompted = true;
+        return McpConsent.once;
+      };
+      final result = await registry.call(
+        call,
+        explain: (e) => mcpExplain(t, e),
+        unsupportedContent: t.mcpUnsupportedContent,
+        confirmation: remoteConfirmation,
+      );
+      expect(result.ok, true);
+      expect(
+        remotePrompted,
+        true,
+        reason:
+            'Remote confirmation must be prompted even for always-allowed tools',
+      );
+    });
     test('revoked availability while confirming is rechecked', () async {
       final approval = Completer<McpConsent>();
       registry.confirm = (_, _) => approval.future;
@@ -412,6 +440,8 @@ void main() {
   test(
     'real bundled-Dart stdio server end to end, stderr, error, timeout and crash',
     () async {
+      final root = await Directory.systemTemp.createTemp('mcp-work-test-');
+      addTearDown(() => root.delete(recursive: true));
       final stderr = <String>[];
       final transport = await StdioMcpTransport.start(
         McpServerConfig(
@@ -420,10 +450,24 @@ void main() {
           args: [File('test/fixtures/mcp_server.dart').absolute.path],
         ),
         log: stderr.add,
+        approved: true,
+        workingDirectory: root,
       );
       final client = McpClient(transport, timeout: const Duration(seconds: 2));
       addTearDown(client.close);
       await client.initialize();
+      final context = await client.callTool('context', {});
+      final launch =
+          jsonDecode(
+                ((context['content'] as List).single as Map)['text'] as String,
+              )
+              as Map;
+      expect(launch['cwd'], root.absolute.path);
+      final environment = launch['env'] as Map;
+      expect(environment['HOME'], root.absolute.path);
+      expect(environment['USERPROFILE'], root.absolute.path);
+      expect(environment['PATH'], isNull);
+      expect(environment['Path'], isNull);
       expect((await client.listTools()).map((t) => t['name']), ['echo', 'add']);
       expect((await client.callTool('echo', {'text': 'hello'}))['content'], [
         {'type': 'text', 'text': 'hello'},
@@ -471,6 +515,75 @@ void main() {
     expect(resolve('missing'), 'missing');
     expect(resolve('npx', {'PATH': r'C:\other'}), 'npx');
   });
+  test('Windows batch file args reject shell metacharacters', () {
+    // .cmd target: forbidden chars should throw
+    expect(
+      () => StdioMcpTransport.validateWindowsBatchArgs(r'C:\node\npx.cmd', [
+        'normal',
+        'arg',
+      ]),
+      returnsNormally,
+    );
+    for (final bad in [
+      '&',
+      '|',
+      '<',
+      '>',
+      '^',
+      '%',
+      '"',
+      'a&b',
+      'a|b',
+      'a"b',
+    ]) {
+      expect(
+        () => StdioMcpTransport.validateWindowsBatchArgs(r'C:\node\npx.cmd', [
+          bad,
+        ]),
+        throwsA(
+          isA<McpException>().having(
+            (e) => e.problem,
+            'problem',
+            McpProblem.batchArgs,
+          ),
+        ),
+        reason: 'arg: $bad',
+      );
+    }
+    // .bat target: same restrictions
+    expect(
+      () => StdioMcpTransport.validateWindowsBatchArgs(r'C:\scripts\run.bat', [
+        'bad&arg',
+      ]),
+      throwsA(
+        isA<McpException>().having(
+          (e) => e.problem,
+          'problem',
+          McpProblem.batchArgs,
+        ),
+      ),
+    );
+    // Non-batch targets: no restriction
+    expect(
+      () => StdioMcpTransport.validateWindowsBatchArgs(r'C:\tools\server.exe', [
+        '&',
+        '|',
+        '<',
+        '>',
+        '^',
+        '%',
+        '"',
+      ]),
+      returnsNormally,
+    );
+    expect(
+      () => StdioMcpTransport.validateWindowsBatchArgs(
+        'npx', // unresolved, not a batch file
+        ['&', '|'],
+      ),
+      returnsNormally,
+    );
+  });
   test(
     'long tool aliases are stable, bounded and dispatch through reverse map',
     () async {
@@ -493,7 +606,7 @@ void main() {
       await registry.saveConfig(
         jsonEncode({
           'mcpServers': {
-            name: {'command': 'fixture'},
+            name: {'url': 'http://localhost:1/mcp'},
           },
         }),
       );
@@ -553,7 +666,7 @@ void main() {
         await dir.delete(recursive: true);
       });
       await registry.saveConfig(
-        '{"mcpServers":{"fixture":{"command":"fixture"}}}',
+        '{"mcpServers":{"fixture":{"url":"http://localhost:1/mcp"}}}',
       );
       registry.confirm = (_, _) async => McpConsent.once;
       transport.silent = true;

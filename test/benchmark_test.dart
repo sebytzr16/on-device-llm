@@ -1,6 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ondevice_llm/desktop/benchmark_receipt.dart';
 import 'package:ondevice_llm/core/constants/app_constants.dart';
 import 'package:ondevice_llm/core/providers/shared_providers.dart';
 import 'package:ondevice_llm/data/local/database/app_database.dart';
@@ -110,6 +111,14 @@ void main() {
       );
       expect(card, contains('Samples: 141/32.0, 135/33.0, 129/34.0 tok/s'));
       expect(card, contains('Chat: 310 tok · first token 2.50 s · 35.0 tok/s'));
+      // Recorded in the shared history the benchmark dialog lists.
+      final receipts = container.read(benchmarkReceiptsProvider);
+      expect(receipts, hasLength(1));
+      expect(receipts.single.json['modelId'], 'test');
+      expect(receipts.single.json['backend'], result.backend);
+      final short =
+          (receipts.single.json['promptClasses'] as Map)['short'] as Map;
+      expect(short['medianTokensPerSecond'], greaterThan(0));
       // Persisted for the next launch.
       final again = ProviderContainer(
         overrides: [

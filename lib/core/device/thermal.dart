@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// Readable thermal zones, for benchmark records (B5). Android exposes
 /// `/sys/class/thermal/thermal_zone*/{type,temp}`; which ones a normal app
@@ -38,7 +39,9 @@ class ThermalState {
           // Zone not readable by this app: skip it.
         }
       }
-    } catch (_) {}
+    } catch (e, st) {
+      quietFailure('thermal:41', e, st);
+    }
     return out;
   }
 

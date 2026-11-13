@@ -8,7 +8,10 @@ import 'package:logging/logging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../features/models/presentation/widgets/model_categories.dart';
 import '../core/l10n/l10n.dart';
+import '../core/design/app_design.dart';
+import '../features/settings/presentation/widgets/settings_widgets.dart';
 import '../core/motion/spring_controls.dart';
 import '../core/platform/desktop_host.dart';
 import '../features/hosting/presentation/device_hosting_provider.dart';
@@ -78,14 +81,15 @@ class DesktopTraySettingsPanel extends ConsumerWidget {
     final notifier = ref.read(desktopTraySettingsProvider.notifier);
     return Column(
       children: [
-        ListTile(
+        SettingsTile(
           title: Text(context.l10n.desktopTrayWhenServing),
           trailing: SpringSwitch(
             value: settings.whenServing,
             onChanged: (value) => notifier.update(whenServing: value),
           ),
         ),
-        ListTile(
+        Divider(height: 1, color: context.colors.hairline),
+        SettingsTile(
           title: Text(context.l10n.desktopTrayAlways),
           trailing: SpringSwitch(
             value: settings.always,
@@ -384,7 +388,9 @@ class _DesktopTrayHostState extends ConsumerState<DesktopTrayHost> {
         servedName: servedName,
         models: [
           for (final m in models.catalog)
-            if (m.isDownloaded) (id: m.id, name: m.displayName),
+            if (m.isDownloaded &&
+                modelCategory(m.fileName) == ModelCategory.llm)
+              (id: m.id, name: m.displayName),
         ],
       ),
     );

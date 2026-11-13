@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -68,7 +69,7 @@ void main() {
       api = WorkspaceApi(
         capabilities: const [],
         run: (job, input) async {
-          api.decodeMessages(
+          await api.decodeMessages(
             job,
             fail
                 ? [
@@ -107,17 +108,24 @@ void main() {
     () async {
       late WorkspaceApi api;
       final images = <File>[];
+      final decoded = <Completer<void>>[];
       api = WorkspaceApi(
         capabilities: const [],
         run: (job, input) async {
+          final done = Completer<void>();
+          decoded.add(done);
           final files = <File>[];
-          api.decodeMessages(
-            job,
-            input['messages'],
-            vision: true,
-            images: files,
-          );
-          images.add(files.single);
+          try {
+            await api.decodeMessages(
+              job,
+              input['messages'],
+              vision: true,
+              images: files,
+            );
+            images.add(files.single);
+          } finally {
+            done.complete();
+          }
           await job.cancel.whenCancel;
         },
       );
@@ -125,6 +133,10 @@ void main() {
       for (var i = 0; i < 2; i++) {
         await post('jobs', {'requestId': '$i', 'messages': imageMessages});
       }
+      // Decoding now awaits the private directory and file writes, so the
+      // accepted response can arrive before a job's image is on disk.
+      expect(decoded, hasLength(2));
+      await Future.wait(decoded.map((done) => done.future));
       expect(images, hasLength(2));
       expect(images[0].parent.path, isNot(images[1].parent.path));
       for (final image in images) {

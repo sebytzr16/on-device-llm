@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/core/providers/shared_providers.dart';
+import 'package:ondevice_llm/desktop/desktop_theme.dart';
+import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:ondevice_llm/data/local/database/app_database.dart';
 import 'package:ondevice_llm/features/goals/goal_runner.dart';
 import 'package:ondevice_llm/features/goals/presentation/goal_provider.dart';
@@ -45,6 +47,55 @@ void main() {
     );
     addTearDown(c.dispose);
     return c;
+  }
+
+  for (final width in [1400.0, 700.0]) {
+    testWidgets(
+      'desktop goals keeps history and report in separate panes at $width',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        tester.view.physicalSize = Size(width, 900);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final c = container();
+        await c.read(goalProvider.notifier).ready;
+        final history = c.read(goalHistoryProvider.notifier);
+        await history.ready;
+        await history.put(_finished('Desktop history report'));
+        final entry = c.read(goalHistoryProvider).single;
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: c,
+            child: MaterialApp(
+              theme: DesktopTheme.of(AccentChoice.amber, dark: true),
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              home: const GoalsPage(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final workspace = find.byKey(const Key('desktop-goals-workspace'));
+        expect(
+          tester.widget<Flex>(workspace).direction,
+          width >= 1000 ? Axis.horizontal : Axis.vertical,
+        );
+        expect(find.byKey(const Key('goal-objective')), findsOneWidget);
+        await tester.tap(find.byKey(Key('desktop-goal-history-${entry.id}')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('goal-report')), findsOneWidget);
+        expect(find.byKey(const Key('desktop-goals-history')), findsOneWidget);
+        expect(find.byType(BackButton), findsNothing);
+        await tester.tap(find.byKey(const Key('goal-past-delete')));
+        await tester.pumpAndSettle();
+        expect(c.read(goalHistoryProvider), isEmpty);
+        expect(workspace, findsOneWidget);
+        expect(find.byKey(const Key('goal-objective')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpAndSettle();
+      },
+    );
   }
 
   test(

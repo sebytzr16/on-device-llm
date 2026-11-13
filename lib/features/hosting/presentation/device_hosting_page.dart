@@ -7,12 +7,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../app.dart';
 import '../../../core/design/app_design.dart';
+import '../../../core/design/app_dialog.dart';
 import '../../../core/design/app_sheet.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/motion/motion.dart';
 import '../../models/presentation/providers/model_manager_provider.dart';
 import '../../settings/presentation/widgets/settings_widgets.dart';
 import '../device_model_server.dart';
+import '../pairing_code.dart';
 import 'device_hosting_provider.dart';
 import 'qr_view.dart';
 import '../../../core/island/status_island.dart';
@@ -230,6 +232,8 @@ class _DeviceHostingPageState extends ConsumerState<DeviceHostingPage> {
         !_switching &&
         modelName != null &&
         _portError == null;
+    final tlsError = context.l10n.hostTlsIdentityError;
+    final showResetIdentity = state.error == tlsError;
     return [
       if (state.stoppedReason != null)
         SettingsNote(
@@ -238,7 +242,37 @@ class _DeviceHostingPageState extends ConsumerState<DeviceHostingPage> {
           tone: c.warning,
         ),
       if (state.error != null)
-        SettingsNote(state.error!, icon: Icons.error_outline, tone: c.danger),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SettingsNote(
+              state.error!,
+              icon: Icons.error_outline,
+              tone: c.danger,
+            ),
+            if (showResetIdentity)
+              Padding(
+                padding: const EdgeInsets.only(top: AppDesign.sm),
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    final confirmed = await confirmAction(
+                      context,
+                      title: context.l10n.hostResetIdentity,
+                      message: context.l10n.hostResetIdentityConfirm,
+                      confirmLabel: context.l10n.hostResetIdentity,
+                      destructive: true,
+                    );
+                    if (confirmed && context.mounted) {
+                      await controller.resetHostIdentity();
+                    }
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: Text(context.l10n.hostResetIdentity),
+                  style: OutlinedButton.styleFrom(foregroundColor: c.danger),
+                ),
+              ),
+          ],
+        ),
       _modelRow(context, modelName: modelName),
       SettingsSection(
         label: context.l10n.hostConnection,
@@ -481,6 +515,18 @@ class _DeviceHostingPageState extends ConsumerState<DeviceHostingPage> {
                           key: const Key('host-pair-code'),
                           style: context.text.title.copyWith(letterSpacing: 4),
                         ),
+                        if (state.fingerprint case final fingerprint?) ...[
+                          const SizedBox(height: AppDesign.sm),
+                          Text(
+                            context.l10n.hostPairFingerprint,
+                            style: context.text.bodyMuted,
+                          ),
+                          Text(
+                            PairingCode.shortFingerprint(fingerprint),
+                            key: const Key('host-pair-fingerprint'),
+                            style: context.text.mono,
+                          ),
+                        ],
                         if (state.pairExpiresAt case final until?)
                           Text(
                             context.l10n.hostPairValidUntil(
@@ -514,6 +560,29 @@ class _DeviceHostingPageState extends ConsumerState<DeviceHostingPage> {
           textAlign: TextAlign.center,
         ),
       ],
+      SettingsSection(
+        label: context.l10n.hostPairedDevices,
+        children: [
+          if (state.legacyTokenEnabled)
+            SettingsRow(
+              title: Text(context.l10n.hostLegacyDevices),
+              subtitle: Text(context.l10n.hostLegacyDevicesHint),
+              trailing: TextButton(
+                onPressed: () => controller.revokeDevice('legacy'),
+                child: Text(context.l10n.hostRevokeDevice),
+              ),
+            ),
+          for (final device in state.pairedDevices)
+            SettingsRow(
+              title: Text(device.name),
+              subtitle: Text(device.pairedAt.toLocal().toString()),
+              trailing: TextButton(
+                onPressed: () => controller.revokeDevice(device.id),
+                child: Text(context.l10n.hostRevokeDevice),
+              ),
+            ),
+        ],
+      ),
       SettingsSection(label: context.l10n.hostRecent),
       if (state.log.isEmpty)
         Text(context.l10n.hostNoneYet, style: context.text.bodyMuted)

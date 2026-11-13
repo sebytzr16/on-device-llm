@@ -195,6 +195,7 @@ void main() {
         fingerprint: 'live',
         run: (_) => jobGate.future,
       );
+      workspace.debugAssignOwner(job.id, 'legacy');
       final subscriptions = <StreamSubscription<List<int>>>[];
       final transports = <HttpClient>[];
       addTearDown(() async {
@@ -323,6 +324,7 @@ void main() {
           fingerprint: 'control',
           run: (_) => jobGate.future,
         );
+        workspace.debugAssignOwner(job.id, 'legacy');
         final answer = job.approve('Allow this operation?');
         final approvalId = job.pendingApprovals.single;
         final transports = <HttpClient>[];

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/core/utils/priority_work_queue.dart';
@@ -9,6 +10,8 @@ import 'package:ondevice_llm/features/chat/domain/export/document_draft_store.da
 import 'package:ondevice_llm/inference/remote/remote_provider.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   test(
     'streamed encryption interoperates with existing backup envelopes',
     () async {

@@ -437,10 +437,17 @@ class RemoteProfile {
 
   RemoteProvider get provider => RemoteProvider.byId(providerId);
 
-  /// The base URL when it is a usable http(s) address.
+  /// The base URL when it is a usable http(s) address without credentials.
+  /// URL userinfo and query/fragment secrets are rejected: they cannot be
+  /// kept out of plaintext settings or diagnostics.
   Uri? get uri {
     final u = Uri.tryParse(baseUrl.trim());
-    if (u == null || !['http', 'https'].contains(u.scheme) || u.host.isEmpty) {
+    if (u == null ||
+        !['http', 'https'].contains(u.scheme) ||
+        u.host.isEmpty ||
+        u.userInfo.isNotEmpty ||
+        u.hasQuery ||
+        u.hasFragment) {
       return null;
     }
     return u;
@@ -489,19 +496,32 @@ class RemoteProfile {
     'id': id,
     'name': name,
     'providerId': providerId,
-    'baseUrl': baseUrl,
+    'baseUrl': sanitizeBaseUrl(baseUrl),
     if (fingerprint != null) 'fingerprint': fingerprint,
     'model': model,
     'shareMemory': shareMemory,
     'learnMemory': learnMemory,
     'serverSettings': serverSettings,
-    if (headers.isNotEmpty) 'headers': headers,
+    // Header values live in the keystore (InferenceSettings.remoteHeaders),
+    // never in the plaintext settings JSON.
     if (limits.isNotEmpty)
       'limits': {for (final e in limits.entries) e.key: e.value.toJson()},
   };
 
   static String _text(Object? v, int limit) =>
       v is String ? v.substring(0, v.length.clamp(0, limit)) : '';
+
+  /// Drops a saved URL carrying credentials, a query or a fragment instead
+  /// of persisting it in plaintext settings.
+  static String sanitizeBaseUrl(Object? v) {
+    final url = _text(v, 2000).trim();
+    final uri = Uri.tryParse(url);
+    if (uri != null &&
+        (uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment)) {
+      return '';
+    }
+    return url;
+  }
 
   /// A connection another phone shared from "Use this device as a server"
   /// (copied text or its QR code): the profile and its access key, or null
@@ -583,7 +603,7 @@ class RemoteProfile {
       id: id,
       name: _text(raw['name'], 80),
       providerId: RemoteProvider.byId(_text(raw['providerId'], 40)).id,
-      baseUrl: _text(raw['baseUrl'], 2000),
+      baseUrl: sanitizeBaseUrl(raw['baseUrl']),
       fingerprint: raw['fingerprint'] == null
           ? null
           : _text(raw['fingerprint'], 128),

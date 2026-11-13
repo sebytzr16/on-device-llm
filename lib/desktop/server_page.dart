@@ -7,9 +7,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/design/app_design.dart';
+import '../core/design/app_dialog.dart';
 import '../core/l10n/l10n.dart';
 import '../features/hosting/device_model_server.dart';
 import '../features/hosting/model_pool.dart';
+import '../features/hosting/pairing_code.dart';
 import '../features/hosting/presentation/device_hosting_provider.dart';
 import '../features/hosting/presentation/pool_options_provider.dart';
 import '../features/hosting/presentation/qr_view.dart';
@@ -178,7 +180,7 @@ class _DesktopServerPageState extends ConsumerState<DesktopServerPage> {
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpace.row),
         Align(
           alignment: Alignment.centerLeft,
           child: DeveloperButton(
@@ -201,7 +203,7 @@ class _DesktopServerPageState extends ConsumerState<DesktopServerPage> {
           const SizedBox(height: 10),
           Text(t.desktopServerNeedsModel, style: context.text.small),
         ],
-        const SizedBox(height: 20),
+        const SizedBox(height: AppSpace.section),
         if (host.running) ...[
           value(
             t.desktopServerBind,
@@ -216,15 +218,54 @@ class _DesktopServerPageState extends ConsumerState<DesktopServerPage> {
           t.desktopServerModel,
           modelLabel.isEmpty ? t.desktopServerNoModel : modelLabel,
         ),
-        if (host.error != null || _actionError != null)
-          Text(
-            _actionError ?? host.error!,
-            style: context.text.small.copyWith(color: context.colors.danger),
-          ),
-        if (host.stoppedReason != null)
-          Text(host.stoppedReason!, style: context.text.small),
       ],
     );
+    final tlsError = t.hostTlsIdentityError;
+    final showResetIdentity =
+        (host.error == tlsError) || (_actionError == tlsError);
+    if (host.error != null || _actionError != null) {
+      controls.children.add(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _actionError ?? host.error!,
+              style: context.text.small.copyWith(color: context.colors.danger),
+            ),
+            if (showResetIdentity)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    final confirmed = await confirmAction(
+                      context,
+                      title: t.hostResetIdentity,
+                      message: t.hostResetIdentityConfirm,
+                      confirmLabel: t.hostResetIdentity,
+                      destructive: true,
+                    );
+                    if (confirmed && context.mounted) {
+                      await ref
+                          .read(deviceHostingProvider.notifier)
+                          .resetHostIdentity();
+                    }
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: Text(t.hostResetIdentity),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: context.colors.danger,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+    if (host.stoppedReason != null) {
+      controls.children.add(
+        Text(host.stoppedReason!, style: context.text.small),
+      );
+    }
     void setPool(PoolOptions next) =>
         unawaited(ref.read(poolOptionsProvider.notifier).set(next));
     final ids = <String>{
@@ -424,6 +465,33 @@ class _DesktopServerPageState extends ConsumerState<DesktopServerPage> {
         ],
       ],
     );
+    final paired = DeveloperCard(
+      title: t.hostPairedDevices,
+      children: [
+        if (host.legacyTokenEnabled)
+          ListTile(
+            title: Text(t.hostLegacyDevices),
+            subtitle: Text(t.hostLegacyDevicesHint),
+            trailing: TextButton(
+              onPressed: () => ref
+                  .read(deviceHostingProvider.notifier)
+                  .revokeDevice('legacy'),
+              child: Text(t.hostRevokeDevice),
+            ),
+          ),
+        for (final device in host.pairedDevices)
+          ListTile(
+            title: Text(device.name),
+            subtitle: Text(device.pairedAt.toLocal().toString()),
+            trailing: TextButton(
+              onPressed: () => ref
+                  .read(deviceHostingProvider.notifier)
+                  .revokeDevice(device.id),
+              child: Text(t.hostRevokeDevice),
+            ),
+          ),
+      ],
+    );
     final api = DeveloperCard(
       title: t.desktopServerEndpoints,
       children: [
@@ -435,7 +503,7 @@ class _DesktopServerPageState extends ConsumerState<DesktopServerPage> {
           'POST ${DeviceModelServer.messagesPath}',
           style: context.text.mono,
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: AppSpace.section),
         value(
           t.desktopServerToken,
           host.token == null
@@ -462,9 +530,9 @@ class _DesktopServerPageState extends ConsumerState<DesktopServerPage> {
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpace.row),
         Text(t.desktopServerRegenerateHint, style: context.text.small),
-        const SizedBox(height: 20),
+        const SizedBox(height: AppSpace.section),
         value(t.desktopServerCurl, curl, copy: true),
       ],
     );
@@ -509,6 +577,13 @@ class _DesktopServerPageState extends ConsumerState<DesktopServerPage> {
                           ),
                           style: context.text.small,
                         ),
+                      if (host.fingerprint case final fingerprint?) ...[
+                        const SizedBox(height: 12),
+                        value(
+                          t.hostPairFingerprint,
+                          PairingCode.shortFingerprint(fingerprint),
+                        ),
+                      ],
                     ],
                   ],
                 ),
@@ -518,13 +593,13 @@ class _DesktopServerPageState extends ConsumerState<DesktopServerPage> {
         else
           Text(t.desktopServerPairOff, style: context.text.small),
         if (Platform.isWindows && lanOn) ...[
-          const SizedBox(height: 20),
+          const SizedBox(height: AppSpace.section),
           const _NetworkCheck(),
         ],
       ],
     );
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.all(AppSpace.desktopPage),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -546,16 +621,22 @@ class _DesktopServerPageState extends ConsumerState<DesktopServerPage> {
                       ],
                     )
                   : Column(
-                      children: [controls, const SizedBox(height: 20), api],
+                      children: [
+                        controls,
+                        const SizedBox(height: AppSpace.section),
+                        api,
+                      ],
                     ),
             ),
-          const SizedBox(height: 20),
+          const SizedBox(height: AppSpace.section),
           if (advanced) pool,
-          const SizedBox(height: 20),
+          const SizedBox(height: AppSpace.section),
           pair,
-          const SizedBox(height: 20),
+          const SizedBox(height: AppSpace.section),
+          if (host.running) paired,
+          const SizedBox(height: AppSpace.section),
           if (advanced) ServerUsageCard(usage: host.usage),
-          const SizedBox(height: 20),
+          const SizedBox(height: AppSpace.section),
           if (advanced)
             DeveloperCard(
               title: t.desktopServerRequests,
@@ -668,7 +749,10 @@ class _NetworkCheckState extends ConsumerState<_NetworkCheck> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(text, style: context.text.body),
-                if (action != null) ...[const SizedBox(height: 8), action],
+                if (action != null) ...[
+                  const SizedBox(height: AppSpace.row),
+                  action,
+                ],
               ],
             ),
           ),

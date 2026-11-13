@@ -13,6 +13,7 @@ void main() {
         'qwen35-9b-q4km',
         'gemma4-e4b-qat',
         'gemma4-26b-a4b-qat',
+        'gemma4-31b-qat',
         'bonsai2-9b-q2_0',
         'bonsai2-27b-ptq1_0',
       ]);
@@ -32,7 +33,7 @@ void main() {
         expect(m.downloadUrl, contains('/resolve/'), reason: m.id);
         expect(retiredCatalogIds, isNot(contains(m.id)));
       }
-      expect(desktopCatalog.map((m) => m.fileName).toSet(), hasLength(8));
+      expect(desktopCatalog.map((m) => m.fileName).toSet(), hasLength(9));
     },
   );
 

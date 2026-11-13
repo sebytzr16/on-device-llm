@@ -6,11 +6,14 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/services.dart';
+import 'package:logging/logging.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 import 'package:path/path.dart' as p;
 
 import '../../core/utils/inference_admission.dart';
 import 'voice_models.dart';
+
+final _log = Logger('voice');
 
 /// Synthesized speech: 16-bit mono PCM.
 class SpeechAudio {
@@ -165,59 +168,59 @@ void serveSherpaWorker(
 @visibleForTesting
 sherpa.OfflineTtsGenerationConfig speakingGenerationConfig(
   Map<Object?, Object?> m,
-) => sherpa.OfflineTtsGenerationConfig(
-  sid: m['sid'] as int,
-  speed: (m['speed'] as num).toDouble().clamp(0.6, 1.6),
-  extra: m['engine'] == 'supertonic-2'
-      ? {'lang': m['lang'] as String}
-      : const {},
-);
+) {
+  final supertonic = VoiceModels.isSupertonic('${m['engine'] ?? ''}');
+  return sherpa.OfflineTtsGenerationConfig(
+    sid: m['sid'] as int,
+    speed: (m['speed'] as num).toDouble().clamp(0.6, 1.6),
+    extra: supertonic ? {'lang': m['lang'] as String} : const {},
+  );
+}
 
 /// Build the selected engine before crossing FFI, so configuration can be
 /// checked without loading model weights (owner, 2026-11-02).
 @visibleForTesting
-sherpa.OfflineTtsModelConfig speakingModelConfig(Map<Object?, Object?> m) =>
-    sherpa.OfflineTtsModelConfig(
-      supertonic: m['engine'] == 'supertonic-2'
-          ? sherpa.OfflineTtsSupertonicModelConfig(
-              durationPredictor: p.join(
-                m['supertonicDir'] as String,
-                'duration_predictor.int8.onnx',
-              ),
-              textEncoder: p.join(
-                m['supertonicDir'] as String,
-                'text_encoder.int8.onnx',
-              ),
-              vectorEstimator: p.join(
-                m['supertonicDir'] as String,
-                'vector_estimator.int8.onnx',
-              ),
-              vocoder: p.join(
-                m['supertonicDir'] as String,
-                'vocoder.int8.onnx',
-              ),
-              ttsJson: p.join(m['supertonicDir'] as String, 'tts.json'),
-              unicodeIndexer: p.join(
-                m['supertonicDir'] as String,
-                'unicode_indexer.bin',
-              ),
-              voiceStyle: p.join(m['supertonicDir'] as String, 'voice.bin'),
-            )
-          : const sherpa.OfflineTtsSupertonicModelConfig(),
-      kokoro: m['engine'] == 'supertonic-2'
-          ? const sherpa.OfflineTtsKokoroModelConfig()
-          : sherpa.OfflineTtsKokoroModelConfig(
-              model: m['model'] as String,
-              voices: m['voices'] as String,
-              tokens: m['tokens'] as String,
-              dataDir: m['dataDir'] as String,
-              lexicon: m['lexicon'] as String,
-              lang: m['lang'] as String,
+sherpa.OfflineTtsModelConfig speakingModelConfig(Map<Object?, Object?> m) {
+  final supertonic = VoiceModels.isSupertonic('${m['engine'] ?? ''}');
+  return sherpa.OfflineTtsModelConfig(
+    supertonic: supertonic
+        ? sherpa.OfflineTtsSupertonicModelConfig(
+            durationPredictor: p.join(
+              m['supertonicDir'] as String,
+              'duration_predictor.int8.onnx',
             ),
-      numThreads: m['threads'] as int,
-      provider: m['provider'] as String? ?? 'cpu',
-      debug: false,
-    );
+            textEncoder: p.join(
+              m['supertonicDir'] as String,
+              'text_encoder.int8.onnx',
+            ),
+            vectorEstimator: p.join(
+              m['supertonicDir'] as String,
+              'vector_estimator.int8.onnx',
+            ),
+            vocoder: p.join(m['supertonicDir'] as String, 'vocoder.int8.onnx'),
+            ttsJson: p.join(m['supertonicDir'] as String, 'tts.json'),
+            unicodeIndexer: p.join(
+              m['supertonicDir'] as String,
+              'unicode_indexer.bin',
+            ),
+            voiceStyle: p.join(m['supertonicDir'] as String, 'voice.bin'),
+          )
+        : const sherpa.OfflineTtsSupertonicModelConfig(),
+    kokoro: supertonic
+        ? const sherpa.OfflineTtsKokoroModelConfig()
+        : sherpa.OfflineTtsKokoroModelConfig(
+            model: m['model'] as String,
+            voices: m['voices'] as String,
+            tokens: m['tokens'] as String,
+            dataDir: m['dataDir'] as String,
+            lexicon: m['lexicon'] as String,
+            lang: m['lang'] as String,
+          ),
+    numThreads: m['threads'] as int,
+    provider: m['provider'] as String? ?? 'cpu',
+    debug: false,
+  );
+}
 
 /// Keep only the selected engine/language loaded to bound memory during
 /// the comparison (owner, 2026-11-02).
@@ -324,6 +327,133 @@ void _earsMain(SendPort boot) {
   );
 }
 
+/// Running captions from the streaming model for one utterance: feed it
+/// 16 kHz frames as they arrive and read the text heard so far, word by
+/// word. The recognizer is shared by [SherpaVoice]; [close] frees only the
+/// stream, so the next utterance starts fresh.
+abstract class LiveCaption {
+  /// Appends [samples] and returns the whole text of this utterance.
+  String accept(Float32List samples);
+
+  /// Frees the stream. The recognizer stays for the next utterance, and
+  /// [accept] then returns an empty text.
+  void close();
+}
+
+/// Streaming captions in their own isolate: loading the 0.6B model and
+/// decoding each chunk must not hold up the UI isolate (orb, captions).
+/// Frames are sent in order; [accept] returns the latest text the worker
+/// sent back, a frame or two behind the microphone.
+class _WorkerLiveCaption implements LiveCaption {
+  final Future<SherpaWorker> _worker;
+  final void Function() _failed;
+  var _text = '';
+  var _closed = false;
+  _WorkerLiveCaption(this._worker, Map<String, Object?> open, this._failed) {
+    _send(open);
+  }
+
+  void _send(Map<String, Object?> request) {
+    _worker
+        .then((w) => w.call(request))
+        .then((r) {
+          if (r['error'] != null) {
+            if (request['cmd'] == 'open') _failed();
+            return;
+          }
+          final text = r['text'];
+          if (!_closed && text is String) _text = text;
+        })
+        .catchError((Object e) {
+          if (request['cmd'] == 'open') _failed();
+        });
+  }
+
+  @override
+  String accept(Float32List samples) {
+    if (!_closed) {
+      _send({
+        'cmd': 'feed',
+        'samples': TransferableTypedData.fromList([samples]),
+      });
+    }
+    return _text;
+  }
+
+  @override
+  void close() {
+    if (_closed) return;
+    _closed = true;
+    _text = '';
+    _send(const {'cmd': 'end'});
+  }
+}
+
+void _captionsMain(SendPort boot) {
+  sherpa.initBindings();
+  sherpa.OnlineRecognizer? recognizer;
+  sherpa.OnlineStream? stream;
+  String? loaded;
+  serveSherpaWorker(
+    boot,
+    (m) {
+      switch (m['cmd']) {
+        case 'open':
+          final encoder = m['encoder'] as String;
+          if (recognizer == null || loaded != encoder) {
+            stream?.free();
+            stream = null;
+            recognizer?.free();
+            recognizer = null;
+            recognizer = sherpa.OnlineRecognizer(
+              sherpa.OnlineRecognizerConfig(
+                model: sherpa.OnlineModelConfig(
+                  transducer: sherpa.OnlineTransducerModelConfig(
+                    encoder: encoder,
+                    decoder: m['decoder'] as String,
+                    joiner: m['joiner'] as String,
+                  ),
+                  tokens: m['tokens'] as String,
+                  numThreads: m['threads'] as int,
+                  debug: false,
+                ),
+              ),
+            );
+            loaded = encoder;
+          }
+          stream?.free();
+          stream = recognizer!.createStream();
+          return const {};
+        case 'feed':
+          final s = stream;
+          final r = recognizer;
+          if (s == null || r == null) return const {};
+          s.acceptWaveform(
+            samples: (m['samples'] as TransferableTypedData)
+                .materialize()
+                .asFloat32List(),
+            sampleRate: 16000,
+          );
+          while (r.isReady(s)) {
+            r.decode(s);
+          }
+          return {'text': r.getResult(s).text.trim()};
+        case 'end':
+          stream?.free();
+          stream = null;
+          return const {};
+      }
+      return const {};
+    },
+    () {
+      stream?.free();
+      stream = null;
+      recognizer?.free();
+      recognizer = null;
+    },
+  );
+}
+
 /// The on-device voice through sherpa-onnx. Workers start on first use and
 /// stay while a [lease] is held (the conversation screen), or until they
 /// have been idle for [idleRelease]; a voice pack deleted or replaced frees
@@ -333,6 +463,14 @@ class SherpaVoice {
   Future<SherpaWorker>? _mouthStart, _earsStart;
   SpeakingPaths? _speaking;
   ListeningPaths? _listening;
+
+  /// The streaming caption worker, started on first use and freed with the
+  /// listening worker.
+  Future<SherpaWorker>? _live;
+  LiveCaption? _liveOpen;
+
+  /// Loading failed: today's captions are used until the pack changes.
+  var _liveFailed = false;
 
   /// Bumped when a worker is freed: one still starting is not kept.
   var _mouthGen = 0, _earsGen = 0;
@@ -359,9 +497,10 @@ class SherpaVoice {
   });
 
   static Future<bool> canSpeak({String preferred = 'kokoro'}) =>
-      VoiceModels.isReady(VoiceModels.speakingPack(preferred));
+      VoiceModels.isUsable(VoiceModels.speakingPack(preferred));
   static Future<bool> canListen() async =>
       await VoiceModels.isReady(VoiceModels.listening) ||
+      await VoiceModels.isReady(VoiceModels.parakeetUltra) ||
       await VoiceModels.isReady(VoiceModels.parakeet);
 
   Future<SherpaWorker> _mouthWorker() async {
@@ -452,7 +591,20 @@ class SherpaVoice {
       _ears = null;
       _earsStart = null;
       _listening = null;
+      _freeLiveCaptions();
     }
+  }
+
+  /// Frees the running caption stream and the streaming model: the pack
+  /// was deleted or replaced, or the listening worker is released. The
+  /// next utterance tries a fresh one.
+  void _freeLiveCaptions() {
+    _liveOpen?.close();
+    _liveOpen = null;
+    final live = _live;
+    _live = null;
+    live?.then((w) => w.dispose()).catchError((Object _) {});
+    _liveFailed = false;
   }
 
   Future<Map<String, Object?>?> _speakRequest(KokoroVoice voice) async {
@@ -504,10 +656,16 @@ class SherpaVoice {
   }
 
   Future<Map<String, Object?>?> _listenRequest(String language) async {
+    final generation = _earsGen;
+    final model = _listeningModel;
     final paths = _listening ??= await VoiceModels.listeningPaths(
-      preferred: _listeningModel,
+      preferred: model,
     );
-    if (paths == null) return null;
+    // A selection or deletion during disk lookup invalidates these paths
+    // before a native engine can receive them (owner, 2026-11-02).
+    if (paths == null || generation != _earsGen || model != _listeningModel) {
+      return null;
+    }
     return {
       'encoder': paths.encoder,
       'decoder': paths.decoder,
@@ -595,6 +753,32 @@ class SherpaVoice {
     }
   }
 
+  /// A running caption stream from the streaming pack at [paths], or null
+  /// when it is not installed or does not load: today's captions are used
+  /// then. The recognizer is loaded once and kept for later utterances.
+  LiveCaption? startLiveCaption(LiveCaptionPaths paths) {
+    if (_liveFailed) return null;
+    // One stream at a time: the worker frees the previous one on open.
+    _liveOpen?.close();
+    final worker = _live ??= SherpaWorker.spawn(_captionsMain);
+    return _liveOpen = _WorkerLiveCaption(
+      worker,
+      {
+        'cmd': 'open',
+        'encoder': paths.encoder,
+        'decoder': paths.decoder,
+        'joiner': paths.joiner,
+        'tokens': paths.tokens,
+        'threads': threads,
+      },
+      () {
+        if (_liveFailed) return;
+        _liveFailed = true;
+        _log.warning('Streaming captions did not load');
+      },
+    );
+  }
+
   void dispose() {
     _idle?.cancel();
     releasePack(speaking: true);
@@ -602,11 +786,34 @@ class SherpaVoice {
   }
 }
 
+/// What the voice listener needs from voice-activity detection: Silero
+/// through sherpa-onnx in the app, a fake where native bindings cannot
+/// load (unit tests).
+abstract class VoiceDetector {
+  /// Feeds 16 kHz frames; returns finished utterances.
+  List<Float32List> accept(Float32List samples);
+
+  /// True while speech is going on.
+  bool get speaking;
+
+  void reset();
+  void dispose();
+}
+
+/// sherpa-onnx bindings are per isolate: the native models on this one (the
+/// voice detector and the streaming captions) initialize them once.
+var _bindingsReady = false;
+
+void _ensureBindings() {
+  if (_bindingsReady) return;
+  sherpa.initBindings();
+  _bindingsReady = true;
+}
+
 /// Silero voice-activity detection on the UI isolate: one 32 ms window
 /// costs well under a millisecond, and keeping it here means the end of a
 /// sentence is noticed even while Whisper or Kokoro is busy.
-class SpeechDetector {
-  static var _bound = false;
+class SpeechDetector implements VoiceDetector {
   final sherpa.VoiceActivityDetector _vad;
   SpeechDetector._(this._vad);
 
@@ -619,10 +826,7 @@ class SpeechDetector {
     double minSpeech = 0.25,
     double maxSpeech = 28,
   }) {
-    if (!_bound) {
-      sherpa.initBindings();
-      _bound = true;
-    }
+    _ensureBindings();
     return SpeechDetector._(
       sherpa.VoiceActivityDetector(
         config: sherpa.VadModelConfig(
@@ -642,6 +846,7 @@ class SpeechDetector {
   }
 
   /// Feeds one window; returns finished utterances (16 kHz samples).
+  @override
   List<Float32List> accept(Float32List samples) {
     _vad.acceptWaveform(samples);
     final out = <Float32List>[];
@@ -653,9 +858,12 @@ class SpeechDetector {
   }
 
   /// True while speech is going on.
+  @override
   bool get speaking => _vad.isDetected();
 
+  @override
   void reset() => _vad.clear();
+  @override
   void dispose() => _vad.free();
 }
 
@@ -685,6 +893,18 @@ class VoiceAudioChannel {
       }) ??
       false;
   static Future<void> stopMic() => _channel.invokeMethod<void>('stopMic');
+
+  /// Windows verifies the effect on the current communications stream.
+  /// Missing/older implementations must never authorize talk-over.
+  static Future<bool> aecActive() async {
+    try {
+      return await _channel.invokeMethod<bool>('aecActive') ?? false;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
 
   static Future<bool> micPrivacyDenied() async =>
       await _channel.invokeMethod<bool>('micPrivacyDenied') ?? false;

@@ -61,3 +61,9 @@ List<ModelInfo> availableLibraryModels(
     ...suggestedModels(library, desktop: desktop),
   ].where((m) => !hidden.contains(m.id)).toList();
 }
+
+/// The loaded model leads the list so it is always in sight (owner 2026-11-12).
+List<ModelInfo> loadedFirst(Iterable<ModelInfo> models, String? loadedId) => [
+  ...models.where((m) => m.id == loadedId),
+  ...models.where((m) => m.id != loadedId),
+];

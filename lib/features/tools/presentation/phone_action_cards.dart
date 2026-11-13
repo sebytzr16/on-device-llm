@@ -8,7 +8,7 @@ import '../phone_actions.dart';
 
 /// The actions an answer (or a goal) prepared, one card each. A tap opens
 /// the phone's own app filled in; the user confirms there.
-class PhoneActionCards extends StatelessWidget {
+class PhoneActionCards extends StatefulWidget {
   final List<PhoneAction> actions;
 
   /// When each action was opened in its app (by index), shown on its card.
@@ -28,12 +28,30 @@ class PhoneActionCards extends StatelessWidget {
   });
 
   @override
+  State<PhoneActionCards> createState() => _PhoneActionCardsState();
+}
+
+class _PhoneActionCardsState extends State<PhoneActionCards> {
+  final Set<int> _expanded = {};
+
+  void _toggleExpanded(int index) {
+    setState(() {
+      if (_expanded.contains(index)) {
+        _expanded.remove(index);
+      } else {
+        _expanded.add(index);
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final t = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final (i, a) in actions.indexed)
+        for (final (i, a) in widget.actions.indexed)
           Padding(
             padding: const EdgeInsets.only(bottom: AppDesign.sm),
             child: Material(
@@ -43,6 +61,7 @@ class PhoneActionCards extends StatelessWidget {
                 side: BorderSide(color: c.hairline),
               ),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   ListTile(
                     key: Key('phone-action-$i'),
@@ -52,21 +71,21 @@ class PhoneActionCards extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    subtitle: a.detail.isEmpty && opened[i] == null
+                    subtitle: a.detail.isEmpty && widget.opened[i] == null
                         ? null
                         : Text(
                             [
                               if (a.detail.isNotEmpty) a.detail,
-                              if (confirmed[i] != null)
-                                context.l10n.actionConfirmedAt(
+                              if (widget.confirmed[i] != null)
+                                t.actionConfirmedAt(
                                   TimeOfDay.fromDateTime(
-                                    confirmed[i]!,
+                                    widget.confirmed[i]!,
                                   ).format(context),
                                 )
-                              else if (opened[i] != null)
-                                context.l10n.actionOpenedAt(
+                              else if (widget.opened[i] != null)
+                                t.actionOpenedAt(
                                   TimeOfDay.fromDateTime(
-                                    opened[i]!,
+                                    widget.opened[i]!,
                                   ).format(context),
                                 ),
                             ].join('\n'),
@@ -74,32 +93,50 @@ class PhoneActionCards extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: context.text.bodyMuted,
                           ),
-                    trailing: FilledButton.tonal(
-                      key: Key('phone-action-go-$i'),
-                      onPressed: confirmed[i] == null
-                          ? () => _go(context, a, i)
-                          : null,
-                      child: Text(_label(context, a.kind)),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          key: Key('phone-action-expand-$i'),
+                          onPressed: () => _toggleExpanded(i),
+                          icon: Icon(
+                            _expanded.contains(i)
+                                ? Icons.expand_less
+                                : Icons.expand_more,
+                          ),
+                          tooltip: _expanded.contains(i)
+                              ? t.actionCollapse
+                              : t.actionExpand,
+                        ),
+                        FilledButton.tonal(
+                          key: Key('phone-action-go-$i'),
+                          onPressed: widget.confirmed[i] == null
+                              ? () => _go(context, a, i)
+                              : null,
+                          child: Text(_actionButtonLabel(context, a.kind)),
+                        ),
+                      ],
                     ),
                   ),
-                  if (onConfirmed != null &&
-                      opened[i] != null &&
-                      confirmed[i] == null &&
+                  if (_expanded.contains(i)) _ExpandedDetail(action: a),
+                  if (widget.onConfirmed != null &&
+                      widget.opened[i] != null &&
+                      widget.confirmed[i] == null &&
                       a.kind != 'save_file')
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton.icon(
                         key: Key('phone-action-confirm-$i'),
-                        onPressed: () => onConfirmed!(i),
+                        onPressed: () => widget.onConfirmed!(i),
                         icon: const Icon(Icons.check),
-                        label: Text(context.l10n.actionConfirmDone),
+                        label: Text(t.actionConfirmDone),
                       ),
                     ),
                 ],
               ),
             ),
           ),
-        Text(context.l10n.actionConfirmHint, style: context.text.small),
+        Text(t.actionConfirmHint, style: context.text.small),
       ],
     );
   }
@@ -110,7 +147,7 @@ class PhoneActionCards extends StatelessWidget {
     final missing = context.l10n.actionNoApp;
     final ok = await PhoneActions.launch(a);
     if (!ok) toast(missing, tone: IslandTone.warning);
-    onLaunched?.call(i, ok);
+    widget.onLaunched?.call(i, ok);
   }
 
   static IconData _icon(String kind) => switch (kind) {
@@ -132,5 +169,64 @@ class PhoneActionCards extends StatelessWidget {
       'draft_message' => t.actionMessage,
       _ => t.actionFile,
     };
+  }
+
+  /// Explicit button labels: Save / Share for save_file, otherwise the
+  /// standard action label.
+  static String _actionButtonLabel(BuildContext context, String kind) {
+    final t = context.l10n;
+    if (kind == 'save_file') {
+      return t.actionSaveButton;
+    }
+    return _label(context, kind);
+  }
+}
+
+/// Expandable detail section showing all fields for the action.
+/// HTML content is displayed as escaped source text, never rendered.
+class _ExpandedDetail extends StatelessWidget {
+  final PhoneAction action;
+  const _ExpandedDetail({required this.action});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final details = action.fullDetail(context);
+    if (details.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surfaceRaised,
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(AppDesign.rMd),
+          bottomRight: Radius.circular(AppDesign.rMd),
+        ),
+        border: Border(top: BorderSide(color: c.hairline)),
+      ),
+      padding: const EdgeInsets.all(AppDesign.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final (label, value) in details) ...[
+            if (label.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Text(
+                  label,
+                  style: context.text.label.copyWith(color: c.textMuted),
+                ),
+              ),
+            SelectableText(
+              value,
+              style: context.text.body.copyWith(
+                // Monospace for content to make HTML source readable
+                fontFamily: 'monospace',
+              ),
+            ),
+            const SizedBox(height: AppDesign.sm),
+          ],
+        ],
+      ),
+    );
   }
 }

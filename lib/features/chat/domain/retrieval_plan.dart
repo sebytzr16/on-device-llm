@@ -187,6 +187,7 @@ class RetrievalPlan {
   static bool localTask(String input) {
     final t = input.trim();
     if (_arithmeticOnly(t)) return true;
+    if (wantsImage(t)) return true;
     if (_url.hasMatch(t) || _asksForWeb(t)) return false;
     if (PhoneActions.wanted(t)) return true;
     if (timeSensitive(t)) return false;
@@ -206,6 +207,7 @@ class RetrievalPlan {
   static bool mayNeedTools(String input, {bool documents = false}) {
     final t = input.trim();
     if (smallTalk(t) || aboutAssistant(t)) return false;
+    if (wantsImage(t)) return true;
     if (_url.hasMatch(t) || timeSensitive(t) || _asksForWeb(t)) return true;
     // Local arithmetic still benefits from the calculator tool.
     if (_arithmeticOnly(t)) return true;
@@ -217,6 +219,33 @@ class RetrievalPlan {
         _year.hasMatch(t) ||
         _named(t);
   }
+
+  /// A request to draw or generate a picture: the chat offers generate_image
+  /// and Auto mode does not send it to the web.
+  static bool wantsImage(String input) => _imageAsk.hasMatch(input.trim());
+
+  /// A request to change a picture already in the chat ("make the sky
+  /// purple", "remove the background", "rends-le noir et blanc", "quita el
+  /// fondo"). Only meaningful when the chat has a picture: the chat then
+  /// offers edit_image.
+  static bool wantsImageEdit(String input) => _imageEdit.hasMatch(input.trim());
+
+  static final _imageEdit = RegExp(
+    r"(?<![\p{L}\p{N}])(?:edit|retouch|recolou?r|colou?rize|crop|blur|brighten|darken|make|turn|change|modify|remove|erase|delete|add|replace|swap|put|fix|enhance|restyle|stylize|transform|convert|cartoonize|"
+    r"modifie|modifier|retouche|retoucher|change|changer|rends|rendre|transforme|transformer|enl[èe]ve|enlever|supprime|supprimer|efface|effacer|ajoute|ajouter|remplace|remplacer|mets|mettre|"
+    r"edita|editar|retoca|retocar|cambia|cambiar|modifica|modificar|haz|hacer|convierte|convertir|transforma|transformar|quita|quitar|elimina|eliminar|borra|borrar|a[ñn]ade|a[ñn]adir|reemplaza|reemplazar|pon|poner)(?![\p{L}\p{N}])",
+    caseSensitive: false,
+    unicode: true,
+  );
+
+  static final _imageAsk = RegExp(
+    r"(?<![\p{L}\p{N}])(?:draw|draws|drawing|paint|paints|painting|sketch|sketches|illustrate|dessine|dessines|dessiner|peins|peindre|dibuja|dibujar|pinta|pintar|ilustra)(?![\p{L}\p{N}])|"
+    r"\b(?:make|create|generate|give me|show me|produce)\s+(?:me\s+)?(?:an?|the)\s+(?:image|picture|drawing|illustration|photo)\b|"
+    r"\b(?:fais|cr[ée]e|g[ée]n[èe]re|donne-moi|montre-moi)\s+(?:moi\s+)?(?:une?\s+|la\s+|le\s+)?(?:image|photo|illustration|dessin)\b|"
+    r"\b(?:haz|crea|genera|dame|mu[ée]strame)\s+(?:me\s+)?(?:una?\s+|la\s+|el\s+)?(?:imagen|foto|ilustraci[óo]n|dibujo)\b",
+    caseSensitive: false,
+    unicode: true,
+  );
 
   // A sum in words: "six times seven", "cinq fois sept", "seis por siete".
   static const _numberWord =

@@ -1,3 +1,4 @@
+#include "memory_admission.h"
 #include "sd_bridge.h"
 #include <algorithm>
 #include <atomic>
@@ -368,6 +369,8 @@ uint8_t* generate(od_sd_ctx_t* ctx, const char* request, const uint8_t* init,
     if (height) *height = 0;
     if (!ctx) return nullptr;
     try {
+        MemoryAdmission memory_admission;
+        memory_admission.check();
         std::lock_guard<std::mutex> lock(backend_mutex);
         ctx->error_msg.clear();
         if (ctx->cancelled.load()) throw std::runtime_error("Generation cancelled");
@@ -377,7 +380,9 @@ uint8_t* generate(od_sd_ctx_t* ctx, const char* request, const uint8_t* init,
         std::string prompt = json.str("prompt", "");
         std::string negative = json.str("negativePrompt", "");
         int w = json.number("width", 512), h = json.number("height", 512);
-        pixels(w, h);
+        const size_t output_pixels = pixels(w, h);
+        if (output_pixels > std::numeric_limits<size_t>::max() / 4 / 3) throw std::bad_alloc();
+        MemoryAdmission::HostReservation output_memory(output_pixels * 4 * 3);
         if (w % 8 || h % 8) throw std::runtime_error("Width and height must be multiples of 8");
         int steps = json.number("steps", 20), batch = json.number("batchCount", 1);
         float cfg = json.real("cfgScale", 7.0f);
@@ -452,6 +457,8 @@ uint8_t* generate_frames(od_sd_ctx_t* ctx, const char* request, const uint8_t* i
     if (fps) *fps = 0;
     if (!ctx) return nullptr;
     try {
+        MemoryAdmission memory_admission;
+        memory_admission.check();
         std::lock_guard<std::mutex> lock(backend_mutex);
         ctx->error_msg.clear();
         if (ctx->cancelled.load()) throw std::runtime_error("Generation cancelled");
@@ -470,6 +477,11 @@ uint8_t* generate_frames(od_sd_ctx_t* ctx, const char* request, const uint8_t* i
         float cfg = json.real("cfgScale", 6.0f);
         if (steps <= 0 || cfg < 0 || count <= 0 || count > 241 || rate <= 0 || rate > 60)
             throw std::runtime_error("Invalid steps, cfgScale, frames or fps");
+        // Native RGBA, Dart bytes and decoded preview frames.
+        const size_t frame_bytes = pixels(w, h) * 4;
+        if (frame_bytes > std::numeric_limits<size_t>::max() / static_cast<size_t>(count) / 3)
+            throw std::bad_alloc();
+        MemoryAdmission::HostReservation output_memory(frame_bytes * static_cast<size_t>(count) * 3);
         auto method = sampler(json.str("sampler", "euler"));
         std::vector<uint8_t> rgb;
         sd_image_t input{};
@@ -549,6 +561,8 @@ int32_t od_sd_load(od_sd_ctx_t* ctx, const char* model_path, const char* vae_pat
     if (!ctx) return 0;
 #if OD_SD_AVAILABLE
     try {
+        MemoryAdmission memory_admission;
+        memory_admission.check();
         std::lock_guard<std::mutex> lock(backend_mutex);
         watch_log();
         ctx->error_msg.clear();
@@ -594,8 +608,12 @@ int32_t od_sd_load(od_sd_ctx_t* ctx, const char* model_path, const char* vae_pat
         // Map the files instead of copying them: LTX-2.3 is 25 GB of weights,
         // and mapped pages can be dropped and re-read under memory pressure.
         params.enable_mmap = mmap;
-        // Weights stay in RAM and stream to the GPU as needed: an 8 GB card
-        // cannot hold a 4 GB DiT, a 5 GB text encoder and the VAE at once.
+        // Upstream auto-fit measures converted tensor bytes and live memory
+        // for every ggml device, trying GPU residency before RAM/disk. Its
+        // runner measures actual resolution/frame-dependent graphs before
+        // allocation and can stream/segment them under the live budget.
+        // Keep explicit host-streaming as an override only.
+        params.auto_fit = !offload;
         if (offload) params.params_backend = "*=cpu";
         std::string backends = vae_cpu ? (te_cpu ? "te=cpu,vae=cpu" : "vae=cpu") : (te_cpu ? "te=cpu" : "");
         if (!backends.empty()) params.backend = backends.c_str();
@@ -708,6 +726,8 @@ uint8_t* od_sd_upscale(od_sd_ctx_t* ctx, const char* model_path, const uint8_t* 
     if (!ctx) return nullptr;
 #if OD_SD_AVAILABLE && OD_SD_MODERN_API
     try {
+        MemoryAdmission memory_admission;
+        memory_admission.check();
         std::lock_guard<std::mutex> lock(backend_mutex);
         watch_log();
         ctx->error_msg.clear();

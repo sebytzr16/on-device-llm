@@ -83,10 +83,10 @@ class _GoalEvidencePageState extends ConsumerState<GoalEvidencePage> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(AppDesign.lg),
+        padding: const EdgeInsets.all(AppSpace.lg),
         children: [
           Text(t.goalEvidenceSnapshotHint, style: context.text.bodyMuted),
-          const SizedBox(height: AppDesign.md),
+          const SizedBox(height: AppSpace.md),
           DropdownButtonFormField<String>(
             key: ValueKey('evidence-criterion-${_criterion ?? 'all'}'),
             initialValue: _criterion ?? '',
@@ -107,7 +107,7 @@ class _GoalEvidencePageState extends ConsumerState<GoalEvidencePage> {
             onChanged: (text) => setState(() => _select(goal, text)),
           ),
           if (assessment != null) ...[
-            const SizedBox(height: AppDesign.md),
+            const SizedBox(height: AppSpace.md),
             Text(
               assessment.satisfied && assessment.validationError.isEmpty
                   ? t.goalEvidenceSupported
@@ -125,10 +125,10 @@ class _GoalEvidencePageState extends ConsumerState<GoalEvidencePage> {
               SelectableText('[${item.source}] “${item.quote}”'),
           ],
           if (goal.sources.isEmpty) ...[
-            const SizedBox(height: AppDesign.lg),
+            const SizedBox(height: AppSpace.lg),
             Text(t.goalEvidenceMissing),
           ] else ...[
-            const SizedBox(height: AppDesign.md),
+            const SizedBox(height: AppSpace.md),
             TextField(
               key: const Key('evidence-search'),
               decoration: InputDecoration(
@@ -137,7 +137,7 @@ class _GoalEvidencePageState extends ConsumerState<GoalEvidencePage> {
               ),
               onChanged: (v) => setState(() => _query = v.trim()),
             ),
-            const SizedBox(height: AppDesign.lg),
+            const SizedBox(height: AppSpace.lg),
             LayoutBuilder(
               builder: (context, bounds) {
                 if (bounds.maxWidth < 760 || panels.length == 1) {
@@ -180,7 +180,7 @@ class _GoalEvidencePageState extends ConsumerState<GoalEvidencePage> {
     return Card(
       key: Key('evidence-panel-$side'),
       child: Padding(
-        padding: const EdgeInsets.all(AppDesign.md),
+        padding: const EdgeInsets.all(AppSpace.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -203,7 +203,7 @@ class _GoalEvidencePageState extends ConsumerState<GoalEvidencePage> {
               onChanged: select,
             ),
             if (source != null) ...[
-              const SizedBox(height: AppDesign.sm),
+              const SizedBox(height: AppSpace.sm),
               SelectableText(source.url, style: context.text.bodyMuted),
               if (source.publishedAt != null)
                 Text(

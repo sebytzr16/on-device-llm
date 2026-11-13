@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -56,6 +57,7 @@ class _DesktopProjectsPageState extends ConsumerState<DesktopProjectsPage> {
       text: project?.instructions ?? '',
     );
     final collection = TextEditingController(text: project?.collection ?? '');
+    final folder = TextEditingController(text: project?.folder ?? '');
     try {
       final ok = await showAppDialog<bool>(
         context: context,
@@ -80,6 +82,32 @@ class _DesktopProjectsPageState extends ConsumerState<DesktopProjectsPage> {
                   maxLength: 4000,
                   decoration: InputDecoration(
                     labelText: dialog.l10n.projectInstructions,
+                  ),
+                ),
+                TextField(
+                  controller: folder,
+                  readOnly: true,
+                  decoration: InputDecoration(
+                    labelText: dialog.l10n.projectFolder,
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: dialog.l10n.projectFolderClear,
+                          onPressed: folder.clear,
+                          icon: const Icon(Icons.clear),
+                        ),
+                        IconButton(
+                          tooltip: dialog.l10n.projectFolderPick,
+                          onPressed: () async {
+                            final selected =
+                                await FilePicker.getDirectoryPath();
+                            if (selected != null) folder.text = selected;
+                          },
+                          icon: const Icon(Icons.folder_open),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 TextField(
@@ -120,6 +148,7 @@ class _DesktopProjectsPageState extends ConsumerState<DesktopProjectsPage> {
                 name: name.text,
                 instructions: instructions.text,
                 collection: collection.text,
+                folder: folder.text.isEmpty ? null : folder.text,
               ),
         );
       }
@@ -129,6 +158,7 @@ class _DesktopProjectsPageState extends ConsumerState<DesktopProjectsPage> {
       name.dispose();
       instructions.dispose();
       collection.dispose();
+      folder.dispose();
     }
   }
 
@@ -254,7 +284,7 @@ class _DesktopProjectsPageState extends ConsumerState<DesktopProjectsPage> {
         .where((p) => p.id == _project)
         .firstOrNull;
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(AppSpace.desktopPage),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -285,7 +315,7 @@ class _DesktopProjectsPageState extends ConsumerState<DesktopProjectsPage> {
                                   )
                                   .length,
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: AppSpace.row),
                             for (final p in workspace.projects)
                               _place(
                                 p.name,
@@ -327,7 +357,7 @@ class _DesktopProjectsPageState extends ConsumerState<DesktopProjectsPage> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppSpace.row),
                       DeveloperButton(
                         label: t.desktopProjectsNew,
                         icon: Icons.create_new_folder_outlined,
@@ -428,9 +458,9 @@ class _DesktopProjectsPageState extends ConsumerState<DesktopProjectsPage> {
                                         );
                                         if (!ok || !mounted) return;
                                         await _run(
-                                          () => _workspace.removeProject(
-                                            project.id,
-                                          ),
+                                          () => ref
+                                              .read(chatProvider.notifier)
+                                              .deleteProject(project.id),
                                         );
                                         if (mounted) _navigate('active');
                                       },
@@ -442,7 +472,7 @@ class _DesktopProjectsPageState extends ConsumerState<DesktopProjectsPage> {
                             ],
                           ],
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: AppSpace.row),
                         BlurSwitcher(
                           alignment: Alignment.centerLeft,
                           child: _selected.isEmpty
@@ -543,7 +573,7 @@ class _DesktopProjectsPageState extends ConsumerState<DesktopProjectsPage> {
                                           color: c.textFaint,
                                           size: 32,
                                         ),
-                                        const SizedBox(height: 8),
+                                        const SizedBox(height: AppSpace.row),
                                         Text(
                                           _query.isEmpty
                                               ? t.noConversations

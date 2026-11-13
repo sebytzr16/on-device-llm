@@ -18,7 +18,6 @@ import '../features/settings/presentation/screens/settings_screen.dart';
 import '../features/settings/presentation/widgets/settings_widgets.dart';
 import 'desktop_theme.dart';
 import '../core/platform/desktop_preferences.dart';
-import 'advanced_toggle.dart';
 import 'engine_files_panel.dart';
 import 'focus_ring.dart';
 import 'keyboard_shortcuts.dart';
@@ -118,14 +117,10 @@ class _DesktopSettingsPanelState extends ConsumerState<DesktopSettingsPanel> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(l10n.settings, style: context.text.headline),
-                    const SizedBox(height: 6),
-                    Text(
-                      l10n.desktopSettingsExplanation,
-                      style: context.text.small,
+                    AppPageHeader(
+                      title: l10n.settings,
+                      subtitle: l10n.desktopSettingsExplanation,
                     ),
-                    const SizedBox(height: 12),
-                    const DesktopAdvancedToggle(),
                   ],
                 ),
               ),
@@ -356,24 +351,18 @@ class _GeneralSettings extends ConsumerWidget {
                 display: '${s.vramReserveMb}',
                 onChanged: (v) => set(s.copyWith(vramReserveMb: v.round())),
               ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          const ModelsFolderSetting(),
-          const DesktopTraySettingsPanel(),
-          const SizedBox(height: 20),
-          if (prefs.advanced) const EngineFilesPanel(),
-          const SizedBox(height: 24),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
-              onPressed: () => showDesktopShortcuts(
-                context,
-                DesktopShortcutScope.of(context),
+              const ModelsFolderSetting(),
+              const DesktopTraySettingsPanel(),
+              if (prefs.advanced) const EngineFilesPanel(),
+              SettingsTile(
+                leading: const Icon(Icons.keyboard_outlined),
+                title: Text('${l10n.desktopKeyboardShortcuts} (Ctrl+/)'),
+                onTap: () => showDesktopShortcuts(
+                  context,
+                  DesktopShortcutScope.of(context),
+                ),
               ),
-              icon: const Icon(Icons.keyboard_outlined),
-              label: Text('${l10n.desktopKeyboardShortcuts} (Ctrl+/)'),
-            ),
+            ],
           ),
         ],
       ),

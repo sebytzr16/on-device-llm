@@ -22,8 +22,11 @@ class TurnPrompts {
     required bool vision,
     bool documents = true,
     String? documentQuestion,
+    bool skipLexicalSelection = false,
   }) {
-    if (m.attachments.isEmpty) {
+    // Only questions carry files; an answer's generated pictures are shown
+    // to the user, not sent back to the model as another photo.
+    if (m.attachments.isEmpty || m.role != ChatRole.user) {
       return {'role': m.role.name, 'content': m.content};
     }
     final b = StringBuffer();
@@ -47,7 +50,7 @@ class TurnPrompts {
                       'Quote amounts exactly as written here; never work out new ones]',
           );
           b.writeln(
-            documentQuestion == null
+            documentQuestion == null || skipLexicalSelection
                 ? a.text
                 : DocumentPassages.select(a.text!, documentQuestion),
           );
@@ -60,7 +63,7 @@ class TurnPrompts {
       } else if (a.text != null && a.text!.isNotEmpty) {
         b.writeln('[File: ${a.name}]');
         b.writeln(
-          documentQuestion == null
+          documentQuestion == null || skipLexicalSelection
               ? a.text
               : DocumentPassages.select(a.text!, documentQuestion),
         );

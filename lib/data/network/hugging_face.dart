@@ -6,6 +6,19 @@ import 'package:dio/dio.dart';
 import '../../features/models/domain/entities/model_info.dart';
 import '../storage/gguf_split.dart';
 
+/// Weight formats that stable-diffusion.cpp can load for image and video
+/// generation.
+const hfImageGenerationExtensions = <String>{'.gguf', '.safetensors'};
+
+/// The Hub pipelines used by the image and video model discovery screen.
+enum HfImagePipeline {
+  textToImage('text-to-image'),
+  textToVideo('text-to-video');
+
+  final String tag;
+  const HfImagePipeline(this.tag);
+}
+
 /// A GGUF repository as the Hub search lists it (FX-12).
 class HfRepo {
   final String id;
@@ -61,6 +74,14 @@ class HfRepoFiles {
             split.names.every((name) => files.any((f) => f.name == name)));
   }).toList()..sort((a, b) => totalSize(a).compareTo(totalSize(b)));
 
+  /// Diffusion weights that stable-diffusion.cpp can load. Split files and
+  /// vision projectors are not standalone image/video models.
+  List<HfFile> get imageModels => files.where((f) {
+    if (f.isProjector || f.isSplit) return false;
+    final lower = f.name.toLowerCase();
+    return hfImageGenerationExtensions.any(lower.endsWith);
+  }).toList()..sort((a, b) => totalSize(a).compareTo(totalSize(b)));
+
   List<HfFile> partsFor(HfFile file) {
     final split = GgufSplit.parse(file.name);
     if (split == null) return [file];
@@ -106,21 +127,7 @@ class HuggingFace {
           'full': true,
         },
       );
-      return [
-        for (final m in res.data ?? const [])
-          if (m is Map && m['id'] is String && m['private'] != true)
-            HfRepo(
-              id: m['id'] as String,
-              tags: (m['tags'] as List? ?? const [])
-                  .whereType<String>()
-                  .toList(),
-              downloads: (m['downloads'] as num?)?.toInt() ?? 0,
-              likes: (m['likes'] as num?)?.toInt() ?? 0,
-              lastModified: DateTime.tryParse(
-                m['lastModified'] as String? ?? '',
-              ),
-            ),
-      ];
+      return _repos(res.data);
     } on DioException catch (e) {
       throw FormatException(
         'Hugging Face search failed (${e.response?.statusCode ?? 'network error'}).',
@@ -130,16 +137,86 @@ class HuggingFace {
     }
   }
 
+  /// Image or video generation repositories matching [query]. The Hub
+  /// filters GGUF conversions and Diffusers libraries separately, so both
+  /// are searched and merged before the most-downloaded results are shown.
+  static Future<List<HfRepo>> searchImageGeneration(
+    String query, {
+    required HfImagePipeline pipeline,
+    int limit = 25,
+    Dio? client,
+  }) async {
+    final dio = client ?? _dio();
+    try {
+      final responses = await Future.wait([
+        dio.get<List<dynamic>>(
+          'https://huggingface.co/api/models',
+          queryParameters: {
+            'search': query.trim(),
+            'filter': 'gguf',
+            'pipeline_tag': pipeline.tag,
+            'sort': 'downloads',
+            'direction': -1,
+            'limit': limit,
+            'full': true,
+          },
+        ),
+        dio.get<List<dynamic>>(
+          'https://huggingface.co/api/models',
+          queryParameters: {
+            'search': query.trim(),
+            'library': 'diffusers',
+            'pipeline_tag': pipeline.tag,
+            'sort': 'downloads',
+            'direction': -1,
+            'limit': limit,
+            'full': true,
+          },
+        ),
+      ]);
+      final byId = <String, HfRepo>{};
+      for (final response in responses) {
+        for (final repo in _repos(response.data)) {
+          byId.putIfAbsent(repo.id, () => repo);
+        }
+      }
+      final repos = byId.values.toList()
+        ..sort((a, b) => b.downloads.compareTo(a.downloads));
+      return repos.take(limit).toList();
+    } on DioException catch (e) {
+      throw FormatException(
+        'Hugging Face search failed (${e.response?.statusCode ?? 'network error'}).',
+      );
+    } finally {
+      if (client == null) dio.close();
+    }
+  }
+
+  static List<HfRepo> _repos(List<dynamic>? data) => [
+    for (final m in data ?? const [])
+      if (m is Map && m['id'] is String && m['private'] != true)
+        HfRepo(
+          id: m['id'] as String,
+          tags: (m['tags'] as List? ?? const []).whereType<String>().toList(),
+          downloads: (m['downloads'] as num?)?.toInt() ?? 0,
+          likes: (m['likes'] as num?)?.toInt() ?? 0,
+          lastModified: DateTime.tryParse(m['lastModified'] as String? ?? ''),
+        ),
+  ];
+
   /// Hub `siblings` contains every file, including nested repository paths.
   /// Gated repositories fail with a clear message.
   /// [revision] (a branch, tag or commit) reads that version instead of
-  /// the default branch.
+  /// the default branch. [extensions] selects the file kinds listed; chat
+  /// models use the default GGUF, the image/video importer adds safetensors.
   static Future<HfRepoFiles> files(
     String repo, {
     String? revision,
     Dio? client,
+    Set<String> extensions = const {'.gguf'},
   }) async {
     _validateRepo(repo);
+    final allowed = {for (final e in extensions) e.toLowerCase()};
     final dio = client ?? _dio();
     try {
       final at = revision == null || revision == 'main'
@@ -159,7 +236,7 @@ class HuggingFace {
       for (final e in (data['siblings'] as List? ?? const [])) {
         if (e is! Map) continue;
         final name = e['rfilename'] as String? ?? '';
-        if (!name.toLowerCase().endsWith('.gguf')) continue;
+        if (!allowed.any(name.toLowerCase().endsWith)) continue;
         final lfs = e['lfs'] as Map?;
         final hash = lfs?['sha256'] as String?, size = lfs?['size'] as int?;
         if (hash == null || size == null) continue;
@@ -232,6 +309,7 @@ class HuggingFace {
   /// Null when none is found; never throws.
   static Future<Map<String, dynamic>?> generationConfig(
     String repo, {
+    String? revision,
     int hops = 2,
     Dio? client,
   }) async {
@@ -242,8 +320,11 @@ class HuggingFace {
       final seen = <String>{};
       for (var i = 0; i <= hops && seen.add(current); i++) {
         try {
+          final at = revision == null || revision == 'main'
+              ? 'main'
+              : Uri.encodeComponent(revision);
           final res = await dio.get<dynamic>(
-            'https://huggingface.co/$current/resolve/main/generation_config.json',
+            'https://huggingface.co/$current/resolve/$at/generation_config.json',
             options: Options(responseType: ResponseType.json),
           );
           final data = res.data is String
@@ -336,6 +417,13 @@ class HuggingFace {
     });
     return candidates.firstOrNull;
   }
+
+  /// The pinned URL of [name] in [repo] at [revision].
+  static String fileUrl(String repo, String revision, String name) => Uri(
+    scheme: 'https',
+    host: 'huggingface.co',
+    pathSegments: [...repo.split('/'), 'resolve', revision, ...name.split('/')],
+  ).toString();
 
   /// A catalog entry for [selected] at the repository's pinned revision.
   static ModelInfo modelFor(

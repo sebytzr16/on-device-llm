@@ -6,6 +6,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import '../../../core/storage/app_directories.dart';
+import '../../../core/storage/database_encryption.dart';
+import '../../../core/storage/device_encryption.dart';
 
 import '../../../core/utils/search_terms.dart';
 
@@ -724,7 +726,12 @@ class AppDatabase extends _$AppDatabase {
 LazyDatabase _openConnection() => LazyDatabase(() async {
   final dir = await appDataDirectory();
   final file = File(p.join(dir.path, 'ondevice_llm.sqlite'));
-  return NativeDatabase.createInBackground(file);
+  final encryption = DatabaseEncryption(DeviceEncryption.instance);
+  final key = await encryption.keyForFile(file);
+  return NativeDatabase.createInBackground(
+    file,
+    setup: (db) => DatabaseEncryption.setup(db, key),
+  );
 });
 
 final appDatabaseProvider = Provider<AppDatabase>((ref) {

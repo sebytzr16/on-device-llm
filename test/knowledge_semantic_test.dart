@@ -238,6 +238,8 @@ void main() {
     await run;
     final done = c.read(knowledgeIndexerProvider).done;
     expect(done, lessThan(total));
+    // The cancelled run released the run token, so the next index() starts.
+    expect(c.read(knowledgeIndexerProvider).running, false);
     await indexer.index('Manuals');
     expect(await db.countUnindexedKnowledgeChunks('Manuals', 'fake-v1'), 0);
   });

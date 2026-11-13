@@ -8,6 +8,9 @@ import '../../../../core/l10n/l10n.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../data/storage/download_history.dart';
 import '../../../../data/storage/download_manager.dart';
+import '../../../image_gen/image_gen_downloads.dart';
+import '../../../image_gen/image_gen_imports.dart';
+import '../../../image_gen/image_gen_model_widgets.dart';
 import '../providers/model_manager_provider.dart';
 import 'model_tags.dart';
 
@@ -50,12 +53,20 @@ class DownloadsButton extends ConsumerWidget {
   });
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final active = ref
-        .watch(modelManagerProvider)
-        .downloads
+    final imageActive = ref
+        .watch(imageGenDownloadsProvider)
+        .models
         .values
-        .where(activeDownload)
+        .where((m) => m.status == ImageGenModelStatus.downloading)
         .length;
+    final active =
+        imageActive +
+        ref
+            .watch(modelManagerProvider)
+            .downloads
+            .values
+            .where(activeDownload)
+            .length;
     if (onlyWhenActive && active == 0) return const SizedBox.shrink();
     final icon = Badge(
       isLabelVisible: active > 0,
@@ -74,6 +85,7 @@ class DownloadsButton extends ConsumerWidget {
     );
     if (labelled) {
       return FilledButton.tonalIcon(
+        style: appTonalButtonStyle(context),
         key: const Key('model-downloads-button'),
         onPressed: open,
         icon: icon,
@@ -127,6 +139,15 @@ class DownloadCenter extends ConsumerWidget {
     final t = context.l10n;
     final state = ref.watch(modelManagerProvider);
     final active = state.downloads.values.where(activeDownload).toList();
+    final imageState = ref.watch(imageGenDownloadsProvider);
+    final imageModels = imageGenManagedModels(
+      ref.watch(imageGenImportsProvider),
+    );
+    final imageActive = imageModels.where((m) {
+      final s = imageState.of(m);
+      return s.status == ImageGenModelStatus.downloading ||
+          s.status != ImageGenModelStatus.ready && s.paused;
+    }).toList();
     final history = ref.watch(downloadHistoryProvider);
     String nameFor(DownloadProgress p) {
       final id = p.modelId.replaceFirst(RegExp(r':vision$'), '');
@@ -141,6 +162,22 @@ class DownloadCenter extends ConsumerWidget {
       'cancelled' => t.modelDownloadCancelled,
       _ => t.modelDownloadInterrupted,
     };
+    String historyResult(DownloadRecord row) {
+      final model = imageGenModelForDownload(
+        row.modelId,
+        ref.read(imageGenImportsProvider),
+      );
+      final label = result(row.result);
+      if (model == null) return label;
+      final percent = row.result == 'completed'
+          ? 100.0
+          : (imageState.of(model).received / model.sizeBytes * 100).clamp(
+              0.0,
+              100.0,
+            );
+      return '$label \u00b7 ${percent.toStringAsFixed(1)}%';
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -157,7 +194,9 @@ class DownloadCenter extends ConsumerWidget {
         Expanded(
           child: ListView(
             children: [
-              if (active.isEmpty)
+              for (final model in imageActive)
+                ImageGenDownloadRow(model: model),
+              if (active.isEmpty && imageActive.isEmpty)
                 Text(t.modelNoDownloads, style: context.text.small),
               for (final p in active)
                 ListTile(
@@ -230,16 +269,39 @@ class DownloadCenter extends ConsumerWidget {
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(result(row.result)),
+                            Text(historyResult(row)),
                             Text(
                               '${bytesLabel(row.size)} · ${MaterialLocalizations.of(context).formatMediumDate(row.date.toLocal())}',
                             ),
                           ],
                         ),
-                        trailing: IconButton(
-                          tooltip: t.downloadRemoveHistoryRow,
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () => _remove(context, row: row),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (row.result != 'completed' &&
+                                imageGenModelForDownload(
+                                      row.modelId,
+                                      ref.read(imageGenImportsProvider),
+                                    ) !=
+                                    null)
+                              IconButton(
+                                tooltip: t.imageResumeDownload,
+                                icon: const Icon(Icons.play_arrow),
+                                onPressed: () => ref
+                                    .read(imageGenDownloadsProvider.notifier)
+                                    .download(
+                                      imageGenModelForDownload(
+                                        row.modelId,
+                                        ref.read(imageGenImportsProvider),
+                                      )!,
+                                    ),
+                              ),
+                            IconButton(
+                              tooltip: t.downloadRemoveHistoryRow,
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () => _remove(context, row: row),
+                            ),
+                          ],
                         ),
                         isThreeLine: true,
                       ),

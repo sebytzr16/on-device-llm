@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import '../../core/platform/device_info.dart';
 
 import '../../inference/engine/llama_engine.dart';
+import '../settings/domain/entities/inference_settings.dart';
 import 'device_model_server.dart';
 
 /// Keeps embedding work on its own worker and loaded model.
@@ -16,7 +17,15 @@ class LocalServedVectorEngine extends ServedVectorEngine {
   bool _busy = false;
 
   final Map<String, String> Function()? availableModels;
-  LocalServedVectorEngine(this.modelPath, {this.availableModels});
+
+  /// The chat model's hardware setting, so a desktop load can use its GPU
+  /// backend (audit E22); null keeps the vectors on the CPU.
+  final InferenceSettings Function()? placement;
+  LocalServedVectorEngine(
+    this.modelPath, {
+    this.availableModels,
+    this.placement,
+  });
 
   @override
   Map<String, String> get models => availableModels?.call() ?? const {};
@@ -34,7 +43,7 @@ class LocalServedVectorEngine extends ServedVectorEngine {
     if (path == null) throw const RouteRefusal(400, 'Unknown embedding model.');
     _busy = true;
     try {
-      await _engine.loadEmbedder(modelPath: path);
+      await _engine.loadEmbedder(modelPath: path, placement: placement?.call());
       return await action();
     } finally {
       _busy = false;

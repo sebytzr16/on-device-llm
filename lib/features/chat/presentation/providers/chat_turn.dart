@@ -11,6 +11,7 @@ class _Turn {
     required this.insertUser,
     required this.resume,
     required this.attachments,
+    required this.audioPath,
     required this.compareWith,
     required this.reuseSourcesJson,
     required this.parentId,
@@ -35,6 +36,11 @@ class _Turn {
   final bool insertUser;
   final ChatMessage? resume;
   final List<Attachment> attachments;
+
+  /// A spoken utterance's recording, sent with this turn's prompt only (a
+  /// model that can hear it); never saved as a chat attachment.
+  final String? audioPath;
+
   final ModelInfo? compareWith;
   final String? reuseSourcesJson, parentId;
   final Map<String, dynamic> turnOverrides;
@@ -147,6 +153,9 @@ class _Turn {
   /// the answer rests on nothing read this turn, and the notice says so.
   var researchSkipped = false;
   ToolRunner? runner;
+
+  /// Pictures the generate_image tool made for this answer.
+  final generatedImages = <Attachment>[];
 
   /// Whether this turn's engine can see photos.
   var vision = false;

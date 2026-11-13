@@ -2,16 +2,6 @@ part of 'conversation_screen.dart';
 
 // The Conversation screen's caption lines and big buttons.
 
-/// One line of the transcript.
-class _Line {
-  final bool user;
-  final String text;
-
-  /// The user is still saying it (a running caption).
-  final bool live;
-  const _Line(this.user, this.text, {this.live = false});
-}
-
 /// A large round control with its name underneath.
 class _BigButton extends StatelessWidget {
   static const size = 64.0;

@@ -12,9 +12,27 @@ import 'package:ondevice_llm/features/settings/domain/entities/inference_setting
 import 'package:ondevice_llm/inference/remote/remote_engine.dart';
 import 'package:ondevice_llm/inference/remote/remote_provider.dart';
 import 'package:ondevice_llm/inference/remote/remote_usage.dart';
+import 'support/hosting_secure_storage.dart';
 import 'device_model_server_test.dart' show FakeEngine;
 
 void main() {
+  test('authenticated LAN APIs require the TLS port only when active', () {
+    for (final address in ['192.168.1.5', '100.64.0.1', 'fd00::1', 'fe80::1']) {
+      final remote = InternetAddress(address);
+      expect(DeviceModelServer.requiresApiTls(remote, 8787, 8788), isTrue);
+      expect(DeviceModelServer.requiresApiTls(remote, null, 8788), isTrue);
+      expect(DeviceModelServer.requiresApiTls(remote, 8788, 8788), isFalse);
+      expect(DeviceModelServer.requiresApiTls(remote, 8787, null), isFalse);
+    }
+    for (final address in ['127.0.0.1', '127.0.0.2', '::1']) {
+      expect(
+        DeviceModelServer.requiresApiTls(InternetAddress(address), 8787, 8788),
+        isFalse,
+      );
+    }
+  });
+
+  final secrets = MemoryHostSecrets();
   late Directory dir;
   HttpOverrides? offlineOverrides;
   late HostingTls identity;
@@ -25,14 +43,14 @@ void main() {
     offlineOverrides = HttpOverrides.current;
     HttpOverrides.global = null;
     dir = await Directory.systemTemp.createTemp('pairing-tls-');
-    identity = await HostingTls.load(directory: dir);
+    identity = await HostingTls.load(directory: dir, storage: secrets);
   });
   tearDownAll(() async {
     HttpOverrides.global = offlineOverrides;
     await dir.delete(recursive: true);
   });
 
-  Future<DeviceModelServer> host() async {
+  Future<DeviceModelServer> host({InternetAddress? address}) async {
     final server = DeviceModelServer(
       engine: FakeEngine(),
       settings: () => const InferenceSettings(),
@@ -41,7 +59,7 @@ void main() {
       accessToken: 'abcdefghijklmnopqrstuvwxyz0123456789',
       pairCode: '123456',
     );
-    await server.start(tls: identity);
+    await server.start(address: address, tls: identity);
     addTearDown(server.stop);
     return server;
   }
@@ -69,12 +87,55 @@ void main() {
   );
 
   test(
+    'LAN HTTP refuses both API credentials but keeps bootstrap public',
+    () async {
+      // A LAN peer is never loopback, so authenticated API traffic from the
+      // LAN requires the TLS port; loopback is exempt from that rule.
+      final lan = InternetAddress('192.168.1.5');
+      expect(DeviceModelServer.requiresApiTls(lan, 8787, 8788), isTrue);
+      expect(DeviceModelServer.requiresApiTls(lan, 8788, 8788), isFalse);
+      expect(
+        DeviceModelServer.requiresApiTls(
+          InternetAddress.loopbackIPv4,
+          8787,
+          8788,
+        ),
+        isFalse,
+      );
+
+      // Bind to loopback (no LAN interface needed) and prove loopback clients
+      // still reach the API over plain HTTP with valid credentials.
+      final s = await host(address: InternetAddress.loopbackIPv4);
+      final http = Uri.parse('http://127.0.0.1:${s.port}/v1/');
+      final client = HttpClient();
+      addTearDown(() => client.close(force: true));
+
+      // No credentials -> refused even on loopback.
+      final request = await client.getUrl(http.resolve('models'));
+      final unauthenticated = await request.close();
+      expect(unauthenticated.statusCode, HttpStatus.unauthorized);
+      await unauthenticated.transform(utf8.decoder).join();
+
+      // Valid bearer token -> served over plain HTTP on loopback.
+      final authed = await client.getUrl(http.resolve('models'));
+      authed.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer ${s.accessToken}',
+      );
+      final response = await authed.close();
+      expect(response.statusCode, HttpStatus.ok);
+      final body = await response.transform(utf8.decoder).join();
+      expect(body, contains('"test"'));
+    },
+  );
+
+  test(
     'fingerprint and key survive identity reload and server restart',
     () async {
       final first = await host();
       final before = identity.fingerprint;
       await first.stop();
-      final reloaded = await HostingTls.load(directory: dir);
+      final reloaded = await HostingTls.load(directory: dir, storage: secrets);
       expect(reloaded.fingerprint, before);
       expect(reloaded.privateKeyPem, identity.privateKeyPem);
       final second = await host();
@@ -85,35 +146,101 @@ void main() {
     },
   );
 
-  test('corrupt identity is regenerated and then persists', () async {
-    final other = await Directory.systemTemp.createTemp('invalid-tls-');
+  test(
+    'legacy TLS migration preserves pin and removes plaintext after vault verification',
+    () async {
+      final other = await Directory.systemTemp.createTemp('migrate-tls-');
+      addTearDown(() => other.delete(recursive: true));
+      final legacy = File('${other.path}/hosting-tls.json');
+      final raw = jsonEncode({
+        'cert': identity.certificatePem,
+        'key': identity.privateKeyPem,
+      });
+      await legacy.writeAsString(raw);
+      await File('${legacy.path}.pending').writeAsString(raw);
+      final vault = MemoryHostSecrets()..failWrites = true;
+      await expectLater(
+        HostingTls.load(directory: other, storage: vault),
+        throwsA(isA<HostingTlsException>()),
+      );
+      expect(await legacy.exists(), isTrue);
+      vault.failWrites = false;
+      final migrated = await HostingTls.load(directory: other, storage: vault);
+      expect(migrated.fingerprint, identity.fingerprint);
+      expect(await legacy.exists(), isFalse);
+      expect(await File('${legacy.path}.pending').exists(), isFalse);
+      expect(
+        (await HostingTls.load(directory: other, storage: vault)).privateKeyPem,
+        identity.privateKeyPem,
+      );
+      for (final file in other.listSync().whereType<File>()) {
+        expect(await file.readAsString(), isNot(contains('PRIVATE KEY')));
+      }
+      vault.values.clear();
+      await expectLater(
+        HostingTls.load(directory: other, storage: vault),
+        throwsA(isA<HostingTlsException>()),
+      );
+    },
+  );
+
+  test(
+    'interrupted cleanup resumes from the verified vault identity',
+    () async {
+      final other = await Directory.systemTemp.createTemp('interrupted-tls-');
+      addTearDown(() => other.delete(recursive: true));
+      final legacy = File('${other.path}/hosting-tls.json');
+      await legacy.writeAsString(
+        jsonEncode({
+          'cert': identity.certificatePem,
+          'key': identity.privateKeyPem,
+        }),
+      );
+      final blockedMarker = await Directory(
+        '${other.path}/hosting-tls.fingerprint',
+      ).create();
+      final vault = MemoryHostSecrets();
+      await expectLater(
+        HostingTls.load(directory: other, storage: vault),
+        throwsA(isA<HostingTlsException>()),
+      );
+      expect(vault.values, isNotEmpty);
+      expect(await legacy.exists(), isTrue);
+      await blockedMarker.delete();
+      expect(
+        (await HostingTls.load(directory: other, storage: vault)).fingerprint,
+        identity.fingerprint,
+      );
+      expect(await legacy.exists(), isFalse);
+    },
+  );
+
+  test('concurrent first loads retain one host identity', () async {
+    final other = await Directory.systemTemp.createTemp('concurrent-tls-');
     addTearDown(() => other.delete(recursive: true));
-    await File('${other.path}/hosting-tls.json').writeAsString('{}');
-    final regenerated = await HostingTls.load(directory: other);
-    expect(
-      (await HostingTls.load(directory: other)).fingerprint,
-      regenerated.fingerprint,
-    );
+    final vault = MemoryHostSecrets();
+    final results = await Future.wait([
+      HostingTls.load(directory: other, storage: vault),
+      HostingTls.load(directory: other, storage: vault),
+    ]);
+    expect(results[0].fingerprint, results[1].fingerprint);
+    expect(vault.values, hasLength(1));
   });
 
-  test('mismatched private key is invalid and regenerated', () async {
-    final other = await Directory.systemTemp.createTemp('mismatched-tls-');
-    addTearDown(() => other.delete(recursive: true));
-    final second = await HostingTls.load(directory: other);
-    await File('${other.path}/hosting-tls.json').writeAsString(
-      jsonEncode({
-        'cert': identity.certificatePem,
-        'key': second.privateKeyPem,
-      }),
-    );
-    final repaired = await HostingTls.load(directory: other);
-    expect(repaired.fingerprint, isNot(identity.fingerprint));
-    expect(repaired.fingerprint, isNot(second.fingerprint));
-    expect(
-      (await HostingTls.load(directory: other)).fingerprint,
-      repaired.fingerprint,
-    );
-  });
+  test(
+    'corrupt migration source fails closed and remains recoverable',
+    () async {
+      final other = await Directory.systemTemp.createTemp('invalid-tls-');
+      addTearDown(() => other.delete(recursive: true));
+      final file = File('${other.path}/hosting-tls.json');
+      await file.writeAsString('{}');
+      await expectLater(
+        HostingTls.load(directory: other, storage: MemoryHostSecrets()),
+        throwsA(anything),
+      );
+      expect(await file.readAsString(), '{}');
+    },
+  );
 
   test('TLS port is stable for a configured HTTP port', () async {
     // Reserve and release an available pair before testing a fixed-port restart.
@@ -126,7 +253,7 @@ void main() {
     await first.stop();
     await first.start(
       port: port,
-      tls: await HostingTls.load(directory: dir),
+      tls: await HostingTls.load(directory: dir, storage: secrets),
     );
     expect(first.tlsPort, tlsPort);
     expect(
@@ -223,6 +350,14 @@ void main() {
             )
             as Map;
     expect(result['fingerprint'], identity.fingerprint);
+    final client = HttpClient();
+    addTearDown(() => client.close(force: true));
+    final request = await client.postUrl(Uri.parse('${http}pair'));
+    request.headers.contentType = ContentType.json;
+    request.write(jsonEncode({'code': s.pairCode!}));
+    final response = await request.close();
+    expect(response.statusCode, HttpStatus.upgradeRequired);
+    await response.drain<void>();
     await expectLater(
       PairingCode.redeem(http, s.pairCode!),
       throwsA(isA<PairingException>()),
@@ -230,7 +365,7 @@ void main() {
   });
 
   test(
-    'legacy HTTP profile works alongside pinned API and streaming',
+    'loopback HTTP profile works alongside pinned API and streaming',
     () async {
       final s = await host();
       final legacy = settings('http://127.0.0.1:${s.port}/v1/', null);
@@ -358,4 +493,60 @@ void main() {
       isNull,
     );
   });
+
+  test('reset deletes identity and next load generates a fresh one', () async {
+    final dir = await Directory.systemTemp.createTemp('reset-tls-');
+    addTearDown(() => dir.delete(recursive: true));
+    final vault = MemoryHostSecrets();
+
+    final first = await HostingTls.load(directory: dir, storage: vault);
+    final firstFingerprint = first.fingerprint;
+    expect(vault.values, isNotEmpty);
+    expect(await File('${dir.path}/hosting-tls.fingerprint').exists(), isTrue);
+
+    await HostingTls.reset(directory: dir, storage: vault);
+
+    expect(vault.values, isEmpty);
+    expect(await File('${dir.path}/hosting-tls.fingerprint').exists(), isFalse);
+    expect(await File('${dir.path}/hosting-tls.json').exists(), isFalse);
+    expect(
+      await File('${dir.path}/hosting-tls.json.pending').exists(),
+      isFalse,
+    );
+
+    final second = await HostingTls.load(directory: dir, storage: vault);
+    expect(second.fingerprint, isNot(firstFingerprint));
+    expect(vault.values, isNotEmpty);
+    expect(await File('${dir.path}/hosting-tls.fingerprint').exists(), isTrue);
+  });
+
+  test(
+    'load after deleting only vault key throws, but reset recovers',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('vault-lost-');
+      addTearDown(() => dir.delete(recursive: true));
+      final vault = MemoryHostSecrets();
+
+      await HostingTls.load(directory: dir, storage: vault);
+      final fp = (await HostingTls.load(
+        directory: dir,
+        storage: vault,
+      )).fingerprint;
+
+      vault.values.clear();
+      await expectLater(
+        HostingTls.load(directory: dir, storage: vault),
+        throwsA(isA<HostingTlsException>()),
+      );
+
+      await HostingTls.reset(directory: dir, storage: vault);
+      final recovered = await HostingTls.load(directory: dir, storage: vault);
+      expect(recovered.fingerprint, isNot(fp));
+      expect(vault.values, isNotEmpty);
+      expect(
+        await File('${dir.path}/hosting-tls.fingerprint').exists(),
+        isTrue,
+      );
+    },
+  );
 }

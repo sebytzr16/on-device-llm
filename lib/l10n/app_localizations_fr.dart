@@ -606,6 +606,50 @@ class AppLocalizationsFr extends AppLocalizations {
       'Paquets, modèles et voix, avec leurs licences';
 
   @override
+  String get checkForUpdates => 'Vérifier les mises à jour';
+
+  @override
+  String get updateCheckHint =>
+      'Interroge l’API publique GitHub Releases pour obtenir la dernière version. Aucun compte ni identifiant d’appareil n’est envoyé.';
+
+  @override
+  String get checkingForUpdates => 'Vérification des mises à jour…';
+
+  @override
+  String updateUpToDate(String version) {
+    return 'Vous avez la dernière version ($version).';
+  }
+
+  @override
+  String updateAvailable(String version) {
+    return 'La version $version est disponible.';
+  }
+
+  @override
+  String updateCurrentVersion(String current) {
+    return 'Vous utilisez la version $current.';
+  }
+
+  @override
+  String updateReleaseNotesTitle(String version) {
+    return 'Nouveautés de la version $version';
+  }
+
+  @override
+  String get updateOpenReleasePage => 'Ouvrir la page de la version';
+
+  @override
+  String get updateNoReleaseNotes => 'Cette version n’a pas de notes.';
+
+  @override
+  String get updateCheckOffline =>
+      'Vous semblez être hors ligne. Vérifiez votre connexion et réessayez.';
+
+  @override
+  String get updateCheckFailed =>
+      'Impossible de vérifier les mises à jour. Vérifiez votre connexion et réessayez.';
+
+  @override
   String get resetQuestion => 'Rétablir les valeurs par défaut ?';
 
   @override
@@ -723,6 +767,17 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get skipForNow => 'Passer pour l’instant';
+
+  @override
+  String get onboardingSaveFailedTitle =>
+      'Impossible d’enregistrer le choix d’accueil';
+
+  @override
+  String get onboardingSaveFailedBody =>
+      'Votre fin d’accueil n’a pas pu être enregistrée. Vous pouvez réessayer, ou continuer pour cette session seulement (l’accueil réapparaîtra la prochaine fois).';
+
+  @override
+  String get onboardingContinueSession => 'Continuer pour cette session';
 
   @override
   String get verifyingSha => 'Vérification SHA-256…';
@@ -1137,6 +1192,14 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
+  String get deleteModelQuestion => 'Supprimer ce modèle ?';
+
+  @override
+  String deleteModelHint(Object model, Object size) {
+    return 'Supprimer définitivement $model de cette app et libérer $size ? Cette action est irréversible. Vos conversations seront conservées.';
+  }
+
+  @override
   String get browseHf => 'Parcourir Hugging Face';
 
   @override
@@ -1169,7 +1232,7 @@ class AppLocalizationsFr extends AppLocalizations {
       'Rien de téléchargé pour l’instant. Choisissez un modèle ci-dessous pour commencer.';
 
   @override
-  String get availableToDownload => 'Disponibles au téléchargement';
+  String get availableToDownload => 'Recommandés';
 
   @override
   String get everythingOnPhone => 'Tout le catalogue est sur ce téléphone.';
@@ -2036,6 +2099,19 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
+  String get startupFailedTitle => 'Échec du démarrage';
+
+  @override
+  String get startupFailedBody =>
+      'Impossible d\'ouvrir la base de données. Réessayez ou exportez ses fichiers. La réinitialisation crée une base vide et conserve une copie locale. Les exports contiennent des données privées : conservez-les en lieu sûr.';
+
+  @override
+  String get startupRetry => 'Réessayer';
+
+  @override
+  String get startupCopyDetails => 'Copier les détails';
+
+  @override
   String get backupTitle => 'Sauvegarde chiffrée';
 
   @override
@@ -2054,6 +2130,29 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get backupRestoreBackup => 'Restaurer une sauvegarde';
+
+  @override
+  String get backupSaveToFile => 'Enregistrer dans un fichier';
+
+  @override
+  String get backupShareAction => 'Partager';
+
+  @override
+  String get backupSavedToFile =>
+      'Sauvegarde chiffrée enregistrée dans un fichier. Conservez le mot de passe : il ne peut pas être récupéré.';
+
+  @override
+  String backupSaveFailed(String error) {
+    return 'Échec de l\'enregistrement de la sauvegarde : $error';
+  }
+
+  @override
+  String backupPasswordMinLength(Object minLength) {
+    return 'Au moins $minLength caractères';
+  }
+
+  @override
+  String get backupPasswordsMatch => 'Les mots de passe correspondent';
 
   @override
   String get uiRemoteProfilePageDeleteConnection => 'Supprimer la connexion ?';
@@ -2322,7 +2421,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get supportCheckHint =>
-      'Un petit modèle (Qwen3 Reranker 0.6B) lit le passage source le plus proche avant de signaler une phrase : une phrase juste formulée autrement n\'est pas déclarée non étayée. Téléchargement séparé ; il tourne quelques secondes après une réponse tirée de sources.';
+      'Un petit modèle (Qwen3 Reranker 0.6B, anglais, français et espagnol) lit le passage source le plus proche de chaque phrase : une phrase juste formulée autrement n\'est pas déclarée non étayée, et une phrase que son passage n\'énonce pas est signalée même quand les mots correspondent. Téléchargement séparé ; il tourne quelques secondes après une réponse tirée de sources.';
 
   @override
   String get uiHfSearchPageSearchHuggingFace => 'Rechercher un visage câlin';
@@ -2341,6 +2440,35 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get uiHfSearchPageNotAddableHere => 'Non ajoutable ici';
+
+  @override
+  String get imageDiscoverFilesError =>
+      'Impossible de charger les fichiers. Réessayez.';
+
+  @override
+  String get imageDiscoverTitle => 'Découvrir les modèles d\'image et vidéo';
+
+  @override
+  String get imageDiscoverFilterImage =>
+      'Affichage des modèles texte vers image';
+
+  @override
+  String get imageDiscoverFilterVideo =>
+      'Affichage des modèles texte vers vidéo';
+
+  @override
+  String get imageDiscoverSearchHint => 'Nom du modèle, p. ex. SDXL, Flux, SVD';
+
+  @override
+  String get imageDiscoverIntro =>
+      'Dépôts de diffusion publics (GGUF et Diffusers), classés par téléchargements. Chaque fichier est vérifié avec le SHA-256 du Hub. Choisissez un poids pour l\'ajouter à votre bibliothèque.';
+
+  @override
+  String get imageDiscoverEmpty => 'Aucun dépôt de diffusion ne correspond.';
+
+  @override
+  String get imageDiscoverNoFiles =>
+      'Aucun poids de diffusion (GGUF ou safetensors) dans ce dépôt.';
 
   @override
   String get uiBenchmarkDialogBenchmarkCopied => 'Benchmark copié';
@@ -3546,6 +3674,10 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get fitTooLarge => 'Trop volumineux pour cet appareil';
+
+  @override
+  String get ternaryVulkanCpuNotice =>
+      'Ce type de modèle s’exécute sur le processeur avec le moteur Vulkan ; le moteur CUDA l’exécute sur la carte graphique.';
 
   @override
   String get configApplyNote =>
@@ -4979,6 +5111,14 @@ class AppLocalizationsFr extends AppLocalizations {
       'En conversation, interrompez en parlant. La réponse sonne alors comme un appel. Désactivé : son clair, cliquez pour interrompre.';
 
   @override
+  String get conversationHearsAudioTitle =>
+      'Laisser le modèle entendre votre voix';
+
+  @override
+  String get conversationHearsAudioHint =>
+      'Quand le modèle de discussion peut écouter (Gemma 4 E2B/E4B), il reçoit aussi votre enregistrement, en plus du texte.';
+
+  @override
   String get spokenLengthTitle => 'Longueur des réponses parlées';
 
   @override
@@ -5012,17 +5152,24 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get listeningModelHint =>
-      'Parakeet v3 a entendu toutes les phrases de test sur le téléphone et répond plus vite que Whisper ; il comprend aussi mieux le français et l\'espagnol. Il se télécharge à part et utilise plus de mémoire pendant que vous parlez. Parakeet TDT 0.6B v3 par NVIDIA, CC BY 4.0.';
+      'Parakeet Ultra a entendu toutes les phrases de test sur le téléphone et répond plus vite que Whisper ; il comprend aussi mieux le français et l\'espagnol. Il se télécharge à part et utilise plus de mémoire pendant que vous parlez. Parakeet Ultra par Moondream, basé sur Parakeet TDT 0.6B v3 de NVIDIA, CC BY 4.0.';
 
   @override
   String get listeningModelHintPc =>
-      'Parakeet v3 a entendu toutes les phrases de test et répond plus vite que Whisper ; il comprend aussi mieux le français et l\'espagnol. Il se télécharge à part et utilise plus de mémoire pendant que vous parlez. Parakeet TDT 0.6B v3 par NVIDIA, CC BY 4.0.';
+      'Parakeet Ultra a entendu toutes les phrases de test et répond plus vite que Whisper ; il comprend aussi mieux le français et l\'espagnol. Il se télécharge à part et utilise plus de mémoire pendant que vous parlez. Parakeet Ultra par Moondream, basé sur Parakeet TDT 0.6B v3 de NVIDIA, CC BY 4.0.';
 
   @override
   String get listeningWhisper => 'Whisper base';
 
   @override
-  String get listeningParakeet => 'Parakeet v3';
+  String get listeningParakeet => 'Parakeet Ultra';
+
+  @override
+  String get liveCaptionsTitle => 'Sous-titres en direct (Nemotron streaming)';
+
+  @override
+  String get liveCaptionsHint =>
+      'Affiche vos mots au fur et à mesure que vous parlez, en 25 langues. 475 Mo.';
 
   @override
   String get voiceUnpacking => 'Décompression…';
@@ -5121,6 +5268,10 @@ class AppLocalizationsFr extends AppLocalizations {
   String get convInterrupt => 'Interrompre';
 
   @override
+  String get convSynthesisFailed =>
+      'La synthèse vocale a échoué. Basculement sur la voix système.';
+
+  @override
   String get actionEvent => 'Ajouter à l\'agenda';
 
   @override
@@ -5152,6 +5303,82 @@ class AppLocalizationsFr extends AppLocalizations {
   String actionConfirmedAt(String time) {
     return 'Confirmé à $time';
   }
+
+  @override
+  String get actionExpand => 'Afficher les détails';
+
+  @override
+  String get actionCollapse => 'Masquer les détails';
+
+  @override
+  String get actionSaveButton => 'Enregistrer';
+
+  @override
+  String get actionShareButton => 'Partager';
+
+  @override
+  String get actionEventTitle => 'Titre';
+
+  @override
+  String get actionEventStart => 'Début';
+
+  @override
+  String get actionEventEnd => 'Fin';
+
+  @override
+  String get actionEventLocation => 'Lieu';
+
+  @override
+  String get actionEventNotes => 'Notes';
+
+  @override
+  String get actionEventAllDay => 'Toute la journée';
+
+  @override
+  String get actionReminderText => 'Rappel';
+
+  @override
+  String get actionReminderWhen => 'Quand';
+
+  @override
+  String get actionAlarmTime => 'Heure';
+
+  @override
+  String get actionAlarmLabel => 'Libellé';
+
+  @override
+  String get actionAlarmDays => 'Répétition';
+
+  @override
+  String get actionTimerDuration => 'Durée';
+
+  @override
+  String get actionTimerLabel => 'Libellé';
+
+  @override
+  String get actionMessageTo => 'Destinataire';
+
+  @override
+  String get actionMessageSubject => 'Sujet';
+
+  @override
+  String get actionMessageBody => 'Message';
+
+  @override
+  String get actionMessageChannel => 'Via';
+
+  @override
+  String get actionFileName => 'Nom du fichier';
+
+  @override
+  String get actionFileFormat => 'Format';
+
+  @override
+  String get actionFileContent => 'Contenu';
+
+  @override
+  String get actionHtmlEscapedNotice =>
+      'Contenu HTML affiché en source (non rendu).';
 
   @override
   String get goalAwaitingActions =>
@@ -5361,6 +5588,17 @@ class AppLocalizationsFr extends AppLocalizations {
       'Chargez d\'abord un modèle : les téléphones et les apps reçoivent les réponses du modèle chargé ici.';
 
   @override
+  String get hostPairFingerprint => 'Empreinte du serveur';
+
+  @override
+  String remotePairFingerprintMessage(String fingerprint) {
+    return 'Comparez cette empreinte avec celle affichée à côté du code d’appairage sur l’appareil hôte :\n\n$fingerprint\n\nContinuez uniquement si elles sont identiques.';
+  }
+
+  @override
+  String get remotePairFingerprintConfirm => 'Elles correspondent';
+
+  @override
   String get hostPairCode => 'Code d\'appairage';
 
   @override
@@ -5451,7 +5689,7 @@ class AppLocalizationsFr extends AppLocalizations {
   String get desktopLocalModels => 'Sur ce PC';
 
   @override
-  String get desktopCatalog => 'Disponibles au téléchargement';
+  String get desktopCatalog => 'Recommandés';
 
   @override
   String get desktopLoad => 'Charger';
@@ -6234,6 +6472,10 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get mcpUnsupportedContent =>
       'Le serveur MCP a renvoyé un contenu non textuel (image, audio ou ressource) ; ce résultat d’outil contient uniquement du texte.';
+
+  @override
+  String get mcpBatchArgsError =>
+      'Les arguments des fichiers batch Windows ne doivent pas contenir & | < > ^ % ou \".';
 
   @override
   String get structuredFormatText => 'Texte';
@@ -7102,7 +7344,15 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get desktopOptimizeKept =>
-      'Les réglages optimisés n’étaient pas plus rapides, les réglages actuels sont donc conservés.';
+      'Aucune configuration acceptable ne dépassait les réglages actuels de plus de 3 % au-delà du bruit de mesure. Réglages conservés.';
+
+  @override
+  String get desktopOptimizeKeptOutput =>
+      'Les réponses testées différaient trop de la référence. Réglages conservés.';
+
+  @override
+  String get desktopOptimizeKeptBaseline =>
+      'Vos réglages actuels n’ont pas pu être mesurés de façon fiable ; les réglages testés n’ont donc pas pu être comparés à leurs réponses et les réglages actuels sont conservés.';
 
   @override
   String desktopOptimizeRates(String before, String after) {
@@ -7350,6 +7600,50 @@ class AppLocalizationsFr extends AppLocalizations {
   String get imageCleanUp => 'Nettoyer';
 
   @override
+  String get imageAddModel => 'Ajouter un modèle';
+
+  @override
+  String get imageRemoveModel => 'Retirer le modèle';
+
+  @override
+  String get imageImportTitle => 'Ajouter un modèle d’image ou de vidéo';
+
+  @override
+  String get imageImportRepo => 'Dépôt Hugging Face';
+
+  @override
+  String get imageImportRepoHint => 'propriétaire/dépôt';
+
+  @override
+  String get imageImportFind => 'Trouver les fichiers';
+
+  @override
+  String get imageImportMode => 'Mode';
+
+  @override
+  String get imageModeImage => 'Image';
+
+  @override
+  String get imageImportFile => 'Fichier';
+
+  @override
+  String get imageImportNoSupported =>
+      'Aucun fichier .gguf ou .safetensors pris en charge par stable-diffusion.cpp n’a été trouvé dans ce dépôt.';
+
+  @override
+  String imageImportUnsupported(String file) {
+    return '$file n’est pas pris en charge. Choisissez un fichier .gguf ou .safetensors que stable-diffusion.cpp peut charger.';
+  }
+
+  @override
+  String get imageImportDownload => 'Télécharger et ajouter';
+
+  @override
+  String imageImportFailed(String error) {
+    return 'Impossible d’ajouter le modèle : $error';
+  }
+
+  @override
   String get reasoningThinking => 'Réflexion…';
 
   @override
@@ -7563,6 +7857,15 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
+  String get documentEpubFallback =>
+      'La structure du paquet est incomplète ; les chapitres ont été lus dans l’ordre du fichier.';
+
+  @override
+  String documentImagesOmitted(num count) {
+    return '$count image(s) non extraite(s)';
+  }
+
+  @override
   String documentScanUnreadable(String count) {
     return '[$count pages n’ont pas pu être lues.]';
   }
@@ -7579,6 +7882,62 @@ class AppLocalizationsFr extends AppLocalizations {
   String documentScanQuality(String confidence) {
     return ' (OCR ; $confidence ; vérifiez les erreurs)';
   }
+
+  @override
+  String get documentTextRecognitionFailed =>
+      'La reconnaissance de texte a échoué ; la photo reste disponible pour la recherche visuelle.';
+
+  @override
+  String get documentMediaNotTranscribed =>
+      'Le média est consultable, mais ses faits ne peuvent pas être utilisés tant qu\'une transcription ou une légende n\'est pas disponible.';
+
+  @override
+  String get documentTextLimitReached =>
+      'La limite d\'extraction de texte a été atteinte ; une partie du document peut manquer.';
+
+  @override
+  String voiceDictationUnavailable(Object error) {
+    return 'Dictée indisponible : $error';
+  }
+
+  @override
+  String voiceDictationFailed(Object error) {
+    return 'La dictée a échoué : $error';
+  }
+
+  @override
+  String get voiceOfflineDictationUnavailable =>
+      'La dictée sur l\'appareil est indisponible. Installez un service de reconnaissance vocale hors ligne et un pack de langue. Aucune reconnaissance réseau n\'a été lancée.';
+
+  @override
+  String get voiceOfflineRecognitionFailed =>
+      'La dictée sur l\'appareil a échoué. Vérifiez le pack de langue hors ligne dans les paramètres vocaux du téléphone. Aucune reconnaissance réseau n\'a été lancée.';
+
+  @override
+  String get voiceErrorNoMatch => 'Aucune parole reconnue.';
+
+  @override
+  String get voiceErrorSpeechTimeout => 'Aucune parole détectée.';
+
+  @override
+  String get voiceErrorPermission =>
+      'La permission microphone est nécessaire pour la dictée.';
+
+  @override
+  String get voiceErrorLanguageUnavailable =>
+      'La reconnaissance sur l\'appareil n\'a pas de pack de langue installé. Installez-en un dans les paramètres vocaux du téléphone, ou autorisez la reconnaissance réseau.';
+
+  @override
+  String get voiceErrorNetwork =>
+      'Le reconnaisseur a besoin d\'un réseau et aucun n\'est disponible.';
+
+  @override
+  String voiceErrorUnknown(Object code) {
+    return 'Erreur de dictée ($code).';
+  }
+
+  @override
+  String get voiceCodeOmitted => 'code omis';
 
   @override
   String get mtpNeedsTarget => 'Téléchargez d’abord le modèle cible.';
@@ -7682,6 +8041,14 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get dgTextOnly => 'DiffusionGemma ne gère que le chat textuel.';
+
+  @override
+  String get dgFixedSettings =>
+      'DiffusionGemma s’exécute dans son propre processus : seuls le contexte, les couches GPU, les threads et la graine sont pris en compte. Les réglages désactivés ici sont fixés par son moteur.';
+
+  @override
+  String get dgNoContinuation =>
+      'DiffusionGemma ne peut pas poursuivre une réponse partielle ; renvoyez la question pour en obtenir une nouvelle.';
 
   @override
   String hostPairValidUntil(String time) {
@@ -7900,10 +8267,10 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get readingVoiceHint =>
-      'Comparez Kokoro et Supertonic 2 en anglais, français et espagnol. Téléchargez la voix choisie ci-dessous. Poids Supertonic 2 : OpenRAIL-M ; code : MIT.';
+      'Comparez Kokoro et Supertonic 3 en anglais, français et espagnol. Téléchargez la voix choisie ci-dessous. Poids Supertonic 3 : OpenRAIL-M ; code : MIT.';
 
   @override
-  String get supertonicSpeakingPack => 'Parole (Supertonic 2)';
+  String get supertonicSpeakingPack => 'Parole (Supertonic 3)';
 
   @override
   String supertonicSpeaker(int number) {
@@ -8513,6 +8880,48 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
+  String get chatImageNeedsDesktop =>
+      'La création d’images nécessite l’application de bureau. Ce téléphone peut discuter et chercher sur le web, mais la génération d’images se fait sur le PC.';
+
+  @override
+  String get chatImageNoModel =>
+      'Téléchargez Qwen-Image 2.1 rapide depuis Créer avant de générer une image.';
+
+  @override
+  String get chatImageWrongModel =>
+      'Le modèle sélectionné dans Créer produit de la vidéo. Choisissez d’abord un modèle d’image dans Créer.';
+
+  @override
+  String get chatImagePreparing => 'Chargement du modèle d’image…';
+
+  @override
+  String chatImageDrawing(int step, int total) {
+    return 'Création de l’image : étape $step sur $total…';
+  }
+
+  @override
+  String get generatedImageName => 'Image générée';
+
+  @override
+  String get chatImageEditNeedsPicture =>
+      'Retoucher une image demande un modèle d’image, pas un modèle vidéo.';
+
+  @override
+  String get chatImageNoPictureToEdit =>
+      'Il n’y a aucune image à retoucher dans cette conversation. Joignez-en une ou demandez d’abord une nouvelle image.';
+
+  @override
+  String chatImageEditing(int step, int total) {
+    return 'Retouche de l’image : étape $step sur $total…';
+  }
+
+  @override
+  String get editedImageName => 'Image retouchée';
+
+  @override
+  String get chatImageAnswer => 'Voici l’image que vous avez demandée.';
+
+  @override
   String modelDownloadLicenseNotice(String size, String license) {
     return '$size depuis Hugging Face.\n\nLicence : $license\n\nEn continuant, vous reconnaissez avoir pris connaissance de la licence du modèle fournie par l’éditeur. Le fichier est vérifié avec SHA-256 avant utilisation.';
   }
@@ -8612,6 +9021,36 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get hardwareNextLoad =>
       'Les modifications matérielles s’appliquent au prochain chargement du modèle.';
+
+  @override
+  String get detectedHardware => 'Matériel détecté';
+
+  @override
+  String get detectedHardwareCpu => 'Processeur';
+
+  @override
+  String get detectedHardwareCpuUnknown => 'Processeur inconnu';
+
+  @override
+  String get detectedHardwareRam => 'Mémoire vive';
+
+  @override
+  String get detectedHardwareGpu => 'Carte graphique';
+
+  @override
+  String get detectedHardwareNone => 'Aucune';
+
+  @override
+  String get detectedHardwareGpuUnknown => 'Carte graphique inconnue';
+
+  @override
+  String get detectedHardwareVram => 'VRAM';
+
+  @override
+  String get detectedHardwareBackend => 'Moteur';
+
+  @override
+  String get detectedHardwareUnknown => 'Inconnu';
 
   @override
   String get searchRegionCanadaEnglish => 'Canada (anglais)';
@@ -9100,6 +9539,14 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
+  String historyDamaged(int count) {
+    return 'Impossible de lire $count comparaison(s) enregistrée(s) ; elles sont masquées.';
+  }
+
+  @override
+  String get historyRepair => 'Les supprimer';
+
+  @override
   String get historyReadOnly =>
       'Comparaison enregistrée · appuyez sur Lancer pour comparer à nouveau.';
 
@@ -9182,4 +9629,251 @@ class AppLocalizationsFr extends AppLocalizations {
   String modelRestoreRemoved(int count) {
     return 'Restaurer les retirés ($count)';
   }
+
+  @override
+  String get desktopSpeculationMode => 'Décodage spéculatif';
+
+  @override
+  String get desktopDraftModel => 'Modèle brouillon';
+
+  @override
+  String get desktopDFlash => 'DFlash (diffusion par blocs)';
+
+  @override
+  String get desktopDFlashUnavailable =>
+      'Cette bibliothèque native ne prend pas en charge DFlash.';
+
+  @override
+  String get desktopDraftRequired => 'Choisissez un modèle brouillon GGUF.';
+
+  @override
+  String get desktopDraftBrowse => 'Parcourir les modèles brouillons GGUF…';
+
+  @override
+  String get desktopDraftModeMismatch =>
+      'Ce GGUF ne correspond pas au mode de décodage spéculatif sélectionné.';
+
+  @override
+  String get desktopDFlashConvert =>
+      'Ce GGUF dflash-draft utilise un autre format. Reconvertissez-le avec le convertisseur de la version épinglée de llama.cpp et son modèle cible ; l’architecture prise en charge est dflash.';
+
+  @override
+  String get desktopDFlashInvalid =>
+      'Les métadonnées de ce brouillon DFlash sont invalides, ou ses dimensions et couches ne correspondent pas au modèle cible.';
+
+  @override
+  String get hostPairedDevices => 'Appareils associés';
+
+  @override
+  String get hostRevokeDevice => 'Révoquer';
+
+  @override
+  String get hostLegacyDevices => 'Ancien jeton partagé';
+
+  @override
+  String get hostLegacyDevicesHint =>
+      'Révoquez l’accès de tous les appareils utilisant l’ancien jeton partagé. Associez-les à nouveau pour attribuer un jeton propre à chaque appareil.';
+
+  @override
+  String get mcpExecutableReview => 'Vérifier l’accès de l’exécutable';
+
+  @override
+  String get mcpEnableExecutable => 'Faire confiance et activer';
+
+  @override
+  String get mcpExecutableWarning =>
+      'Activez uniquement un exécutable préinstallé de confiance, en indiquant son chemin absolu. Le lancement direct de npx, npm, uvx, uv, pip et des interpréteurs de commandes courants est bloqué. Ce serveur fonctionne sans isolation du système : il peut lire ou modifier des fichiers hors de son répertoire de travail dédié et accéder au réseau. Son activation constitue une exception aux règles strictes de l’application concernant l’absence de serveur, l’accès aux fichiers et le réseau. Vérifiez la commande, les arguments et les variables d’environnement ci-dessous. Toute modification de configuration nécessite une nouvelle autorisation.';
+
+  @override
+  String get hostTlsIdentityError =>
+      'L’identité TLS de l’hôte est indisponible. Restaurez le stockage sécurisé avant de relancer le partage. Réinitialiser l’identité nécessite de révoquer tous les appareils et de les associer à nouveau.';
+
+  @override
+  String get hostResetIdentity => 'Réinitialiser l\'identité';
+
+  @override
+  String get hostResetIdentityConfirm =>
+      'Créer une nouvelle identité d\'hôte ? Tous les appareils associés sont révoqués et doivent être associés à nouveau.';
+
+  @override
+  String get startupExport => 'Exporter les fichiers de la base';
+
+  @override
+  String get startupResetTitle => 'Réinitialiser la base de données ?';
+
+  @override
+  String get startupResetBody =>
+      'Les discussions, connaissances et souvenirs seront supprimés de la base active. Une copie locale est conservée. Exportez d\'abord les fichiers pour garder une copie séparée.';
+
+  @override
+  String get deviceEncryptionTitle => 'Chiffrer les données sur cet appareil';
+
+  @override
+  String get deviceEncryptionHint =>
+      'Protège les conversations, la mémoire, les connaissances, les brouillons, les pièces jointes, les vecteurs en cache et les objectifs. Redémarrez l’application pour appliquer le changement à la base de données. Désactivé par défaut. Faites une sauvegarde : la perte du stockage sécurisé peut rendre les données illisibles.';
+
+  @override
+  String get deviceEncryptionWorking =>
+      'Migration des fichiers locaux… Gardez l’application ouverte.';
+
+  @override
+  String get deviceEncryptionFailed =>
+      'La modification n’a pas pu se terminer. Les fichiers ont été conservés. Réessayez pour terminer la migration ; ne réinitialisez pas les données.';
+
+  @override
+  String get deviceEncryptionRecovery =>
+      'Impossible d’ouvrir les données chiffrées. Rétablissez l’accès au stockage sécurisé de cet appareil ou restaurez une sauvegarde protégée par mot de passe. Conservez les fichiers ; ne réinitialisez pas les données. Aucune donnée n’a été supprimée.';
+
+  @override
+  String get deviceEncryptionDoneOn =>
+      'Le chiffrement des fichiers est activé. Redémarrez l’application pour chiffrer les conversations, la mémoire et les connaissances.';
+
+  @override
+  String get deviceEncryptionDoneOff =>
+      'Le chiffrement des fichiers est désactivé. Redémarrez l’application pour déchiffrer les conversations, la mémoire et les connaissances.';
+
+  @override
+  String get deviceEncryptionRetry => 'Réessayer la migration';
+
+  @override
+  String get engineVersionsTitle => 'Versions du moteur';
+
+  @override
+  String get engineLlamaCppBuild => 'Build llama.cpp';
+
+  @override
+  String get engineSdCppRevision => 'Révision de stable-diffusion.cpp';
+
+  @override
+  String get engineCudaRuntime => 'Runtime CUDA';
+
+  @override
+  String get engineNvidiaDriver => 'Pilote NVIDIA';
+
+  @override
+  String get engineNotDetected => 'Non détecté';
+
+  @override
+  String get engineCheckUpdates => 'Rechercher les mises à jour du moteur';
+
+  @override
+  String get engineChecking => 'Vérification…';
+
+  @override
+  String engineUpToDate(String name) {
+    return '$name : à jour';
+  }
+
+  @override
+  String engineNewerAvailable(String name, String latest, String bundled) {
+    return '$name plus récent disponible : $latest (inclus : $bundled) - il arrivera avec la prochaine mise à jour de l’app';
+  }
+
+  @override
+  String engineUpdateUnknown(String name) {
+    return '$name : comparaison des versions impossible';
+  }
+
+  @override
+  String engineUpdateOffline(String name) {
+    return '$name : GitHub injoignable (hors ligne ?)';
+  }
+
+  @override
+  String engineDriverOk(String driver, String major, String required) {
+    return 'Le pilote $driver prend en charge CUDA $major ($required ou plus requis)';
+  }
+
+  @override
+  String engineDriverTooOld(String driver, String major, String required) {
+    return 'Le pilote $driver est plus ancien que la version $required requise par CUDA $major';
+  }
+
+  @override
+  String get engineCudaNote =>
+      'Les mises à jour du runtime CUDA arrivent avec celles de l’app.';
+
+  @override
+  String get desktopCompareDone => 'Terminé';
+
+  @override
+  String get desktopCompareFailed => 'Échec';
+
+  @override
+  String get desktopOptimizeKeptNoise =>
+      'Les mesures étaient instables ; aucun gain n’a pu être vérifié. Réglages conservés. Réessayez lorsque l’appareil est au repos.';
+
+  @override
+  String get imageModelReady => 'Prêt';
+
+  @override
+  String get imageModelDownloaded => 'Téléchargé';
+
+  @override
+  String get imageModelPartial => 'Partiellement téléchargé';
+
+  @override
+  String get imageModelNotDownloaded => 'Non téléchargé';
+
+  @override
+  String imageMissingFiles(String files) {
+    return 'Fichiers manquants : $files';
+  }
+
+  @override
+  String get imageCompanionsUnknown =>
+      'Ce fichier contient seulement le modèle de diffusion ; il nécessite un encodeur de texte et un VAE compatibles. Importez un modèle Qwen-Image 2.1, Wan 2.2 5B ou LTX-2.3 pris en charge.';
+
+  @override
+  String imageDownloadRequired(String model) {
+    return 'Téléchargez les fichiers manquants de $model dans Créer avant de générer une image.';
+  }
+
+  @override
+  String get projectFolder => 'Dossier du projet';
+
+  @override
+  String get projectFolderPick => 'Choisir un dossier';
+
+  @override
+  String get projectFolderClear => 'Détacher le dossier';
+
+  @override
+  String get projectFileDiff => 'Différences';
+
+  @override
+  String get projectFileApprove => 'Approuver';
+
+  @override
+  String get projectFileReject => 'Refuser';
+
+  @override
+  String get projectFileAllowChat =>
+      'Autoriser les modifications dans cette conversation';
+
+  @override
+  String get projectFileUndo => 'Annuler la modification';
+
+  @override
+  String get projectFileUndone => 'Modification annulée';
+
+  @override
+  String get projectFileFinished => 'Vérification terminée';
+
+  @override
+  String get attachmentDetails => 'Détails';
+
+  @override
+  String get kvFp8E4m3 => 'FP8 E4M3 (moteurs compatibles)';
+
+  @override
+  String get nativeSetMoeCacheSizeMb =>
+      'Cache MoE sur le GPU (Mio, 0 = désactivé)';
+
+  @override
+  String get nativeSetMoeCacheCpuShare =>
+      'Part des défauts de cache MoE calculée sur CPU (0–1)';
+
+  @override
+  String get kvCacheFp8 => 'FP8';
 }

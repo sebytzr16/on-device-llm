@@ -1,8 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
+import '../../core/storage/device_encryption.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show BuildContext;
 import 'package:path/path.dart' as p;
+import '../../core/l10n/l10n.dart';
 import '../../core/storage/app_directories.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -74,6 +78,96 @@ class PhoneAction {
     'save_file' => '${_s('content').length} characters',
     _ => '',
   };
+
+  /// Full details for the expandable preview: list of (label, value) pairs.
+  /// Values are never rendered as HTML; HTML content is returned as escaped source.
+  List<(String, String)> fullDetail(BuildContext context) {
+    final t = context.l10n;
+    final lines = <(String, String)>[];
+    switch (kind) {
+      case 'create_event':
+        lines.add((t.actionEventTitle, _s('title')));
+        if (start != null) {
+          lines.add((t.actionEventStart, _whenWithZone(start!)));
+        }
+        if (end != null) {
+          lines.add((t.actionEventEnd, _whenWithZone(end!)));
+        }
+        if (args['all_day'] == true) {
+          lines.add((t.actionEventAllDay, t.actionEventAllDay));
+        }
+        if (_s('location').isNotEmpty) {
+          lines.add((t.actionEventLocation, _s('location')));
+        }
+        if (_s('notes').isNotEmpty) {
+          lines.add((t.actionEventNotes, _s('notes')));
+        }
+        break;
+      case 'set_reminder':
+        lines.add((t.actionReminderText, _s('text')));
+        if (start != null) {
+          lines.add((t.actionReminderWhen, _whenWithZone(start!)));
+        }
+        break;
+      case 'set_alarm':
+        lines.add((t.actionAlarmTime, _s('time')));
+        if (_s('label').isNotEmpty) {
+          lines.add((t.actionAlarmLabel, _s('label')));
+        }
+        if (_days.isNotEmpty) {
+          lines.add((t.actionAlarmDays, _days.join(', ')));
+        }
+        break;
+      case 'set_timer':
+        if (timerSeconds != null) {
+          lines.add((t.actionTimerDuration, _duration(timerSeconds!)));
+        }
+        if (_s('label').isNotEmpty) {
+          lines.add((t.actionTimerLabel, _s('label')));
+        }
+        break;
+      case 'draft_message':
+        if (_s('to').isNotEmpty) {
+          lines.add((t.actionMessageTo, _s('to')));
+        }
+        if (_s('subject').isNotEmpty) {
+          lines.add((t.actionMessageSubject, _s('subject')));
+        }
+        lines.add((t.actionMessageBody, _s('body')));
+        lines.add((t.actionMessageChannel, _s('channel').toUpperCase()));
+        break;
+      case 'save_file':
+        lines.add((t.actionFileName, fileName));
+        lines.add((
+          t.actionFileFormat,
+          p.extension(fileName).toUpperCase().replaceFirst('.', ''),
+        ));
+        final content = _s('content');
+        // Detect HTML content and add notice
+        if (content.trim().toLowerCase().startsWith('<') &&
+            content.trim().toLowerCase().contains('>')) {
+          lines.add((t.actionFileContent, content));
+          lines.add(('', t.actionHtmlEscapedNotice));
+        } else {
+          lines.add((t.actionFileContent, content));
+        }
+        break;
+    }
+    return lines;
+  }
+
+  /// Format date-time with timezone offset for display.
+  static String _whenWithZone(DateTime d) {
+    d = d.toLocal();
+    String two(int v) => v.toString().padLeft(2, '0');
+    final base =
+        '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
+    final offset = d.timeZoneOffset;
+    final sign = offset.isNegative ? '-' : '+';
+    final oh = offset.inHours.abs().toString().padLeft(2, '0');
+    final om = (offset.inMinutes.abs() % 60).toString().padLeft(2, '0');
+    return '$base (UTC$sign$oh:$om)';
+  }
 
   /// Event and reminder start, read as local time.
   DateTime? get start => _date(
@@ -627,7 +721,10 @@ abstract final class PhoneActions {
         if (await file.exists()) continue;
         rethrow;
       }
-      await file.writeAsString('${a.args['content']}', encoding: utf8);
+      await DeviceEncryption.instance.write(
+        file,
+        utf8.encode('${a.args['content']}'),
+      );
       return file;
     }
   }
@@ -637,9 +734,21 @@ abstract final class PhoneActions {
   static Future<bool> launch(PhoneAction a) async {
     if (a.kind == 'save_file') {
       final file = await writeFile(a);
-      await SharePlus.instance.share(
-        ShareParams(files: [XFile(file.path)], subject: a.fileName),
+      final temporary = await (await getTemporaryDirectory()).createTemp(
+        'shared-goal-',
       );
+      try {
+        final clear = File(p.join(temporary.path, a.fileName));
+        await clear.writeAsBytes(
+          await DeviceEncryption.instance.read(file),
+          flush: true,
+        );
+        await SharePlus.instance.share(
+          ShareParams(files: [XFile(clear.path)], subject: a.fileName),
+        );
+      } finally {
+        await temporary.delete(recursive: true);
+      }
       return true;
     }
     try {

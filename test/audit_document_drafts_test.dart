@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/features/chat/domain/chat_draft_store.dart';
@@ -20,6 +21,8 @@ ChatDocument _doc(String text) => ChatDocument(
 );
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   late Directory dir;
   setUp(() async => dir = await Directory.systemTemp.createTemp('drafts'));
   tearDown(() async => dir.delete(recursive: true));

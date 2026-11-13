@@ -1,3 +1,4 @@
+import '../../../../core/platform/cpu_cores.dart';
 import '../../../../core/platform/desktop_host.dart';
 import '../../../../desktop/cpu_variant_setting.dart';
 import '../../../../core/l10n/l10n.dart';
@@ -8,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/design/app_design.dart';
+import '../../../../core/providers/shared_providers.dart';
 import '../../../../data/network/web_search/duckduckgo_scraper.dart';
 import '../../../../data/storage/download_manager.dart';
 import '../../../models/domain/entities/model_catalog.dart';
@@ -19,6 +21,8 @@ import '../../domain/entities/inference_settings.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/settings_labels.dart';
 import '../widgets/settings_widgets.dart';
+import '../widgets/engine_versions_section.dart';
+import '../../../../core/platform/engine_versions.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/design/app_dialog.dart';
 import '../../../../core/platform/form_factor.dart';
@@ -171,6 +175,132 @@ class ContextBatchPage extends ConsumerWidget {
   }
 }
 
+/// A card showing the detected hardware: CPU, RAM, GPU(s), VRAM, and backend.
+class _DetectedHardwareCard extends StatelessWidget {
+  final AsyncValue<Map<String, dynamic>?> hardware;
+  final GpuBackend selected;
+  final String? library;
+  const _DetectedHardwareCard({
+    required this.hardware,
+    required this.selected,
+    this.library,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final t = context.l10n;
+    return hardware.when(
+      data: (info) {
+        if (info == null) return const SizedBox.shrink();
+        final devices =
+            (info['devices'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        final gpus = devices
+            .where((d) => d['type'] == 'gpu' || d['type'] == 'igpu')
+            .toList();
+        final cpu = devices.firstWhere(
+          (d) => d['type'] == 'cpu',
+          orElse: () => <String, dynamic>{},
+        );
+        final backend = info['backend'] as String? ?? '';
+        final ramTotalMb = (info['ramTotalMb'] as num?)?.toInt();
+        final vramTotalMb = gpus.isNotEmpty
+            ? (gpus
+                  .map((d) => (d['totalMb'] as num?)?.toInt() ?? 0)
+                  .reduce((a, b) => a + b))
+            : (info['vramTotalMb'] as num?)?.toInt();
+
+        final cpuName =
+            cpu['description'] as String? ?? t.detectedHardwareCpuUnknown;
+        final cpuThreads = Platform.numberOfProcessors;
+
+        final ramText = ramTotalMb != null && ramTotalMb > 0
+            ? '${(ramTotalMb / 1024).toStringAsFixed(1)} GB'
+            : t.detectedHardwareUnknown;
+
+        final gpuNames = gpus
+            .map(
+              (d) =>
+                  d['description'] as String? ?? t.detectedHardwareGpuUnknown,
+            )
+            .join(', ');
+        final gpuText = gpus.isNotEmpty ? gpuNames : t.detectedHardwareNone;
+
+        final vramText = vramTotalMb != null && vramTotalMb > 0
+            ? '${(vramTotalMb / 1024).toStringAsFixed(1)} GB'
+            : t.detectedHardwareUnknown;
+
+        final backendText = resolveBackendLabel(
+          library: library,
+          selected: selected.name,
+          hardware: {...info, if (backend.isNotEmpty) 'backend': backend},
+          unknown: t.detectedHardwareUnknown,
+        );
+
+        return SettingsSection(
+          label: t.detectedHardware,
+          children: [
+            SettingsRow(
+              leading: const Icon(Icons.memory_rounded),
+              title: Text(t.detectedHardwareCpu),
+              trailing: Text(
+                '$cpuName · $cpuThreads threads',
+                style: context.text.mono.copyWith(color: c.textMuted),
+              ),
+            ),
+            SettingsRow(
+              leading: const Icon(Icons.storage_rounded),
+              title: Text(t.detectedHardwareRam),
+              trailing: Text(
+                ramText,
+                style: context.text.mono.copyWith(color: c.textMuted),
+              ),
+            ),
+            SettingsRow(
+              leading: const Icon(Icons.videogame_asset_rounded),
+              title: Text(t.detectedHardwareGpu),
+              trailing: Text(
+                gpuText,
+                style: context.text.mono.copyWith(color: c.textMuted),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (vramTotalMb != null && vramTotalMb > 0)
+              SettingsRow(
+                leading: const Icon(Icons.speed_rounded),
+                title: Text(t.detectedHardwareVram),
+                trailing: Text(
+                  vramText,
+                  style: context.text.mono.copyWith(color: c.textMuted),
+                ),
+              ),
+            SettingsRow(
+              leading: const Icon(Icons.developer_board_rounded),
+              title: Text(t.detectedHardwareBackend),
+              trailing: Text(
+                backendText,
+                style: context.text.mono.copyWith(color: c.accent),
+              ),
+            ),
+          ],
+        );
+      },
+      loading: () => SettingsSection(
+        label: context.l10n.detectedHardware,
+        children: [
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(AppSpace.lg),
+              child: CircularProgressIndicator(),
+            ),
+          ),
+        ],
+      ),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+}
+
 class HardwarePage extends ConsumerWidget {
   const HardwarePage({super.key});
 
@@ -178,9 +308,16 @@ class HardwarePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final s = ref.watch(settingsProvider);
     final n = ref.read(settingsProvider.notifier);
+    final hardware = ref.watch(detectedHardwareProvider);
     return _AdvancedScaffold(
       title: context.l10n.uiAdvancedPagesHardware,
       children: [
+        _DetectedHardwareCard(
+          hardware: hardware,
+          selected: s.backend,
+          library: ref.watch(loadedEngineLibraryProvider),
+        ),
+        const EngineVersionsSection(),
         SettingsGroup(
           children: [
             SettingDropdown<GpuBackend>(
@@ -210,8 +347,9 @@ class HardwarePage extends ConsumerWidget {
                   .uiAdvancedPagesWorkerThreadsWhileTheAnswerStreams,
               value: s.cpuThreads.toDouble(),
               min: 0,
-              max: 16,
-              divisions: 16,
+              // Follow the real core count instead of a fixed 16-thread ceiling.
+              max: CpuCores.desktop.toDouble(),
+              divisions: CpuCores.desktop,
               display: threadsLabel(s, context.l10n),
               onChanged: (v) => n.update(s.copyWith(cpuThreads: v.round())),
             ),
@@ -220,8 +358,9 @@ class HardwarePage extends ConsumerWidget {
               hint: context.l10n.uiAdvancedPagesThreadsWhileThePromptIsRead,
               value: s.batchThreads.toDouble(),
               min: 0,
-              max: 16,
-              divisions: 16,
+              // Follow the real core count instead of a fixed 16-thread ceiling.
+              max: CpuCores.desktop.toDouble(),
+              divisions: CpuCores.desktop,
               display: batchThreadsLabel(s, context.l10n),
               onChanged: (v) => n.update(s.copyWith(batchThreads: v.round())),
             ),

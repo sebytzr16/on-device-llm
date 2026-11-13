@@ -5,27 +5,66 @@ part of 'conversation_screen.dart';
 /// The sound wave: amber ribbons that rest as a calm line, rise with the
 /// user's voice while listening, follow the answer while it is spoken and
 /// ripple slowly while thinking.
-class _Wave extends StatefulWidget {
+class Wave extends StatefulWidget {
   final ConversationPhase phase;
 
   /// Loudness now (0…1 RMS), read every frame.
   final double Function() level;
   final bool muted;
-  const _Wave({required this.phase, required this.level, required this.muted});
+  const Wave({
+    super.key,
+    required this.phase,
+    required this.level,
+    required this.muted,
+  });
 
   @override
-  State<_Wave> createState() => _WaveState();
+  State<Wave> createState() => _WaveState();
 }
 
-class _WaveState extends State<_Wave> with SingleTickerProviderStateMixin {
+class _WaveState extends State<Wave> with SingleTickerProviderStateMixin {
   late final Ticker _ticker;
   final _frame = _WaveFrame();
   var _last = Duration.zero;
+  bool _tickerRunning = false;
 
   @override
   void initState() {
     super.initState();
-    _ticker = createTicker(_tick)..start();
+    _ticker = createTicker(_tick);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updateTicker();
+  }
+
+  @override
+  void didUpdateWidget(covariant Wave oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _updateTicker();
+  }
+
+  void _updateTicker() {
+    final shouldRun =
+        context.motion.animates &&
+        (widget.phase == ConversationPhase.listening ||
+            widget.phase == ConversationPhase.speaking ||
+            widget.phase == ConversationPhase.thinking);
+    if (shouldRun != _tickerRunning) {
+      _tickerRunning = shouldRun;
+      if (shouldRun) {
+        _last = Duration.zero;
+        _ticker.start();
+      } else {
+        _ticker.stop();
+        // Reset to rest state when motion is off
+        _frame.amp = 0.04;
+        _frame.time = 0.0;
+        _frame.changed();
+      }
+    }
   }
 
   @override
@@ -55,9 +94,7 @@ class _WaveState extends State<_Wave> with SingleTickerProviderStateMixin {
     // Quick to rise with a syllable, slow to settle: no flicker.
     final rate = target > f.amp ? 16.0 : 5.0;
     f.amp += (target - f.amp) * (1 - math.exp(-dt * rate));
-    if (context.motion.animates) {
-      f.time += dt * (0.6 + f.amp * 1.6);
-    }
+    f.time += dt * (0.6 + f.amp * 1.6);
     f.changed();
   }
 

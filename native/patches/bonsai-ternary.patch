@@ -1,14 +1,15 @@
 diff --git a/ggml/include/ggml.h b/ggml/include/ggml.h
-index 3c2e673..8103f9e 100644
+index 973aea2..8ac67e2 100644
 --- a/ggml/include/ggml.h
 +++ b/ggml/include/ggml.h
-@@ -430,7 +430,9 @@ extern "C" {
+@@ -432,8 +432,10 @@ extern "C" {
          GGML_TYPE_NVFP4   = 40, // NVFP4 (4 blocks, E4M3 scale)
          GGML_TYPE_Q1_0    = 41,
          GGML_TYPE_Q2_0    = 42,
--        GGML_TYPE_COUNT   = 43,
 +        GGML_TYPE_PQ2_0   = 142, // Prism ternary, group 128
 +        GGML_TYPE_PTQ1_0  = 143, // Prism dense ternary, group 128
+         GGML_TYPE_F8_E4M3 = 43,
+-        GGML_TYPE_COUNT   = 44,
 +        GGML_TYPE_COUNT   = 144,
      };
  
@@ -52,10 +53,10 @@ index 1dbbe32..5680b49 100644
  typedef struct {
      ggml_half d;           // delta
 diff --git a/ggml/src/ggml-cpu/ggml-cpu.c b/ggml/src/ggml-cpu/ggml-cpu.c
-index 4c33369..b238aae 100644
+index 40e93cc..3594134 100644
 --- a/ggml/src/ggml-cpu/ggml-cpu.c
 +++ b/ggml/src/ggml-cpu/ggml-cpu.c
-@@ -237,6 +237,16 @@ static const struct ggml_type_traits_cpu type_traits_cpu[GGML_TYPE_COUNT] = {
+@@ -240,6 +240,16 @@ static const struct ggml_type_traits_cpu type_traits_cpu[GGML_TYPE_COUNT] = {
          .vec_dot_type             = GGML_TYPE_Q8_0,
          .nrows                    = 1,
      },
@@ -73,7 +74,7 @@ index 4c33369..b238aae 100644
          .from_float               = quantize_row_q4_0,
          .vec_dot                  = ggml_vec_dot_q4_0_q8_0,
 diff --git a/ggml/src/ggml-cpu/ggml-cpu.cpp b/ggml/src/ggml-cpu/ggml-cpu.cpp
-index 81ff5d7..aef08c1 100644
+index 2978340..d3fe96d 100644
 --- a/ggml/src/ggml-cpu/ggml-cpu.cpp
 +++ b/ggml/src/ggml-cpu/ggml-cpu.cpp
 @@ -443,6 +443,8 @@ static bool ggml_backend_cpu_device_supports_op(ggml_backend_dev_t dev, const st
@@ -86,10 +87,10 @@ index 81ff5d7..aef08c1 100644
                  op->type != GGML_TYPE_IQ3_S   &&
                  op->type != GGML_TYPE_IQ2_XXS &&
 diff --git a/ggml/src/ggml-cpu/ops.cpp b/ggml/src/ggml-cpu/ops.cpp
-index 02d5eff..4141781 100644
+index c987a08..068b088 100644
 --- a/ggml/src/ggml-cpu/ops.cpp
 +++ b/ggml/src/ggml-cpu/ops.cpp
-@@ -4918,6 +4918,8 @@ void ggml_compute_forward_out_prod(
+@@ -4809,6 +4809,8 @@ void ggml_compute_forward_out_prod(
      switch (src0->type) {
          case GGML_TYPE_Q1_0:
          case GGML_TYPE_Q2_0:
@@ -98,7 +99,7 @@ index 02d5eff..4141781 100644
          case GGML_TYPE_Q4_0:
          case GGML_TYPE_Q4_1:
          case GGML_TYPE_Q5_0:
-@@ -5461,6 +5463,8 @@ void ggml_compute_forward_get_rows(
+@@ -5360,6 +5362,8 @@ void ggml_compute_forward_get_rows(
      switch (src0->type) {
          case GGML_TYPE_Q1_0:
          case GGML_TYPE_Q2_0:
@@ -108,10 +109,10 @@ index 02d5eff..4141781 100644
          case GGML_TYPE_Q4_1:
          case GGML_TYPE_Q5_0:
 diff --git a/ggml/src/ggml-cpu/quants.c b/ggml/src/ggml-cpu/quants.c
-index 5e36459..2ba2081 100644
+index 44ea9fa..a27df52 100644
 --- a/ggml/src/ggml-cpu/quants.c
 +++ b/ggml/src/ggml-cpu/quants.c
-@@ -22,6 +22,239 @@
+@@ -23,6 +23,239 @@
  
  #define UNUSED GGML_UNUSED
  
@@ -352,10 +353,10 @@ index 5e36459..2ba2081 100644
      quantize_row_q1_0_ref(x, y, k);
  }
 diff --git a/ggml/src/ggml-cpu/quants.h b/ggml/src/ggml-cpu/quants.h
-index 93ea7ee..d341e67 100644
+index f04be52..b59dd03 100644
 --- a/ggml/src/ggml-cpu/quants.h
 +++ b/ggml/src/ggml-cpu/quants.h
-@@ -38,6 +38,8 @@ void quantize_row_iq4_nl (const float * GGML_RESTRICT x, void * GGML_RESTRICT y,
+@@ -39,6 +39,8 @@ void quantize_row_iq4_nl (const float * GGML_RESTRICT x, void * GGML_RESTRICT y,
  void quantize_row_iq4_xs (const float * GGML_RESTRICT x, void * GGML_RESTRICT y, int64_t k);
  
  // Dot product
@@ -363,12 +364,12 @@ index 93ea7ee..d341e67 100644
 +void ggml_vec_dot_ptq1_0_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc);
  void ggml_vec_dot_q1_0_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc);
  void ggml_vec_dot_q2_0_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc);
- void ggml_vec_dot_q4_0_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc);
+ void ggml_vec_dot_f8_e4m3_f32(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc);
 diff --git a/ggml/src/ggml-cuda/common.cuh b/ggml/src/ggml-cuda/common.cuh
-index 049100f..842d6c2 100644
+index 4141773..fb06bdd 100644
 --- a/ggml/src/ggml-cuda/common.cuh
 +++ b/ggml/src/ggml-cuda/common.cuh
-@@ -1715,3 +1715,43 @@ static __inline__ void ggml_cuda_kernel_launch(Kernel kernel, const ggml_cuda_ke
+@@ -1543,3 +1543,43 @@ static __inline__ void ggml_cuda_kernel_launch(Kernel kernel, const ggml_cuda_ke
      kernel<<<launch_params.block_nums, launch_params.block_dims, launch_params.shmem, launch_params.stream>>>(std::forward<Args>(args)... );
      CUDA_CHECK(cudaGetLastError());
  }
@@ -413,7 +414,7 @@ index 049100f..842d6c2 100644
 +    return (int) ((v * 3) >> 8) - 1;
 +}
 diff --git a/ggml/src/ggml-cuda/convert.cu b/ggml/src/ggml-cuda/convert.cu
-index 77fd288..2d8d04b 100644
+index a8f5047..3856138 100644
 --- a/ggml/src/ggml-cuda/convert.cu
 +++ b/ggml/src/ggml-cuda/convert.cu
 @@ -499,6 +499,10 @@ to_bf16_cuda_t ggml_get_to_bf16_cuda(ggml_type type) {
@@ -427,7 +428,7 @@ index 77fd288..2d8d04b 100644
          case GGML_TYPE_Q4_0:
              return dequantize_row_q4_0_cuda;
          case GGML_TYPE_Q4_1:
-@@ -556,6 +560,10 @@ to_fp16_cuda_t ggml_get_to_fp16_cuda(ggml_type type) {
+@@ -558,6 +562,10 @@ to_fp16_cuda_t ggml_get_to_fp16_cuda(ggml_type type) {
              return dequantize_block_cont_cuda<QK1_0, QR1_0, dequantize_q1_0>;
          case GGML_TYPE_Q2_0:
              return dequantize_block_cont_cuda<QK2_0, QR2_0, dequantize_q2_0>;
@@ -438,7 +439,7 @@ index 77fd288..2d8d04b 100644
          case GGML_TYPE_Q4_0:
              return dequantize_row_q4_0_cuda;
          case GGML_TYPE_Q4_1:
-@@ -616,6 +624,10 @@ to_fp32_cuda_t ggml_get_to_fp32_cuda(ggml_type type) {
+@@ -620,6 +628,10 @@ to_fp32_cuda_t ggml_get_to_fp32_cuda(ggml_type type) {
              return dequantize_block_cont_cuda<QK1_0, QR1_0, dequantize_q1_0>;
          case GGML_TYPE_Q2_0:
              return dequantize_block_cont_cuda<QK2_0, QR2_0, dequantize_q2_0>;
@@ -449,7 +450,7 @@ index 77fd288..2d8d04b 100644
          case GGML_TYPE_Q4_0:
              return dequantize_row_q4_0_cuda;
          case GGML_TYPE_Q4_1:
-@@ -675,6 +687,10 @@ to_fp16_nc_cuda_t ggml_get_to_fp16_nc_cuda(ggml_type type) {
+@@ -681,6 +693,10 @@ to_fp16_nc_cuda_t ggml_get_to_fp16_nc_cuda(ggml_type type) {
              return dequantize_block_cuda<QK1_0, QR1_0, dequantize_q1_0>;
          case GGML_TYPE_Q2_0:
              return dequantize_block_cuda<QK2_0, QR2_0, dequantize_q2_0>;
@@ -460,7 +461,7 @@ index 77fd288..2d8d04b 100644
          case GGML_TYPE_Q4_0:
              return dequantize_block_cuda<QK4_0, QR4_0, dequantize_q4_0>;
          case GGML_TYPE_Q4_1:
-@@ -700,6 +716,10 @@ to_bf16_nc_cuda_t ggml_get_to_bf16_nc_cuda(ggml_type type) {
+@@ -708,6 +724,10 @@ to_bf16_nc_cuda_t ggml_get_to_bf16_nc_cuda(ggml_type type) {
              return dequantize_block_cuda<QK1_0, QR1_0, dequantize_q1_0>;
          case GGML_TYPE_Q2_0:
              return dequantize_block_cuda<QK2_0, QR2_0, dequantize_q2_0>;
@@ -471,7 +472,7 @@ index 77fd288..2d8d04b 100644
          case GGML_TYPE_Q4_0:
              return dequantize_block_cuda<QK4_0, QR4_0, dequantize_q4_0>;
          case GGML_TYPE_Q4_1:
-@@ -725,6 +745,10 @@ to_fp32_nc_cuda_t ggml_get_to_fp32_nc_cuda(ggml_type type) {
+@@ -735,6 +755,10 @@ to_fp32_nc_cuda_t ggml_get_to_fp32_nc_cuda(ggml_type type) {
              return dequantize_block_cuda<QK1_0, QR1_0, dequantize_q1_0>;
          case GGML_TYPE_Q2_0:
              return dequantize_block_cuda<QK2_0, QR2_0, dequantize_q2_0>;
@@ -519,10 +520,10 @@ index 651524b..6b36430 100644
 +    v.y = (c1 - 1) * d;
 +}
 diff --git a/ggml/src/ggml-cuda/getrows.cu b/ggml/src/ggml-cuda/getrows.cu
-index d97e8fd..7fa05bc 100644
+index 09b7f02..cbd5b13 100644
 --- a/ggml/src/ggml-cuda/getrows.cu
 +++ b/ggml/src/ggml-cuda/getrows.cu
-@@ -324,6 +324,14 @@ static void ggml_cuda_get_rows_switch_src0_type(
+@@ -328,6 +328,14 @@ static void ggml_cuda_get_rows_switch_src0_type(
              get_rows_cuda_q<QK2_0, QR2_0, dequantize_q2_0>(src0_d, src1_d, dst_d,
                  ne00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb1, nb2, nb3, stream);
              break;
@@ -538,10 +539,10 @@ index d97e8fd..7fa05bc 100644
              get_rows_cuda_q<QK4_0, QR4_0, dequantize_q4_0>(src0_d, src1_d, dst_d,
                  ne00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb1, nb2, nb3, stream);
 diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
-index e438073..3f1444b 100644
+index dd384d9..569a93d 100644
 --- a/ggml/src/ggml-cuda/ggml-cuda.cu
 +++ b/ggml/src/ggml-cuda/ggml-cuda.cu
-@@ -5639,6 +5639,8 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
+@@ -6303,6 +6303,8 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
                      case GGML_TYPE_F16:
                      case GGML_TYPE_Q1_0:
                      case GGML_TYPE_Q2_0:
@@ -550,7 +551,7 @@ index e438073..3f1444b 100644
                      case GGML_TYPE_Q4_0:
                      case GGML_TYPE_Q4_1:
                      case GGML_TYPE_Q5_0:
-@@ -5678,6 +5680,8 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
+@@ -6343,6 +6345,8 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
                      case GGML_TYPE_I32:
                      case GGML_TYPE_Q1_0:
                      case GGML_TYPE_Q2_0:
@@ -560,10 +561,10 @@ index e438073..3f1444b 100644
                      case GGML_TYPE_Q4_1:
                      case GGML_TYPE_Q5_0:
 diff --git a/ggml/src/ggml-cuda/mmvq.cu b/ggml/src/ggml-cuda/mmvq.cu
-index 930f1ad..23e6dea 100644
+index c6d895d..c01e29e 100644
 --- a/ggml/src/ggml-cuda/mmvq.cu
 +++ b/ggml/src/ggml-cuda/mmvq.cu
-@@ -41,6 +41,8 @@ static constexpr __device__ vec_dot_q_cuda_t get_vec_dot_q_cuda(ggml_type type)
+@@ -37,6 +37,8 @@ static constexpr __device__ vec_dot_q_cuda_t get_vec_dot_q_cuda(ggml_type type)
      switch (type) {
          case GGML_TYPE_Q1_0:    return vec_dot_q1_0_q8_1;
          case GGML_TYPE_Q2_0:    return vec_dot_q2_0_q8_1;
@@ -572,7 +573,7 @@ index 930f1ad..23e6dea 100644
          case GGML_TYPE_Q4_0:    return vec_dot_q4_0_q8_1;
          case GGML_TYPE_Q4_1:    return vec_dot_q4_1_q8_1;
          case GGML_TYPE_Q5_0:    return vec_dot_q5_0_q8_1;
-@@ -70,6 +72,8 @@ static constexpr __host__ __device__ int get_vdr_mmvq(ggml_type type) {
+@@ -66,6 +68,8 @@ static constexpr __host__ __device__ int get_vdr_mmvq(ggml_type type) {
      switch (type) {
          case GGML_TYPE_Q1_0:    return VDR_Q1_0_Q8_1_MMVQ;
          case GGML_TYPE_Q2_0:    return VDR_Q2_0_Q8_1_MMVQ;
@@ -581,7 +582,7 @@ index 930f1ad..23e6dea 100644
          case GGML_TYPE_Q4_0:    return VDR_Q4_0_Q8_1_MMVQ;
          case GGML_TYPE_Q4_1:    return VDR_Q4_1_Q8_1_MMVQ;
          case GGML_TYPE_Q5_0:    return VDR_Q5_0_Q8_1_MMVQ;
-@@ -1321,6 +1325,18 @@ static void mul_mat_vec_q_switch_type(
+@@ -1318,6 +1322,18 @@ static void mul_mat_vec_q_switch_type(
                   nchannels_x, nchannels_y, nchannels_dst, stride_channel_x, stride_channel_y, stride_channel_dst,
                   nsamples_x, nsamples_dst, stride_sample_x, stride_sample_y, stride_sample_dst, ids_stride, stream);
              break;
@@ -601,7 +602,7 @@ index 930f1ad..23e6dea 100644
              mul_mat_vec_q_switch_ncols_dst<GGML_TYPE_Q4_0>
                  (vx, vy, ids, fusion, dst, ncols_x, nrows_x, ncols_dst, stride_row_x, stride_col_y, stride_col_dst,
 diff --git a/ggml/src/ggml-cuda/vecdotq.cuh b/ggml/src/ggml-cuda/vecdotq.cuh
-index c7acdac..64d8490 100644
+index d5ff93b..06d2e58 100644
 --- a/ggml/src/ggml-cuda/vecdotq.cuh
 +++ b/ggml/src/ggml-cuda/vecdotq.cuh
 @@ -1441,3 +1441,104 @@ static __device__ __forceinline__ float vec_dot_iq4_xs_q8_1(
@@ -710,10 +711,10 @@ index c7acdac..64d8490 100644
 +    return (float) bq->d * acc;
 +}
 diff --git a/ggml/src/ggml-quants.c b/ggml/src/ggml-quants.c
-index 7750a72..6f6d9a1 100644
+index 3586f67..d4c57a9 100644
 --- a/ggml/src/ggml-quants.c
 +++ b/ggml/src/ggml-quants.c
-@@ -456,6 +456,60 @@ void dequantize_row_q2_0(const block_q2_0 * GGML_RESTRICT x, float * GGML_RESTRI
+@@ -459,6 +459,60 @@ void dequantize_row_q2_0(const block_q2_0 * GGML_RESTRICT x, float * GGML_RESTRI
      }
  }
  
@@ -774,7 +775,7 @@ index 7750a72..6f6d9a1 100644
  void dequantize_row_q4_0(const block_q4_0 * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k) {
      static const int qk = QK4_0;
  
-@@ -5384,7 +5438,7 @@ bool ggml_validate_row_data(enum ggml_type type, const void * data, size_t nbyte
+@@ -5400,7 +5454,7 @@ bool ggml_validate_row_data(enum ggml_type type, const void * data, size_t nbyte
          return false;
      }
  
@@ -783,7 +784,7 @@ index 7750a72..6f6d9a1 100644
          fprintf(stderr, "%s: invalid size %zu for type %s (type size = %zu)\n", __func__, nbytes, ggml_type_name(type), ggml_type_size(type));
          return false;
      }
-@@ -5509,6 +5563,14 @@ bool ggml_validate_row_data(enum ggml_type type, const void * data, size_t nbyte
+@@ -5525,6 +5579,14 @@ bool ggml_validate_row_data(enum ggml_type type, const void * data, size_t nbyte
              {
                  VALIDATE_ROW_DATA_D_F16_IMPL(block_q2_0, data, nb);
              } break;
@@ -799,10 +800,10 @@ index 7750a72..6f6d9a1 100644
              {
                  VALIDATE_ROW_DATA_D_F16_IMPL(block_q4_0, data, nb);
 diff --git a/ggml/src/ggml-quants.h b/ggml/src/ggml-quants.h
-index 75188f1..21b9c34 100644
+index ca36d13..44df747 100644
 --- a/ggml/src/ggml-quants.h
 +++ b/ggml/src/ggml-quants.h
-@@ -45,6 +45,8 @@ GGML_API void quantize_row_iq2_s_ref  (const float * GGML_RESTRICT x, block_iq2_
+@@ -46,6 +46,8 @@ GGML_API void quantize_row_iq2_s_ref  (const float * GGML_RESTRICT x, block_iq2_
  // Dequantization
  GGML_API void dequantize_row_q1_0(const block_q1_0 * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k);
  GGML_API void dequantize_row_q2_0(const block_q2_0 * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k);
@@ -812,10 +813,10 @@ index 75188f1..21b9c34 100644
  GGML_API void dequantize_row_q4_1(const block_q4_1 * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k);
  GGML_API void dequantize_row_q5_0(const block_q5_0 * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k);
 diff --git a/ggml/src/ggml-vulkan/ggml-vulkan.cpp b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
-index e603cbc..b874fdf 100644
+index 041497d..c1c93fb 100644
 --- a/ggml/src/ggml-vulkan/ggml-vulkan.cpp
 +++ b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
-@@ -1875,6 +1875,7 @@ void ggml_vk_load_shaders(vk_device& device, vk_pipeline requested) {
+@@ -2084,6 +2084,7 @@ void ggml_vk_load_shaders(vk_device& device, vk_pipeline requested) {
                                   (device->architecture == AMD_RDNA3 || device->architecture == AMD_RDNA4);
  
          for (uint32_t i = 0; i < GGML_TYPE_COUNT; ++i) {
@@ -823,7 +824,7 @@ index e603cbc..b874fdf 100644
              ggml_type t = (ggml_type)i;
              // Disable medium and large matrix multiplication if not enough shared memory is available
              // Check mmq warptiles as the largest configuration
-@@ -4786,6 +4787,7 @@ vk_device ggml_vk_get_device(size_t idx) {
+@@ -5062,6 +5063,7 @@ vk_device ggml_vk_get_device(size_t idx) {
          // Shaders
          // Disable matmul tile sizes early if performance low or not supported
          for (uint32_t i = 0; i < GGML_TYPE_COUNT; ++i) {
@@ -832,10 +833,10 @@ index e603cbc..b874fdf 100644
  #ifndef GGML_VULKAN_RUN_TESTS
              case VK_VENDOR_ID_AMD:
 diff --git a/ggml/src/ggml.c b/ggml/src/ggml.c
-index 004970d..9731d59 100644
+index c6a080d..1d89a57 100644
 --- a/ggml/src/ggml.c
 +++ b/ggml/src/ggml.c
-@@ -701,6 +701,20 @@ static const struct ggml_type_traits type_traits[GGML_TYPE_COUNT] = {
+@@ -697,6 +697,20 @@ static const struct ggml_type_traits type_traits[GGML_TYPE_COUNT] = {
          .to_float                 = (ggml_to_float_t) dequantize_row_q2_0,
          .from_float_ref           = (ggml_from_float_t) quantize_row_q2_0_ref,
      },
@@ -856,7 +857,7 @@ index 004970d..9731d59 100644
      [GGML_TYPE_Q4_0] = {
          .type_name                = "q4_0",
          .blck_size                = QK4_0,
-@@ -1365,7 +1379,7 @@ double ggml_type_sizef(enum ggml_type type) {
+@@ -1369,7 +1383,7 @@ double ggml_type_sizef(enum ggml_type type) {
  const char * ggml_type_name(enum ggml_type type) {
      assert(type >= 0);
      assert(type < GGML_TYPE_COUNT);
@@ -866,7 +867,7 @@ index 004970d..9731d59 100644
  
  bool ggml_is_quantized(enum ggml_type type) {
 diff --git a/ggml/src/gguf.cpp b/ggml/src/gguf.cpp
-index 75ceade..2034554 100644
+index c80b682..9777b7b 100644
 --- a/ggml/src/gguf.cpp
 +++ b/ggml/src/gguf.cpp
 @@ -736,6 +736,12 @@ static struct gguf_context * gguf_init_from_reader(const struct gguf_reader & gr
@@ -883,39 +884,39 @@ index 75ceade..2034554 100644
              if (blck_size == 0 || info.t.ne[0] % blck_size != 0) {
                  GGML_LOG_ERROR("%s: tensor '%s' of type %d (%s) has %" PRId64 " elements per row, "
 diff --git a/gguf-py/gguf/constants.py b/gguf-py/gguf/constants.py
-index b8cfa3a..4a1da2d 100644
+index 30185f0..805c506 100644
 --- a/gguf-py/gguf/constants.py
 +++ b/gguf-py/gguf/constants.py
-@@ -6283,6 +6283,8 @@ class GGMLQuantizationType(IntEnum):
+@@ -6894,6 +6894,8 @@ class GGMLQuantizationType(IntEnum):
      NVFP4   = 40
      Q1_0    = 41
      Q2_0    = 42
 +    PQ2_0   = 142
 +    PTQ1_0  = 143
+     F8_E4M3 = 43
  
  
- class ExpertGatingFuncType(IntEnum):
-@@ -6339,6 +6341,9 @@ class LlamaFileType(IntEnum):
+@@ -6951,6 +6953,9 @@ class LlamaFileType(IntEnum):
      MOSTLY_NVFP4         = 39  # except 1d tensors
      MOSTLY_Q1_0          = 40  # except 1d tensors
      MOSTLY_Q2_0          = 41  # except 1d tensors
 +    MOSTLY_PQ2_0         = 141  # Prism published GGUF file metadata
 +    MOSTLY_PQ2_0_LEGACY  = 142
 +    MOSTLY_PTQ1_0        = 143
+     MOSTLY_F8_E4M3       = 42  # except 1d tensors
  
      GUESSED              = 1024  # not specified in the model file
- 
-@@ -6502,6 +6507,8 @@ GGML_QUANT_SIZES: dict[GGMLQuantizationType, tuple[int, int]] = {
+@@ -7129,6 +7134,8 @@ GGML_QUANT_SIZES: dict[GGMLQuantizationType, tuple[int, int]] = {
      GGMLQuantizationType.NVFP4:   (64, 4 + 32),
      GGMLQuantizationType.Q1_0:    (128, 2 + 16),
      GGMLQuantizationType.Q2_0:    (64, 2 + 16),
 +    GGMLQuantizationType.PQ2_0:   (128, 2 + 32),
 +    GGMLQuantizationType.PTQ1_0:  (128, 24 + 2 + 2),
+     GGMLQuantizationType.F8_E4M3: (1, 1),
  }
  
- 
 diff --git a/include/llama.h b/include/llama.h
-index 3af6e22..aa39640 100644
+index 428f51f..20a6a43 100644
 --- a/include/llama.h
 +++ b/include/llama.h
 @@ -158,6 +158,9 @@ extern "C" {
@@ -925,11 +926,11 @@ index 3af6e22..aa39640 100644
 +        LLAMA_FTYPE_MOSTLY_PQ2_0          = 141, // Prism published file metadata
 +        LLAMA_FTYPE_MOSTLY_PQ2_0_LEGACY   = 142,
 +        LLAMA_FTYPE_MOSTLY_PTQ1_0         = 143,
+         LLAMA_FTYPE_MOSTLY_F8_E4M3       = 42, // except 1d tensors
  
          LLAMA_FTYPE_GUESSED = 1024, // not specified in the model file
-     };
 diff --git a/src/llama-model-loader.cpp b/src/llama-model-loader.cpp
-index 066e69e..b1b1233 100644
+index 2cbee61..6075f1c 100644
 --- a/src/llama-model-loader.cpp
 +++ b/src/llama-model-loader.cpp
 @@ -39,6 +39,9 @@ const char * llama_ftype_name(llama_ftype ftype) {
@@ -940,14 +941,14 @@ index 066e69e..b1b1233 100644
 +        case LLAMA_FTYPE_MOSTLY_PQ2_0_LEGACY: return "PQ2_0 - 2.125 bpw ternary";
 +        case LLAMA_FTYPE_MOSTLY_PTQ1_0: return "PTQ1_0 - 1.75 bpw ternary";
          case LLAMA_FTYPE_MOSTLY_Q2_0:      name = LLAMA_FTYPE_PREFIX "Q2_0"; break;
+         case LLAMA_FTYPE_MOSTLY_F8_E4M3:   name = LLAMA_FTYPE_PREFIX "F8_E4M3"; break;
          case LLAMA_FTYPE_MOSTLY_Q4_0:      name = LLAMA_FTYPE_PREFIX "Q4_0"; break;
-         case LLAMA_FTYPE_MOSTLY_Q4_1:      name = LLAMA_FTYPE_PREFIX "Q4_1"; break;
-@@ -779,6 +782,8 @@ llama_model_loader::llama_model_loader(
+@@ -865,6 +868,8 @@ llama_model_loader::llama_model_loader(
              case GGML_TYPE_IQ3_S:   ftype = LLAMA_FTYPE_MOSTLY_IQ3_S;   break;
              case GGML_TYPE_NVFP4:   ftype = LLAMA_FTYPE_MOSTLY_NVFP4;   break;
              case GGML_TYPE_Q1_0:    ftype = LLAMA_FTYPE_MOSTLY_Q1_0;    break;
 +            case GGML_TYPE_PQ2_0: ftype = LLAMA_FTYPE_MOSTLY_PQ2_0; break;
 +            case GGML_TYPE_PTQ1_0: ftype = LLAMA_FTYPE_MOSTLY_PTQ1_0; break;
              case GGML_TYPE_Q2_0:    ftype = LLAMA_FTYPE_MOSTLY_Q2_0;    break;
+             case GGML_TYPE_F8_E4M3: ftype = LLAMA_FTYPE_MOSTLY_F8_E4M3; break;
              default:
-                 {

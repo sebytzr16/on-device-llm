@@ -175,9 +175,51 @@ class DesktopMcpPage extends ConsumerWidget {
                       label: server.config.name,
                       child: Switch(
                         value: registry.serverEnabled(server.config.name),
-                        onChanged: (v) => act(
-                          () => registry.enableServer(server.config.name, v),
-                        ),
+                        onChanged: (v) => act(() async {
+                          if (v && server.config.command != null) {
+                            final approved = await showAppDialog<bool>(
+                              context: context,
+                              builder: (dialog) => AlertDialog(
+                                title: Text(t.mcpExecutableReview),
+                                content: SingleChildScrollView(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(t.mcpExecutableWarning),
+                                      const SizedBox(height: 16),
+                                      SelectableText(
+                                        jsonEncode(server.config.toJson()),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialog, false),
+                                    child: Text(t.mcpDeny),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialog, true),
+                                    child: Text(t.mcpEnableExecutable),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (approved != true) return;
+                          }
+                          if (registry.servers[server.config.name] != server) {
+                            throw const McpException(McpProblem.denied);
+                          }
+                          await registry.enableServer(
+                            server.config.name,
+                            v,
+                            reviewed: v,
+                          );
+                        }),
                       ),
                     ),
                   ],
@@ -223,20 +265,28 @@ class DesktopMcpPage extends ConsumerWidget {
                 ),
                 for (final tool in server.tools) ...[
                   const Divider(height: 24),
-                  SpringSwitchTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      tool['name'] as String,
-                      style: context.text.mono,
-                    ),
-                    subtitle: Text(tool['description'] as String? ?? ''),
-                    value: registry.toolEnabled(
-                      mcpToolName(server.config.name, tool['name'] as String),
-                    ),
-                    onChanged: (v) => act(
-                      () => registry.enableTool(
+                  // The card is a coloured box: give the tile its own
+                  // Material so ink and background stay visible.
+                  Material(
+                    type: MaterialType.transparency,
+                    child: SpringSwitchTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        tool['name'] as String,
+                        style: context.text.mono,
+                      ),
+                      subtitle: Text(tool['description'] as String? ?? ''),
+                      value: registry.toolEnabled(
                         mcpToolName(server.config.name, tool['name'] as String),
-                        v,
+                      ),
+                      onChanged: (v) => act(
+                        () => registry.enableTool(
+                          mcpToolName(
+                            server.config.name,
+                            tool['name'] as String,
+                          ),
+                          v,
+                        ),
                       ),
                     ),
                   ),

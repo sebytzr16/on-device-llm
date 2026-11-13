@@ -18,14 +18,27 @@ void main() {
 
   test('reading engine and speed survive the saved settings format', () {
     final chosen = const InferenceSettings().copyWith(
-      readingVoice: 'supertonic-2',
+      readingVoice: 'supertonic-3',
       readingSpeed: 1.3,
     );
     final restored = InferenceSettings.fromJson(
       jsonDecode(jsonEncode(chosen.toJson())) as Map<String, dynamic>,
     );
-    expect(restored.readingVoice, 'supertonic-2');
+    expect(restored.readingVoice, 'supertonic-3');
     expect(restored.readingSpeed, 1.3);
-    expect(restored.copyWith(talkOver: true).readingVoice, 'supertonic-2');
+    expect(restored.copyWith(talkOver: true).readingVoice, 'supertonic-3');
+  });
+
+  test('a saved Supertonic 2 preference selects Supertonic 3', () {
+    expect(
+      InferenceSettings.fromJson({'readingVoice': 'supertonic-2'}).readingVoice,
+      'supertonic-3',
+    );
+    expect(
+      const InferenceSettings()
+          .copyWith(readingVoice: 'supertonic-2')
+          .readingVoice,
+      'supertonic-3',
+    );
   });
 }

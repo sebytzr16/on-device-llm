@@ -12,7 +12,10 @@ import '../../data/storage/model_storage.dart';
 import '../../inference/engine/llama_engine.dart';
 import '../models/domain/entities/model_catalog.dart';
 import '../models/presentation/providers/model_manager_provider.dart';
+import '../settings/domain/entities/inference_settings.dart';
+import '../settings/presentation/providers/settings_provider.dart';
 import 'knowledge_store.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// Turns text into vectors with the on-device embedding model (FX-02).
 /// Null results mean "no semantic index available" (model not downloaded,
@@ -58,6 +61,10 @@ class LlamaEmbedder implements TextEmbedder {
   final EmbeddingModel model;
   final Future<bool> Function() available;
   final Future<bool> Function() mediaAvailable;
+
+  /// The chat model's hardware setting, so a desktop load can use its GPU
+  /// backend (audit E22); null keeps the embedder on the CPU.
+  final InferenceSettings Function()? placement;
   final _queue = PriorityWorkQueue();
   Timer? _idle;
   bool _disposed = false;
@@ -87,6 +94,7 @@ class LlamaEmbedder implements TextEmbedder {
     this.model,
     this.available, [
     Future<bool> Function()? mediaAvailable,
+    this.placement,
   ]) : mediaAvailable = mediaAvailable ?? (() async => false);
 
   @override
@@ -107,6 +115,7 @@ class LlamaEmbedder implements TextEmbedder {
       mmprojPath: media
           ? (await ModelStorage.modelFile(projector!.fileName)).path
           : null,
+      placement: placement?.call(),
     );
     return true;
   }
@@ -196,7 +205,9 @@ class LlamaEmbedder implements TextEmbedder {
         _idle?.cancel();
         _idle = Timer(const Duration(minutes: 2), () => unawaited(release()));
       }
-    } catch (_) {}
+    } catch (e, st) {
+      quietFailure('knowledge_embedder:199', e, st);
+    }
   }, priority: 5);
 
   @override
@@ -234,6 +245,7 @@ final textEmbedderProvider = Provider<TextEmbedder>((ref) {
     embeddingModel,
     () async => ref.read(modelManagerProvider).embeddingReady,
     () async => ref.read(modelManagerProvider).embeddingMediaReady,
+    () => ref.read(settingsProvider),
   );
   ref.onDispose(embedder.dispose);
   return embedder;
@@ -279,19 +291,27 @@ class KnowledgeIndexer extends Notifier<KnowledgeIndexState> {
   static const batch = 8;
 
   Future<void> index(String collection) async {
+    // Acquire the run token synchronously before the first await (audit A05).
     if (state.running) return;
     final db = ref.read(appDatabaseProvider);
     final embedder = ref.read(textEmbedderProvider);
     _cancel = false;
+    state = KnowledgeIndexState(
+      running: true,
+      collection: collection,
+      total: 0,
+    );
     final total = await db.countUnindexedKnowledgeChunks(
       collection,
       embedder.modelId,
     );
-    state = KnowledgeIndexState(
-      running: true,
-      collection: collection,
-      total: total,
-    );
+    if (_cancel || !ref.mounted) {
+      // A cancel that landed before the first batch still owns the run token
+      // acquired above: release it, or every later index() returns early.
+      if (ref.mounted) state = state.copyWith(running: false, total: total);
+      return;
+    }
+    state = state.copyWith(total: total);
     var done = 0;
     try {
       while (!_cancel) {

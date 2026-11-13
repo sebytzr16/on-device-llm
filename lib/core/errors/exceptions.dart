@@ -1,3 +1,5 @@
+import '../l10n/l10n.dart';
+
 sealed class AppException implements Exception {
   final String message;
   const AppException(this.message);
@@ -24,6 +26,21 @@ String modelLoadErrorMessage(Object? error) {
       : error is StateError
       ? error.message
       : '$error';
+  if (message.contains('OD_DFLASH_UNAVAILABLE')) {
+    return appStrings.desktopDFlashUnavailable;
+  }
+  if (message.contains('OD_DFLASH_FORMAT')) {
+    return appStrings.desktopDFlashConvert;
+  }
+  if (message.contains('OD_DRAFT_REQUIRED')) {
+    return appStrings.desktopDraftRequired;
+  }
+  if (message.contains('OD_SPEC_MODE')) {
+    return appStrings.desktopDraftModeMismatch;
+  }
+  if (message.contains('OD_DFLASH_METADATA')) {
+    return appStrings.desktopDFlashInvalid;
+  }
   final lower = message.toLowerCase();
   if (lower.contains('unknown model architecture') ||
       lower.contains('unsupported model architecture') ||

@@ -31,6 +31,7 @@ import 'run_details_sheet.dart';
 import 'code_block.dart';
 import 'reasoning_accordion.dart';
 import '../../../../core/design/app_dialog.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// One turn of the conversation. User turns sit in a raised bubble on the
 /// right; assistant turns are set directly on the page like an article,
@@ -95,13 +96,12 @@ class ChatBubble extends StatelessWidget {
     if (message.isSuperseded) {
       return _SupersededTurn(message, onRestore: onRestore);
     }
-    // Appearance > compact bubbles halves the gap between turns.
-    final compact = ChatBubbleDensity.of(context);
+    // Appearance > compact bubbles: every spacing in the turn comes from the
+    // density the chat set (the phone's chat screen and the desktop pane both
+    // provide one, so the toggle rebuilds the list live).
+    final density = ChatBubbleDensity.of(context);
     final bubble = Padding(
-      padding: EdgeInsets.symmetric(
-        vertical: compact ? AppDesign.xs : AppDesign.sm,
-        horizontal: compact ? AppDesign.md : AppDesign.lg,
-      ),
+      padding: density.turnPadding,
       child: GestureDetector(
         onLongPress: streaming ? null : () => showMessageActions(context),
         child: isUser
@@ -287,7 +287,7 @@ extension on ChatBubble {
                       size: 18,
                       color: a.danger ? c.danger : c.textMuted,
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: AppSpace.md),
                     Flexible(
                       child: Text(
                         a.label,
@@ -396,9 +396,9 @@ class _SupersededTurnState extends State<_SupersededTurn> {
         ? context.l10n.earlierQuestion
         : context.l10n.earlierAnswer;
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        vertical: AppDesign.xs,
-        horizontal: AppDesign.lg,
+      padding: EdgeInsets.symmetric(
+        vertical: AppSpace.xs,
+        horizontal: ChatBubbleDensity.of(context).turnInset,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -428,12 +428,12 @@ class _SupersededTurnState extends State<_SupersededTurn> {
           ),
           if (_open)
             Padding(
-              padding: const EdgeInsets.only(top: AppDesign.sm),
+              padding: const EdgeInsets.only(top: AppSpace.sm),
               child: SelectableText(m.content, style: context.text.bodyMuted),
             ),
           if (_open && widget.onRestore != null && m.role == ChatRole.user)
             Padding(
-              padding: const EdgeInsets.only(top: AppDesign.sm),
+              padding: const EdgeInsets.only(top: AppSpace.sm),
               child: OutlinedButton.icon(
                 key: Key('restore-${m.id}'),
                 onPressed: widget.onRestore,
@@ -500,48 +500,58 @@ class _UserTurn extends StatelessWidget {
     );
   }
 
-  Widget _bubble(BuildContext context, AppColors c) => Container(
-    constraints: BoxConstraints(
-      maxWidth: MediaQuery.sizeOf(context).width * 0.8,
-    ),
-    padding: const EdgeInsets.symmetric(
-      horizontal: AppDesign.lg,
-      vertical: AppDesign.md,
-    ),
-    decoration: BoxDecoration(
-      color: c.surfaceRaised,
-      border: Border.all(color: c.hairline),
-      borderRadius: const BorderRadius.only(
-        topLeft: Radius.circular(AppDesign.rLg),
-        topRight: Radius.circular(AppDesign.rLg),
-        bottomLeft: Radius.circular(AppDesign.rLg),
-        bottomRight: Radius.circular(AppDesign.xs),
+  Widget _bubble(BuildContext context, AppColors c) {
+    final density = ChatBubbleDensity.of(context);
+    return Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width * 0.8,
       ),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (message.attachments.isNotEmpty)
-          Padding(
-            padding: EdgeInsets.only(
-              bottom: message.content.isEmpty ? 0 : AppDesign.sm,
+      padding: density.bubblePadding,
+      decoration: BoxDecoration(
+        color: c.surfaceRaised,
+        border: Border.all(color: c.hairline),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(AppDesign.rLg),
+          topRight: Radius.circular(AppDesign.rLg),
+          bottomLeft: Radius.circular(AppDesign.rLg),
+          bottomRight: Radius.circular(AppSpace.xs),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (message.attachments.isNotEmpty)
+            Padding(
+              padding: EdgeInsets.only(
+                bottom: message.content.isEmpty ? 0 : AppSpace.sm,
+              ),
+              child: AttachmentChips(attachments: message.attachments),
             ),
-            child: AttachmentChips(attachments: message.attachments),
-          ),
-        if (message.content.isNotEmpty)
-          DesktopHost.active
-              ? Text(message.content, style: context.text.body)
-              : SelectableText(message.content, style: context.text.body),
-        if (versions.length > 1)
-          _VersionSwitcher(
-            current: message,
-            versions: versions,
-            onPick: onRestoreVersion,
-          ),
-      ],
-    ),
-  );
+          if (message.content.isNotEmpty)
+            DesktopHost.active
+                ? Text(
+                    message.content,
+                    style: context.text.body.copyWith(
+                      height: ChatBubbleDensity.of(context).lineHeight,
+                    ),
+                  )
+                : SelectableText(
+                    message.content,
+                    style: context.text.body.copyWith(
+                      height: ChatBubbleDensity.of(context).lineHeight,
+                    ),
+                  ),
+          if (versions.length > 1)
+            _VersionSwitcher(
+              current: message,
+              versions: versions,
+              onPick: onRestoreVersion,
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 /// ‹ 2/3 › under an edited question: the arrows bring back the previous or
@@ -602,7 +612,7 @@ class _VersionSwitcher extends StatelessWidget {
           child: Container(
             constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
             alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: AppDesign.xs),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpace.xs),
             child: Text(
               '${at + 1}/${versions.length}',
               style: context.text.mono.copyWith(color: c.textMuted),
@@ -647,7 +657,7 @@ class _AssistantTurn extends StatelessWidget {
               height: 1.5,
               color: alternative ? c.info : c.accent,
             ),
-            const SizedBox(width: AppDesign.sm),
+            const SizedBox(width: AppSpace.sm),
             Expanded(
               child: Text(
                 streaming ? context.l10n.generating : caption,
@@ -657,7 +667,7 @@ class _AssistantTurn extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: AppDesign.sm),
+        SizedBox(height: ChatBubbleDensity.of(context).captionGap),
         if (reasoning != null && reasoning.isNotEmpty)
           ReasoningAccordion(
             content: reasoning,
@@ -667,7 +677,7 @@ class _AssistantTurn extends StatelessWidget {
         // Above the answer, as rounded chips (owner, 2026-11-01).
         if (!streaming && sources.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(bottom: AppDesign.md),
+            padding: const EdgeInsets.only(bottom: AppSpace.md),
             child: _SourcesBubble(sources: sources),
           ),
         if (!streaming && message.runJson?.contains('"ask_helper"') == true)
@@ -678,6 +688,15 @@ class _AssistantTurn extends StatelessWidget {
                 if ((r['call'] as Map?)?['name'] == 'ask_helper')
                   ToolResult.fromJson(Map<String, dynamic>.from(r)),
             ],
+          ),
+        // Pictures the answer made (generate_image), as attachments.
+        if (message.attachments.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpace.md),
+            child: AttachmentChips(
+              attachments: message.attachments,
+              large: true,
+            ),
           ),
         if (message.content.isNotEmpty)
           // While it streams, new words fade in behind a soft trailing edge
@@ -695,7 +714,7 @@ class _AssistantTurn extends StatelessWidget {
               child: StreamingMarkdown(
                 data: message.content,
                 streaming: streaming,
-                blockSpacing: AppDesign.md,
+                blockSpacing: ChatBubbleDensity.of(context).blockGap,
                 builder: (data) => MarkdownBody(
                   data: data,
                   // The desktop pane selects across the whole conversation.
@@ -712,7 +731,9 @@ class _AssistantTurn extends StatelessWidget {
                     if (href != null) {
                       try {
                         await openExternalLink(href);
-                      } catch (_) {}
+                      } catch (e, st) {
+                        quietFailure('chat_bubble:715', e, st);
+                      }
                     }
                   },
                   styleSheet: _styleSheet(context, t, c),
@@ -723,7 +744,7 @@ class _AssistantTurn extends StatelessWidget {
         if (streaming)
           Padding(
             padding: EdgeInsets.only(
-              top: message.content.isEmpty ? AppDesign.xs : AppDesign.sm,
+              top: message.content.isEmpty ? AppSpace.xs : AppSpace.sm,
             ),
             child: RepaintBoundary(
               child: _StreamingDots(waiting: message.content.isEmpty),
@@ -731,7 +752,7 @@ class _AssistantTurn extends StatelessWidget {
           ),
         if (!streaming && message.responseStatus != 'complete')
           Padding(
-            padding: const EdgeInsets.only(top: AppDesign.sm),
+            padding: const EdgeInsets.only(top: AppSpace.sm),
             child: Text(
               switch (message.responseStatus) {
                 'stopped' => context.l10n.stoppedPartial,
@@ -753,7 +774,7 @@ class _AssistantTurn extends StatelessWidget {
               return actions.isEmpty
                   ? const SizedBox.shrink()
                   : Padding(
-                      padding: const EdgeInsets.only(top: AppDesign.md),
+                      padding: const EdgeInsets.only(top: AppSpace.md),
                       child: PhoneActionCards(actions: actions),
                     );
             },
@@ -767,10 +788,10 @@ class _AssistantTurn extends StatelessWidget {
                 )?.toolTrace.any((t) => t['ok'] == true) ??
                 false))
           Padding(
-            padding: const EdgeInsets.only(top: AppDesign.sm),
+            padding: const EdgeInsets.only(top: AppSpace.sm),
             child: Wrap(
               crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: AppDesign.sm,
+              spacing: AppSpace.sm,
               children: [
                 Text(
                   context.l10n.answerFromMemory,
@@ -781,7 +802,7 @@ class _AssistantTurn extends StatelessWidget {
                   style: TextButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.symmetric(
-                      horizontal: AppDesign.sm,
+                      horizontal: AppSpace.sm,
                     ),
                   ),
                   onPressed: bubble.onSearchWeb,
@@ -806,7 +827,7 @@ class _AssistantTurn extends StatelessWidget {
         ? TurnRun.decode(message.runJson)?.warning
         : null;
     return Padding(
-      padding: const EdgeInsets.only(top: AppDesign.xs),
+      padding: const EdgeInsets.only(top: AppSpace.xs),
       child: Row(
         children: [
           if (message.content.isNotEmpty)
@@ -889,15 +910,18 @@ class _AssistantTurn extends StatelessWidget {
     AppColors c,
   ) {
     final code = context.text.mono.copyWith(color: c.text);
+    // Compact bubbles tighten the answer's line spacing and block gaps too.
+    final density = ChatBubbleDensity.of(context);
+    final body = context.text.body.copyWith(height: density.lineHeight);
     return MarkdownStyleSheet.fromTheme(t).copyWith(
-      p: context.text.body,
+      p: body,
       h1: context.text.headline,
       h2: context.text.headline.copyWith(fontSize: _h2Size),
       h3: context.text.title,
       h4: context.text.title,
       h5: context.text.title,
       h6: context.text.title,
-      a: context.text.body.copyWith(
+      a: body.copyWith(
         color: c.info,
         decoration: TextDecoration.underline,
         decorationColor: c.info.fade(0.5),
@@ -906,20 +930,20 @@ class _AssistantTurn extends StatelessWidget {
       // The 'pre' builder paints its own panel.
       codeblockDecoration: const BoxDecoration(),
       codeblockPadding: EdgeInsets.zero,
-      blockquote: context.text.body.copyWith(color: c.textMuted),
+      blockquote: body.copyWith(color: c.textMuted),
       blockquoteDecoration: BoxDecoration(
         border: Border(left: BorderSide(color: c.accent.fade(0.6), width: 2)),
       ),
-      blockquotePadding: const EdgeInsets.only(left: AppDesign.md),
-      listBullet: context.text.body.copyWith(color: c.textMuted),
+      blockquotePadding: const EdgeInsets.only(left: AppSpace.md),
+      listBullet: body.copyWith(color: c.textMuted),
       horizontalRuleDecoration: BoxDecoration(
         border: Border(top: BorderSide(color: c.hairline)),
       ),
       tableBorder: TableBorder.all(color: c.hairline),
       tableColumnWidth: markdownTableColumns(context),
-      tableHead: context.text.body.copyWith(fontWeight: FontWeight.w600),
-      tableBody: context.text.body,
-      blockSpacing: AppDesign.md,
+      tableHead: body.copyWith(fontWeight: FontWeight.w600),
+      tableBody: body,
+      blockSpacing: density.blockGap,
     );
   }
 }
@@ -943,7 +967,7 @@ class _HelperHandoffs extends StatelessWidget {
     final ms = trace.fold<int>(0, (sum, r) => sum + r.elapsedMs);
     final seconds = ms / 1000;
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppDesign.md),
+      padding: const EdgeInsets.only(bottom: AppSpace.md),
       child: Align(
         alignment: Alignment.centerLeft,
         child: Material(
@@ -955,14 +979,14 @@ class _HelperHandoffs extends StatelessWidget {
             onTap: () => _show(context),
             child: Padding(
               padding: const EdgeInsets.symmetric(
-                horizontal: AppDesign.md,
-                vertical: AppDesign.sm,
+                horizontal: AppSpace.md,
+                vertical: AppSpace.sm,
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.handshake_outlined, size: 14, color: c.textMuted),
-                  const SizedBox(width: AppDesign.sm),
+                  const SizedBox(width: AppSpace.sm),
                   Flexible(
                     child: Text(
                       '${t.helperHandoffs(trace.length)} · '
@@ -975,7 +999,7 @@ class _HelperHandoffs extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: AppDesign.xs),
+                  const SizedBox(width: AppSpace.xs),
                   Icon(Icons.chevron_right, size: 16, color: c.textFaint),
                 ],
               ),
@@ -998,19 +1022,19 @@ class _HelperHandoffs extends StatelessWidget {
         children: [
           for (final r in trace) ...[
             Text(t.helperTask, style: context.text.label),
-            const SizedBox(height: AppDesign.xs),
+            const SizedBox(height: AppSpace.xs),
             SelectableText(
               r.call.args['task']?.toString() ?? '',
               style: context.text.body,
             ),
-            const SizedBox(height: AppDesign.md),
+            const SizedBox(height: AppSpace.md),
             Text(t.helperResult, style: context.text.label),
-            const SizedBox(height: AppDesign.xs),
+            const SizedBox(height: AppSpace.xs),
             SelectableText(
               ToolRunner.helperReplyText(r.output),
               style: context.text.body.copyWith(color: r.ok ? null : c.danger),
             ),
-            const SizedBox(height: AppDesign.lg),
+            const SizedBox(height: AppSpace.lg),
           ],
         ],
       ),
@@ -1066,15 +1090,15 @@ class _SourcesBubble extends StatelessWidget {
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(
-            horizontal: AppDesign.md,
-            vertical: AppDesign.sm,
+            horizontal: AppSpace.md,
+            vertical: AppSpace.sm,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (icon != null) ...[
                 Icon(icon, size: 15, color: c.textMuted),
-                const SizedBox(width: AppDesign.xs),
+                const SizedBox(width: AppSpace.xs),
               ],
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 150),
@@ -1095,8 +1119,8 @@ class _SourcesBubble extends StatelessWidget {
     );
     return Wrap(
       key: const Key('sources-bubble'),
-      spacing: AppDesign.sm,
-      runSpacing: AppDesign.sm,
+      spacing: AppSpace.sm,
+      runSpacing: AppSpace.sm,
       children: [
         for (final s in shown)
           chip(
@@ -1153,7 +1177,7 @@ class _SourcesBubble extends StatelessWidget {
     return [
       if (sponsored.isNotEmpty)
         Padding(
-          padding: const EdgeInsets.all(AppDesign.sm),
+          padding: const EdgeInsets.all(AppSpace.sm),
           child: Text(
             context.l10n.sourceReferenceSponsoredCount(
               evidence.length,
@@ -1224,10 +1248,10 @@ class _SourcesBubble extends StatelessWidget {
       if (sponsored.isNotEmpty)
         Padding(
           padding: const EdgeInsets.fromLTRB(
-            AppDesign.md,
-            AppDesign.sm,
-            AppDesign.md,
-            AppDesign.xs,
+            AppSpace.md,
+            AppSpace.sm,
+            AppSpace.md,
+            AppSpace.xs,
           ),
           child: Align(
             alignment: Alignment.centerLeft,
@@ -1453,12 +1477,12 @@ Future<void> showSourceSheet(
     Widget statusRow((IconData, String, Color) row) {
       final parts = row.$2.split(' · ');
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppDesign.xs),
+        padding: const EdgeInsets.symmetric(vertical: AppSpace.xs),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(row.$1, size: 18, color: row.$3),
-            const SizedBox(width: AppDesign.sm),
+            const SizedBox(width: AppSpace.sm),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1513,7 +1537,9 @@ Future<void> showSourceSheet(
                   }
                   try {
                     await openExternalLink(url);
-                  } catch (_) {}
+                  } catch (e, st) {
+                    quietFailure('chat_bubble:1516', e, st);
+                  }
                 },
                 icon: Icon(
                   zim ? Icons.menu_book_outlined : Icons.open_in_new,
@@ -1555,8 +1581,8 @@ Future<void> showSourceSheet(
             children: [
               Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: AppDesign.md,
-                  vertical: AppDesign.sm,
+                  horizontal: AppSpace.md,
+                  vertical: AppSpace.sm,
                 ),
                 decoration: BoxDecoration(
                   color: c.surfaceRaised,
@@ -1565,10 +1591,10 @@ Future<void> showSourceSheet(
                 ),
                 child: Column(children: [for (final r in status) statusRow(r)]),
               ),
-              const SizedBox(height: AppDesign.xl),
+              const SizedBox(height: AppSpace.xl),
               if (!sponsored)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: AppDesign.sm),
+                  padding: const EdgeInsets.only(bottom: AppSpace.sm),
                   child: Row(
                     children: [
                       Expanded(
@@ -1589,7 +1615,7 @@ Future<void> showSourceSheet(
                   borderRadius: AppDesign.radius(AppDesign.rSm),
                   child: Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(AppDesign.md),
+                    padding: const EdgeInsets.all(AppSpace.md),
                     decoration: BoxDecoration(
                       color: c.surfaceRaised,
                       border: Border(
@@ -1607,13 +1633,13 @@ Future<void> showSourceSheet(
                     ),
                   ),
                 ),
-                const SizedBox(height: AppDesign.sm),
+                const SizedBox(height: AppSpace.sm),
               ],
               if (!knowledge) ...[
-                const SizedBox(height: AppDesign.md),
+                const SizedBox(height: AppSpace.md),
                 const SizedBox.shrink(),
                 if (!zim) ...[
-                  const SizedBox(height: AppDesign.lg),
+                  const SizedBox(height: AppSpace.lg),
                   Text(
                     t.sourceAddress,
                     style: context.text.label.copyWith(color: c.textFaint),
@@ -1634,7 +1660,8 @@ Future<void> showSourceSheet(
   },
 );
 
-/// Inherited density flag set by the chat screen from Settings > Appearance.
+/// Inherited density set by the chat screen (phone) and the desktop chat
+/// pane from Settings > Appearance > Compact bubbles.
 class ChatBubbleDensity extends InheritedWidget {
   final bool compact;
   const ChatBubbleDensity({
@@ -1643,11 +1670,36 @@ class ChatBubbleDensity extends InheritedWidget {
     required super.child,
   });
 
-  static bool of(BuildContext context) =>
-      context
-          .dependOnInheritedWidgetOfExactType<ChatBubbleDensity>()
-          ?.compact ??
-      false;
+  /// The density of the surrounding conversation; the loose default when a
+  /// screen forgets to provide one.
+  static ChatBubbleDensity of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<ChatBubbleDensity>() ??
+      const ChatBubbleDensity(compact: false, child: SizedBox.shrink());
+
+  /// Vertical gap between two turns.
+  double get turnGap => compact ? AppDesign.xs : AppDesign.sm;
+
+  /// Horizontal inset of a turn inside the list.
+  double get turnInset => compact ? AppDesign.md : AppDesign.lg;
+
+  /// Padding around a turn: the gap between turns and the list's inset.
+  EdgeInsetsGeometry get turnPadding =>
+      EdgeInsets.symmetric(vertical: turnGap, horizontal: turnInset);
+
+  /// Inner padding of the question's raised bubble.
+  EdgeInsetsGeometry get bubblePadding => EdgeInsets.symmetric(
+    horizontal: compact ? AppDesign.md : AppDesign.lg,
+    vertical: compact ? AppDesign.sm : AppDesign.md,
+  );
+
+  /// Space between the turn's caption and its content.
+  double get captionGap => compact ? AppDesign.xs : AppDesign.sm;
+
+  /// Space between the answer's markdown blocks.
+  double get blockGap => compact ? AppDesign.sm : AppDesign.md;
+
+  /// Line height of the conversation's body text.
+  double get lineHeight => compact ? 1.35 : 1.55;
 
   @override
   bool updateShouldNotify(ChatBubbleDensity old) => old.compact != compact;

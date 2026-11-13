@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import '../knowledge/knowledge_embedder.dart';
 import '../knowledge/knowledge_store.dart';
 import 'domain/evidence.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// Web passages ranked by meaning as well as by words: the lexical (BM25)
 /// shortlist is embedded with the knowledge library's embedding model and
@@ -112,7 +113,9 @@ class SemanticRerank {
     try {
       q = (await embedder.embedQueriesWithin([query], expired).timeout(budget))
           ?.first;
-    } catch (_) {}
+    } catch (e, st) {
+      quietFailure('semantic_rerank:115', e, st);
+    }
     for (final c in chunks) {
       before += c.text.length;
       final units = c.text
@@ -128,7 +131,9 @@ class SemanticRerank {
                 for (final u in units) u.length > 400 ? u.substring(0, 400) : u,
               ], expired)
               .timeout(budget - clock.elapsed);
-        } catch (_) {}
+        } catch (e, st) {
+          quietFailure('semantic_rerank:131', e, st);
+        }
       }
       if (vs == null || vs.length != units.length) {
         out.add(c);

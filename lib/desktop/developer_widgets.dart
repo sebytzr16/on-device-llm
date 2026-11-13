@@ -67,16 +67,7 @@ class DeveloperPageHeader extends StatelessWidget {
   const DeveloperPageHeader({super.key, required this.title, this.subtitle});
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 20),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SpringEntrance(child: Text(title, style: context.text.headline)),
-        if (subtitle != null) ...[
-          const SizedBox(height: 8),
-          Text(subtitle!, style: context.text.small),
-        ],
-      ],
-    ),
+    padding: const EdgeInsets.only(bottom: AppSpace.section),
+    child: AppPageHeader(title: title, subtitle: subtitle),
   );
 }

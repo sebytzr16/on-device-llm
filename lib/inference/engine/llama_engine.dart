@@ -1,3 +1,5 @@
+import '../../core/utils/memory_admission.dart';
+import '../../core/storage/native_media_lease.dart';
 import '../../data/storage/model_file_leases.dart';
 import '../../data/storage/gguf_split.dart';
 import 'package:path/path.dart' as p;
@@ -10,6 +12,7 @@ import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:logging/logging.dart';
 import '../../core/errors/exceptions.dart';
 import '../../core/platform/desktop_host.dart';
@@ -18,51 +21,120 @@ import '../../features/tools/domain/tool_spec.dart';
 import '../ffi/llama_bindings.dart';
 import 'text_engine.dart';
 import '../../core/l10n/l10n.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 part 'llama_side.dart';
 
 final _log = Logger('engine');
 
+/// Prompt size in KV positions from the bridge's `od_info` (audit E26).
+/// A photo turn renders image chunks instead of text tokens, so the bridge
+/// tracks the media prompt separately and reports it in `promptTokens`; an
+/// older bridge left that at 0 and only filled `mediaTokens`. Cached
+/// positions are clamped to the total so a flat token count from an older
+/// bridge cannot make prefill progress exceed 1.
+({int total, int cached}) promptPositions(Map<String, dynamic> info) {
+  final prompt = (info['promptTokens'] as num?)?.toInt() ?? 0;
+  final media = (info['mediaTokens'] as num?)?.toInt() ?? 0;
+  final total = math.max(prompt, media);
+  final cached = (info['cachedPromptTokens'] as num?)?.toInt() ?? 0;
+  return (total: total, cached: math.min(math.max(cached, 0), total));
+}
+
 class LlamaEngine implements TextEngine {
-  _SideClient? _side;
+  HelperBatch? _side;
+  SideConfig? _sideConfig;
   Future<void>? _sideOpening;
   int? _nativeAddress;
   int _sideEpoch = 0;
   final Map<String, Map<String, dynamic>> sideMetrics = {};
   int get helperStreams => _side?.count ?? 0;
 
+  /// Opens the helper batch client for one agent configuration. Native fixes
+  /// the per-sequence window and the sequence count when it opens, so a
+  /// different configuration replaces the client instead of being ignored
+  /// until it closed (audit E07). A running helper finishes its stream first.
   Future<void> openSide({int sequences = 3, int contextSize = 4096}) async {
-    if (_side != null) return;
-    if (_sideOpening != null) return _sideOpening;
-    final epoch = _sideEpoch;
-    final address = _nativeAddress;
-    final library = _library;
-    if (!isLoaded || address == null || library == null) {
-      throw StateError('chat model changed');
-    }
-    final future = () async {
-      final side = await _SideClient.open(
-        address,
-        library,
-        sideMetrics,
-        sequences,
-        contextSize,
-      );
-      if (epoch != _sideEpoch) {
-        await side.close();
-        throw StateError('chat model changed');
+    final wanted = SideConfig(sequences: sequences, contextSize: contextSize);
+    for (;;) {
+      final opening = _sideOpening;
+      if (opening != null) {
+        await opening;
+        continue;
       }
-      _side = side;
-    }();
-    _sideOpening = future;
-    try {
-      await future;
-    } finally {
-      _sideOpening = null;
+      if (_side != null && _sideConfig == wanted) return;
+      final future = _openSide(wanted);
+      _sideOpening = future;
+      try {
+        await future;
+      } finally {
+        _sideOpening = null;
+      }
+      return;
     }
   }
 
+  /// Replaced in tests with a fake, so reopening is exercised without a
+  /// native library.
+  @visibleForTesting
+  Future<HelperBatch> Function(SideConfig config)? sideOpener;
+
+  Future<void> _openSide(SideConfig wanted) async {
+    final epoch = _sideEpoch;
+    final previous = _side;
+    if (previous != null) {
+      // Never cut a helper off: wait for the old client's streams to finish.
+      await previous.drained;
+      _side = null;
+      _sideConfig = null;
+      await previous.close();
+      sideMetrics.clear();
+    }
+    // A reload or unload while the old streams drained: do not open a client
+    // for a model that is gone.
+    if (epoch != _sideEpoch) throw StateError('chat model changed');
+    final HelperBatch side;
+    final opener = sideOpener;
+    if (opener != null) {
+      side = await opener(wanted);
+    } else {
+      final address = _nativeAddress;
+      final library = _library;
+      if (!isLoaded || address == null || library == null) {
+        throw StateError('chat model changed');
+      }
+      side = await _SideClient.open(address, library, sideMetrics, wanted);
+    }
+    if (epoch != _sideEpoch) {
+      await side.close();
+      throw StateError('chat model changed');
+    }
+    _side = side;
+    _sideConfig = wanted;
+  }
+
   Stream<String> generateSide({
+    required String jobId,
+    required List<Map<String, Object>> messages,
+    required String fallbackTemplate,
+    required InferenceSettings settings,
+    void Function()? onStarted,
+  }) async* {
+    final media = await NativeMediaLease.open(messages);
+    try {
+      yield* _generateSideNative(
+        jobId: jobId,
+        messages: media.messages,
+        fallbackTemplate: fallbackTemplate,
+        settings: settings,
+        onStarted: onStarted,
+      );
+    } finally {
+      await media.dispose();
+    }
+  }
+
+  Stream<String> _generateSideNative({
     required String jobId,
     required List<Map<String, Object>> messages,
     required String fallbackTemplate,
@@ -73,7 +145,9 @@ class LlamaEngine implements TextEngine {
       sequences: settings.agentMaxConcurrent,
       contextSize: settings.contextSize,
     );
-    yield* _side!.generate(
+    final side = _side;
+    if (side == null) throw StateError('chat model changed');
+    yield* side.generate(
       jobId,
       jsonEncode({
         'messages': messages,
@@ -92,10 +166,13 @@ class LlamaEngine implements TextEngine {
     if (opening != null) {
       try {
         await opening;
-      } catch (_) {}
+      } catch (e, st) {
+        quietFailure('llama_engine:132', e, st);
+      }
     }
     final side = _side;
     _side = null;
+    _sideConfig = null;
     await side?.close();
     sideMetrics.clear();
   }
@@ -112,7 +189,88 @@ class LlamaEngine implements TextEngine {
   /// Told which bridge library the worker opened, so the platform reaches
   /// the same copy when it frees them.
   final void Function(String library)? onLibrary;
-  LlamaEngine({this.cacheDirectory, this.owner, this.onLibrary});
+  LlamaEngine({
+    this.cacheDirectory,
+    this.owner,
+    this.onLibrary,
+    this.tokenTimeout = const Duration(seconds: 60),
+    this.stopTimeout = const Duration(seconds: 3),
+    this.workerEntrypoint,
+  });
+  final Duration tokenTimeout, stopTimeout;
+  @visibleForTesting
+  final void Function(List<Object?>)? workerEntrypoint;
+  Timer? _tokenWatchdog, _stopWatchdog;
+  bool _speculationStalled = false;
+  int _prefillRead = -1;
+  Future<void>? _retiringWorker;
+  Completer<void>? _workerExit;
+
+  void _clearGenerationTimers() {
+    _tokenWatchdog?.cancel();
+    _stopWatchdog?.cancel();
+    _tokenWatchdog = _stopWatchdog = null;
+  }
+
+  void _armTokenWatchdog() {
+    _tokenWatchdog?.cancel();
+    _tokenWatchdog = Timer(tokenTimeout, () {
+      if (!_busy) return;
+      // Only a load that drafts falls back to normal decoding next time.
+      final settings = _loadSettings;
+      if (settings != null) {
+        final c = jsonDecode(settings) as Map;
+        if (c['speculationMode'] != 'off' || c['mtp'] == true) {
+          _speculationStalled = true;
+        }
+      }
+      _output?.addError(
+        InferenceException(
+          'No token received for ${tokenTimeout.inSeconds} seconds. '
+          'Generation stopped. Try normal decoding or a smaller context.',
+        ),
+      );
+      cancel();
+    });
+  }
+
+  // Never free an in-flight FFI context or release its file leases. Retire
+  // the worker cooperatively, detach its events, and refuse new native work
+  // until onExit confirms that its cleanup has finished.
+  void _retireGeneration() {
+    _clearGenerationTimers();
+    _cancelNative();
+    _commands?.send({'type': 'dispose'});
+    _retiringWorker = _workerExit?.future;
+    _events?.close();
+    _events = null;
+    _commands = null;
+    _starting = null;
+    _sessionId = null;
+    _nativeAddress = null;
+    _control = null;
+    _loadedPath = _loadSettings = null;
+    unawaited(_output?.close());
+    _output = null;
+    _busy = false;
+    _setPrefill(null);
+    _notifyIdle();
+  }
+
+  Future<void> stopAndWait() async {
+    cancel();
+    try {
+      await _waitIdle().timeout(stopTimeout);
+    } on TimeoutException {
+      if (_busy) _retireGeneration();
+      if (_occupied) {
+        throw const InferenceException(
+          'The native engine did not stop in time.',
+        );
+      }
+    }
+  }
+
   SendPort? _commands;
   ReceivePort? _events;
   Future<void>? _starting;
@@ -128,6 +286,10 @@ class LlamaEngine implements TextEngine {
   LlamaBindings? _control;
   bool _cancelRequested = false;
   String? _library;
+
+  /// Bridge library this engine's worker opened (e.g. ondevice_llm_cuda.dll),
+  /// known once a session has started.
+  String? get library => _library;
   int _loads = 0;
   Completer<void>? _idle;
   Future<void> _metadataTail = Future.value();
@@ -255,6 +417,11 @@ class LlamaEngine implements TextEngine {
   @override
   Map<String, dynamic> metrics = {};
 
+  /// Whether the loaded projector can hear audio (llama.cpp audio
+  /// projectors: Gemma 4 E2B/E4B, Qwen2/3 audio, LFM3 audio…). False without
+  /// a projector or for a text-only model.
+  bool get supportsAudio => metrics['supportsAudio'] == true;
+
   bool reportLiveMetrics = false;
 
   /// Share of the prompt already read (0…1) while the model reads it, before
@@ -314,7 +481,10 @@ class LlamaEngine implements TextEngine {
     _fileLeases.clear();
   }
 
-  Future<void> _load(String path, String config) async {
+  Future<void> _load(String path, String config) =>
+      MemoryAdmission.shared.run(() => _loadAdmitted(path, config));
+
+  Future<void> _loadAdmitted(String path, String config) async {
     await closeSide();
     final data = jsonDecode(config) as Map;
     final files = <String>[
@@ -379,9 +549,18 @@ class LlamaEngine implements TextEngine {
   bool get _working =>
       _busy || _operation != null || _preview != null || _embed != null;
   String? get loadedPath => _loadedPath;
-  Future<void> _start() => _starting ??= _spawn();
+  Future<void> _start() {
+    if (_retiringWorker != null) {
+      throw const InferenceException(
+        'The previous native request is still stopping. If it does not finish, restart the app.',
+      );
+    }
+    return _starting ??= _spawn();
+  }
+
   Future<void> _spawn() async {
     final leases = _fileLeases = <ModelFileLease>[];
+    final workerExit = _workerExit = Completer<void>();
     final ready = Completer<void>();
     final events = _events = ReceivePort();
     events.listen((dynamic event) {
@@ -392,6 +571,7 @@ class LlamaEngine implements TextEngine {
         return;
       }
       if (event == null || event is List) {
+        _clearGenerationTimers();
         events.close();
         _events = null;
         _commands = null;
@@ -489,9 +669,12 @@ class LlamaEngine implements TextEngine {
           if (info['thinkingForcedOpen'] == true) {
             _output?.add(utf8.encode(ThinkingTagNormalizer.openTag));
           }
-          final total = (info['promptTokens'] as num?)?.toInt() ?? 0;
-          final cached = (info['cachedPromptTokens'] as num?)?.toInt() ?? 0;
-          _setPrefill(total > cached ? cached / total : null);
+          final positions = promptPositions(info);
+          _setPrefill(
+            positions.total > positions.cached
+                ? positions.cached / positions.total
+                : null,
+          );
         case 'liveMetrics':
           metrics = {
             ...metrics,
@@ -499,11 +682,24 @@ class LlamaEngine implements TextEngine {
           };
         case 'prefill':
           final total = e['total'] as int;
+          // Prompt reading is progress too: a long prompt on a slow device
+          // can take minutes before the first token, and must not trip the
+          // stall watchdog while it advances.
+          // Only advancing reads count: a repeated position is a stall.
+          final read = e['read'] as int;
+          if (_busy && !_cancelRequested && read > _prefillRead) {
+            _prefillRead = read;
+            _armTokenWatchdog();
+          }
           _setPrefill(total > 0 ? (e['read'] as int) / total : null);
         case 'bytes':
+          if ((e['data'] as Uint8List).isNotEmpty && !_cancelRequested) {
+            _armTokenWatchdog();
+          }
           _setPrefill(null);
           _output?.add(e['data'] as Uint8List);
         case 'done':
+          _clearGenerationTimers();
           _setPrefill(null);
           metrics = Map<String, dynamic>.from(e['metrics'] as Map);
           _log.info(
@@ -516,10 +712,11 @@ class LlamaEngine implements TextEngine {
           _output = null;
           _busy = false;
         case 'error':
+          _clearGenerationTimers();
           _log.warning('Native error: ${e['message']}');
           final error = e['load'] == true
               ? ModelLoadException(modelLoadErrorMessage(e['message']))
-              : InferenceException(e['message'] as String);
+              : InferenceException(modelLoadErrorMessage(e['message']));
           _preview?.completeError(error);
           _preview = null;
           _probe?.completeError(error);
@@ -556,12 +753,16 @@ class LlamaEngine implements TextEngine {
         lease.release();
       }
       leases.clear();
+      if (!workerExit.isCompleted) workerExit.complete();
+      if (identical(_workerExit, workerExit)) {
+        _retiringWorker = null;
+      }
       exited.close();
       if (identical(_fileLeases, leases)) _events?.sendPort.send(null);
     });
     try {
       await Isolate.spawn(
-        _worker,
+        workerEntrypoint ?? _worker,
         [events.sendPort, cacheDir, ownerId],
         onError: events.sendPort,
         onExit: exited.sendPort,
@@ -597,7 +798,9 @@ class LlamaEngine implements TextEngine {
       throw ModelLoadException(appStrings.engineBusy);
     }
     final config = loadConfig(
-      settings: settings,
+      settings: _speculationStalled
+          ? settings.copyWith(speculationMode: 'off', mtp: false)
+          : settings,
       mmprojPath: mmprojPath,
       adapters: adapters,
       draftModelPath: draftModelPath,
@@ -655,7 +858,14 @@ class LlamaEngine implements TextEngine {
     List<({String path, double scale})> adapters = const [],
     String? draftModelPath,
   }) {
+    final missingDraft =
+        (settings.speculationMode == 'draft' ||
+            settings.speculationMode == 'dflash') &&
+        (draftModelPath == null || draftModelPath.isEmpty);
     return jsonEncode({
+      if (missingDraft)
+        'speculationFallback':
+            'Selected draft model is missing. Using normal decoding.',
       'contextSize': settings.contextSize,
       'imageMaxTokens': settings.imageMaxTokens,
       'backend': settings.backend.name,
@@ -670,6 +880,8 @@ class LlamaEngine implements TextEngine {
       'offloadKv': settings.offloadKv,
       'swaFull': settings.swaFull,
       'nCpuMoe': settings.nCpuMoe,
+      'moeCacheSizeMb': settings.moeCacheSizeMb,
+      'moeCacheCpuShare': settings.moeCacheCpuShare,
       'expertsUsed': settings.expertsUsed,
       'draftGpuLayers': settings.draftGpuLayers,
 
@@ -694,31 +906,39 @@ class LlamaEngine implements TextEngine {
       'loraAdapters': [
         for (final a in adapters) {'path': a.path, 'scale': a.scale},
       ],
-      'draftModel': draftModelPath ?? '',
+      'draftModel': settings.speculationMode == 'off'
+          ? ''
+          : draftModelPath ?? '',
+      'speculationMode': missingDraft ? 'off' : settings.speculationMode,
       'draftMaxTokens': settings.draftMaxTokens,
       'draftMinP': settings.draftMinP,
-      'mtp': settings.mtp,
+      'mtp':
+          settings.speculationMode == 'mtp' ||
+          (settings.speculationMode == 'auto' && settings.mtp),
       'chatTemplate': settings.chatTemplate,
     });
   }
 
-  /// Loads an embedding GGUF (EmbeddingGemma, nomic, bge…) on the CPU with
-  /// pooled outputs (FX-02). Such a runtime answers [embed] only. With
-  /// [mmprojPath] (ABI 7, EmbeddingGemma 2) it also embeds photos and
-  /// recordings into the same space as text.
-  Future<void> loadEmbedder({
-    required String modelPath,
+  /// The load config for an embedder or reranker (audit E22). [placement] is
+  /// the chat model's hardware choice: on the desktop its backend and GPU
+  /// layers are used too, so an embedding model can use the same accelerator.
+  /// Android stays on the CPU, and no placement keeps the old CPU load.
+  static Map<String, Object?> embedderConfig({
+    required bool desktop,
+    required int contextSize,
+    required int threads,
+    InferenceSettings? placement,
     String? mmprojPath,
-    int threads = 4,
-    int contextSize = 2048,
-  }) async {
-    if (_priming != null) await _stopPriming();
-    if (_occupied) {
-      throw ModelLoadException(appStrings.engineBusy);
-    }
-    final config = jsonEncode({
+  }) {
+    final gpu =
+        desktop &&
+        placement != null &&
+        placement.backend != GpuBackend.cpu &&
+        placement.effectiveGpuLayers > 0;
+    return {
       'embedding': true,
-      'backend': 'cpu',
+      'backend': gpu ? placement.backend.name : 'cpu',
+      'nGpuLayers': gpu ? placement.effectiveGpuLayers : 0,
       'contextSize': contextSize,
       'effectiveThreads': threads,
       'effectiveBatchThreads': threads,
@@ -727,14 +947,63 @@ class LlamaEngine implements TextEngine {
       'flashAttention': false,
       'kvCacheType': 'fp16',
       'mmproj': ?mmprojPath,
-    });
+    };
+  }
+
+  /// Loads an embedding GGUF (EmbeddingGemma, nomic, bge…) with pooled
+  /// outputs (FX-02). Such a runtime answers [embed] only. With
+  /// [mmprojPath] (ABI 7, EmbeddingGemma 2) it also embeds photos and
+  /// recordings into the same space as text. [placement] is the chat model's
+  /// hardware setting: the desktop then loads on the same GPU backend (and
+  /// GPU layer count) and retries on the CPU when that load fails; Android and
+  /// a missing placement use the CPU.
+  Future<void> loadEmbedder({
+    required String modelPath,
+    String? mmprojPath,
+    int threads = 4,
+    int contextSize = 2048,
+    InferenceSettings? placement,
+  }) async {
+    if (_priming != null) await _stopPriming();
+    if (_occupied) {
+      throw ModelLoadException(appStrings.engineBusy);
+    }
+    final config = jsonEncode(
+      embedderConfig(
+        desktop: DesktopHost.active,
+        contextSize: contextSize,
+        threads: threads,
+        placement: placement,
+        mmprojPath: mmprojPath,
+      ),
+    );
     if (_loadedPath == modelPath && _loadSettings == config) return;
     await _start();
     while (_occupied) {
       await _waitIdle();
     }
     _loadedPath = null;
-    await _load(modelPath, config);
+    final gpu = (jsonDecode(config) as Map)['backend'] != 'cpu';
+    try {
+      await _load(modelPath, config);
+    } on ModelLoadException catch (error, stack) {
+      if (!gpu || error is ModelLoadStopped) rethrow;
+      // The card or its driver can reject an embedding model; the vectors
+      // stay available on the CPU (audit E22).
+      _log.warning('Embedding load failed; retrying on the CPU', error, stack);
+      final cpu = jsonEncode(
+        embedderConfig(
+          desktop: false,
+          contextSize: contextSize,
+          threads: threads,
+          mmprojPath: mmprojPath,
+        ),
+      );
+      await _load(modelPath, cpu);
+      _loadedPath = modelPath;
+      _loadSettings = cpu;
+      return;
+    }
     _loadedPath = modelPath;
     _loadSettings = config;
   }
@@ -850,6 +1119,7 @@ class LlamaEngine implements TextEngine {
     required String modelPath,
     required InferenceSettings settings,
     String? mmprojPath,
+    List<({String path, double scale})> adapters = const [],
     String? draftModelPath,
   }) => _metadata(() async {
     await _start();
@@ -864,6 +1134,7 @@ class LlamaEngine implements TextEngine {
       'settings': loadConfig(
         settings: settings,
         mmprojPath: mmprojPath,
+        adapters: adapters,
         draftModelPath: draftModelPath,
       ),
     });
@@ -880,7 +1151,38 @@ class LlamaEngine implements TextEngine {
     String assistantPrefix = '',
     List<ToolSpec> tools = const [],
   }) async {
-    if (_priming != null && !_primeIssuing) await _stopPriming();
+    // Read before the first await: priming issues its previews with the flag
+    // set only for this synchronous call. Read after the media lease, the
+    // preview waited for the priming that was waiting for it, a deadlock that
+    // also blocked Stop (owner 2026-11-12: "Gemma doesn't work, stopping
+    // still doesn't work").
+    final fromPriming = _primeIssuing;
+    final media = await NativeMediaLease.open(messages);
+    try {
+      return await _previewNative(
+        fromPriming: fromPriming,
+        messages: media.messages,
+        fallbackTemplate: fallbackTemplate,
+        settings: settings,
+        assistantPrefix: assistantPrefix,
+        tools: tools,
+      );
+    } finally {
+      await media.dispose();
+    }
+  }
+
+  Future<Map<String, dynamic>> _previewNative({
+    bool fromPriming = false,
+    required List<Map<String, Object>> messages,
+    required String fallbackTemplate,
+    required InferenceSettings settings,
+    String assistantPrefix = '',
+    List<ToolSpec> tools = const [],
+  }) async {
+    if (_priming != null && !_primeIssuing && !fromPriming) {
+      await _stopPriming();
+    }
     if (!isLoaded || _occupied) {
       throw InferenceException(appStrings.engineNeedsModel);
     }
@@ -935,6 +1237,41 @@ class LlamaEngine implements TextEngine {
     List<ToolSpec> tools = const [],
     String toolChoice = 'auto',
   }) {
+    if (!messages.any((m) => (m['images'] as List?)?.isNotEmpty ?? false)) {
+      return _generateNative(
+        messages: messages,
+        fallbackTemplate: fallbackTemplate,
+        settings: settings,
+        assistantPrefix: assistantPrefix,
+        tools: tools,
+        toolChoice: toolChoice,
+      );
+    }
+    return (() async* {
+      final media = await NativeMediaLease.open(messages);
+      try {
+        yield* _generateNative(
+          messages: media.messages,
+          fallbackTemplate: fallbackTemplate,
+          settings: settings,
+          assistantPrefix: assistantPrefix,
+          tools: tools,
+          toolChoice: toolChoice,
+        );
+      } finally {
+        await media.dispose();
+      }
+    })();
+  }
+
+  Stream<String> _generateNative({
+    required List<Map<String, Object>> messages,
+    required String fallbackTemplate,
+    required InferenceSettings settings,
+    String assistantPrefix = '',
+    List<ToolSpec> tools = const [],
+    String toolChoice = 'auto',
+  }) {
     if (_priming != null && !_primeIssuing) {
       final stopped = _stopPriming();
       return (() async* {
@@ -953,6 +1290,8 @@ class LlamaEngine implements TextEngine {
       throw InferenceException(appStrings.engineNeedsModel);
     }
     _busy = true;
+    _prefillRead = -1;
+    _clearGenerationTimers();
     _replyAdmission = InferenceAdmission.shared.hold();
     final output = StreamController<List<int>>(onCancel: cancel);
     _output = output;
@@ -970,6 +1309,7 @@ class LlamaEngine implements TextEngine {
         'toolChoice': toolChoice,
       }),
     });
+    _armTokenWatchdog();
     return output.stream
         .transform(const Utf8Decoder(allowMalformed: true))
         .transform(normalizer);
@@ -991,7 +1331,8 @@ class LlamaEngine implements TextEngine {
   /// Frees the model and context but keeps the worker alive, so the next
   /// load is a plain reload (model residency, roadmap §5.2).
   Future<void> unload() async {
-    await closeSide();
+    if (_busy) await stopAndWait();
+    await closeSide().timeout(stopTimeout);
     if (_priming != null) await _stopPriming();
     if (_commands == null) return;
     if (_occupied) {
@@ -1000,7 +1341,15 @@ class LlamaEngine implements TextEngine {
     final op = Completer<void>();
     _operation = op;
     _send({'type': 'unload'});
-    await op.future;
+    try {
+      await op.future.timeout(stopTimeout);
+    } on TimeoutException {
+      _operation = null;
+      _retireGeneration();
+      throw const InferenceException(
+        'Native unload timed out. The engine is still releasing the model.',
+      );
+    }
     _releaseFiles();
     _loadedPath = null;
     _loadSettings = null;
@@ -1012,6 +1361,8 @@ class LlamaEngine implements TextEngine {
     _cancelRequested = true;
     _cancelNative();
     _commands?.send({'type': 'cancel'});
+    _tokenWatchdog?.cancel();
+    if (_busy) _stopWatchdog ??= Timer(stopTimeout, _retireGeneration);
   }
 
   void _cancelNative() {
@@ -1027,12 +1378,14 @@ class LlamaEngine implements TextEngine {
   }
 
   void dispose() {
+    _clearGenerationTimers();
     final commands = _commands;
     unawaited(
       closeSide().whenComplete(() => commands?.send({'type': 'dispose'})),
     );
     _stopLoadProgress();
     cancel();
+    _clearGenerationTimers();
     _preview?.completeError(StateError('Engine disposed.'));
     _preview = null;
     _probe?.completeError(StateError('Engine disposed.'));
@@ -1061,12 +1414,18 @@ class LlamaEngine implements TextEngine {
 }
 
 /// Explicit Windows backend choice; each bridge carries one GPU backend.
-String? _windowsGpuChoice(String settings) {
-  if (!Platform.isWindows) return null;
-  final backend = (jsonDecode(settings) as Map)['backend'];
-  return const ['cpu', 'cuda', 'vulkan'].contains(backend)
-      ? backend as String
-      : null;
+({String? backend, String cpuVariant}) nativeLibraryChoice(
+  String settings, {
+  required bool windows,
+}) {
+  final config = jsonDecode(settings) as Map;
+  final backend = config['backend'];
+  return (
+    backend: windows && const ['cpu', 'cuda', 'vulkan'].contains(backend)
+        ? backend as String
+        : null,
+    cpuVariant: config['cpuVariant'] as String? ?? 'auto',
+  );
 }
 
 void _worker(List<Object?> args) {
@@ -1139,26 +1498,44 @@ void _worker(List<Object?> args) {
       return;
     }
     if (m['type'] == 'estimate') {
+      LlamaBindings? scratch;
+      Pointer<Void> scratchHandle = nullptr;
       try {
-        api ??= LlamaBindings();
-        final estimate = api!.estimate;
+        // Keep the loaded runtime intact when estimating another library.
+        final choice = nativeLibraryChoice(
+          m['settings'] as String,
+          windows: Platform.isWindows,
+        );
+        scratch = LlamaBindings(
+          windowsBackend: choice.backend,
+          cpuVariant: choice.cpuVariant,
+        );
+        final estimate = scratch.estimate;
         if (estimate == null) {
           throw UnsupportedError('This native bridge cannot estimate memory.');
         }
-        if (handle == nullptr) {
-          final opts = options.toNativeUtf8();
-          try {
-            handle = api!.create(opts);
-          } finally {
-            calloc.free(opts);
-          }
+        final opts = options.toNativeUtf8();
+        try {
+          scratchHandle = scratch.create(opts);
+        } finally {
+          calloc.free(opts);
+        }
+        if (scratchHandle == nullptr) {
+          throw StateError('Native runtime initialization failed');
         }
         final path = (m['path'] as String).toNativeUtf8();
         final settings = (m['settings'] as String).toNativeUtf8();
         try {
-          final result = estimate(handle, path, settings);
+          final requested = jsonDecode(m['settings'] as String) as Map;
+          final capabilities =
+              jsonDecode(scratch.info(scratchHandle).toDartString()) as Map;
+          if (requested['speculationMode'] == 'dflash' &&
+              capabilities['supportsDFlash'] != true) {
+            throw StateError('OD_DFLASH_UNAVAILABLE');
+          }
+          final result = estimate(scratchHandle, path, settings);
           if (result == nullptr) {
-            throw StateError(api!.error(handle).toDartString());
+            throw StateError(scratch.error(scratchHandle).toDartString());
           }
           send({
             'type': 'estimated',
@@ -1173,6 +1550,8 @@ void _worker(List<Object?> args) {
         send({'type': 'error', 'message': e.message});
       } catch (e) {
         send({'type': 'error', 'message': '$e'});
+      } finally {
+        if (scratchHandle != nullptr) scratch!.destroy(scratchHandle);
       }
       return;
     }
@@ -1214,14 +1593,12 @@ void _worker(List<Object?> args) {
       return;
     }
     try {
-      final want = m['type'] == 'load'
-          ? _windowsGpuChoice(m['settings'] as String)
-          : null;
-      final cpuVariant = m['type'] == 'load'
-          ? ((jsonDecode(m['settings'] as String) as Map)['cpuVariant']
-                    as String? ??
-                'auto')
-          : 'auto';
+      final selection = nativeLibraryChoice(
+        m['type'] == 'load' ? m['settings'] as String : '{}',
+        windows: Platform.isWindows,
+      );
+      final want = selection.backend;
+      final cpuVariant = selection.cpuVariant;
       final choice = '$want/$cpuVariant';
       if (m['type'] == 'load' && api != null && bridgeChoice != choice) {
         // Recreate the runtime when the backend or CPU variant changes.
@@ -1250,16 +1627,53 @@ void _worker(List<Object?> args) {
         'library': api!.library,
       });
       if (m['type'] == 'load') {
+        final requested = Map<String, dynamic>.from(
+          jsonDecode(m['settings'] as String) as Map,
+        );
+        String? fallback;
+        void disableSpeculation(String reason) {
+          requested['speculationMode'] = 'off';
+          requested['draftModel'] = '';
+          requested['mtp'] = false;
+          fallback =
+              'Speculative decoding disabled: ${modelLoadErrorMessage(reason)} Using normal decoding.';
+        }
+
+        if (requested['speculationMode'] == 'dflash' &&
+            info()['supportsDFlash'] != true) {
+          disableSpeculation('OD_DFLASH_UNAVAILABLE');
+        }
         final path = (m['path'] as String).toNativeUtf8();
-        final config = (m['settings'] as String).toNativeUtf8();
         try {
-          if (api!.load(handle, path, config) < 0) {
-            throw ModelLoadException(api!.error(handle).toDartString());
+          int load() {
+            final config = jsonEncode(requested).toNativeUtf8();
+            try {
+              return api!.load(handle, path, config);
+            } finally {
+              calloc.free(config);
+            }
           }
-          send({'type': 'loaded', 'metrics': info()});
+
+          if (load() < 0) {
+            final reason = api!.error(handle).toDartString();
+            final speculative =
+                requested['speculationMode'] == 'draft' ||
+                requested['speculationMode'] == 'dflash' ||
+                (requested['draftModel'] as String? ?? '').isNotEmpty;
+            if (!speculative || api!.cancelled?.call(handle) == 1) {
+              throw ModelLoadException(reason);
+            }
+            disableSpeculation(reason);
+            if (load() < 0) {
+              throw ModelLoadException(api!.error(handle).toDartString());
+            }
+          }
+          send({
+            'type': 'loaded',
+            'metrics': {...info(), 'fallbackReason': ?fallback},
+          });
         } finally {
           calloc.free(path);
-          calloc.free(config);
         }
       } else if (m['type'] == 'preview') {
         final request = (m['request'] as String).toNativeUtf8();
@@ -1303,8 +1717,9 @@ void _worker(List<Object?> args) {
           send({'type': 'begun', 'info': begun});
           // od_step returns 0 once per batch of prompt tokens read, starting
           // after the cached prefix: enough to show how far reading got.
-          final total = (begun['promptTokens'] as num?)?.toInt() ?? 0;
-          var read = (begun['cachedPromptTokens'] as num?)?.toInt() ?? 0;
+          final positions = promptPositions(begun);
+          final total = positions.total;
+          var read = positions.cached;
           final batch =
               ((begun['effectiveSettings'] as Map?)?['batchSize'] as num?)
                   ?.toInt() ??
@@ -1356,7 +1771,9 @@ void _worker(List<Object?> args) {
         send({
           'type': 'error',
           'load': m['type'] == 'load',
-          'message': m['type'] == 'load' ? modelLoadErrorMessage(e) : '$e',
+          'message': m['type'] == 'load' && !'$e'.contains('OD_')
+              ? modelLoadErrorMessage(e)
+              : '$e',
         });
       }
     }

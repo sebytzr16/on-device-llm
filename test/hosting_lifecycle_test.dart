@@ -11,6 +11,7 @@ import 'package:ondevice_llm/inference/engine/llama_engine.dart';
 import 'package:ondevice_llm/features/tools/domain/tool_spec.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ondevice_llm/core/providers/shared_providers.dart';
 import 'package:ondevice_llm/features/hosting/presentation/device_hosting_provider.dart';
@@ -98,6 +99,7 @@ class _ReadyHost extends DeviceHostingNotifier {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => FlutterSecureStorage.setMockInitialValues({}));
   test(
     'stop during keystore startup prevents a later server from appearing',
     () async {

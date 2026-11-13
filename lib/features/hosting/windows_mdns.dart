@@ -3,6 +3,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// Announces the local server on the LAN through Windows' own DNS-SD
 /// responder (dnsapi, Windows 10 1809+), under the type the Android app
@@ -145,7 +146,9 @@ class WindowsMdns {
         Void Function(Pointer<Void>),
         void Function(Pointer<Void>)
       >('DnsServiceFreeInstance')(instance);
-    } catch (_) {}
+    } catch (e, st) {
+      quietFailure('windows_mdns:148', e, st);
+    }
   }
 
   /// One DNS label: no dots, at most 63 bytes.

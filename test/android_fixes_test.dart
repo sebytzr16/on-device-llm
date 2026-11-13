@@ -17,6 +17,8 @@ void main() {
       'cpuVariant': 'compat',
       'vramReserveMb': 4096,
       'mtp': true,
+      'speculationMode': 'draft',
+      'draftModelId': 'some-draft',
       'chatTemplate': 'custom',
       'promptStoreMb': 1024,
       'useMmap': false,
@@ -33,6 +35,8 @@ void main() {
       'contextOverflow': 'shift',
       'logitBias': {'42': -3},
       'draftMinP': 0.5,
+      'moeCacheSizeMb': 256,
+      'moeCacheCpuShare': 0.5,
       'temperature': 0.2,
     };
     expect(SettingsResolver.sanitize(overrides), {'temperature': 0.2});

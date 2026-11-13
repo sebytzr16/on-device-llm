@@ -126,7 +126,7 @@ class _ReasoningAccordionState extends State<ReasoningAccordion>
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(Icons.auto_awesome, size: 14, color: tint),
-        const SizedBox(width: AppDesign.sm),
+        const SizedBox(width: AppSpace.sm),
         Flexible(
           child: _Shimmer(
             animation: _shimmer,
@@ -143,7 +143,7 @@ class _ReasoningAccordionState extends State<ReasoningAccordion>
             ),
           ),
         ),
-        const SizedBox(width: AppDesign.xs),
+        const SizedBox(width: AppSpace.xs),
         RotationTransition(
           turns: Tween(begin: 0.0, end: 0.5).animate(_expand),
           child: Icon(Icons.expand_more, size: 16, color: tint.fade(0.7)),
@@ -164,7 +164,7 @@ class _ReasoningAccordionState extends State<ReasoningAccordion>
             style: context.text.reasoning.copyWith(color: tint.fade(0.85)),
           );
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppDesign.md),
+      padding: const EdgeInsets.only(bottom: AppSpace.md),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -177,8 +177,8 @@ class _ReasoningAccordionState extends State<ReasoningAccordion>
               onTap: _toggle,
               child: Padding(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: AppDesign.md,
-                  vertical: AppDesign.sm,
+                  horizontal: AppSpace.md,
+                  vertical: AppSpace.sm,
                 ),
                 child: header,
               ),
@@ -193,10 +193,10 @@ class _ReasoningAccordionState extends State<ReasoningAccordion>
               sizeFactor: _expand,
               alignment: Alignment.topCenter,
               child: Padding(
-                padding: const EdgeInsets.only(top: AppDesign.sm),
+                padding: const EdgeInsets.only(top: AppSpace.sm),
                 child: Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(AppDesign.md),
+                  padding: const EdgeInsets.all(AppSpace.md),
                   decoration: BoxDecoration(
                     color: tint.fade(0.06),
                     borderRadius: AppDesign.radius(AppDesign.rLg),

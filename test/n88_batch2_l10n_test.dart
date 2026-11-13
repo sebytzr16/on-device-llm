@@ -92,6 +92,7 @@ void main() {
       expect(backendLabel(GpuBackend.cpu, t), t.backendCpuOnly);
       expect(webModeShort(WebMode.always, t), t.webAlwaysShort);
       expect(kvCacheLabel(KvCacheType.q4_0, t), t.kvQ4SavesMoreRam);
+      expect(kvCacheLabel(KvCacheType.f8_e4m3, t), t.kvFp8E4m3);
       expect(
         threadsLabel(const InferenceSettings(), t),
         startsWith(t.threadsAutoCount(0).split('(').first),

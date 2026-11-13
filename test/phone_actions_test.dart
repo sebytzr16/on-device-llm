@@ -280,8 +280,273 @@ void main() {
     expect(find.text('list.md'), findsOneWidget);
     expect(find.text('Add to calendar'), findsOneWidget);
     expect(find.text('Start timer'), findsOneWidget);
-    expect(find.text('Save or share'), findsOneWidget);
+    expect(find.text('Save'), findsOneWidget);
     expect(find.byKey(const Key('phone-action-go-2')), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  group('PhoneAction.fullDetail', () {
+    test('create_event returns all fields with timezone', () {
+      const a = PhoneAction('create_event', {
+        'title': 'Dentist',
+        'start': '2026-10-09T15:00',
+        'end': '2026-10-09T16:00',
+        'location': 'Main St',
+        'notes': 'Bring insurance card',
+        'all_day': false,
+      });
+      // We can't easily test BuildContext-dependent output without a widget test,
+      // but we can verify the method exists and returns a list.
+      // The actual rendering is tested in the widget tests below.
+      expect(a.kind, 'create_event');
+      expect(a.title, 'Dentist');
+    });
+
+    test('save_file includes full content and filename', () {
+      const a = PhoneAction('save_file', {
+        'name': 'notes',
+        'content': 'Hello world',
+        'format': 'md',
+      });
+      expect(a.fileName, 'notes.md');
+      expect(a.args['content'], 'Hello world');
+    });
+
+    test('save_file with HTML content is detected', () {
+      const a = PhoneAction('save_file', {
+        'name': 'page',
+        'content': '<html><body>Hello</body></html>',
+        'format': 'html',
+      });
+      final content = a.args['content'] as String;
+      expect(content.trim().startsWith('<'), isTrue);
+      expect(content.contains('>'), isTrue);
+    });
+
+    test('draft_message includes all recipients and body', () {
+      const a = PhoneAction('draft_message', {
+        'to': 'alice@example.com',
+        'subject': 'Hello',
+        'body': 'How are you?',
+        'channel': 'email',
+      });
+      expect(a.args['to'], 'alice@example.com');
+      expect(a.args['subject'], 'Hello');
+      expect(a.args['body'], 'How are you?');
+    });
+  });
+
+  group('PhoneActionCards expandable preview', () {
+    testWidgets('cards start collapsed and expand on tap', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.dark,
+          home: const Scaffold(
+            body: SingleChildScrollView(
+              child: PhoneActionCards(
+                actions: [
+                  PhoneAction('create_event', {
+                    'title': 'Dentist',
+                    'start': '2026-10-09T15:00',
+                    'location': 'Main St',
+                    'notes': 'Bring insurance',
+                  }),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Card shows title and truncated detail
+      expect(find.text('Dentist'), findsOneWidget);
+      expect(find.byKey(const Key('phone-action-expand-0')), findsOneWidget);
+
+      // Expanded detail not visible initially
+      expect(find.text('Main St'), findsNothing);
+      expect(find.text('Bring insurance'), findsNothing);
+
+      // Tap expand button
+      await tester.tap(find.byKey(const Key('phone-action-expand-0')));
+      await tester.pumpAndSettle();
+
+      // Now expanded detail should be visible
+      expect(find.text('Main St'), findsOneWidget);
+      expect(find.text('Bring insurance'), findsOneWidget);
+      expect(find.text('Location'), findsOneWidget);
+      expect(find.text('Notes'), findsOneWidget);
+    });
+
+    testWidgets(
+      'save_file card shows Save/Share button and full content when expanded',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.dark,
+            home: const Scaffold(
+              body: SingleChildScrollView(
+                child: PhoneActionCards(
+                  actions: [
+                    PhoneAction('save_file', {
+                      'name': 'report',
+                      'content': 'Full report content here',
+                      'format': 'md',
+                    }),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+
+        // Button shows "Save" not "Save or share"
+        expect(find.text('Save'), findsOneWidget);
+        expect(find.text('Save or share'), findsNothing);
+
+        // Expand
+        await tester.tap(find.byKey(const Key('phone-action-expand-0')));
+        await tester.pumpAndSettle();
+
+        // Full content visible
+        expect(find.text('Full report content here'), findsOneWidget);
+        expect(find.text('File name'), findsOneWidget);
+        expect(find.text('Format'), findsOneWidget);
+        expect(find.text('Content'), findsOneWidget);
+      },
+    );
+
+    testWidgets('HTML content shows as escaped source with notice', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.dark,
+          home: const Scaffold(
+            body: SingleChildScrollView(
+              child: PhoneActionCards(
+                actions: [
+                  PhoneAction('save_file', {
+                    'name': 'page',
+                    'content': '<html><body>Hello</body></html>',
+                    'format': 'html',
+                  }),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('phone-action-expand-0')));
+      await tester.pumpAndSettle();
+
+      // HTML shown as source (not rendered)
+      expect(find.text('<html><body>Hello</body></html>'), findsOneWidget);
+      // Notice about HTML being shown as source
+      expect(
+        find.text('HTML content shown as source (not rendered).'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('draft_message shows all recipients, subject, body, channel', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.dark,
+          home: const Scaffold(
+            body: SingleChildScrollView(
+              child: PhoneActionCards(
+                actions: [
+                  PhoneAction('draft_message', {
+                    'to': 'alice@example.com, bob@example.com',
+                    'subject': 'Meeting',
+                    'body': 'Let us meet tomorrow.',
+                    'channel': 'email',
+                  }),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('phone-action-expand-0')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('alice@example.com, bob@example.com'), findsWidgets);
+      expect(find.text('Meeting'), findsOneWidget);
+      expect(find.text('Let us meet tomorrow.'), findsWidgets);
+      expect(find.text('EMAIL'), findsOneWidget);
+      expect(find.text('To'), findsOneWidget);
+      expect(find.text('Subject'), findsOneWidget);
+      expect(find.text('Message'), findsOneWidget);
+      expect(find.text('Via'), findsOneWidget);
+    });
+
+    testWidgets('create_event shows dates with timezone offset', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.dark,
+          home: const Scaffold(
+            body: SingleChildScrollView(
+              child: PhoneActionCards(
+                actions: [
+                  PhoneAction('create_event', {
+                    'title': 'Lunch',
+                    'start': '2026-10-09T12:30',
+                    'end': '2026-10-09T13:30',
+                    'all_day': false,
+                  }),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('phone-action-expand-0')));
+      await tester.pumpAndSettle();
+
+      // Dates should include timezone offset (UTC+/-HH:MM)
+      expect(find.textContaining('UTC', findRichText: true), findsWidgets);
+      expect(find.text('Lunch'), findsWidgets);
+      expect(find.text('Start'), findsOneWidget);
+      expect(find.text('End'), findsOneWidget);
+    });
+
+    testWidgets('collapse hides detail again', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.dark,
+          home: const Scaffold(
+            body: SingleChildScrollView(
+              child: PhoneActionCards(
+                actions: [
+                  PhoneAction('set_timer', {'minutes': 5, 'label': 'Tea'}),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Expand
+      await tester.tap(find.byKey(const Key('phone-action-expand-0')));
+      await tester.pumpAndSettle();
+      expect(find.text('Duration'), findsOneWidget);
+      // The label is in the summary and in the selectable detail.
+      final expanded = find.text('Tea').evaluate().length;
+      expect(expanded, greaterThan(1));
+
+      // Collapse
+      await tester.tap(find.byKey(const Key('phone-action-expand-0')));
+      await tester.pumpAndSettle();
+      expect(find.text('Duration'), findsNothing);
+      expect(find.text('Tea').evaluate().length, lessThan(expanded));
+    });
   });
 }

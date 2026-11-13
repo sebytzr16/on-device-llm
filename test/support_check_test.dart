@@ -124,6 +124,68 @@ void main() {
     expect(verdicts.single.support, isNull);
   });
 
+  const placed = "The Eiffel Tower was completed in 1889 for the World's Fair.";
+
+  test('a sentence the word check placed is flagged on a clear no', () async {
+    final plain = await ClaimCheckRunner.run(placed, _sources);
+    expect(plain.single.status, ClaimStatus.supported);
+    final judge = _Judge((_, _) => 0.03);
+    final verdicts = await ClaimCheckRunner.run(placed, _sources, judge: judge);
+    expect(judge.asked, isNotEmpty);
+    expect(verdicts.single.status, ClaimStatus.uncertain);
+    expect(verdicts.single.support, closeTo(0.03, 1e-9));
+    expect(ClaimCheckRunner.notice(verdicts, AppLocalizationsEn()), isNotNull);
+  });
+
+  test('a placed sentence stays on a yes or an unsure score', () async {
+    for (final p in [0.95, 0.4, SupportCheck.unbacked]) {
+      final verdicts = await ClaimCheckRunner.run(
+        placed,
+        _sources,
+        judge: _Judge((_, _) => p),
+      );
+      expect(verdicts.single.status, ClaimStatus.supported, reason: '$p');
+      expect(verdicts.single.support, closeTo(p, 1e-9));
+      expect(ClaimCheckRunner.notice(verdicts, AppLocalizationsEn()), isNull);
+    }
+  });
+
+  test('without the model a placed sentence is untouched', () async {
+    final verdicts = await ClaimCheckRunner.run(placed, _sources);
+    expect(verdicts.single.status, ClaimStatus.supported);
+    expect(verdicts.single.support, isNull);
+    final failing = await ClaimCheckRunner.run(
+      placed,
+      _sources,
+      judge: _Judge((_, _) => 0, fails: true),
+    );
+    expect(failing.single.status, ClaimStatus.supported);
+  });
+
+  test(
+    'doubtful sentences are asked before placed ones, placed capped',
+    () async {
+      final judge = _Judge((_, _) => 0.9);
+      await ClaimCheckRunner.run(
+        "$placed Gustave Eiffel's firm drew up its plans.",
+        _sources,
+        judge: judge,
+      );
+      expect(judge.asked.first.claim, contains('firm'));
+      expect(judge.asked.last.claim, contains('completed'));
+      final many = await ClaimCheckRunner.run(
+        List.filled(6, placed).join(' '),
+        _sources,
+        judge: judge,
+      );
+      expect(many.length, 6);
+      expect(
+        many.where((v) => v.support != null).length,
+        lessThanOrEqualTo(ClaimCheckRunner.confirmed),
+      );
+    },
+  );
+
   test('the source-check model is pinned', () {
     expect(supportCheckModel.downloadUrl, contains('/resolve/'));
     expect(

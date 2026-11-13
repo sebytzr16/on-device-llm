@@ -1,3 +1,5 @@
+import '../features/image_gen/image_gen_model_widgets.dart';
+import '../features/image_gen/image_gen_imports.dart';
 import '../features/models/domain/entities/model_suggestions.dart';
 import '../features/models/presentation/widgets/download_center.dart';
 import '../features/models/presentation/widgets/model_categories.dart';
@@ -7,6 +9,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:logging/logging.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/design/app_design.dart';
@@ -25,6 +28,7 @@ import '../features/models/domain/entities/model_catalog.dart';
 import '../features/models/domain/entities/model_info.dart';
 import '../features/models/presentation/providers/hidden_library_models.dart';
 import '../features/models/presentation/providers/model_manager_provider.dart';
+import '../features/models/presentation/recommended_models.dart';
 import '../features/models/presentation/widgets/model_tags.dart';
 import '../features/settings/presentation/providers/settings_provider.dart';
 import 'desktop_theme.dart';
@@ -33,7 +37,7 @@ import 'model_visibility.dart';
 import 'hf_discover.dart';
 import 'load_progress.dart';
 import 'load_settings_dialog.dart';
-import 'model_speed_badge.dart';
+import 'model_speed_results_provider.dart';
 
 /// The model library as a page: what is on this PC (load, eject, delete)
 /// and the catalog to download from, in table-like rows.
@@ -51,17 +55,25 @@ class _DesktopModelsPageState extends State<DesktopModelsPage> {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(32, 24, 32, 0),
+    padding: const EdgeInsets.fromLTRB(
+      AppSpace.desktopPage,
+      AppSpace.desktopPage,
+      AppSpace.desktopPage,
+      0,
+    ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // One header for both views: the title, the view switch beside it,
-        // and the local view's action on the right.
-        Row(
-          children: [
-            Text(context.l10n.models, style: context.text.headline),
-            const SizedBox(width: 24),
-            SegmentedButton<bool>(
+        AppPageHeader(
+          title: context.l10n.models,
+          subtitle: context.l10n.desktopModelsExplanation,
+          actions: [
+            const DownloadsButton(labelled: true),
+            if (!_discover) const _ImportButton(),
+          ],
+          bottom: Align(
+            alignment: Alignment.centerLeft,
+            child: SegmentedButton<bool>(
               showSelectedIcon: false,
               segments: [
                 ButtonSegment(
@@ -79,23 +91,15 @@ class _DesktopModelsPageState extends State<DesktopModelsPage> {
               onSelectionChanged: (value) =>
                   setState(() => _discover = value.single),
             ),
-            const Spacer(),
-            const DownloadsButton(labelled: true),
-            if (!_discover) ...[
-              const SizedBox(width: 8),
-              const _ImportButton(),
-            ],
-          ],
+          ),
         ),
-        const SizedBox(height: 6),
-        Text(context.l10n.desktopModelsExplanation, style: context.text.small),
         if (!_discover) ...[
           const SizedBox(height: 12),
           ModelCategoryFilters(
             selected: _category,
             onChanged: (value) => setState(() => _category = value),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpace.row),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -131,12 +135,15 @@ class _DesktopModelsPageState extends State<DesktopModelsPage> {
             ],
           ),
         ],
-        const SizedBox(height: 20),
+        const SizedBox(height: AppSpace.section),
         Expanded(
           child: IndexedStack(
             index: _discover ? 1 : 0,
             children: [
-              _allFiles || _category != null && _category != ModelCategory.llm
+              _category == ModelCategory.image
+                  ? const ImageGenLibrary()
+                  : _allFiles ||
+                        _category != null && _category != ModelCategory.llm
                   ? _AllModelFiles(category: _category)
                   : const _LocalModelsPage(),
               DesktopHfDiscover(active: _discover),
@@ -158,7 +165,7 @@ class _ImportButton extends ConsumerWidget {
     );
     return Pressable(
       enabled: !importing,
-      child: FilledButton.icon(
+      child: OutlinedButton.icon(
         onPressed: importing
             ? null
             : () => _LocalModelsPage._import(context, ref),
@@ -181,6 +188,19 @@ class _ImportButton extends ConsumerWidget {
   }
 }
 
+String? _lastRecommendedLog;
+
+/// One line per change of the Recommended counts, so an empty list can be
+/// told apart from an empty catalog or hidden rows in a release build.
+void _logRecommended(int catalog, int available, int hidden) {
+  final line =
+      'Recommended: $available of $catalog library rows '
+      '($hidden hidden)';
+  if (line == _lastRecommendedLog) return;
+  _lastRecommendedLog = line;
+  Logger('models').info(line);
+}
+
 class _LocalModelsPage extends ConsumerWidget {
   const _LocalModelsPage();
 
@@ -194,11 +214,24 @@ class _LocalModelsPage extends ConsumerWidget {
     );
     final local = visible.where((m) => m.isDownloaded).toList();
     final hidden = ref.watch(hiddenLibraryModelsProvider);
-    final available = availableLibraryModels(
-      models.catalog,
+    final memory = ref.watch(modelDeviceMemoryProvider).value;
+    final available = rankRecommended(
+      // Only chat models that can be downloaded: a file the user imported
+      // and later moved has no URL, and image or draft files have their own
+      // pages (owner 2026-11-12).
+      availableLibraryModels(
+        models.catalog,
+        desktop: true,
+        hidden: hidden,
+      ).where(
+        (m) =>
+            m.downloadUrl != null &&
+            modelCategory(m.fileName) == ModelCategory.llm,
+      ),
+      fit: (m) => modelFit(memory, m),
       desktop: true,
-      hidden: hidden,
     );
+    _logRecommended(models.catalog.length, available.length, hidden.length);
     return ListView(
       padding: const EdgeInsets.only(bottom: 32),
       children: [
@@ -230,20 +263,7 @@ class _LocalModelsPage extends ConsumerWidget {
             ],
           ),
         const SizedBox(height: 28),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: _SectionLabel(l10n.desktopCatalog)),
-            if (hidden.isNotEmpty)
-              TextButton.icon(
-                key: const Key('restore-removed-models'),
-                onPressed: () =>
-                    ref.read(hiddenLibraryModelsProvider.notifier).restoreAll(),
-                icon: const Icon(Icons.undo_rounded, size: 16),
-                label: Text(l10n.modelRestoreRemoved(hidden.length)),
-              ),
-          ],
-        ),
+        _SectionLabel(l10n.desktopCatalog),
         _Table(
           children: [
             for (final (i, m) in available.indexed)
@@ -253,6 +273,29 @@ class _LocalModelsPage extends ConsumerWidget {
               ),
           ],
         ),
+        // All means all (owner 2026-11-12): image and video models and every
+        // other kind of model file follow the chat models.
+        const SizedBox(height: 28),
+        _SectionLabel(l10n.modelCategoryImage),
+        for (final m in imageGenManagedModels(
+          ref.watch(imageGenImportsProvider),
+        ))
+          ImageGenDownloadRow(model: m),
+        for (final category in const [
+          ModelCategory.draft,
+          ModelCategory.embedding,
+          ModelCategory.reranker,
+          ModelCategory.projector,
+          ModelCategory.speech,
+        ])
+          ModelInventoryList(
+            category: category,
+            hideEmpty: true,
+            header: Padding(
+              padding: const EdgeInsets.only(top: 28),
+              child: _SectionLabel(modelCategoryLabel(l10n, category)),
+            ),
+          ),
       ],
     );
   }
@@ -329,22 +372,6 @@ class _Cascade extends StatelessWidget {
     delay: SpringEntrance.cascade(index),
     from: const Offset(0, 10),
     child: child,
-  );
-}
-
-/// A mono tag with a hairline outline, as on the phone's model cards.
-class _Tag extends StatelessWidget {
-  final String text;
-  const _Tag(this.text);
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-    decoration: BoxDecoration(
-      borderRadius: AppDesign.radius(AppDesign.rSm),
-      border: Border.all(color: context.colors.hairline),
-    ),
-    child: Text(text, style: context.text.mono.copyWith(fontSize: 11.5)),
   );
 }
 
@@ -535,12 +562,25 @@ class _ModelRowState extends ConsumerState<_ModelRow> {
     final params = facts?.parameterCount != null
         ? _params(facts!.parameterCount!)
         : paramLabel(m);
+    final speedResults =
+        ref
+            .watch(modelSpeedResultsProvider)
+            .values
+            .where((r) => r.modelId == m.id && r.samples.isNotEmpty)
+            .toList()
+          ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
     final line = [
       facts?.architecture ?? m.family.name,
       if (params.isNotEmpty) params,
       if (facts?.contextLength case final ctx? when ctx > 0)
         _context(ctx, context.l10n),
-    ].join(' · ');
+      quant,
+      m.sizeLabel,
+      if (speedResults.isNotEmpty)
+        l10n.desktopBenchRate(
+          speedResults.first.samples.first.decodeTps.toStringAsFixed(0),
+        ),
+    ].join(' \u00b7 ');
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
@@ -625,33 +665,12 @@ class _ModelRowState extends ConsumerState<_ModelRow> {
                       Text(
                         line,
                         overflow: TextOverflow.ellipsis,
-                        style: context.text.mono.copyWith(
-                          fontSize: 11,
-                          color: c.textFaint,
-                        ),
+                        maxLines: 1,
+                        style: context.text.small,
                       ),
                       ModelCapabilityBadges(model: m),
                     ],
                   ),
-                ),
-              ),
-            ),
-            SizedBox(
-              width: 100,
-              child: Align(alignment: Alignment.centerLeft, child: _Tag(quant)),
-            ),
-            SizedBox(
-              width: 200,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Row(
-                  children: [
-                    _Tag(m.sizeLabel),
-                    if (m.isDownloaded) ...[
-                      const SizedBox(width: 6),
-                      ModelSpeedBadge(m.id),
-                    ],
-                  ],
                 ),
               ),
             ),
@@ -716,9 +735,11 @@ class _ModelRowState extends ConsumerState<_ModelRow> {
                       IconButton(
                         key: ValueKey('remove-available-${m.id}'),
                         tooltip: l10n.uiModelCardRemoveFromList,
-                        onPressed: () => ref
-                            .read(hiddenLibraryModelsProvider.notifier)
-                            .hide(m.id),
+                        onPressed: () => removeLibraryEntry(
+                          ref,
+                          ref.read(modelManagerProvider.notifier),
+                          m,
+                        ),
                         icon: const Icon(Icons.close_rounded, size: 17),
                       ),
                     ] else if (loaded || helperLoaded) ...[
@@ -730,22 +751,32 @@ class _ModelRowState extends ConsumerState<_ModelRow> {
                       ),
                       const SizedBox(width: 10),
                       Pressable(
-                        child: OutlinedButton(
-                          onPressed: busy
-                              ? null
-                              : () => loaded
-                                    ? ref
-                                          .read(modelManagerProvider.notifier)
-                                          .unloadModel()
-                                    : ref
-                                          .read(helperRunnerProvider)
-                                          .unloadModel(m.id),
+                        child: FilledButton(
+                          onPressed: () async {
+                            try {
+                              if (loaded) {
+                                await ref
+                                    .read(modelManagerProvider.notifier)
+                                    .unloadModel();
+                              } else {
+                                await ref
+                                    .read(helperRunnerProvider)
+                                    .unloadModel(m.id);
+                              }
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(
+                                context,
+                              ).showSnackBar(SnackBar(content: Text('$e')));
+                            }
+                          },
                           child: Text(l10n.desktopEject),
                         ),
                       ),
                     ] else
                       Pressable(
-                        child: FilledButton(
+                        child: FilledButton.tonal(
+                          style: appTonalButtonStyle(context),
                           onPressed:
                               busy ||
                                   models.isLoadingModel ||

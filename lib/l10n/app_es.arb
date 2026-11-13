@@ -203,6 +203,17 @@
   "builtOnLlamaHint": "Motor de inferencia del proyecto ggml.",
   "openSourceLicences": "Licencias de código abierto",
   "openSourceLicencesHint": "Paquetes, modelos y voces, con sus licencias",
+  "checkForUpdates": "Buscar actualizaciones",
+  "updateCheckHint": "Consulta la API pública de versiones de GitHub para obtener la última versión. No se envía ninguna cuenta ni identificador del dispositivo.",
+  "checkingForUpdates": "Buscando actualizaciones…",
+  "updateUpToDate": "Tienes la última versión ({version}).",
+  "updateAvailable": "La versión {version} está disponible.",
+  "updateCurrentVersion": "Estás en la versión {current}.",
+  "updateReleaseNotesTitle": "Novedades de la versión {version}",
+  "updateOpenReleasePage": "Abrir la página de la versión",
+  "updateNoReleaseNotes": "Esta versión no incluye notas.",
+  "updateCheckOffline": "Parece que no tienes conexión. Comprueba tu conexión e inténtalo de nuevo.",
+  "updateCheckFailed": "No se pudieron buscar actualizaciones. Comprueba tu conexión e inténtalo de nuevo.",
   "resetQuestion": "¿Restablecer los valores predeterminados?",
   "resetHint": "Todos los asistentes, modelos y configuraciones avanzadas vuelven a los valores predeterminados para este dispositivo. Tus chats no se ven afectados.",
   "reset": "Reiniciar",
@@ -246,6 +257,9 @@
   "downloadInterruptedHint": "Puede volver a intentarlo ahora u omitirlo y descargarlo más tarde desde la biblioteca de modelos. La aplicación funciona sin modelo, simplemente no puede responder todavía.",
   "retry": "Reintentar",
   "skipForNow": "Saltar por ahora",
+  "onboardingSaveFailedTitle": "No se pudo guardar la elección de bienvenida",
+  "onboardingSaveFailedBody": "No se pudo guardar la finalización de la bienvenida. Puede reintentarlo o continuar solo para esta sesión (la bienvenida volverá a aparecer la próxima vez).",
+  "onboardingContinueSession": "Continuar solo esta sesión",
   "verifyingSha": "Verificando SHA-256…",
   "pausedOf": "En pausa · {received} de {size}",
   "@pausedOf": {
@@ -481,6 +495,18 @@
       }
     }
   },
+  "deleteModelQuestion": "¿Eliminar este modelo?",
+  "deleteModelHint": "¿Eliminar permanentemente {model} de esta aplicación y liberar {size}? Esto no se puede deshacer. Tus chats se conservarán.",
+  "@deleteModelHint": {
+    "placeholders": {
+      "model": {
+        "type": "Object"
+      },
+      "size": {
+        "type": "Object"
+      }
+    }
+  },
   "browseHf": "Explorar Hugging Face",
   "yourModelLibrary": "Tu biblioteca de modelos",
   "libraryHint": "Descargue un modelo inicial, agregue un enlace de archivo Hugging Face o importe un GGUF que ya posee. Después de la descarga, la inferencia funciona sin conexión.",
@@ -491,7 +517,7 @@
   "preparingLibrary": "Preparando tu biblioteca…",
   "onThisDevice": "En este dispositivo",
   "nothingDownloaded": "Aún no se ha descargado nada. Elija un modelo a continuación para comenzar.",
-  "availableToDownload": "Disponible para descargar",
+  "availableToDownload": "Recomendados",
   "everythingOnPhone": "Todo lo que hay en el catálogo está en este teléfono.",
   "justNow": "justo ahora",
   "minutesAgo": "hace {n} min",
@@ -975,12 +1001,29 @@
       }
     }
   },
+  "startupFailedTitle": "Error al iniciar",
+  "startupFailedBody": "No se pudo abrir la base de datos. Reintente o exporte sus archivos. Restablecer crea una base vacía y conserva una copia local. Los archivos exportados contienen datos privados; guárdelos de forma segura.",
+  "startupRetry": "Reintentar",
+  "startupCopyDetails": "Copiar detalles",
   "backupTitle": "Copia de seguridad cifrada",
   "backupIntro": "Guarda chats, biblioteca, archivos adjuntos, objetivos y ajustes en un archivo protegido con contraseña. Los modelos y las claves API permanecen en este dispositivo. El límite es de 96 MB.",
   "backupPasswordLabel": "Contraseña de la copia",
   "backupConfirmPassword": "Confirma la contraseña de la nueva copia",
   "backupCreateAction": "Crear copia de seguridad cifrada",
   "backupRestoreBackup": "Restaurar copia de seguridad",
+  "backupSaveToFile": "Guardar en archivo",
+  "backupShareAction": "Compartir",
+  "backupSavedToFile": "Copia cifrada guardada en archivo. Conserva la contraseña: no se puede recuperar.",
+  "backupSaveFailed": "Error al guardar la copia: {error}",
+  "@backupSaveFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "backupPasswordMinLength": "Al menos {minLength} caracteres",
+  "backupPasswordsMatch": "Las contraseñas coinciden",
   "uiRemoteProfilePageDeleteConnection": "¿Eliminar conexión?",
   "uiRemoteProfilePageCancel": "Cancelar",
   "uiRemoteProfilePageDelete": "Eliminar",
@@ -1057,12 +1100,20 @@
   "uiAdvancedPagesFlagUnsupportedFigures": "Marcar figuras no admitidas",
   "uiAdvancedPagesAfterAGroundedAnswerNumbersVersions": "Después de una respuesta fundamentada, los números, versiones y fechas que no aparecen en ningún pasaje proporcionado se consideran no verificados.",
   "supportCheckTitle": "Comprobar frases por el sentido",
-  "supportCheckHint": "Un modelo pequeño (Qwen3 Reranker 0.6B) lee el pasaje de la fuente más cercano antes de marcar una frase, así una frase correcta dicha con otras palabras no se marca como no respaldada. Descarga aparte; funciona unos segundos tras una respuesta con fuentes.",
+  "supportCheckHint": "Un modelo pequeño (Qwen3 Reranker 0.6B, inglés, francés y español) lee el pasaje de la fuente más cercano de cada frase: una frase correcta dicha con otras palabras no se marca como no respaldada, y una frase que su pasaje no afirma se marca como no respaldada aunque las palabras coincidan. Descarga aparte; funciona unos segundos tras una respuesta con fuentes.",
   "uiHfSearchPageSearchHuggingFace": "Buscar en Hugging Face",
   "uiHfSearchPageModelNameEGQwen34B": "Nombre del modelo, p. ej., Qwen3 4B, Phi-4, Llama 3.2",
   "uiHfSearchPageNoGGUFRepositoriesMatch": "Ningún repositorio GGUF coincide.",
   "uiHfSearchPageNoSingleFileGGUFWeightsIn": "No hay pesos GGUF de un solo archivo en este repositorio.",
   "uiHfSearchPageNotAddableHere": "No se puede agregar aquí",
+  "imageDiscoverFilesError": "No se pudieron cargar los archivos. Inténtalo de nuevo.",
+  "imageDiscoverTitle": "Descubrir modelos de imagen y vídeo",
+  "imageDiscoverFilterImage": "Mostrando modelos de texto a imagen",
+  "imageDiscoverFilterVideo": "Mostrando modelos de texto a vídeo",
+  "imageDiscoverSearchHint": "Nombre del modelo, p. ej. SDXL, Flux, SVD",
+  "imageDiscoverIntro": "Repositorios de difusión públicos (GGUF y Diffusers), ordenados por descargas. Cada archivo se verifica con el SHA-256 del Hub. Elige un peso para añadirlo a tu biblioteca.",
+  "imageDiscoverEmpty": "Ningún repositorio de difusión coincide.",
+  "imageDiscoverNoFiles": "No hay pesos de difusión (GGUF o safetensors) en este repositorio.",
   "uiBenchmarkDialogBenchmarkCopied": "Prueba de rendimiento copiada",
   "uiBenchmarkDialogCopy": "Copiar",
   "uiBenchmarkDialogShare": "Compartir",
@@ -1398,6 +1449,7 @@
   "fitFits": "Cabe en este dispositivo",
   "fitTight": "Justo de RAM",
   "fitTooLarge": "Demasiado grande para este dispositivo",
+  "ternaryVulkanCpuNotice": "Este tipo de modelo se ejecuta en el procesador con el motor Vulkan; el motor CUDA lo ejecuta en la tarjeta gráfica.",
   "configApplyNote": "Aplicar reemplaza el perfil de ese modelo. La búsqueda web y el hardware quedan como los configuraste.",
   "configApplied": "Aplicado a {model}. Surte efecto en la próxima respuesta.",
   "storageUnavailable": "No disponible en este dispositivo",
@@ -1750,6 +1802,8 @@
   "talkOverTitle": "Hablar encima de la respuesta",
   "talkOverHint": "En una conversación, interrumpe hablando. La respuesta suena entonces como una llamada. Desactivado: sonido claro, toca para interrumpir.",
   "talkOverHintPc": "En una conversación, interrumpe hablando. La respuesta suena entonces como una llamada. Desactivado: sonido claro, haz clic para interrumpir.",
+  "conversationHearsAudioTitle": "Dejar que el modelo oiga tu voz",
+  "conversationHearsAudioHint": "Cuando el modelo de chat puede escuchar (Gemma 4 E2B/E4B), recibe también tu grabación además del texto.",
   "spokenLengthTitle": "Longitud de las respuestas habladas",
   "spokenLengthHint": "Cuánto de una respuesta dice Conversación en voz alta. Las listas se leen siempre enteras.",
   "readingSpeedTitle": "Velocidad de lectura",
@@ -1760,10 +1814,12 @@
   "voiceListeningPack": "Escucha (Whisper)",
   "voiceSpeakingPack": "Habla (Kokoro)",
   "listeningModelTitle": "Modelo de escucha",
-  "listeningModelHint": "Parakeet v3 entendió todas las frases de prueba en el teléfono y responde más rápido que Whisper; además entiende mejor el francés y el español. Se descarga aparte y usa más memoria mientras hablas. Parakeet TDT 0.6B v3 de NVIDIA, CC BY 4.0.",
-  "listeningModelHintPc": "Parakeet v3 entendió todas las frases de prueba y responde más rápido que Whisper; además entiende mejor el francés y el español. Se descarga aparte y usa más memoria mientras hablas. Parakeet TDT 0.6B v3 de NVIDIA, CC BY 4.0.",
+  "listeningModelHint": "Parakeet Ultra entendió todas las frases de prueba en el teléfono y responde más rápido que Whisper; además entiende mejor el francés y el español. Se descarga aparte y usa más memoria mientras hablas. Parakeet Ultra de Moondream, basado en Parakeet TDT 0.6B v3 de NVIDIA, CC BY 4.0.",
+  "listeningModelHintPc": "Parakeet Ultra entendió todas las frases de prueba y responde más rápido que Whisper; además entiende mejor el francés y el español. Se descarga aparte y usa más memoria mientras hablas. Parakeet Ultra de Moondream, basado en Parakeet TDT 0.6B v3 de NVIDIA, CC BY 4.0.",
   "listeningWhisper": "Whisper base",
-  "listeningParakeet": "Parakeet v3",
+  "listeningParakeet": "Parakeet Ultra",
+  "liveCaptionsTitle": "Subtítulos en directo (Nemotron streaming)",
+  "liveCaptionsHint": "Muestra tus palabras mientras hablas, en 25 idiomas. 475 MB.",
   "voiceUnpacking": "Descomprimiendo…",
   "voicePick": "Voz",
   "voiceTry": "Probar",
@@ -1792,6 +1848,7 @@
   "convLoadingModel": "Cargando {model}…",
   "convHint": "Solo habla. Respondo en voz alta; habla encima para interrumpirme.",
   "convInterrupt": "Interrumpir",
+  "convSynthesisFailed": "Falló la síntesis de voz. Cambiando a la voz del sistema.",
   "actionEvent": "Añadir al calendario",
   "actionReminder": "Añadir recordatorio",
   "actionAlarm": "Poner la alarma",
@@ -1809,6 +1866,31 @@
       }
     }
   },
+  "actionExpand": "Mostrar detalles",
+  "actionCollapse": "Ocultar detalles",
+  "actionSaveButton": "Guardar",
+  "actionShareButton": "Compartir",
+  "actionEventTitle": "Título",
+  "actionEventStart": "Inicio",
+  "actionEventEnd": "Fin",
+  "actionEventLocation": "Ubicación",
+  "actionEventNotes": "Notas",
+  "actionEventAllDay": "Todo el día",
+  "actionReminderText": "Recordatorio",
+  "actionReminderWhen": "Cuándo",
+  "actionAlarmTime": "Hora",
+  "actionAlarmLabel": "Etiqueta",
+  "actionAlarmDays": "Repetir",
+  "actionTimerDuration": "Duración",
+  "actionTimerLabel": "Etiqueta",
+  "actionMessageTo": "Para",
+  "actionMessageSubject": "Asunto",
+  "actionMessageBody": "Mensaje",
+  "actionMessageChannel": "Vía",
+  "actionFileName": "Nombre de archivo",
+  "actionFileFormat": "Formato",
+  "actionFileContent": "Contenido",
+  "actionHtmlEscapedNotice": "Contenido HTML mostrado como fuente (no renderizado).",
   "goalAwaitingActions": "Esperando tu confirmación de la acción",
   "actionReadyAnswer": "Listo. Revisa la tarjeta de abajo y toca su botón para terminar.",
   "echoedAnswer": "El modelo copió sus instrucciones en lugar de responder, así que no se muestra ninguna respuesta. Abre las fuentes de abajo o pregunta de otra forma.",
@@ -1867,6 +1949,16 @@
   "desktopServerPairHint": "En el teléfono, abre Ajustes > Servidor remoto. Toca Escanear código QR, o toca Buscar anfitriones cercanos, elige este PC y escribe el código de vinculación. Ambos dispositivos deben estar en la misma Wi-Fi.",
   "desktopServerPairOff": "Activa «Compartir en la red local» e inicia el servidor para mostrar un código de vinculación.",
   "desktopServerNeedsModel": "Primero carga un modelo: los teléfonos y las apps reciben respuestas del modelo cargado aquí.",
+  "hostPairFingerprint": "Huella del servidor",
+  "remotePairFingerprintMessage": "Compara esta huella con la que aparece junto al código de vinculación en el dispositivo anfitrión:\n\n{fingerprint}\n\nContinúa solo si coinciden exactamente.",
+  "@remotePairFingerprintMessage": {
+    "placeholders": {
+      "fingerprint": {
+        "type": "String"
+      }
+    }
+  },
+  "remotePairFingerprintConfirm": "Coinciden",
   "hostPairCode": "Código de vinculación",
   "remotePairCodeMessage": "Escribe el código de vinculación de 6 dígitos que aparece junto al servidor en {name}. Déjalo vacío para escribir una clave de acceso.",
   "remotePairConnect": "Conectar",
@@ -1891,7 +1983,7 @@
   "timeLeft": "quedan {time}",
   "desktopNoModels": "Aún no hay modelos en este PC. Importa un GGUF o descarga uno en Modelos.",
   "desktopLocalModels": "En este PC",
-  "desktopCatalog": "Disponibles para descargar",
+  "desktopCatalog": "Recomendados",
   "desktopLoad": "Cargar",
   "desktopEject": "Expulsar",
   "desktopLoaded": "Cargado",
@@ -2156,6 +2248,7 @@
     }
   },
   "mcpUnsupportedContent": "El servidor MCP devolvió contenido no textual (imagen, audio o recurso); este resultado solo incluye texto.",
+  "mcpBatchArgsError": "Los argumentos de archivos batch de Windows no deben contener & | < > ^ % o \".",
   "structuredFormatText": "Texto",
   "structuredFormatGrammar": "Gramática",
   "structuredSchemaEmpty": "Sin esquema: se aceptará cualquier objeto JSON.",
@@ -2478,7 +2571,9 @@
   "desktopOptimizeBaseline": "Midiendo los ajustes actuales…",
   "desktopOptimizeProgress": "{percent} % completado",
   "desktopOptimizeStep": "Probando la configuración {n} de {total}…",
-  "desktopOptimizeKept": "Los ajustes optimizados no eran más rápidos, así que se mantuvieron los actuales.",
+  "desktopOptimizeKept": "Ninguna configuración aceptable fue más de un 3 % más rápida por encima del ruido de medición. Se mantuvo la configuración actual.",
+  "desktopOptimizeKeptOutput": "Las respuestas probadas diferían demasiado de la referencia. Se mantuvo la configuración actual.",
+  "desktopOptimizeKeptBaseline": "No se pudieron medir tus ajustes actuales de forma fiable, así que los ajustes probados no se pudieron comparar con sus respuestas y se mantuvieron los actuales.",
   "desktopOptimizeRates": "Antes: {before} tok/s · Después: {after} tok/s",
   "desktopLoadSettingsPaged": "+{gb} GB paginados desde el disco",
   "desktopStopLoading": "Detener la carga",
@@ -2546,6 +2641,19 @@
   "imageSquare": "Cuadrado",
   "imageSharp": "Nítido",
   "imageCleanUp": "Limpiar",
+  "imageAddModel": "Añadir un modelo",
+  "imageRemoveModel": "Quitar el modelo",
+  "imageImportTitle": "Añadir un modelo de imagen o vídeo",
+  "imageImportRepo": "Repositorio de Hugging Face",
+  "imageImportRepoHint": "propietario/repositorio",
+  "imageImportFind": "Buscar archivos",
+  "imageImportMode": "Modo",
+  "imageModeImage": "Imagen",
+  "imageImportFile": "Archivo",
+  "imageImportNoSupported": "No se encontró ningún archivo .gguf o .safetensors compatible con stable-diffusion.cpp en este repositorio.",
+  "imageImportUnsupported": "{file} no es compatible. Elige un archivo .gguf o .safetensors que stable-diffusion.cpp pueda cargar.",
+  "imageImportDownload": "Descargar y añadir",
+  "imageImportFailed": "No se pudo añadir el modelo: {error}",
   "reasoningThinking": "Pensando…",
   "reasoningTitle": "Razonamiento",
   "reasoningDuration": "Razonamiento · {seconds} s",
@@ -2597,10 +2705,26 @@
   "documentScanNoText": "No se encontró texto legible. Prueba con un escaneo más nítido o adjunta fotos de las páginas.",
   "documentScanTextLimit": "[Se alcanzó el límite de texto; no se procesaron las páginas restantes.]",
   "documentScanOcrLimit": "[Límite OCR de {limit} páginas: se omitieron {skipped} páginas escaneadas. Las capas de texto sí se leyeron.]",
+  "documentEpubFallback": "El diseño del paquete estaba incompleto; los capítulos se leyeron en orden de archivo.",
+  "documentImagesOmitted": "{count} imagen(es) no extraída(s)",
   "documentScanUnreadable": "[No se pudieron leer {count} páginas.]",
   "documentScanConfidenceUnknown": "confianza no disponible",
   "documentScanConfidence": "confianza del reconocimiento: {percent}%",
   "documentScanQuality": " (OCR; {confidence}; revisa posibles errores)",
+  "documentTextRecognitionFailed": "El reconocimiento de texto falló; la foto sigue disponible para búsqueda visual.",
+  "documentMediaNotTranscribed": "El medio se puede buscar, pero sus datos no se pueden usar hasta que haya una transcripción o descripción disponible.",
+  "documentTextLimitReached": "Se alcanzó el límite de extracción de texto; puede faltar parte del documento.",
+  "voiceDictationUnavailable": "Dictado no disponible: {error}",
+  "voiceDictationFailed": "El dictado falló: {error}",
+  "voiceOfflineDictationUnavailable": "El dictado en el dispositivo no está disponible. Instale un servicio de reconocimiento de voz sin conexión y un paquete de idioma. No se inició ningún reconocedor de red.",
+  "voiceOfflineRecognitionFailed": "El dictado en el dispositivo falló. Compruebe el paquete de idioma sin conexión en los ajustes de voz del teléfono. No se inició ningún reconocedor de red.",
+  "voiceErrorNoMatch": "No se reconoció ningún habla.",
+  "voiceErrorSpeechTimeout": "No se detectó habla.",
+  "voiceErrorPermission": "Se necesita permiso de micrófono para el dictado.",
+  "voiceErrorLanguageUnavailable": "El reconocimiento en el dispositivo no tiene paquete de idioma instalado. Instale uno en los ajustes de voz del teléfono, o permita el reconocedor de red.",
+  "voiceErrorNetwork": "El reconocedor necesita una red y no hay ninguna disponible.",
+  "voiceErrorUnknown": "Error de dictado ({code}).",
+  "voiceCodeOmitted": "código omitido",
   "mtpNeedsTarget": "Descarga primero el modelo de destino.",
   "mtpReadFailed": "No se puede leer la cabeza MTP: {error}",
   "remoteKeyRejected": "El servidor rechazó la clave de API (HTTP {status})",
@@ -2626,6 +2750,8 @@
   "dgUnreadable": "El archivo del modelo DiffusionGemma no es un GGUF legible.",
   "dgLoadFirst": "Carga primero DiffusionGemma.",
   "dgTextOnly": "DiffusionGemma solo admite chat de texto.",
+  "dgFixedSettings": "DiffusionGemma se ejecuta en su propio proceso: solo respeta el contexto, las capas de GPU, los hilos y la semilla. Los ajustes desactivados aquí los fija su motor.",
+  "dgNoContinuation": "DiffusionGemma no puede continuar una respuesta parcial; vuelve a enviar la pregunta para obtener una nueva.",
   "hostPairValidUntil": "Válido hasta las {time}, para un solo dispositivo.",
   "modelCardUnavailable": "La ficha del modelo no está disponible. Los archivos se pueden descargar.",
   "modelCardRetry": "Reintentar la ficha del modelo",
@@ -2704,8 +2830,8 @@
   "helperTask": "Tarea",
   "helperResult": "Resultado",
   "readingVoiceTitle": "Voz de lectura",
-  "readingVoiceHint": "Compara Kokoro y Supertonic 2 en inglés, francés y español. Descarga la voz elegida a continuación. Pesos de Supertonic 2: OpenRAIL-M; código: MIT.",
-  "supertonicSpeakingPack": "Habla (Supertonic 2)",
+  "readingVoiceHint": "Compara Kokoro y Supertonic 3 en inglés, francés y español. Descarga la voz elegida a continuación. Pesos de Supertonic 3: OpenRAIL-M; código: MIT.",
+  "supertonicSpeakingPack": "Habla (Supertonic 3)",
   "supertonicSpeaker": "Voz {number}",
   "helperLiveTitle": "Ayudante",
   "helperQueued": "En cola",
@@ -3008,6 +3134,37 @@
       }
     }
   },
+  "chatImageNeedsDesktop": "La generación de imágenes necesita la aplicación de escritorio. Este teléfono puede chatear y buscar, pero las imágenes se generan en el PC.",
+  "chatImageNoModel": "Descarga Qwen-Image 2.1 r?pido desde Crear antes de generar una imagen.",
+  "chatImageWrongModel": "El modelo seleccionado en Crear genera vídeo. Elige primero un modelo de imagen en Crear.",
+  "chatImagePreparing": "Cargando el modelo de imagen…",
+  "chatImageDrawing": "Creando la imagen: paso {step} de {total}…",
+  "@chatImageDrawing": {
+    "placeholders": {
+      "step": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "generatedImageName": "Imagen generada",
+  "chatImageEditNeedsPicture": "Editar una imagen necesita un modelo de imagen, no uno de vídeo.",
+  "chatImageNoPictureToEdit": "No hay ninguna imagen que editar en este chat. Adjunta una o pide primero una imagen nueva.",
+  "chatImageEditing": "Editando la imagen: paso {step} de {total}…",
+  "@chatImageEditing": {
+    "placeholders": {
+      "step": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "editedImageName": "Imagen editada",
+  "chatImageAnswer": "Aquí está la imagen que pediste.",
   "modelDownloadLicenseNotice": "{size} de Hugging Face.\n\nLicencia: {license}\n\nAl continuar, reconoces haber leído la licencia del modelo del editor. El archivo se verifica con SHA-256 antes de usarse.",
   "@modelDownloadLicenseNotice": {
     "placeholders": {
@@ -3083,6 +3240,16 @@
   "appearanceTextScaleHint": "Ajusta el tamaño de todo el texto de la aplicación además del ajuste del sistema.",
   "contextBatchNextLoad": "Los cambios de contexto y de lote se aplican la próxima vez que se cargue un modelo.",
   "hardwareNextLoad": "Los cambios de hardware se aplican la próxima vez que se cargue el modelo.",
+  "detectedHardware": "Hardware detectado",
+  "detectedHardwareCpu": "CPU",
+  "detectedHardwareCpuUnknown": "CPU desconocida",
+  "detectedHardwareRam": "RAM",
+  "detectedHardwareGpu": "GPU",
+  "detectedHardwareNone": "Ninguna",
+  "detectedHardwareGpuUnknown": "GPU desconocida",
+  "detectedHardwareVram": "VRAM",
+  "detectedHardwareBackend": "Backend",
+  "detectedHardwareUnknown": "Desconocido",
   "searchRegionCanadaEnglish": "Canadá (inglés)",
   "searchRegionUnitedStates": "Estados Unidos",
   "searchRegionUnitedKingdom": "Reino Unido",
@@ -3460,6 +3627,15 @@
   "historyClearConfirm": "¿Eliminar todas las comparaciones guardadas?",
   "historyStorage": "Historial: {size} · se conservan los 300 elementos más recientes",
   "historyFailed": "No se pudo acceder al historial: {error}",
+  "historyDamaged": "No se puede leer {count} comparación(es) guardada(s) y está(n) oculta(s).",
+  "@historyDamaged": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "historyRepair": "Eliminarlas",
   "historyReadOnly": "Comparación guardada · pulsa Ejecutar para comparar de nuevo.",
   "benchmarkHistory": "Historial de pruebas de velocidad",
   "benchmarkHistoryEmpty": "Aún no hay pruebas de velocidad guardadas",
@@ -3480,5 +3656,89 @@
   "answerTokensInvalid": "Introduce un número entero positivo de hasta 1.048.576.",
   "answerTokensContextLimit": "La ventana de contexto ({context} tokens) limita la respuesta real. El prompt y el razonamiento también usan esta ventana. El valor solicitado se guarda.",
   "answerTokensHint": "La respuesta más larga que puede escribir el modelo. Desliza hasta 64.000 o toca Personalizado para escribir cualquier valor. La ventana de contexto sigue limitando lo que cabe.",
-  "modelRestoreRemoved": "Restaurar quitados ({count})"
+  "modelRestoreRemoved": "Restaurar quitados ({count})",
+  "desktopSpeculationMode": "Decodificación especulativa",
+  "desktopDraftModel": "Modelo borrador",
+  "desktopDFlash": "DFlash (difusión por bloques)",
+  "desktopDFlashUnavailable": "Esta biblioteca nativa no admite DFlash.",
+  "desktopDraftRequired": "Elige un modelo borrador GGUF.",
+  "desktopDraftBrowse": "Buscar un modelo borrador GGUF…",
+  "desktopDraftModeMismatch": "Este GGUF no corresponde al modo de decodificación especulativa seleccionado.",
+  "desktopDFlashConvert": "Este GGUF dflash-draft usa otro formato. Vuelve a convertirlo con el conversor de la versión fijada de llama.cpp y su modelo objetivo; la arquitectura admitida es dflash.",
+  "desktopDFlashInvalid": "Los metadatos de este borrador DFlash no son válidos, o sus dimensiones y capas no coinciden con las del modelo objetivo.",
+  "hostPairedDevices": "Dispositivos vinculados",
+  "hostRevokeDevice": "Revocar",
+  "hostLegacyDevices": "Token compartido anterior",
+  "hostLegacyDevicesHint": "Revoca el acceso de todos los dispositivos que usan el token compartido anterior. Vuelve a vincularlos para asignar un token propio a cada dispositivo.",
+  "mcpExecutableReview": "Revisar el acceso del ejecutable",
+  "mcpEnableExecutable": "Confiar y activar",
+  "mcpExecutableWarning": "Activa únicamente un ejecutable preinstalado de confianza, mediante su ruta absoluta. Se bloquea la ejecución directa de npx, npm, uvx, uv, pip y los intérpretes de comandos habituales. Este servidor funciona sin aislamiento del sistema: puede leer o modificar archivos fuera de su directorio de trabajo dedicado y acceder a la red. Activarlo es una excepción a las reglas estrictas de la aplicación sobre ausencia de servidor, acceso a archivos y red. Revisa el comando, los argumentos y las variables de entorno que aparecen a continuación. Los cambios de configuración requieren una nueva autorización.",
+  "hostTlsIdentityError": "La identidad TLS del anfitrión no está disponible. Restaura el almacenamiento seguro antes de volver a compartir. Restablecer la identidad requiere revocar todos los dispositivos y volver a vincularlos.",
+  "hostResetIdentity": "Restablecer identidad",
+  "hostResetIdentityConfirm": "¿Crear una nueva identidad de anfitrión? Se revoca cada dispositivo vinculado y debe vincularse de nuevo.",
+  "startupExport": "Exportar archivos de la base",
+  "startupResetTitle": "¿Restablecer la base de datos?",
+  "startupResetBody": "Se eliminarán los chats, conocimientos y recuerdos de la base activa. Se conserva una copia local. Exporte primero los archivos para guardar una copia aparte.",
+  "deviceEncryptionTitle": "Cifrar los datos en este dispositivo",
+  "deviceEncryptionHint": "Protege conversaciones, memoria, conocimiento, borradores, adjuntos, vectores en caché y objetivos. Reinicia la aplicación para aplicar el cambio a la base de datos. Desactivado por defecto. Haz una copia: perder el almacenamiento seguro puede impedir leer los datos.",
+  "deviceEncryptionWorking": "Migrando archivos locales… Mantén la aplicación abierta.",
+  "deviceEncryptionFailed": "No se pudo completar el cambio. Los archivos se han conservado. Reintenta para completar la migración; no restablezcas los datos.",
+  "deviceEncryptionRecovery": "No se pudieron abrir los datos cifrados. Recupera el acceso al almacenamiento seguro del dispositivo o restaura una copia protegida con contraseña. Conserva los archivos; no restablezcas los datos. No se ha eliminado ningún dato.",
+  "deviceEncryptionDoneOn": "El cifrado de archivos está activado. Reinicia la aplicación para cifrar conversaciones, memoria y conocimiento.",
+  "deviceEncryptionDoneOff": "El cifrado de archivos está desactivado. Reinicia la aplicación para descifrar conversaciones, memoria y conocimiento.",
+  "deviceEncryptionRetry": "Reintentar migración",
+  "engineVersionsTitle": "Versiones del motor",
+  "engineLlamaCppBuild": "Compilación de llama.cpp",
+  "engineSdCppRevision": "Revisión de stable-diffusion.cpp",
+  "engineCudaRuntime": "Runtime de CUDA",
+  "engineNvidiaDriver": "Controlador NVIDIA",
+  "engineNotDetected": "No detectado",
+  "engineCheckUpdates": "Buscar actualizaciones del motor",
+  "engineChecking": "Comprobando…",
+  "engineUpToDate": "{name}: actualizado",
+  "engineNewerAvailable": "{name} más reciente disponible: {latest} (incluido: {bundled}) - llegará con la próxima actualización de la app",
+  "engineUpdateUnknown": "{name}: no se pudieron comparar las versiones",
+  "engineUpdateOffline": "{name}: no se pudo contactar con GitHub (¿sin conexión?)",
+  "engineDriverOk": "El controlador {driver} admite CUDA {major} (requiere {required} o superior)",
+  "engineDriverTooOld": "El controlador {driver} es anterior a la versión {required} que requiere CUDA {major}",
+  "engineCudaNote": "Las actualizaciones del runtime de CUDA llegan con las de la app.",
+  "desktopCompareDone": "Completado",
+  "desktopCompareFailed": "Error",
+  "desktopOptimizeKeptNoise": "Las mediciones fueron inestables y no se pudo verificar una mejora. Se mantuvo la configuración actual. Reinténtelo con el dispositivo inactivo.",
+  "imageModelReady": "Listo",
+  "imageModelDownloaded": "Descargado",
+  "imageModelPartial": "Parcialmente descargado",
+  "imageModelNotDownloaded": "Sin descargar",
+  "imageMissingFiles": "Faltan: {files}",
+  "imageCompanionsUnknown": "Este archivo solo contiene el modelo de difusión; necesita un codificador de texto y un VAE compatibles. Importa un modelo compatible Qwen-Image 2.1, Wan 2.2 5B o LTX-2.3.",
+  "@imageMissingFiles": {
+    "placeholders": {
+      "files": {
+        "type": "String"
+      }
+    }
+  },
+  "imageDownloadRequired": "Descarga los archivos que faltan de {model} en Crear antes de generar una imagen.",
+  "@imageDownloadRequired": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "projectFolder": "Carpeta del proyecto",
+  "projectFolderPick": "Elegir carpeta",
+  "projectFolderClear": "Desvincular carpeta",
+  "projectFileDiff": "Diferencias",
+  "projectFileApprove": "Aprobar",
+  "projectFileReject": "Rechazar",
+  "projectFileAllowChat": "Permitir cambios en esta conversación",
+  "projectFileUndo": "Deshacer",
+  "projectFileUndone": "Cambio deshecho",
+  "projectFileFinished": "Revisión terminada",
+  "attachmentDetails": "Detalles",
+  "kvFp8E4m3": "FP8 E4M3 (motores compatibles)",
+  "nativeSetMoeCacheSizeMb": "Caché MoE en GPU (MiB, 0 = desactivada)",
+  "nativeSetMoeCacheCpuShare": "Fracción de fallos de caché MoE calculada en CPU (0–1)",
+  "kvCacheFp8": "FP8"
 }

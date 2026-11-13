@@ -11,5 +11,6 @@ String mcpExplain(AppLocalizations t, Object error) {
     McpProblem.timeout => t.mcpTimeoutError,
     McpProblem.unavailable => t.mcpUnavailableError,
     McpProblem.denied => t.mcpDeniedError,
+    McpProblem.batchArgs => t.mcpBatchArgsError,
   };
 }

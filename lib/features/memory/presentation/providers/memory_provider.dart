@@ -15,7 +15,38 @@ final memoriesProvider = StreamProvider<List<Memory>>(
 class MemoryStore {
   final AppDatabase _db;
   Future<int>? _historyScan;
+  int _writeGeneration = 0;
+  Future<void> _writes = Future<void>.value();
+
+  Future<T> _serialize<T>(Future<T> Function() action) {
+    final result = _writes.then((_) => action());
+    _writes = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return result;
+  }
+
+  /// Check ownership after entering the same queue used by clear, before SQL.
+  Future<Memory?> addIfCurrent(
+    String content, {
+    required int generation,
+    String? sourceChatId,
+    String? sourceMessageId,
+    DateTime? notedAt,
+  }) => _serialize(() async {
+    if (generation != _writeGeneration) return null;
+    return _add(
+      content,
+      sourceChatId: sourceChatId,
+      sourceMessageId: sourceMessageId,
+      notedAt: notedAt,
+    );
+  });
   MemoryStore(this._db);
+
+  /// Monotonic counter bumped by [clear] and by bulk deletes ([_trim]).
+  /// An extraction or scan captures it before awaiting and re-checks it
+  /// inside the serialized write boundary before each insert. Forgetting
+  /// cannot be undone by extraction or history recovery already in flight.
+  int get writeGeneration => _writeGeneration;
 
   /// Explicit recovery action, rather than silently recreating deleted notes
   /// every time a chat is reopened. This never calls a remote or local model.
@@ -26,6 +57,7 @@ class MemoryStore {
 
   Future<int> _scanSavedChats(bool Function() enabled) async {
     if (!enabled()) return 0;
+    final generation = _writeGeneration;
     final known = [
       for (final m in await all())
         if (m.expiresAt == null || m.expiresAt!.isAfter(DateTime.now()))
@@ -57,15 +89,18 @@ class MemoryStore {
     var count = 0;
     for (final (fact, message) in candidates) {
       if (!enabled()) return count;
+      if (_writeGeneration != generation) return count;
       if (UserMemory.parseFacts(fact, existing: await facts()).isEmpty) {
         continue;
       }
-      await add(
+      final added = await addIfCurrent(
         fact,
+        generation: generation,
         sourceChatId: message.chatId,
         sourceMessageId: message.id,
         notedAt: message.timestamp,
       );
+      if (added == null) return count;
       known.add(fact);
       count++;
     }
@@ -79,6 +114,20 @@ class MemoryStore {
   Future<List<Memory>> all() => _db.allMemories();
 
   Future<Memory> add(
+    String content, {
+    String? sourceChatId,
+    String? sourceMessageId,
+    DateTime? notedAt,
+  }) => _serialize(
+    () => _add(
+      content,
+      sourceChatId: sourceChatId,
+      sourceMessageId: sourceMessageId,
+      notedAt: notedAt,
+    ),
+  );
+
+  Future<Memory> _add(
     String content, {
     String? sourceChatId,
     String? sourceMessageId,
@@ -118,7 +167,11 @@ class MemoryStore {
     ),
   );
 
-  Future<void> remove(String id) => _db.deleteMemory(id);
+  Future<void> remove(String id) {
+    _writeGeneration++;
+    return _serialize(() => _db.deleteMemory(id));
+  }
+
   Future<void> pin(Memory m, bool value) =>
       (_db.update(_db.memories)..where((t) => t.id.equals(m.id))).write(
         MemoriesCompanion(pinned: drift.Value(value)),
@@ -128,15 +181,20 @@ class MemoryStore {
         MemoriesCompanion(expiresAt: drift.Value(at)),
       );
 
-  Future<void> clear() => _db.clearMemories();
+  Future<void> clear() {
+    // Invalidate immediately, including jobs waiting for reads or queued SQL.
+    _writeGeneration++;
+    return _serialize(() => _db.clearMemories());
+  }
 
   /// Removes expired notes before keeping the newest [UserMemory.maxFacts].
   Future<void> _trim() => _db.transaction(() async {
-    await (_db.delete(
+    final deleted = await (_db.delete(
       _db.memories,
     )..where((t) => t.expiresAt.isSmallerOrEqualValue(DateTime.now()))).go();
     final all = await _db.allMemories();
     final unpinned = all.where((m) => !m.pinned).toList();
+    var excess = 0;
     for (final m in unpinned.skip(
       (UserMemory.maxFacts - all.where((m) => m.pinned).length).clamp(
         0,
@@ -144,7 +202,9 @@ class MemoryStore {
       ),
     )) {
       await _db.deleteMemory(m.id);
+      excess++;
     }
+    if (deleted + excess > 0) _writeGeneration++;
   });
 }
 

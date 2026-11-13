@@ -18,6 +18,7 @@ import 'local_backup_service_test.dart' show BackupPaths;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   test(
     'P1-24 durable drafts restore files, clear on deletion, and never persist temporary chat',
     () async {

@@ -7,9 +7,11 @@ import '../../inference/engine/text_engine.dart';
 import '../tools/domain/tool_spec.dart';
 import '../settings/domain/entities/inference_settings.dart';
 import 'pairing_code.dart';
+import 'paired_devices.dart';
 import 'hosting_tls.dart';
 import 'request_queue.dart';
 import 'workspace_api.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// One request the device server answered (or refused), for the live
 /// dashboard on the hosting page.
@@ -132,8 +134,11 @@ class DeviceModelServer {
   final String modelId;
   final String fallbackTemplate;
   final String accessToken;
+  final String? localAccessToken;
+  final PairedDevices pairedDevices;
+  final void Function()? onDevicesChanged;
 
-  /// Traded for [accessToken] at [pairPath] by a device that found this
+  /// Traded for a device credential at [pairPath] by a device that found this
   /// server nearby; null turns pairing off.
   String? pairCode;
   late PairingSession _pairing = PairingSession(lifetime: pairingLifetime);
@@ -213,6 +218,9 @@ class DeviceModelServer {
     required this.modelId,
     required this.fallbackTemplate,
     required this.accessToken,
+    this.localAccessToken,
+    PairedDevices? pairedDevices,
+    this.onDevicesChanged,
     this.pairCode,
     this.onPairingUnavailable,
     this.onPairingChanged,
@@ -230,7 +238,8 @@ class DeviceModelServer {
     this.generationTimeout = const Duration(minutes: 10),
   }) // A named parameter cannot be private, so no initializing formal.
     // ignore: prefer_initializing_formals
-    : _engine = engine {
+    : pairedDevices = pairedDevices ?? PairedDevices(save: (_) async {}),
+       _engine = engine {
     if (accessToken.length < 32) {
       throw ArgumentError.value(
         accessToken.length,
@@ -256,7 +265,7 @@ class DeviceModelServer {
   int? get port => _server?.port;
   InternetAddress? get address => _server?.address;
 
-  /// HTTP for loopback/legacy profiles plus an optional pinned TLS listener.
+  /// HTTP for loopback/discovery plus an optional pinned TLS listener.
   /// Every request from an address
   /// outside [allowedClient] is refused before the token is even checked.
   Future<void> start({
@@ -370,6 +379,13 @@ class DeviceModelServer {
     }
     return false;
   }
+
+  /// Authenticated LAN traffic must use the active TLS listener.
+  static bool requiresApiTls(
+    InternetAddress remote,
+    int? localPort,
+    int? tlsPort,
+  ) => tlsPort != null && localPort != tlsPort && !remote.isLoopback;
 
   /// Identity used for client rate and connection budgets.
   static String clientLimitKey(InternetAddress address) {
@@ -845,44 +861,47 @@ class DeviceModelServer {
     );
   }
 
-  static List<Map<String, Object>> decodeWorkspaceMessages(
+  static Future<List<Map<String, Object>>> decodeWorkspaceMessages(
     Object? source, {
     required bool vision,
     required List<File> images,
     required Directory imageDirectory,
-  }) => _messages(
+  }) async => _messages(
     source,
     vision: vision,
     images: images,
     imageDirectory: imageDirectory,
   );
 
-  static List<Map<String, Object>> _messages(
+  static Future<List<Map<String, Object>>> _messages(
     Object? source, {
     required bool vision,
     required List<File> images,
     Directory? imageDirectory,
-  }) {
+  }) async {
     if (source is! List || source.isEmpty || source.length > 64) {
       throw const FormatException('Expected 1 to 64 messages.');
     }
-    return [
-      for (final item in source)
-        _message(
+    final results = <Map<String, Object>>[];
+    for (final item in source) {
+      results.add(
+        await _message(
           item,
           vision: vision,
           images: images,
           imageDirectory: imageDirectory,
         ),
-    ];
+      );
+    }
+    return results;
   }
 
-  static Map<String, Object> _message(
+  static Future<Map<String, Object>> _message(
     Object? item, {
     required bool vision,
     required List<File> images,
     Directory? imageDirectory,
-  }) {
+  }) async {
     if (item is! Map ||
         item['role'] is! String ||
         !const {'system', 'user', 'assistant', 'tool'}.contains(item['role'])) {
@@ -936,7 +955,7 @@ class DeviceModelServer {
           final file = File(
             '${imageDirectory.path}${Platform.pathSeparator}${images.length}.${match.group(1)}',
           );
-          file.writeAsBytesSync(bytes);
+          await file.writeAsBytes(bytes);
           images.add(file);
           paths.add(file.path);
           rendered.write(TextEngine.mediaMarker);
@@ -1085,8 +1104,8 @@ class DeviceModelServer {
         status = response.statusCode = HttpStatus.noContent;
         return;
       }
-      // Public bootstrap only: typed-code pairing trusts the local network,
-      // as explained in the UI. Never send the code or bearer token here.
+      // Public bootstrap only: the UI must confirm this pin out of band.
+      // Never send the code or bearer token here.
       if (request.uri.path == '/v1/pairing-tls' &&
           _tls != null &&
           request.method == 'GET') {
@@ -1112,18 +1131,40 @@ class DeviceModelServer {
         await _pair(request, response, refuse);
         return;
       }
+      String? authenticate(String token) {
+        final device = pairedDevices.principal(token);
+        if (device != null) return device;
+        if (pairedDevices.legacyEnabled && _sameToken(token, accessToken)) {
+          return 'legacy';
+        }
+        if (remote.isLoopback == true &&
+            localAccessToken != null &&
+            _sameToken(token, localAccessToken!)) {
+          return 'local';
+        }
+        return null;
+      }
+
       final auth = request.headers.value(HttpHeaders.authorizationHeader);
-      final bearerOk =
-          auth != null &&
-          auth.startsWith('Bearer ') &&
-          _sameToken(auth.substring(7), accessToken);
+      final bearer = auth != null && auth.startsWith('Bearer ')
+          ? authenticate(auth.substring(7))
+          : null;
       final apiKey = request.headers.value('x-api-key');
-      final keyOk =
-          request.uri.path == messagesPath &&
-          apiKey != null &&
-          _sameToken(apiKey, accessToken);
-      if (!bearerOk && !keyOk) {
+      final principal =
+          bearer ??
+          (request.uri.path == messagesPath && apiKey != null
+              ? authenticate(apiKey)
+              : null);
+      if (principal == null) {
         refuse(HttpStatus.unauthorized, 'A valid access token is required.');
+        return;
+      }
+      if (requiresApiTls(remote, request.connectionInfo?.localPort, tlsPort)) {
+        refuse(
+          HttpStatus.upgradeRequired,
+          'Authenticated API requests from the network require HTTPS. '
+          'Use the TLS port $tlsPort.',
+        );
         return;
       }
       final limitKey = clientLimitKey(remote);
@@ -1144,7 +1185,7 @@ class DeviceModelServer {
         }
         reservedLane = _controlAdmission;
         laneKey = limitKey;
-        await workspace!.handle(request);
+        await workspace!.handle(request, principal: principal);
         return;
       }
       if (!_allowRequest(limitKey)) {
@@ -1169,7 +1210,7 @@ class DeviceModelServer {
       connectionKey = limitKey;
       if (workspace != null &&
           request.uri.path.startsWith('${WorkspaceApi.root}/')) {
-        await workspace!.handle(request);
+        await workspace!.handle(request, principal: principal);
         return;
       }
       if (request.method == 'GET' && request.uri.path == modelsPath) {
@@ -1299,7 +1340,7 @@ class DeviceModelServer {
       }
       final messages = raw
           ? <Map<String, Object>>[]
-          : _messages(
+          : await _messages(
               body['messages'],
               vision: hasProjector?.call(model) ?? false,
               images: images,
@@ -1656,12 +1697,16 @@ class DeviceModelServer {
       for (final file in images) {
         try {
           await file.delete();
-        } catch (_) {}
+        } catch (e, st) {
+          quietFailure('device_model_server:1699', e, st);
+        }
       }
       if (imageDirectory != null) await _removeImageDirectory(imageDirectory);
       try {
         await output.close();
-      } catch (_) {}
+      } catch (e, st) {
+        quietFailure('device_model_server:1704', e, st);
+      }
       socket?.destroy();
       if (laneKey != null) reservedLane!.release(laneKey);
       if (connectionKey != null) {
@@ -1931,21 +1976,25 @@ class DeviceModelServer {
       return;
     }
     _rotatePairing();
+    final token = await pairedDevices.issue(
+      request.connectionInfo?.remoteAddress.address ?? hostId,
+    );
+    onDevicesChanged?.call();
     _json(response, HttpStatus.ok, {
-      'key': accessToken,
+      'key': token,
       'model': modelId,
       'hostId': hostId,
     });
   }
 
+  Future<void> revokeDevice(String id) async {
+    await pairedDevices.revoke(id);
+    await workspace?.revokePrincipal(id);
+    onDevicesChanged?.call();
+  }
+
   static bool _sameToken(String provided, String expected) {
-    final a = utf8.encode(provided);
-    final b = utf8.encode(expected);
-    var difference = a.length ^ b.length;
-    for (var i = 0; i < b.length; i++) {
-      difference |= (i < a.length ? a[i] : 0) ^ b[i];
-    }
-    return difference == 0;
+    return PairedDevices.sameToken(provided, expected);
   }
 
   static void _json(

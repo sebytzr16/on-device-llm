@@ -1,9 +1,11 @@
+import '../../core/utils/memory_admission.dart';
 import '../../data/storage/gguf_metadata.dart';
 import '../../data/storage/model_file_leases.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 
 import '../../features/settings/domain/entities/inference_settings.dart';
@@ -13,6 +15,22 @@ import '../../core/l10n/l10n.dart';
 import '../../core/platform/child_process_job.dart';
 
 const diffusionGemmaModelId = 'diffusiongemma-26b-a4b-q4km';
+
+/// The load controls the DiffusionGemma host honours: the rest of a model
+/// profile is fixed by its own engine, and the load settings UI disables it
+/// for this model instead of saving values the host would ignore (E23).
+const diffusionGemmaLoadKeys = {
+  'contextSize',
+  'nGpuLayers',
+  'cpuThreads',
+  'batchThreads',
+  'microBatchSize',
+  'seed',
+};
+
+/// Whether dg_host honours the load control [key] (audit E23).
+bool diffusionGemmaHonoursLoad(String key) =>
+    diffusionGemmaLoadKeys.contains(key);
 
 /// Accept arbitrary pipe chunks, UTF-8 characters and escaped multiline content.
 Stream<Map<String, dynamic>> diffusionJsonLines(Stream<List<int>> bytes) =>
@@ -40,6 +58,10 @@ class DiffusionGemmaEngine implements TextEngine {
   final int denoisingSteps, ubatch;
   Process? _process;
   String? _modelPath;
+
+  /// The launch arguments the running host was started with: a changed load
+  /// setting reloads it instead of keeping the old process (audit E23).
+  String? _config;
   Completer<void>? _ready;
   StreamController<Map<String, dynamic>>? _turn;
   StreamSubscription<Map<String, dynamic>>? _output;
@@ -60,11 +82,62 @@ class DiffusionGemmaEngine implements TextEngine {
     'contextSize': 4096,
   };
 
-  Future<void> loadModel(String modelPath) async {
+  /// The dg_host command line: the load settings it can honour (context, GPU
+  /// layers, threads, seed and micro-batch) and the model's own diffusion
+  /// flags. Everything else in a profile stays fixed here.
+  @visibleForTesting
+  List<String> launchArgs(String modelPath, InferenceSettings settings) {
+    final batch = settings.microBatchSize > 0
+        ? settings.microBatchSize
+        : ubatch;
+    return [
+      '-m',
+      modelPath,
+      '-ngl',
+      '${settings.nGpuLayers}',
+      '-ot',
+      'exps=CPU',
+      '-c',
+      '${settings.contextSize}',
+      '-b',
+      '$batch',
+      '-ub',
+      '$batch',
+      '-t',
+      '${settings.effectiveThreads}',
+      '-tb',
+      '${settings.effectiveBatchThreads}',
+      // 0 means a fresh random seed for every answer: the host's default.
+      if (settings.seed > 0) ...['-s', '${settings.seed}'],
+      '--diffusion-eb',
+      'on',
+      '--diffusion-eb-max-steps',
+      '$denoisingSteps',
+      '--diffusion-kv-cache',
+      'on',
+      '--diffusion-gpu-sampling',
+      'on',
+      '--diffusion-gpu-sample-reduce',
+      'on',
+    ];
+  }
+
+  Future<void> loadModel(String modelPath, {InferenceSettings? settings}) =>
+      MemoryAdmission.shared.run(
+        () => _loadAdmitted(modelPath, settings ?? const InferenceSettings()),
+      );
+
+  Future<void> _loadAdmitted(
+    String modelPath,
+    InferenceSettings settings,
+  ) async {
     if (!Platform.isWindows) {
       throw UnsupportedError('DiffusionGemma requires Windows desktop.');
     }
+    final args = launchArgs(modelPath, settings);
+    final config = args.join('\n');
     if (_modelPath == modelPath &&
+        _config == config &&
         _process != null &&
         _ready?.isCompleted == true) {
       return;
@@ -93,30 +166,11 @@ class DiffusionGemmaEngine implements TextEngine {
     ], owner: 'DiffusionGemma');
     late Process process;
     try {
-      process = await Process.start(executable, [
-        '-m',
-        modelPath,
-        '-ngl',
-        '999',
-        '-ot',
-        'exps=CPU',
-        '-c',
-        '4096',
-        '-b',
-        '$ubatch',
-        '-ub',
-        '$ubatch',
-        '--diffusion-eb',
-        'on',
-        '--diffusion-eb-max-steps',
-        '$denoisingSteps',
-        '--diffusion-kv-cache',
-        'on',
-        '--diffusion-gpu-sampling',
-        'on',
-        '--diffusion-gpu-sample-reduce',
-        'on',
-      ], workingDirectory: p.dirname(p.absolute(executable)));
+      process = await Process.start(
+        executable,
+        args,
+        workingDirectory: p.dirname(p.absolute(executable)),
+      );
       ChildProcessJob.adopt(process);
     } catch (_) {
       lease.release();
@@ -125,6 +179,7 @@ class DiffusionGemmaEngine implements TextEngine {
     unawaited(process.exitCode.whenComplete(lease.release));
     _process = process;
     _modelPath = modelPath;
+    _config = config;
     _errors = process.stderr
         .transform(const Utf8Decoder(allowMalformed: true))
         .listen((text) {
@@ -191,6 +246,11 @@ class DiffusionGemmaEngine implements TextEngine {
     if (tools.isNotEmpty ||
         messages.any((m) => m.containsKey('images') || m['role'] == 'tool')) {
       throw UnsupportedError(appStrings.dgTextOnly);
+    }
+    // The host templates the whole history for every request: there is no
+    // partial-answer continuation to hand it (audit E23).
+    if (assistantPrefix.isNotEmpty) {
+      throw UnsupportedError(appStrings.dgNoContinuation);
     }
     final turn = _turn = StreamController<Map<String, dynamic>>();
     String committed = '';
@@ -296,6 +356,7 @@ class DiffusionGemmaEngine implements TextEngine {
     final process = _process;
     _process = null;
     _modelPath = null;
+    _config = null;
     process?.kill();
     final ready = _ready;
     if (ready != null && !ready.isCompleted) {

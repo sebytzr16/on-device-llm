@@ -72,7 +72,7 @@ void main() {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) {
-          asked = options.path;
+          asked = options.uri.path;
           handler.resolve(
             Response(
               requestOptions: options,
@@ -171,6 +171,54 @@ void main() {
     );
   });
 
+  test('Hub listings can select safetensors for image models', () async {
+    final dio = Dio();
+    addTearDown(dio.close);
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              data: {
+                'sha': 'pinned',
+                'gated': false,
+                'cardData': {'license': 'cc-by-4.0'},
+                'siblings': [
+                  {
+                    'rfilename': 'model.safetensors',
+                    'lfs': {'sha256': 'a' * 64, 'size': 10},
+                  },
+                  {
+                    'rfilename': 'vae/Qwen.safetensors',
+                    'lfs': {'sha256': 'b' * 64, 'size': 20},
+                  },
+                  {'rfilename': 'README.md'},
+                  {
+                    'rfilename': 'weights.gguf',
+                    'lfs': {'sha256': 'c' * 64, 'size': 30},
+                  },
+                ],
+              },
+            ),
+          );
+        },
+      ),
+    );
+    final repo = await HuggingFace.files(
+      'owner/img',
+      client: dio,
+      extensions: const {'.safetensors'},
+    );
+    expect(repo.files.map((f) => f.name), [
+      'model.safetensors',
+      'vae/Qwen.safetensors',
+    ]);
+    expect(repo.license, 'cc-by-4.0');
+    final chat = await HuggingFace.files('owner/img', client: dio);
+    expect(chat.files.map((f) => f.name), ['weights.gguf']);
+  });
+
   test('files carry quantization, projector and split flags', () {
     const q4 = HfFile(name: 'Qwen3-4B-Q4_K_M.gguf', size: 1, sha256: 'a');
     const f16 = HfFile(name: 'model-F16.gguf', size: 1, sha256: 'b');
@@ -228,5 +276,31 @@ void main() {
       HuggingFace.modelFor(repo, repo.files.single, ModelFamily.other).id,
       m.id,
     );
+  });
+
+  test('generation_config is read at the pinned revision (E25)', () async {
+    final dio = Dio();
+    addTearDown(dio.close);
+    String? asked;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          asked = options.path;
+          handler.resolve(
+            Response(requestOptions: options, data: {'temperature': 0.8}),
+          );
+        },
+      ),
+    );
+    final config = await HuggingFace.generationConfig(
+      'publisher/repo',
+      revision: 'abc123',
+      client: dio,
+    );
+    expect(
+      asked,
+      endsWith('/publisher/repo/resolve/abc123/generation_config.json'),
+    );
+    expect(config, {'temperature': 0.8});
   });
 }

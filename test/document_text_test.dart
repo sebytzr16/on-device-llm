@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ondevice_llm/core/l10n/l10n.dart';
 import 'package:ondevice_llm/features/attachments/domain/document_text.dart';
 
 Uint8List zip(Map<String, String> files) {
@@ -15,6 +16,23 @@ Uint8List zip(Map<String, String> files) {
 }
 
 Uint8List bytes(String s) => Uint8List.fromList(utf8.encode(s));
+
+/// [text] as UTF-16 code units in [endian] order, optionally prefixed with a
+/// BOM that [DocumentText._decode] strips after decoding.
+Uint8List utf16(String text, Endian endian, {bool bom = true}) {
+  final data = ByteData.sublistView(Uint8List(2 + text.codeUnits.length * 2));
+  var offset = 0;
+  if (bom) {
+    data.setUint8(0, endian == Endian.little ? 0xFF : 0xFE);
+    data.setUint8(1, endian == Endian.little ? 0xFE : 0xFF);
+    offset = 2;
+  }
+  for (final unit in text.codeUnits) {
+    data.setUint16(offset, unit, endian);
+    offset += 2;
+  }
+  return data.buffer.asUint8List();
+}
 
 void main() {
   test('forged-size DOCX is bounded by actual inflation', () async {
@@ -196,4 +214,147 @@ void main() {
       expect(pdf.text, 'From pdfium');
     },
   );
+
+  test(
+    'deleted revisions are not extracted and inserted text is (A08)',
+    () async {
+      final docx = await DocumentText.extract(
+        zip({
+          'word/document.xml':
+              '<w:document><w:body><w:p><w:r><w:t>keep this</w:t></w:r>'
+              '<w:del><w:r><w:delText>remove me</w:delText></w:r></w:del>'
+              '<w:ins><w:r><w:t> instead</w:t></w:r></w:ins></w:p>'
+              '<w:p><w:r><w:t>separate paragraph</w:t></w:r></w:p>'
+              '</w:body></w:document>',
+        }),
+        'report.docx',
+      );
+      expect(docx.text, 'keep this instead\nseparate paragraph');
+      expect(docx.text, isNot(contains('remove me')));
+    },
+  );
+
+  test('Word headers, footers, footnotes and embedded images (A08)', () async {
+    final docx = await DocumentText.extract(
+      zip({
+        'word/document.xml':
+            '<w:document><w:body><w:p><w:r><w:t>Body text.</w:t></w:r></w:p></w:body></w:document>',
+        'word/_rels/document.xml.rels':
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>'
+            '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>'
+            '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/>'
+            '<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>'
+            '</Relationships>',
+        'word/header1.xml':
+            '<w:hdr><w:p><w:r><w:t>CONFIDENTIAL</w:t></w:r></w:p></w:hdr>',
+        'word/footer1.xml':
+            '<w:ftr><w:p><w:r><w:t>Page 1</w:t></w:r></w:p></w:ftr>',
+        'word/footnotes.xml':
+            '<w:footnotes><w:footnote w:id="0"><w:p><w:r><w:t>Note one.</w:t></w:r></w:p></w:footnote></w:footnotes>',
+        'word/media/image1.png': 'not-a-png',
+      }),
+      'report.docx',
+    );
+    expect(docx.format, 'Word document');
+    expect(docx.text, contains('Body text.'));
+    expect(docx.text, contains('--- Header ---\nCONFIDENTIAL'));
+    expect(docx.text, contains('--- Footer ---\nPage 1'));
+    expect(docx.text, contains('--- Footnotes ---\nNote one.'));
+    expect(docx.text, contains('not extracted'));
+  });
+
+  test('EPUB spine order overrides file order; navigation is excluded (A09)', () async {
+    final epub = await DocumentText.extract(
+      zip({
+        'META-INF/container.xml':
+            '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+            '<rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>'
+            '</container>',
+        'OEBPS/content.opf':
+            '<package xmlns="http://www.idpf.org/2007/opf" version="2.0">'
+            '<manifest>'
+            '<item id="c10" href="ch10.xhtml" media-type="application/xhtml+xml"/>'
+            '<item id="c2" href="ch2.xhtml" media-type="application/xhtml+xml"/>'
+            '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>'
+            '</manifest>'
+            '<spine><itemref idref="c10"/><itemref idref="c2"/></spine>'
+            '</package>',
+        'OEBPS/ch10.xhtml':
+            '<html><head><title>Chapter Ten</title></head><body><p>Tenth text.</p></body></html>',
+        'OEBPS/ch2.xhtml': '<html><body><p>Second text.</p></body></html>',
+        'OEBPS/nav.xhtml': '<html><body><p>Navigation text.</p></body></html>',
+      }),
+      'book.epub',
+    );
+    expect(epub.format, 'EPUB book');
+    expect(epub.text, startsWith('--- Chapter Ten ---\nTenth text.'));
+    expect(epub.text, contains('\n--- ch2.xhtml ---\nSecond text.'));
+    expect(epub.text, isNot(contains('Navigation text.')));
+  });
+
+  test(
+    'truncated text keeps its limit warning instead of losing it (A07)',
+    () async {
+      final long = 'x' * (DocumentText.maxChars + 1000);
+      final doc = await DocumentText.extract(bytes(long), 'long.txt');
+      expect(doc.text.length, DocumentText.maxChars);
+      expect(doc.text.substring(0, 500), 'x' * 500);
+      expect(doc.text, endsWith(stringsFor('').documentScanTextLimit));
+    },
+  );
+
+  test('PDF truncation warning survives bounding (A07)', () async {
+    final long = 'page text\n' * (DocumentText.maxChars ~/ 10 + 10);
+    final doc = await DocumentText.extract(
+      bytes('%PDF-1.4 ...'),
+      'file.pdf',
+      pdfText: (_) async => long,
+    );
+    expect(doc.text.length, DocumentText.maxChars);
+    expect(doc.text.startsWith('page text'), isTrue);
+    expect(doc.text, endsWith(stringsFor('').documentScanTextLimit));
+  });
+
+  test(
+    'UTF-16LE and UTF-16BE BOM files decode instead of Latin-1 (A10)',
+    () async {
+      final text = 'Café déjà — naïve ¿qué? ¡Hola! 😀';
+      for (final endian in [Endian.little, Endian.big]) {
+        final doc = await DocumentText.extract(
+          utf16(text, endian),
+          'notes.txt',
+        );
+        expect(doc.text, text);
+      }
+    },
+  );
+
+  test('BOM-less UTF-16 is detected from its NUL bytes (A10)', () async {
+    final text = 'El arte de perder n\'est pas difficile à maîtriser.';
+    for (final endian in [Endian.little, Endian.big]) {
+      final doc = await DocumentText.extract(
+        utf16(text, endian, bom: false),
+        'notes.txt',
+      );
+      expect(doc.text, text);
+    }
+  });
+
+  test('UTF-8 and Latin-1 decoding are unchanged (A10)', () async {
+    expect(
+      (await DocumentText.extract(bytes('café'), 'file.txt')).text,
+      'café',
+    );
+    // Invalid UTF-8 still falls back to Latin-1 (0xE9 is é, 0xE8 is è).
+    final latin = await DocumentText.extract(
+      Uint8List.fromList([0xE9, 0x20, 0xE8]),
+      'file.txt',
+    );
+    expect(latin.text, 'é è');
+    // A UTF-8 BOM is still stripped after decoding.
+    final bom = Uint8List.fromList([0xEF, 0xBB, 0xBF] + utf8.encode('héllo'));
+    expect((await DocumentText.extract(bom, 'file.txt')).text, 'héllo');
+  });
 }

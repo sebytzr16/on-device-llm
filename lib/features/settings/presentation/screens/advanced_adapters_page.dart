@@ -110,9 +110,10 @@ class _AttachRow extends StatelessWidget {
           onChanged: (v) => onChanged(v ? 1.0 : null),
         ),
         if (on)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppDesign.lg),
-            child: Slider(
+          // The scale track is a settings row of its own: full width under
+          // the model's label, with the shared card padding.
+          SettingsTile(
+            title: Slider(
               value: attachment!.scale,
               min: -2,
               max: 2,

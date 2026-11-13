@@ -9,6 +9,7 @@ import '../core/design/app_dialog.dart';
 import '../core/l10n/l10n.dart';
 import '../core/providers/shared_providers.dart';
 import '../data/storage/model_storage.dart';
+import '../features/adapters/adapter_store.dart';
 import '../features/models/domain/entities/model_catalog.dart';
 import '../features/models/domain/entities/model_info.dart';
 import '../features/models/presentation/providers/model_manager_provider.dart';
@@ -16,6 +17,7 @@ import '../features/settings/domain/entities/inference_settings.dart';
 import '../features/settings/presentation/providers/model_profiles_provider.dart';
 import '../features/settings/presentation/providers/settings_provider.dart';
 import '../core/island/status_island.dart';
+import '../core/logging/quiet_failure.dart';
 import 'benchmark_receipt.dart';
 import 'model_speed_section.dart';
 import 'model_tuner.dart';
@@ -44,6 +46,8 @@ class _ModelOptimizeSectionState extends ConsumerState<ModelOptimizeSection> {
   (double, double)? _rates;
   (int, int)? _step;
   double? _progress;
+  OptimizeKeepReason? _kept;
+  String? _changes;
 
   @override
   void dispose() {
@@ -87,7 +91,10 @@ class _ModelOptimizeSectionState extends ConsumerState<ModelOptimizeSection> {
           modelPath: model.localPath!,
           settings: s,
           mmprojPath: mmproj,
-          draftModelPath: manager.draftPathFor(model, s.draftModelId),
+          adapters: await ref
+              .read(adaptersProvider.notifier)
+              .resolved(model.id),
+          draftModelPath: await manager.draftPathFor(model, s.draftModelId),
         );
       },
       save: receipts.save,
@@ -98,6 +105,8 @@ class _ModelOptimizeSectionState extends ConsumerState<ModelOptimizeSection> {
       _rates = null;
       _step = null;
       _progress = 0;
+      _kept = null;
+      _changes = null;
     });
     var finalSettings = original;
     try {
@@ -110,20 +119,27 @@ class _ModelOptimizeSectionState extends ConsumerState<ModelOptimizeSection> {
         estimate: runner.estimate,
       );
       if (runner.cancelled) return;
-      // Each setup gets one quick round (three prompts) so big models finish
-      // in minutes; one whose greedy answer differs from the reference
-      // setup's is less accurate and cannot win.
       final setups = pcOptimizationSetups(
         defaults,
-        mtpHead: autoMtpHead(model.localPath!) != null,
+        mtpHead: await autoMtpHead(model.localPath!) != null,
+        userDraft: original.draftModelId.isNotEmpty
+            ? original.draftModelId
+            : matchingDraftOnDisk(
+                    model,
+                    ref.read(modelManagerProvider).catalog,
+                  )?.id ??
+                  '',
+        userSpeculationMode: original.draftModelId.isNotEmpty
+            ? original.speculationMode
+            : 'draft',
+        cpuMoe: await moeExpertPlacements(defaults, estimate: runner.estimate),
       );
-      // The current settings' run, then each setup: equal shares of the bar.
+      // Screening gets half the bar; verified interleaved rounds get half.
       final stages = setups.length + 1;
       void progress(int stage, double part) {
-        if (mounted) setState(() => _progress = (stage + part) / stages);
+        if (mounted) setState(() => _progress = (stage + part) / stages / 2);
       }
 
-      // Do not deliberately benchmark a configuration already over budget.
       final before = await runner.fits(original.toJson())
           ? await runner.benchmark(
               original.toJson(),
@@ -132,53 +148,115 @@ class _ModelOptimizeSectionState extends ConsumerState<ModelOptimizeSection> {
             )
           : null;
       if (runner.cancelled) return;
-      progress(1, 0);
-      InferenceSettings? best;
-      TuneMeasurement? after;
-      String? reference;
+      final measured =
+          <({InferenceSettings settings, TuneMeasurement measurement})>[];
       for (var i = 0; i < setups.length; i++) {
         if (runner.cancelled || !mounted) return;
         setState(() => _step = (i + 1, setups.length));
-        if (!await runner.fits(setups[i].toJson())) {
-          progress(i + 2, 0);
-          continue;
+        if (await runner.fits(setups[i].toJson())) {
+          try {
+            final m = await runner.benchmark(
+              setups[i].toJson(),
+              progress: (f) => progress(i + 1, f),
+              quick: true,
+            );
+            measured.add((settings: setups[i], measurement: m));
+          } catch (e, st) {
+            // A setup the engine refuses (a draft whose vocabulary does not
+            // match, say) is skipped; the first is the baseline and must run.
+            if (i == 0) rethrow;
+            quietFailure('optimize_setup_$i', e, st);
+          }
         }
-        final m = await runner.benchmark(
-          setups[i].toJson(),
-          progress: (f) => progress(i + 1, f),
-          quick: true,
-        );
-        progress(i + 2, 0);
-        reference ??= m.outputHash;
-        if (m.outputHash != reference) continue;
-        if (after == null || m.tokensPerSecond > after.tokensPerSecond) {
-          best = setups[i];
-          after = m;
-        }
+        progress(i + 1, 1);
       }
       if (runner.cancelled || !mounted) return;
-      if (best == null || after == null) throw StateError('No setup measured');
-      final faster =
-          before == null ||
-          after.tokensPerSecond >= before.tokensPerSecond * 0.97;
-      final winner = best, rate = after.tokensPerSecond;
+      if (measured.isEmpty) throw StateError('No setup measured');
+      final base = before;
+      // The original settings are the equivalence gate: without their answer
+      // a candidate cannot be shown to keep it, so keep the current settings.
+      if (base == null || base.outputHash.isEmpty) {
+        _keep(OptimizeKeepReason.baselineUnavailable);
+        return;
+      }
+      final picked = pickOptimizeWinner(
+        reference: base.outputHash,
+        baseline: base,
+        runs: measured,
+      );
+      if (picked == null) {
+        _keep(OptimizeKeepReason.outputChanged);
+        return;
+      }
+      final reference = base.outputHash;
+      // Bound verification to the two best equivalent finalists. No single
+      // screening sample, including the default setup, can authorize a save.
+      final finalists =
+          measured
+              .where((r) => optimizeOutputAcceptable(base, r.measurement))
+              .toList()
+            ..sort(
+              (a, b) => optimizeRate(
+                b.measurement,
+              ).compareTo(optimizeRate(a.measurement)),
+            );
+      final baseline = original;
+      final verified = OptimizeRunner(
+        runner,
+        [baseline, ...finalists.take(2).map((r) => r.settings)],
+        reference,
+        (f) {
+          if (mounted) setState(() => _progress = 0.5 + f / 2);
+        },
+        baseline: base,
+      );
+      final report =
+          await ModelTuner(verified, endToEnd: true, minimumGain: 0.03).run(
+            initial: {'setup': 0},
+            candidates: {
+              'setup': [for (var i = 1; i < verified.setups.length; i++) i],
+            },
+          );
+      if (runner.cancelled || !mounted) return;
+      final index = report.changes['setup'] as int? ?? 0;
+      final best = verified.setups[index];
+      final faster = report.status == TuneStatus.complete && index != 0;
+      final kept = faster
+          ? null
+          : verified.mismatched
+          ? OptimizeKeepReason.outputChanged
+          : report.status == TuneStatus.drift
+          ? OptimizeKeepReason.noisy
+          : OptimizeKeepReason.slower;
+      final winner = best, rate = verified.medianTokens(index);
       if (faster) {
         final changes = {
           for (final key in pcOptimizationKeys) key: winner.toJson()[key],
+          // Null profile values are dropped by sanitization. Save the effective
+          // V precision so a global override cannot undo the measured cache.
+          'vCacheType': winner.effectiveVCacheType.name,
         };
         // The model's profile sits above the app-wide settings, so the
         // winner applies without touching other models (audit P1-13).
         await profiles.set(model.id, {...profiles.of(model.id), ...changes});
         finalSettings = winner;
+        _changes = [
+          for (final key in pcOptimizationKeys)
+            if (original.toJson()[key] != changes[key])
+              '$key: ${original.toJson()[key]} -> ${changes[key]}',
+        ].join(', ');
         widget.onTuned?.call(changes);
       }
       if (mounted) {
-        setState(() => _rates = (before?.tokensPerSecond ?? 0, rate));
+        setState(() {
+          _rates = (verified.medianTokens(0), rate);
+          _kept = kept;
+        });
         showIslandToast(
           context,
           faster
               ? context.l10n.desktopOptimizeSaved
-              : context.l10n.desktopOptimizeKept,
+              : _keepReason(context.l10n, kept ?? OptimizeKeepReason.slower),
         );
       }
     } catch (_) {
@@ -199,6 +277,20 @@ class _ModelOptimizeSectionState extends ConsumerState<ModelOptimizeSection> {
       }
     }
   }
+
+  void _keep(OptimizeKeepReason reason) {
+    if (!mounted) return;
+    setState(() => _kept = reason);
+    showIslandToast(context, _keepReason(context.l10n, reason));
+  }
+
+  String _keepReason(AppLocalizations t, OptimizeKeepReason reason) =>
+      switch (reason) {
+        OptimizeKeepReason.outputChanged => t.desktopOptimizeKeptOutput,
+        OptimizeKeepReason.baselineUnavailable => t.desktopOptimizeKeptBaseline,
+        OptimizeKeepReason.slower => t.desktopOptimizeKept,
+        OptimizeKeepReason.noisy => t.desktopOptimizeKeptNoise,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -259,6 +351,13 @@ class _ModelOptimizeSectionState extends ConsumerState<ModelOptimizeSection> {
               rates.$1 > 0 ? rates.$1.toStringAsFixed(1) : t.tuneUnavailable,
               rates.$2.toStringAsFixed(1),
             ),
+          ),
+        if (_changes != null) Text(_changes!),
+        if (_kept != null)
+          Text(
+            _keepReason(t, _kept!),
+            key: const Key('desktop-optimize-kept-reason'),
+            style: context.text.small.copyWith(color: context.colors.textMuted),
           ),
       ],
     );
@@ -419,7 +518,7 @@ class _BenchmarkReceiptSectionState
               style: context.text.small,
             ),
             subtitle: Text(
-              '${receipt.json['modelFile']} · ${receipt.json['backend'] ?? t.tuneUnknown}',
+              '${receipt.json['modelFile']} Â· ${receipt.json['backend'] ?? t.tuneUnknown}',
               style: context.text.caption,
             ),
             children: [

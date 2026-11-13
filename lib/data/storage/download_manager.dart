@@ -39,6 +39,21 @@ class DownloadProgress {
   double get fraction => total > 0 ? (received / total).clamp(0, 1) : 0;
 }
 
+/// Internal holder for an in-flight download to a specific destination.
+/// Allows callers for the same file to join the same transfer.
+class _DestinationDownload {
+  final int expectedSize;
+  final String expectedSha256;
+  final Completer<void> completer;
+  _DestinationDownload(this.expectedSize, this.expectedSha256)
+    : completer = Completer<void>() {
+    // Owners can fail without joiners. Observe the error here while preserving
+    // it on the future for callers that do join.
+    completer.future.ignore();
+  }
+  Future<void> get future => completer.future;
+}
+
 class DownloadManager {
   final Dio _dio;
   final Future<File> Function(String) _resolve;
@@ -51,6 +66,10 @@ class DownloadManager {
       [];
   final Map<String, int> _remaining = {};
   final Map<String, List<String>> _systemIds = {};
+
+  /// Maps canonical destination path to the in-flight download holder.
+  /// Allows multiple callers for the same file to join the same transfer.
+  final Map<String, _DestinationDownload> _destinationFutures = {};
   final Future<DeviceStorage?> Function() _storage;
   final SystemDownloads? _system;
   final Duration pollInterval;
@@ -80,6 +99,12 @@ class DownloadManager {
     final ready = Completer<bool>();
     _queue.add((id: id, token: token, ready: ready));
     _emit(DownloadProgress(modelId: id, status: DownloadStatus.queued));
+    // Pause/dispose may have happened while destination paths were resolving,
+    // before there was a queue entry for them to wake.
+    if ((token.isCancelled || _disposed) && !ready.isCompleted) {
+      _queue.removeWhere((entry) => identical(entry.ready, ready));
+      ready.complete(false);
+    }
     return ready.future;
   }
 
@@ -204,7 +229,53 @@ class DownloadManager {
         ),
       ).catchError((_) {}),
     );
+
+    final destinations = <File>[];
+    final destKeys = <String>[];
+    final destinationDownloads = <_DestinationDownload>[];
+    Object? failure;
+    StackTrace? failureStack;
     try {
+      final first = await _resolve(files.first.fileName);
+      for (var i = 0; i < files.length; i++) {
+        final file = files.length == 1
+            ? first
+            : File(p.join(first.parent.path, files[i].fileName));
+        destinations.add(file);
+        destKeys.add(p.canonicalize(file.absolute.path));
+      }
+
+      // Claim a whole batch atomically, before admission. Overlapping batches
+      // wait without holding a slot or a subset of locks (which could deadlock).
+      // After joining, verify every file, including this batch's unique parts.
+      while (true) {
+        final joined = <Future<void>>[];
+        for (var i = 0; i < files.length; i++) {
+          final existing = _destinationFutures[destKeys[i]];
+          if (existing == null) continue;
+          final f = files[i];
+          if (existing.expectedSize != f.sizeBytes ||
+              existing.expectedSha256.toLowerCase() != f.sha256.toLowerCase()) {
+            throw DownloadException(
+              'Conflicting download for "${destKeys[i]}": another transfer '
+              'expects different size or SHA-256.',
+            );
+          }
+          joined.add(existing.future);
+        }
+        if (joined.isEmpty) break;
+        await Future.any<void>([
+          Future.wait(joined).then((_) {}),
+          token.whenCancel.then((error) => throw error),
+        ]);
+        if (token.isCancelled) throw token.cancelError!;
+      }
+      for (var i = 0; i < files.length; i++) {
+        final f = files[i];
+        final holder = _DestinationDownload(f.sizeBytes, f.sha256);
+        _destinationFutures[destKeys[i]] = holder;
+        destinationDownloads.add(holder);
+      }
       history();
       _log.info(
         'Download $modelId: ${files.length} file(s), '
@@ -215,17 +286,9 @@ class DownloadManager {
       }
       final complete = <bool>[];
       final missing = <int>[];
-      final destinations = <File>[];
-      final first = await _resolve(files.first.fileName);
       for (var i = 0; i < files.length; i++) {
         final f = files[i];
-        // Validate every name through the resolver, but keep the entire set
-        // beside part 1 even when the user retained an older models folder.
-        final resolved = i == 0 ? first : await _resolve(f.fileName);
-        final file = files.length == 1
-            ? resolved
-            : File(p.join(first.parent.path, f.fileName));
-        destinations.add(file);
+        final file = destinations[i];
         final exists = await file.exists();
         if (exists) {
           // Hashing a finished multi-GB file takes minutes: say so.
@@ -323,7 +386,9 @@ class DownloadManager {
           total: total,
         ),
       );
-    } catch (e) {
+    } catch (e, stack) {
+      failure = e;
+      failureStack = stack;
       final paused = e is DioException && CancelToken.isCancel(e);
       result = paused ? 'paused' : 'failed';
       paused
@@ -340,6 +405,15 @@ class DownloadManager {
       );
       rethrow;
     } finally {
+      for (var i = 0; i < destinationDownloads.length; i++) {
+        final holder = destinationDownloads[i];
+        _destinationFutures.remove(destKeys[i]);
+        if (failure == null) {
+          holder.completer.complete();
+        } else {
+          holder.completer.completeError(failure, failureStack);
+        }
+      }
       history();
       _tokens.remove(modelId);
       _systemIds.remove(modelId);

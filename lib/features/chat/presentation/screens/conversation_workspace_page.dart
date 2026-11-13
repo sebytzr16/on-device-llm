@@ -1,5 +1,10 @@
+import 'package:file_picker/file_picker.dart';
+
+import '../../../../core/platform/desktop_host.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/design/app_design.dart';
 import '../../domain/conversation_workspace.dart';
@@ -34,6 +39,7 @@ class _WorkspacePageState extends ConsumerState<ConversationWorkspacePage> {
       text: project?.instructions ?? '',
     );
     final collection = TextEditingController(text: project?.collection ?? '');
+    final folder = TextEditingController(text: project?.folder ?? '');
     try {
       final ok = await showAppDialog<bool>(
         context: context,
@@ -60,6 +66,33 @@ class _WorkspacePageState extends ConsumerState<ConversationWorkspacePage> {
                     labelText: dialog.l10n.projectInstructions,
                   ),
                 ),
+                if (DesktopHost.active)
+                  TextField(
+                    controller: folder,
+                    readOnly: true,
+                    decoration: InputDecoration(
+                      labelText: dialog.l10n.projectFolder,
+                      suffixIcon: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: dialog.l10n.projectFolderClear,
+                            onPressed: folder.clear,
+                            icon: const Icon(Icons.clear),
+                          ),
+                          IconButton(
+                            tooltip: dialog.l10n.projectFolderPick,
+                            onPressed: () async {
+                              final selected =
+                                  await FilePicker.getDirectoryPath();
+                              if (selected != null) folder.text = selected;
+                            },
+                            icon: const Icon(Icons.folder_open),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 TextField(
                   controller: collection,
                   maxLength: 200,
@@ -97,6 +130,7 @@ class _WorkspacePageState extends ConsumerState<ConversationWorkspacePage> {
                 name: name.text,
                 instructions: instructions.text,
                 collection: collection.text,
+                folder: folder.text.isEmpty ? null : folder.text,
               ),
         );
       }
@@ -106,6 +140,7 @@ class _WorkspacePageState extends ConsumerState<ConversationWorkspacePage> {
       name.dispose();
       instructions.dispose();
       collection.dispose();
+      folder.dispose();
     }
   }
 
@@ -214,7 +249,11 @@ class _WorkspacePageState extends ConsumerState<ConversationWorkspacePage> {
                             );
                             if (!confirmed || !mounted) return;
                             setState(() => _project = null);
-                            await _run(() => notifier.removeProject(id));
+                            await _run(
+                              () => ref
+                                  .read(chatProvider.notifier)
+                                  .deleteProject(id),
+                            );
                           },
                   ),
               ],

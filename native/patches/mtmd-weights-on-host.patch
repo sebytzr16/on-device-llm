@@ -1,53 +1,8 @@
-diff --git a/tools/mtmd/clip.cpp b/tools/mtmd/clip.cpp
-index 5737400..e642c3f 100644
---- a/tools/mtmd/clip.cpp
-+++ b/tools/mtmd/clip.cpp
-@@ -169,6 +169,7 @@ struct clip_ctx {
- 
-     // for measuring memory usage
-     bool no_alloc = false;
-+    bool weights_on_host = false;
-     std::map<ggml_backend_dev_t, size_t> mem_usage;
-     std::map<ggml_backend_dev_t, size_t> mem_compute;
- 
-@@ -177,6 +178,7 @@ struct clip_ctx {
-     clip_ctx(clip_context_params & ctx_params) {
-         flash_attn_type = ctx_params.flash_attn_type;
-         no_alloc = ctx_params.no_alloc;
-+        weights_on_host = ctx_params.weights_on_host;
-         backend_cpu = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, nullptr);
-         if (!backend_cpu) {
-             throw std::runtime_error("failed to initialize CPU backend");
-@@ -3885,6 +3887,12 @@ struct clip_model_loader {
- 
-             // alloc memory and offload data
-             ggml_backend_buffer_type_t buft = ggml_backend_get_default_buffer_type(ctx_clip.backend);
-+            if (ctx_clip.weights_on_host && ctx_clip.backend != ctx_clip.backend_cpu) {
-+                // pinned host memory when the device offers it, for faster copies
-+                ggml_backend_dev_t dev = ggml_backend_get_device(ctx_clip.backend);
-+                ggml_backend_buffer_type_t host = dev ? ggml_backend_dev_host_buffer_type(dev) : nullptr;
-+                buft = host ? host : ggml_backend_get_default_buffer_type(ctx_clip.backend_cpu);
-+            }
-             ctx_clip.buf.reset(ggml_backend_alloc_ctx_tensors_from_buft(ctx_clip.ctx_data.get(), buft));
-             ggml_backend_buffer_set_usage(ctx_clip.buf.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-             // read the weight from file
-diff --git a/tools/mtmd/clip.h b/tools/mtmd/clip.h
-index cd3f434..71f260c 100644
---- a/tools/mtmd/clip.h
-+++ b/tools/mtmd/clip.h
-@@ -60,6 +60,7 @@ struct clip_context_params {
-     bool no_alloc;
-     mtmd_progress_callback progress_callback;
-     void * progress_callback_user_data;
-+    bool weights_on_host;
- };
- 
- struct clip_init_result {
 diff --git a/tools/mtmd/mtmd.cpp b/tools/mtmd/mtmd.cpp
-index 7c825c0..246e698 100644
+index 9b45d3d..bf4b05a 100644
 --- a/tools/mtmd/mtmd.cpp
 +++ b/tools/mtmd/mtmd.cpp
-@@ -513,6 +513,7 @@ mtmd_context_params mtmd_context_params_default() {
+@@ -597,6 +597,7 @@ mtmd_context_params mtmd_context_params_default() {
          /* batch_max_tokens  */ 1024,
          /* progress_callback */ nullptr,
          /* progress_callback_user_data */ nullptr,
@@ -55,25 +10,30 @@ index 7c825c0..246e698 100644
      };
      return params;
  }
-@@ -618,6 +619,7 @@ struct mtmd_context {
-             /* no_alloc          */ no_alloc,
-             /* progress_callback */ ctx_params.progress_callback,
-             /* progress_callback_user_data */ ctx_params.progress_callback_user_data,
-+            /* weights_on_host   */ ctx_params.weights_on_host,
-         };
+@@ -722,6 +723,13 @@ struct mtmd_context {
+         ggml_backend_buffer_type_t buft = device
+             ? ggml_backend_dev_buffer_type(device)
+             : ggml_backend_dev_buffer_type(ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU));
++        if (ctx_params.weights_on_host && device &&
++                ggml_backend_dev_type(device) != GGML_BACKEND_DEVICE_TYPE_CPU) {
++            // Prefer pinned host memory for copies to the compute device.
++            ggml_backend_buffer_type_t host = ggml_backend_dev_host_buffer_type(device);
++            buft = host ? host : ggml_backend_dev_buffer_type(
++                ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU));
++        }
+         models = mtmd_model_load(mmproj_fname, model_params, buft);
  
-         auto res = clip_init(mmproj_fname, ctx_clip_params);
+         // soprano and pocket-tts without voice cloning have no encoder
 diff --git a/tools/mtmd/mtmd.h b/tools/mtmd/mtmd.h
-index 5af73a0..8a2be7d 100644
+index e14f345..2d9b2ff 100644
 --- a/tools/mtmd/mtmd.h
 +++ b/tools/mtmd/mtmd.h
-@@ -125,6 +125,10 @@ struct mtmd_context_params {
+@@ -133,6 +133,9 @@ struct mtmd_context_params {
      // If it returns false, model loading is immediately aborted.
      mtmd_progress_callback progress_callback;
      void * progress_callback_user_data;
 +
-+    // keep the weights in host memory while use_gpu computes on the device:
-+    // the scheduler copies each weight over for large batches (op offload)
++    // Keep projector weights in host memory while use_gpu computes on the device.
 +    bool weights_on_host;
  };
  

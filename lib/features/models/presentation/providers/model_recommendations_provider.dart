@@ -9,6 +9,7 @@ import '../../../../data/network/hugging_face.dart';
 import '../../../../data/storage/gguf_metadata.dart';
 import '../../domain/entities/model_info.dart';
 import '../../domain/model_recommendations.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 const _kKey = 'model_recommendations_v1';
 
@@ -82,7 +83,16 @@ class ModelRecommendationsNotifier
   Future<void> learnFromHub(ModelInfo m) async {
     final repo = ModelRecommendations.repoOf(m.downloadUrl);
     if (repo == null) return;
-    final config = await HuggingFace.generationConfig(repo);
+    String? revision;
+    try {
+      // Read `generation_config.json` at the repository's pinned revision
+      // (E25), not unconditionally at the default branch.
+      final files = await HuggingFace.files(repo);
+      revision = files.revision;
+    } catch (_) {
+      // An unreadable hub repo leaves the built-in values.
+    }
+    final config = await HuggingFace.generationConfig(repo, revision: revision);
     if (config == null || !_alive) return;
     final hub = ModelRecommendations.fromGenerationConfig(config);
     if (hub.isEmpty) return;
@@ -103,7 +113,9 @@ class ModelRecommendationsNotifier
       try {
         _prefs ??= await SharedPreferences.getInstance();
         await _prefs!.setString(_kKey, encoded);
-      } catch (_) {}
+      } catch (e, st) {
+        quietFailure('model_recommendations_provider:115', e, st);
+      }
     });
     await _writes;
   }

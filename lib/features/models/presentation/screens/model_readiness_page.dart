@@ -35,7 +35,7 @@ class ModelReadinessPage extends ConsumerWidget {
       body: CustomScrollView(
         slivers: [
           SliverPadding(
-            padding: const EdgeInsets.all(AppDesign.lg),
+            padding: const EdgeInsets.all(AppSpace.phonePage),
             sliver: SliverMainAxisGroup(
               slivers: [
                 SliverToBoxAdapter(

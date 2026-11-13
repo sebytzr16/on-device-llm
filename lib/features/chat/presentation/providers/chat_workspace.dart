@@ -1,6 +1,30 @@
 part of 'chat_provider.dart';
 
 mixin _ChatWorkspace on _ChatBase {
+  /// Deletes a project with the knowledge collection it owns. The project's
+  /// chats stay; the collection's documents, originals and vectors go only
+  /// when no other project or setting still uses that collection (S13/S14).
+  Future<void> deleteProject(String id) async {
+    final workspace = ref.read(conversationWorkspaceProvider);
+    final project = workspace.projects.where((p) => p.id == id).firstOrNull;
+    await ref.read(conversationWorkspaceProvider.notifier).removeProject(id);
+    final collection = project?.collection.trim() ?? '';
+    if (collection.isEmpty) return;
+    await ref.read(settingsProvider.notifier).ready;
+    final db = ref.read(appDatabaseProvider);
+    final override = jsonEncode({'knowledgeCollection': collection});
+    final usedElsewhere =
+        workspace.projects.any(
+          (p) => p.id != id && p.collection.trim() == collection,
+        ) ||
+        ref.read(settingsProvider).knowledgeCollection == collection ||
+        (await db.select(db.chats).get()).any(
+          (c) => c.overridesJson.contains(override),
+        );
+    if (usedElsewhere) return;
+    await DeletionCleanup.deleteKnowledgeCollection(db, collection);
+  }
+
   Future<
     ({String system, String notes, String researchNotes, List<String> facts})
   >

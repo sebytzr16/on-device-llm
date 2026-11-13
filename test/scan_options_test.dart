@@ -7,7 +7,10 @@ void main() {
   test('unavailable OCR is disclosed for scanned and mixed PDFs', () async {
     Future<String> scan(bool mixed) => PdfTextScanner.scan(
       pages: 2,
-      textLayer: (page) async => mixed && page == 1 ? 'Existing text' : '',
+      textLayer: (page) async => PageLayer(
+        mixed && page == 1 ? 'Existing text' : '',
+        coverage: mixed && page == 1 ? 0.00001 : 0,
+      ),
       recognize: (_) async => throw const OcrUnavailable(),
       options: const ScanOptions(),
       maxCharacters: 10000,
@@ -76,7 +79,10 @@ void main() {
       var calls = 0;
       final result = await PdfTextScanner.scan(
         pages: 24,
-        textLayer: (p) async => p == 24 ? 'Late text layer' : '',
+        textLayer: (p) async => PageLayer(
+          p == 24 ? 'Late text layer' : '',
+          coverage: p == 24 ? 0.00001 : 0,
+        ),
         recognize: (p) async {
           calls++;
           return const OcrReading('Scanned text', confidence: .65);
@@ -90,7 +96,7 @@ void main() {
       expect(result, contains('3 scanned pages skipped'));
       final long = await PdfTextScanner.scan(
         pages: 24,
-        textLayer: (p) async => '',
+        textLayer: (p) async => const PageLayer(''),
         recognize: (p) async => OcrReading('Page $p'),
         options: const ScanOptions(maxScannedPages: 50),
         maxCharacters: 100000,
@@ -106,7 +112,7 @@ void main() {
       await expectLater(
         PdfTextScanner.scan(
           pages: 3,
-          textLayer: (_) async => '',
+          textLayer: (_) async => const PageLayer(''),
           recognize: (_) async {
             calls++;
             cancelled = true;
@@ -121,7 +127,7 @@ void main() {
       expect(calls, 1);
       final result = await PdfTextScanner.scan(
         pages: 20,
-        textLayer: (_) async => '',
+        textLayer: (_) async => const PageLayer(''),
         recognize: (_) async => const OcrReading('text'),
         options: const ScanOptions(),
         maxCharacters: 100000,
@@ -143,4 +149,59 @@ void main() {
     );
     expect(OcrReading.fromJson({'text': 'text'}).confidence, isNull);
   });
+
+  test(
+    'a sparse text layer is still OCRd and both layers are kept (A06)',
+    () async {
+      var recognizes = 0;
+      final result = await PdfTextScanner.scan(
+        pages: 2,
+        textLayer: (page) async => PageLayer(
+          page == 1 ? 'Page 1' : 'A full page of body text. ' * 30,
+          coverage: page == 1 ? 0.00001 : 0.02,
+        ),
+        recognize: (page) async {
+          recognizes++;
+          return OcrReading('OCR text of page $page', confidence: 0.9);
+        },
+        options: const ScanOptions(),
+        maxCharacters: 10000,
+      );
+      // Page 1 carries a text layer, but it covers almost nothing: OCR runs.
+      expect(recognizes, 1);
+      // Both layers survive, with page provenance.
+      expect(
+        result,
+        contains('--- Page 1 (OCR; recognizer confidence 90%) ---'),
+      );
+      expect(result, contains('Page 1\nOCR text of page 1'));
+      expect(result, contains('A full page of body text.'));
+      // Page 2's layer is complete: no OCR and no quality notice.
+      expect(result, isNot(contains('OCR text of page 2')));
+      expect(result, isNot(contains('Page 2 (OCR')));
+    },
+  );
+
+  test(
+    'a thin text layer is kept even when the OCR limit is reached (A06)',
+    () async {
+      var recognizes = 0;
+      final result = await PdfTextScanner.scan(
+        pages: 3,
+        textLayer: (page) async => PageLayer('Header $page', coverage: 0.00001),
+        recognize: (page) async {
+          recognizes++;
+          return OcrReading('OCR page $page');
+        },
+        options: const ScanOptions(maxScannedPages: 1),
+        maxCharacters: 10000,
+      );
+      expect(recognizes, 1);
+      expect(result, contains('Page 1 (OCR; confidence unavailable)'));
+      expect(result, contains('Header 1\nOCR page 1'));
+      expect(result, contains('--- Page 2 ---\nHeader 2'));
+      expect(result, contains('--- Page 3 ---\nHeader 3'));
+      expect(result, isNot(contains('OCR limit')));
+    },
+  );
 }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/design/app_design.dart';
+import '../features/settings/presentation/widgets/settings_widgets.dart';
 import '../core/design/app_dialog.dart';
 import '../core/l10n/l10n.dart';
 import '../data/storage/model_folders.dart';
@@ -92,18 +93,13 @@ class _ModelsFolderSettingState extends ConsumerState<ModelsFolderSetting> {
       future: _folders,
       builder: (context, snapshot) {
         final folders = snapshot.data;
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: context.colors.surface,
-            borderRadius: AppDesign.radius(AppDesign.rLg),
-            border: Border.all(color: context.colors.hairline),
-          ),
-          child: Column(
+        return SettingsTile(
+          title: Text(t.desktopModelsFolder),
+          leading: const Icon(Icons.folder_outlined),
+          subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(t.desktopModelsFolder, style: context.text.title),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpace.row),
               if (folders != null)
                 SelectableText(folders.current.path, style: context.text.mono),
               const SizedBox(height: 16),
@@ -157,11 +153,11 @@ class _ModelsFolderSettingState extends ConsumerState<ModelsFolderSetting> {
                   value: _progress,
                   semanticsLabel: t.desktopModelsFolderMoving,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpace.row),
                 Text(t.desktopModelsFolderMoving),
               ],
               if (_error != null || snapshot.hasError) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpace.row),
                 Text(
                   _error ?? t.desktopModelsFolderWritable,
                   style: context.text.small.copyWith(

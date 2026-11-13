@@ -10,6 +10,8 @@ import '../../data/storage/model_storage.dart';
 import '../../inference/engine/llama_engine.dart';
 import '../models/domain/entities/model_catalog.dart';
 import '../models/presentation/providers/model_manager_provider.dart';
+import '../settings/domain/entities/inference_settings.dart';
+import '../settings/presentation/providers/settings_provider.dart';
 import 'domain/evidence.dart';
 
 /// Asks the optional source-check model whether a passage states an answer
@@ -30,6 +32,11 @@ class SupportCheck {
   /// P(yes) from which a sentence counts as stated by its passage.
   /// Conservative: an inconclusive judgement leaves the flag in place.
   static const supports = 0.8;
+
+  /// P(yes) below which a sentence the word check placed is flagged: the
+  /// model read its passage and found it does not say that. Far below
+  /// [supports] so only a clear "no" overrules the word check.
+  static const unbacked = 0.1;
 
   /// The task line given to the reranker (Qwen3-Reranker is trained with
   /// task instructions; the default one ranks search results).
@@ -106,9 +113,13 @@ class SupportCheck {
 class LlamaSupportJudge implements SupportJudge {
   final LlamaEngine engine;
   final Future<bool> Function() available;
+
+  /// The chat model's hardware setting, so a desktop load can use its GPU
+  /// backend (audit E22); null keeps the reranker on the CPU.
+  final InferenceSettings Function()? placement;
   final _queue = PriorityWorkQueue();
   Timer? _idle;
-  LlamaSupportJudge(this.engine, this.available);
+  LlamaSupportJudge(this.engine, this.available, [this.placement]);
 
   @override
   Future<List<double>?> judge(
@@ -119,7 +130,11 @@ class LlamaSupportJudge implements SupportJudge {
     if (!engine.isLoaded) {
       if (!await available()) return null;
       final file = await ModelStorage.modelFile(supportCheckModel.fileName);
-      await engine.loadEmbedder(modelPath: file.path, contextSize: 1024);
+      await engine.loadEmbedder(
+        modelPath: file.path,
+        contextSize: 1024,
+        placement: placement?.call(),
+      );
     }
     _idle?.cancel();
     try {
@@ -151,6 +166,7 @@ final supportJudgeProvider = Provider<SupportJudge>((ref) {
   final judge = LlamaSupportJudge(
     ref.watch(supportEngineProvider),
     () async => ref.read(modelManagerProvider).supportCheckReady,
+    () => ref.read(settingsProvider),
   );
   ref.onDispose(judge.dispose);
   return judge;

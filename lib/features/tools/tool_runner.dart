@@ -1,3 +1,4 @@
+import 'project_file_tools.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show HttpException;
@@ -20,6 +21,18 @@ import 'calculator.dart';
 import 'domain/tool_aliases.dart';
 import 'domain/tool_spec.dart';
 import 'phone_actions.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
+
+/// Draws one picture for the chat's generate_image tool. Supplied by the
+/// host: the desktop runs the image model selected in Create, the phone
+/// refuses with the reason.
+typedef GenerateImageTool =
+    Future<String> Function(String prompt, int? width, int? height, int? steps);
+
+/// Changes the chat's latest picture for the edit_image tool: [instruction]
+/// says what to change, [strength] (0.05 to 1) how far from the original.
+typedef EditImageTool =
+    Future<String> Function(String instruction, double? strength, int? steps);
 
 /// Executes typed tool calls for one turn under host-owned limits: only
 /// tools whose gate is open are offered, each call has a wall-clock timeout,
@@ -27,6 +40,10 @@ import 'phone_actions.dart';
 /// as a source so citations resolve later. The model never gets a raw
 /// network capability — every URL still goes through the public-web policy.
 final _log = Logger('tools');
+
+/// When true, logs include tool arguments and result snippets (developer/debug mode).
+/// Defaults to false for production: only metadata (name/status/timing/counts) is logged.
+bool _verboseToolLogging = false;
 
 class ToolRunner {
   static const maxSearchChars = 4000;
@@ -49,6 +66,9 @@ class ToolRunner {
   static const helperTimeout = Duration(seconds: 120);
   static const maxHelperInputChars = 12000;
 
+  /// A picture can take minutes to draw and may load the image model first.
+  static const imageTimeout = Duration(minutes: 20);
+
   final DuckDuckGoScraper scraper;
   final WebPageReader reader;
   final KnowledgeStore? knowledge;
@@ -69,6 +89,14 @@ class ToolRunner {
   /// job on a small second model. Null leaves ask_helper out.
   final Future<String> Function(String task, String input)? helper;
 
+  /// Draws a picture with the image model selected in Create; null leaves
+  /// generate_image out. The desktop host supplies it (the phone refuses).
+  final GenerateImageTool? generateImage;
+
+  /// Edits the chat's latest picture with the same image model; null leaves
+  /// edit_image out. The desktop host supplies it when the chat has a picture.
+  final EditImageTool? editImage;
+
   /// Dated news listings for search_news; null leaves the tool out.
   final NewsDesk? newsDesk;
 
@@ -87,6 +115,7 @@ class ToolRunner {
   final String userText;
 
   /// Desktop host tools retain their own live permission gate.
+  final ProjectFileTools? projectFiles;
   final List<ToolSpec> externalTools;
   final Future<ToolResult> Function(ToolCall)? externalRun;
 
@@ -120,12 +149,15 @@ class ToolRunner {
     this.newsDesk,
     this.recall,
     this.helper,
+    this.generateImage,
+    this.editImage,
     this.phoneActions = false,
     this.actionsOnly = false,
     this.webOnly = false,
     this.userText = '',
     this.externalTools = const [],
     this.externalRun,
+    this.projectFiles,
   });
 
   /// Evidence already in the prompt (pipeline pages, recalled pages,
@@ -177,7 +209,11 @@ class ToolRunner {
   };
 
   List<ToolSpec> _allSpecs() => [
-    ...externalTools,
+    if (projectFiles != null) ...ProjectFileTools.specs,
+    for (final tool in externalTools)
+      if (projectFiles == null ||
+          !ProjectFileTools.specs.any((s) => s.name == tool.name))
+        tool,
     if (recall != null)
       const ToolSpec(
         name: 'recall',
@@ -310,12 +346,81 @@ class ToolRunner {
           'required': ['expression'],
         },
       ),
+    if (generateImage != null)
+      const ToolSpec(
+        name: 'generate_image',
+        description:
+            'Draw a picture from a text description. Use it whenever the user asks for an image or a drawing — "draw a cat on a bike", "make me a picture of the sea at night", "dessine un chat", "dibuja un gato" — instead of saying you cannot make pictures. Describe the scene in one or two detailed sentences. Width and height in pixels (multiples of 32, at most 2048) and steps are optional. The picture is attached under your answer; do not write a link to it.',
+        parameters: {
+          'type': 'object',
+          'properties': {
+            'prompt': {
+              'type': 'string',
+              'description': 'What the picture should show, in detail.',
+            },
+            'width': {
+              'type': 'integer',
+              'description':
+                  'Optional width in pixels, a multiple of 32 (default: the model\'s).',
+            },
+            'height': {
+              'type': 'integer',
+              'description':
+                  'Optional height in pixels, a multiple of 32 (default: the model\'s).',
+            },
+            'steps': {
+              'type': 'integer',
+              'description':
+                  'Optional sampling steps, 1 to 50 (default: the model\'s).',
+            },
+          },
+          'required': ['prompt'],
+        },
+      ),
+    if (editImage != null)
+      const ToolSpec(
+        name: 'edit_image',
+        description:
+            'Change the picture the user attached or the last picture in this chat (one you drew or they sent). Use it whenever they ask to modify it — "make the sky purple", "remove the person on the left", "turn it into a watercolour", "rends le ciel violet", "haz el cielo morado" — instead of drawing a new picture. Write the whole picture as it should look after the change, in one or two sentences, not only the change. Strength is optional: 0.3 to 0.5 for small changes, 0.7 to 0.9 for big ones. The new picture is attached under your answer; do not write a link to it.',
+        parameters: {
+          'type': 'object',
+          'properties': {
+            'prompt': {
+              'type': 'string',
+              'description':
+                  'The picture as it should look after the change, in detail.',
+            },
+            'strength': {
+              'type': 'number',
+              'description':
+                  'Optional, 0.05 to 1: how far the result may move away from the original (default 0.65).',
+            },
+            'steps': {
+              'type': 'integer',
+              'description':
+                  'Optional sampling steps, 1 to 50 (default: the model\'s).',
+            },
+          },
+          'required': ['prompt'],
+        },
+      ),
     if (phoneActions) ...PhoneActions.specs(),
   ];
 
   /// Runs one call and records it. Errors become tool output the model can
   /// react to; they never propagate as chat failures.
   Future<ToolResult> run(ToolCall call) async {
+    if (!webOnly &&
+        !actionsOnly &&
+        projectFiles != null &&
+        ProjectFileTools.specs.any((s) => s.name == call.name)) {
+      final order = ++_callCount;
+      final result = await projectFiles!.run(call);
+      _logResult(result);
+      _record(result, order);
+      return result;
+    }
+
     // `web_search`, `open_url`, an argument called `q`…: what the model
     // clearly meant is run (ToolAliases).
     // MCP names and argument keys must remain byte-for-byte intact.
@@ -326,7 +431,9 @@ class ToolRunner {
         externalTools.any((t) => t.name == call.name) &&
         externalRun != null) {
       final order = ++_callCount;
-      _log.info('MCP tool ${call.name} ${_brief(call.arguments)}');
+      _log.info(
+        'MCP tool ${call.name} ${_verboseToolLogging ? _brief(call.arguments) : ''}',
+      );
       final result = await externalRun!(call);
       _logResult(result);
       _record(result, order);
@@ -335,7 +442,9 @@ class ToolRunner {
     call = ToolAliases.normalize(call);
     final clock = Stopwatch()..start();
     final order = ++_callCount;
-    _log.info('Tool ${call.name} ${_brief(call.arguments)}');
+    _log.info(
+      'Tool ${call.name} ${_verboseToolLogging ? _brief(call.arguments) : ''}',
+    );
     String output;
     var ok = true;
     try {
@@ -345,7 +454,11 @@ class ToolRunner {
       output = helperOwnsDeadline && call.name == 'ask_helper'
           ? await _dispatch(call)
           : await _dispatch(call).timeout(
-              call.name == 'ask_helper' ? helperTimeout : callTimeout,
+              call.name == 'ask_helper'
+                  ? helperTimeout
+                  : call.name == 'generate_image' || call.name == 'edit_image'
+                  ? imageTimeout
+                  : callTimeout,
               onTimeout: () =>
                   throw TimeoutException('The tool took too long.'),
             );
@@ -378,11 +491,17 @@ class ToolRunner {
     return text.length > 300 ? '${text.substring(0, 300)}…' : text;
   }
 
+  /// Enable verbose tool logging (arguments and result snippets).
+  /// Default is false for production; enable only for debugging.
+  static void setVerboseLogging(bool enabled) {
+    _verboseToolLogging = enabled;
+  }
+
   static void _logResult(ToolResult result) {
-    final head = result.output.split('\n').first;
+    final head = _verboseToolLogging ? result.output.split('\n').first : '';
     final line =
         '${result.call.name} ${result.ok ? 'returned' : 'failed'} in ${result.elapsedMs} ms, '
-        '${result.output.length} chars: ${head.length > 200 ? '${head.substring(0, 200)}…' : head}';
+        '${result.output.length} chars${head.isNotEmpty ? ': ${head.length > 200 ? '${head.substring(0, 200)}…' : head}' : ''}';
     result.ok ? _log.info(line) : _log.warning(line);
   }
 
@@ -509,6 +628,31 @@ class ToolRunner {
         final expression = _string(a, 'expression');
         final v = Calculator.evaluate(expression);
         return '$expression = ${Calculator.format(v)}';
+      case 'edit_image':
+        final instruction = _string(a, 'prompt');
+        if (instruction.length > 2000) {
+          throw const FormatException(
+            'edit_image needs a prompt of 1–2000 characters.',
+          );
+        }
+        return editImage!(
+          instruction,
+          _strengthArg(a, 'strength'),
+          _intArg(a, 'steps'),
+        );
+      case 'generate_image':
+        final prompt = _string(a, 'prompt');
+        if (prompt.trim().isEmpty || prompt.length > 2000) {
+          throw const FormatException(
+            'generate_image needs a prompt of 1–2000 characters.',
+          );
+        }
+        return generateImage!(
+          prompt,
+          _intArg(a, 'width'),
+          _intArg(a, 'height'),
+          _intArg(a, 'steps'),
+        );
     }
     if (PhoneActions.kinds.contains(call.name)) {
       return PhoneActions.prepare(call);
@@ -527,6 +671,27 @@ class ToolRunner {
       throw FormatException('Missing argument "$key".');
     }
     return '$v'.trim();
+  }
+
+  /// An optional 0.05 to 1 strength; out-of-range values are clamped, a
+  /// percentage ("65") is read as 0.65.
+  static double? _strengthArg(Map<String, dynamic> a, String key) {
+    final v = a[key];
+    if (v == null || '$v'.trim().isEmpty) return null;
+    var n = v is num ? v.toDouble() : double.tryParse('$v'.trim());
+    if (n == null || !n.isFinite) {
+      throw FormatException('"$key" must be a number between 0.05 and 1.');
+    }
+    if (n > 1 && n <= 100) n /= 100;
+    return n.clamp(0.05, 1.0);
+  }
+
+  static int? _intArg(Map<String, dynamic> a, String key) {
+    final v = a[key];
+    if (v == null || '$v'.trim().isEmpty) return null;
+    final n = v is num ? v.toInt() : int.tryParse('$v'.trim());
+    if (n == null) throw FormatException('"$key" must be a whole number.');
+    return n;
   }
 
   /// The last search, so a read_url without a query still ranks a long
@@ -1021,6 +1186,10 @@ class TextToolProtocol {
         'User: "What is the latest version of Flutter?" → ```tool\n{"name": "search_web", "arguments": {"query": "Flutter latest stable version"}}\n```',
     'calculator':
         'User: "What is 18% of 2,450?" → ```tool\n{"name": "calculator", "arguments": {"expression": "2450*0.18"}}\n```',
+    'edit_image':
+        'User: (attached a photo) "Make the sky purple." → ```tool\n{"name": "edit_image", "arguments": {"prompt": "the same photo with a purple sky", "strength": 0.5}}\n```',
+    'generate_image':
+        'User: "Draw a cat on a bike." → ```tool\n{"name": "generate_image", "arguments": {"prompt": "a ginger cat riding a red bicycle"}}\n```',
   };
 
   static final _block = RegExp(
@@ -1209,7 +1378,9 @@ class TextToolProtocol {
     for (final m in _function.allMatches(answer)) {
       try {
         add(m, (m[1]!, jsonDecode(m[2]!)));
-      } catch (_) {}
+      } catch (e, st) {
+        quietFailure('tool_runner:1226', e, st);
+      }
     }
     for (final m in _xmlCall.allMatches(answer)) {
       if (ToolAliases.known(m[2]!)) add(m, (m[2]!, _xmlArgs(m[3]!)));
@@ -1228,7 +1399,9 @@ class TextToolProtocol {
             add(m, _call(item));
           }
         }
-      } catch (_) {}
+      } catch (e, st) {
+        quietFailure('tool_runner:1245', e, st);
+      }
     }
     for (final m in _code.allMatches(answer)) {
       for (final line in m[1]!.split('\n')) {
@@ -1240,7 +1413,9 @@ class TextToolProtocol {
       Object? args = input;
       try {
         args = jsonDecode(input);
-      } catch (_) {}
+      } catch (e, st) {
+        quietFailure('tool_runner:1257', e, st);
+      }
       if (ToolAliases.known(m[1]!)) add(m, (m[1]!, args));
     }
     // The whole reply is one JSON object (no fence).

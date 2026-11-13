@@ -17,13 +17,17 @@ class ClaimCheckRunner {
   /// Sentences the source-check model is asked about, at most.
   static const judged = 3;
 
+  /// Sentences the word check placed ("supported") that the model reads
+  /// too, weakest word match first: right words in a wrong claim.
+  static const confirmed = 3;
+
   static Future<List<ClaimVerdict>> run(
     String answer,
     List<SearchResult> sources, {
     TextEmbedder? embedder,
     SupportJudge? judge,
     Duration budget = const Duration(seconds: 2),
-    Duration judgeBudget = const Duration(seconds: 4),
+    Duration judgeBudget = const Duration(seconds: 6),
   }) async {
     final verdicts = await _byMeaning(
       answer,
@@ -36,7 +40,10 @@ class ClaimCheckRunner {
   }
 
   /// Uncertain and off-source sentences become supported when the model is
-  /// sure a passage states them; anything else keeps its verdict.
+  /// sure a passage states them; anything else keeps its verdict. A
+  /// sentence the word check placed is read against its passage too, and
+  /// is flagged when the model finds that passage does not state it
+  /// (support below [SupportCheck.unbacked]).
   static Future<List<ClaimVerdict>> _judged(
     List<ClaimVerdict> verdicts,
     List<SearchResult> sources,
@@ -49,7 +56,14 @@ class ClaimCheckRunner {
             verdicts[i].status == ClaimStatus.offSource)
           i,
     ].take(judged).toList();
-    if (asked.isEmpty) return verdicts;
+    final placed = [
+      for (var i = 0; i < verdicts.length; i++)
+        if (verdicts[i].status == ClaimStatus.supported &&
+            verdicts[i].support == null)
+          i,
+    ]..sort((a, b) => verdicts[a].share.compareTo(verdicts[b].share));
+    final checked = placed.take(confirmed).toSet();
+    if (asked.isEmpty && checked.isEmpty) return verdicts;
     final clock = Stopwatch()..start();
     bool expired() => clock.elapsed >= budget;
     final pairs = <({String claim, String passage})>[];
@@ -59,6 +73,27 @@ class ClaimCheckRunner {
         pairs.add((claim: verdicts[i].sentence, passage: w.passage));
         owners.add((verdict: i, source: w.source, passage: w.passage));
       }
+    }
+    // After the doubtful ones, so the budget never starves them.
+    for (final i in checked) {
+      final v = verdicts[i];
+      final span = v.span;
+      if (span != null && span.trim().isNotEmpty && v.source != null) {
+        final passage = span.length > SupportCheck.maxPassage
+            ? span.substring(0, SupportCheck.maxPassage)
+            : span;
+        pairs.add((claim: v.sentence, passage: passage));
+        owners.add((verdict: i, source: v.source!, passage: passage));
+        continue;
+      }
+      final w = SupportCheck.windows(v.sentence, sources, take: 1);
+      if (w.isEmpty) continue;
+      pairs.add((claim: v.sentence, passage: w.first.passage));
+      owners.add((
+        verdict: i,
+        source: w.first.source,
+        passage: w.first.passage,
+      ));
     }
     List<double>? scores;
     try {
@@ -74,7 +109,9 @@ class ClaimCheckRunner {
       final p = scores[k];
       if (p > (best[o.verdict] ?? -1)) best[o.verdict] = p;
       final v = out[o.verdict];
-      if (v.status == ClaimStatus.supported) continue;
+      if (checked.contains(o.verdict) || v.status == ClaimStatus.supported) {
+        continue;
+      }
       if (p >= SupportCheck.supports) {
         out[o.verdict] = ClaimVerdict(
           v.sentence,
@@ -89,6 +126,25 @@ class ClaimCheckRunner {
     }
     for (final e in best.entries) {
       final v = out[e.key];
+      if (checked.contains(e.key)) {
+        // Read by the model: kept when it agrees or is unsure, flagged
+        // (uncertain, with the score) when it finds the passage does not
+        // say it.
+        out[e.key] = ClaimVerdict(
+          v.sentence,
+          e.value < SupportCheck.unbacked
+              ? ClaimStatus.uncertain
+              : ClaimStatus.supported,
+          source: v.source,
+          share: v.share,
+          cosine: v.cosine,
+          details: v.details,
+          span: v.span,
+          conflict: v.conflict,
+          support: e.value,
+        );
+        continue;
+      }
       if (v.status == ClaimStatus.supported) continue;
       out[e.key] = ClaimVerdict(
         v.sentence,

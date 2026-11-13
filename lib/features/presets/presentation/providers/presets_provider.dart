@@ -7,6 +7,7 @@ import '../../../../core/storage/prefs_rescue.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../domain/preset.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 const _kPresetsKey = 'presets_v1';
 
@@ -77,7 +78,9 @@ class PresetsNotifier extends Notifier<PresetsState> {
           'activeId': state.activeId,
         }),
       );
-    } catch (_) {}
+    } catch (e, st) {
+      quietFailure('presets_provider:80', e, st);
+    }
   }
 
   Future<void> activate(String id) async {

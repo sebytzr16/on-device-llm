@@ -31,7 +31,7 @@ OD_API void od_cancel_session(int64_t session);
 OD_API void od_reset_cancel(void * handle);
 OD_API int32_t od_cancelled(void * handle);
 OD_API const char * od_error(void * handle);
-// Includes embeddedChatTemplate from the GGUF, even when a load override is active.
+// Includes embeddedChatTemplate and supportsDFlash, also before model load.
 OD_API const char * od_info(void * handle);
 // JSON prompt budget and formattedPrompt without trimming history or changing generation state.
 OD_API const char * od_preview(void * handle, const char * request);
@@ -39,6 +39,8 @@ OD_API const char * od_preview(void * handle, const char * request);
 //   kvCacheType / vCacheType, ropeScaling + rope/yarn numbers,
 //   chatTemplate: non-empty Jinja override (parse errors fail the load),
 //   loraAdapters: [{path, scale}], draftModel + draftMaxTokens (speculative).
+//   speculationMode: auto (legacy), off, mtp, draft, dflash. DFlash requires
+//   canonical general.architecture=dflash; dflash-draft must be reconverted.
 //   mtp: use the model's own NextN heads (default false; ignored without heads
 //   or with draftModel). od_info reports mtp and mtpAcceptRate; ABI stays 7.
 // The context is capped to the model's trained length and to free memory

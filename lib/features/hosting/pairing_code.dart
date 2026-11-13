@@ -48,9 +48,17 @@ abstract final class PairingCode {
   /// Digits only, so "123 456" and "123-456" both work.
   static String normalize(String text) => text.replaceAll(RegExp(r'\D'), '');
 
-  /// Typed-code bootstrap: public metadata carries no secrets. As in Phase A,
-  /// discovery is unauthenticated; the UI requires a trusted network. QR pins
-  /// are delivered out of band and never use this endpoint.
+  /// Human comparison only; certificate pinning still uses all 64 hex digits.
+  static String shortFingerprint(String fingerprint) {
+    if (!validFingerprint(fingerprint)) throw const FormatException();
+    return [
+      for (var i = 0; i < 16; i += 4) fingerprint.substring(i, i + 4),
+    ].join(' ').toUpperCase();
+  }
+
+  /// Typed-code bootstrap: discovery is unauthenticated. The caller must ask
+  /// the user to compare the returned pin with the host before redeeming.
+  /// QR pins are delivered out of band and never use this endpoint.
   static Future<(String, String)> tlsTarget(String endpoint) async {
     final uri = Uri.parse(endpoint);
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);

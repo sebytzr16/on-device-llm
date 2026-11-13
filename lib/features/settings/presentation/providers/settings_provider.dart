@@ -12,10 +12,10 @@ import '../../../../core/platform/desktop_preferences.dart';
 import '../../../../data/network/web_search/duckduckgo_scraper.dart';
 import '../../data/remote_key_store.dart';
 import '../../domain/entities/inference_settings.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 const _kSettingsKey = 'inference_settings_v1';
 const _kThinkingOffKey = 'thinking_off_2026_09_28';
-const _kSamplingDefaultsKey = 'sampling_defaults_2026_10_04';
 
 /// Where remote API keys live; tests swap in an in-memory store.
 final remoteKeyStoreProvider = Provider<RemoteKeyStore>(
@@ -26,6 +26,7 @@ class SettingsNotifier extends Notifier<InferenceSettings> {
   SharedPreferences? _prefs;
   bool _loaded = false;
   InferenceSettings _defaults = const InferenceSettings();
+  Map<String, Map<String, String>> _storedHeaders = {};
 
   /// The device-adjusted defaults (the "This phone" layer of the cascade).
   InferenceSettings get defaults => _defaults;
@@ -55,11 +56,6 @@ class SettingsNotifier extends Notifier<InferenceSettings> {
       // the Think pill turns it on per chat. A saved "on" is turned off
       // once; what the user picks afterwards stays.
       final migrate = _prefs!.getBool(_kThinkingOffKey) != true;
-      // Request 2026-10-04: each model's recommended sampling now
-      // applies unless the user chose otherwise. Legacy saves cannot tell
-      // whether a value equal to a default was chosen. Preserve those keys;
-      // the user can explicitly return them to recommended inheritance.
-      final migrateSampling = _prefs!.getBool(_kSamplingDefaultsKey) != true;
       // Don't clobber state if the user already changed it during load.
       if (!_loaded) {
         var loaded = raw == null
@@ -71,17 +67,12 @@ class SettingsNotifier extends Notifier<InferenceSettings> {
           loaded = loaded.copyWith(thinkingModeEnabled: false);
           await _prefs!.setString(_kSettingsKey, jsonEncode(loaded.toJson()));
         }
-        if (migrateSampling && raw != null) {
-          loaded = migrateSamplingDefaults(loaded, _defaults);
-          await _prefs!.setString(_kSettingsKey, jsonEncode(loaded.toJson()));
-        }
         if (!_loaded) {
           state = loaded;
           DuckDuckGoScraper.preferredRegion = state.searchRegion;
         }
       }
       if (migrate) await _prefs!.setBool(_kThinkingOffKey, true);
-      if (migrateSampling) await _prefs!.setBool(_kSamplingDefaultsKey, true);
     } catch (_) {
       if (_alive) {
         ref.read(settingsErrorProvider.notifier).state = stringsFor(
@@ -93,13 +84,53 @@ class SettingsNotifier extends Notifier<InferenceSettings> {
     await _loadKeys();
   }
 
-  /// Keys come from the keystore after the plaintext settings; a keystore
-  /// failure leaves the connections usable without their keys.
+  /// Credentials come from the keystore after the plaintext settings; a
+  /// keystore failure leaves the connections usable without them.
   Future<void> _loadKeys() async {
     try {
-      final keys = await ref.read(remoteKeyStoreProvider).readAll();
-      if (!_alive || keys.isEmpty) return;
-      state = state.copyWith(remoteApiKeys: {...keys, ...state.remoteApiKeys});
+      final store = ref.read(remoteKeyStoreProvider);
+      final keys = await store.readAll();
+      final headers = await store.readAllHeaders();
+      if (!_alive) return;
+      // Older builds wrote header values into the settings JSON; move them
+      // to the keystore and remove that plaintext copy.
+      final legacy = <String, Map<String, String>>{
+        for (final p in state.remoteProfiles)
+          if (!headers.containsKey(p.id) && p.headers.isNotEmpty)
+            p.id: p.headers,
+      };
+      final merged = {...legacy, ...headers};
+      state = state.copyWith(
+        remoteApiKeys: {...keys, ...state.remoteApiKeys},
+        remoteHeaders: merged,
+        remoteProfiles: [
+          for (final p in state.remoteProfiles)
+            p.copyWith(headers: merged[p.id] ?? const {}),
+        ],
+      );
+      _storedHeaders = {...headers};
+      if (legacy.isEmpty) return;
+      var stored = true;
+      for (final e in legacy.entries) {
+        try {
+          await store.writeHeaders(e.key, e.value);
+          _storedHeaders[e.key] = e.value;
+        } catch (_) {
+          stored = false;
+        }
+      }
+      if (!stored) {
+        if (_alive) {
+          ref.read(settingsErrorProvider.notifier).state = stringsFor(
+            state.localeCode,
+          ).settingsKeySaveFailed;
+        }
+        return;
+      }
+      // Keep the plaintext copy until every value is safely stored.
+      if (_prefs != null) {
+        await _prefs!.setString(_kSettingsKey, jsonEncode(state.toJson()));
+      }
     } catch (_) {
       if (_alive) {
         ref.read(settingsErrorProvider.notifier).state = stringsFor(
@@ -139,32 +170,66 @@ class SettingsNotifier extends Notifier<InferenceSettings> {
 
   Future<void> update(InferenceSettings next) async {
     _loaded = true;
-    // Keys never go through the JSON round trip: they are not written to
-    // plaintext SharedPreferences, only to the keystore.
+    // Credentials never go through the JSON round trip: they are not written
+    // to plaintext SharedPreferences, only to the keystore.
     final ids = {for (final p in next.remoteProfiles) p.id};
-    final orphaned = [
+    final orphaned = {
       for (final id in state.remoteApiKeys.keys)
         if (!ids.contains(id)) id,
-    ];
-    state = InferenceSettings.fromJson(next.toJson()).copyWith(
+      for (final id in state.remoteHeaders.keys)
+        if (!ids.contains(id)) id,
+    };
+    final headers = <String, Map<String, String>>{
+      ...state.remoteHeaders,
+      for (final p in next.remoteProfiles)
+        if (p.headers.isNotEmpty) p.id: p.headers,
+      ...next.remoteHeaders,
+    }..removeWhere((id, value) => !ids.contains(id) || value.isEmpty);
+    final sanitized = InferenceSettings.fromJson(next.toJson());
+    state = sanitized.copyWith(
       remoteApiKeys: {
         for (final e in next.remoteApiKeys.entries)
           if (ids.contains(e.key)) e.key: e.value,
       },
+      remoteHeaders: headers,
+      remoteProfiles: [
+        for (final p in sanitized.remoteProfiles)
+          p.copyWith(headers: headers[p.id] ?? const {}),
+      ],
     );
     DuckDuckGoScraper.preferredRegion = state.searchRegion;
     final encoded = jsonEncode(state.toJson());
     _writes = _writes.then((_) async {
       try {
+        final store = ref.read(remoteKeyStoreProvider);
+        // Store header values before rewriting the settings without them, so
+        // a keystore failure leaves the previous file intact.
+        for (final e in headers.entries) {
+          if (_sameHeaders(_storedHeaders[e.key], e.value)) continue;
+          await store.writeHeaders(e.key, e.value);
+          _storedHeaders[e.key] = e.value;
+        }
+        for (final id in _storedHeaders.keys.toList()) {
+          if (headers.containsKey(id)) continue;
+          await store.deleteHeaders(id);
+          _storedHeaders.remove(id);
+        }
         _prefs ??= await SharedPreferences.getInstance();
         if (!await _prefs!.setString(_kSettingsKey, encoded)) {
           throw StateError('Write failed');
         }
-        // A deleted connection takes its key with it.
+        // A deleted connection takes its key and header values with it.
         for (final id in orphaned) {
           try {
-            await ref.read(remoteKeyStoreProvider).delete(id);
-          } catch (_) {}
+            await store.delete(id);
+          } catch (e, st) {
+            quietFailure('settings_provider:224', e, st);
+          }
+          try {
+            await store.deleteHeaders(id);
+          } catch (e, st) {
+            quietFailure('settings_provider:227', e, st);
+          }
         }
         if (_alive) {
           ref.read(settingsErrorProvider.notifier).state = null;
@@ -194,9 +259,10 @@ class SettingsNotifier extends Notifier<InferenceSettings> {
         .difference(keys)
         .toList();
     return update(
-      InferenceSettings.fromJson(
-        json,
-      ).copyWith(remoteApiKeys: state.remoteApiKeys),
+      InferenceSettings.fromJson(json).copyWith(
+        remoteApiKeys: state.remoteApiKeys,
+        remoteHeaders: state.remoteHeaders,
+      ),
     );
   }
 }
@@ -216,3 +282,12 @@ InferenceSettings migrateSamplingDefaults(
   InferenceSettings saved,
   InferenceSettings defaults,
 ) => saved;
+
+bool _sameHeaders(Map<String, String>? a, Map<String, String>? b) {
+  if (a == null || b == null) return a == b;
+  if (a.length != b.length) return false;
+  for (final e in a.entries) {
+    if (b[e.key] != e.value) return false;
+  }
+  return true;
+}

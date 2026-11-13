@@ -1,0 +1,42 @@
+--- a/src/model_manager.cpp
++++ b/src/model_manager.cpp
+@@ -1,4 +1,5 @@
+-#include "model_manager.h"
++#include "../../src/memory_admission.h"
++#include "model_manager.h"
+ 
+ #include <algorithm>
+ #include <cstdint>
+@@ -1761,9 +1762,16 @@
+     const std::vector<TensorState*>& states,
+     bool log_details) const {
+     CapacityCheck result;
+-    if (request.compute_backend == nullptr || sd_backend_is_cpu(request.compute_backend)) {
+-        return result;
+-    }
++    if (request.compute_backend == nullptr) return result;
++    if (sd_backend_is_cpu(request.compute_backend)) {
++        // Admit the measured graph workspace at the requested resolution and
++        // frame count, with other runtimes still included in live RAM usage.
++        const size_t missing = compute_backend_alloc_size(states, true);
++        const size_t pending = request.pending_allocation_bytes;
++        result.required_device_bytes = missing > SIZE_MAX - pending ? SIZE_MAX : pending + missing;
++        result.available_device_bytes = MemoryAdmission::host_budget();
++        return result;
++    }
+     auto add             = [](size_t a, size_t b) { return b > SIZE_MAX - a ? SIZE_MAX : a + b; };
+     const size_t missing = compute_backend_alloc_size(states, true);
+     // Backend scratch buffers and pipelines are not included in graph measurements.
+@@ -1867,9 +1875,9 @@
+         LOG_ERROR("model manager cannot reclaim memory for a null compute backend");
+         return false;
+     }
+-    if (sd_backend_is_cpu(compute_backend)) {
+-        return true;
+-    }
++    if (sd_backend_is_cpu(compute_backend)) {
++        return check_capacity(request, required_states).fits();
++    }
+ 
+     auto fits = [&]() {
+         const auto capacity = check_capacity(request, required_states);

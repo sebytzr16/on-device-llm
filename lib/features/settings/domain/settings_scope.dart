@@ -80,9 +80,10 @@ class SettingsResolver {
       if (reset == null) ...current.explicitOverrides,
       ...sanitize(values).keys,
     }.toList();
-    return InferenceSettings.fromJson(
-      json,
-    ).copyWith(remoteApiKeys: current.remoteApiKeys);
+    return InferenceSettings.fromJson(json).copyWith(
+      remoteApiKeys: current.remoteApiKeys,
+      remoteHeaders: current.remoteHeaders,
+    );
   }
 
   /// Only keys the registry knows are honoured from profile/preset/chat/turn
@@ -175,10 +176,12 @@ class SettingsResolver {
       layers = layersWith({...rec, ...thinkingRec});
       (merged, origin, requested) = merge(layers);
     }
-    // The API key is session-only and never part of the JSON round trip.
-    final effective = InferenceSettings.fromJson(
-      merged,
-    ).copyWith(remoteApiKeys: global.remoteApiKeys);
+    // API keys and header values are session-only and never part of the
+    // JSON round trip.
+    final effective = InferenceSettings.fromJson(merged).copyWith(
+      remoteApiKeys: global.remoteApiKeys,
+      remoteHeaders: global.remoteHeaders,
+    );
     return ResolvedSettings(
       effective: effective,
       origin: origin,

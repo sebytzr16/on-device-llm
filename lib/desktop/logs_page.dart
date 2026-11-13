@@ -6,7 +6,6 @@ import 'package:logging/logging.dart';
 import '../core/design/app_design.dart';
 import '../core/l10n/l10n.dart';
 import '../core/logging/developer_logs.dart';
-import '../core/motion/spring_entrance.dart';
 import 'developer_widgets.dart';
 
 class DesktopLogsPage extends ConsumerStatefulWidget {
@@ -58,15 +57,11 @@ class _DesktopLogsPageState extends ConsumerState<DesktopLogsPage> {
       return matches && '${e.tag} ${e.message}'.toLowerCase().contains(_query);
     }).toList();
     return Padding(
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.all(AppSpace.desktopPage),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SpringEntrance(
-            child: Text(t.desktopLogsTitle, style: context.text.headline),
-          ),
-          const SizedBox(height: 8),
-          Text(t.desktopLogsHint, style: context.text.small),
+          AppPageHeader(title: t.desktopLogsTitle, subtitle: t.desktopLogsHint),
           const SizedBox(height: 16),
           TextField(
             key: const Key('logs-filter'),

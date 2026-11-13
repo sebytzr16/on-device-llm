@@ -162,15 +162,9 @@ class _KnowledgePageState extends ConsumerState<KnowledgePage> {
     }
     return SettingsGroup(
       children: [
-        Padding(
+        SettingsTile(
           key: const Key('embedding-card'),
-          padding: const EdgeInsets.fromLTRB(
-            AppDesign.lg,
-            AppDesign.md,
-            AppDesign.lg,
-            AppDesign.md,
-          ),
-          child: Column(
+          title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
@@ -388,9 +382,9 @@ class _KnowledgePageState extends ConsumerState<KnowledgePage> {
                             : context.l10n.knowledgeIntro),
                         icon: Icons.local_library_outlined,
                       ),
-                      const SizedBox(height: AppDesign.md),
+                      const SizedBox(height: AppSpace.xl),
                       _embeddingCard(context),
-                      const SizedBox(height: AppDesign.md),
+                      const SizedBox(height: AppSpace.xl),
                       SettingsGroup(
                         children: [
                           SettingsRow(

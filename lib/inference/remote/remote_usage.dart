@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'remote_provider.dart';
 import '../../core/l10n/l10n.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// Why a request was refused before it was sent.
 class RemoteLimitReached implements Exception {
@@ -220,7 +221,9 @@ class RemoteUsageLog {
     _writes = _writes.then((_) async {
       try {
         await (await _prefs())?.setString(_kKey, snapshot);
-      } catch (_) {}
+      } catch (e, st) {
+        quietFailure('remote_usage:223', e, st);
+      }
     });
   }
 

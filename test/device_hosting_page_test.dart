@@ -5,6 +5,8 @@ import 'package:ondevice_llm/core/motion/motion.dart';
 import 'package:ondevice_llm/core/platform/device_info.dart';
 import 'package:ondevice_llm/core/theme/app_theme.dart';
 import 'package:ondevice_llm/features/hosting/device_model_server.dart';
+import 'package:ondevice_llm/features/hosting/pairing_code.dart';
+import 'package:ondevice_llm/features/hosting/paired_devices.dart';
 import 'package:ondevice_llm/features/hosting/presentation/device_hosting_page.dart';
 import 'package:ondevice_llm/features/hosting/presentation/device_hosting_provider.dart';
 import 'package:ondevice_llm/features/hosting/presentation/qr_view.dart';
@@ -20,11 +22,14 @@ class RunningHost extends DeviceHostingNotifier {
   DeviceHostingState build() =>
       DeviceHostingState(
         running: true,
-        endpoint: 'http://192.168.1.5:8787/v1/',
+        endpoint: 'https://192.168.1.5:8788/v1/',
         token: 'abcdefghijklmnopqrstuvwxyz012345',
         modelId: 'test',
         pairingSecret: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
         hostId: 'host-test',
+        pairCode: '123456',
+        fingerprint:
+            '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
         startedAt: DateTime.now().subtract(const Duration(minutes: 3)),
         activeClient: '192.168.1.9',
         liveTokens: 64,
@@ -42,6 +47,22 @@ class RunningHost extends DeviceHostingNotifier {
           took: const Duration(seconds: 12),
         ),
       );
+}
+
+class PairedHost extends RunningHost {
+  static String? revoked;
+  @override
+  DeviceHostingState build() => super.build().copyWith(
+    legacyTokenEnabled: false,
+    pairedDevices: [
+      PairedDevice('phone-id', 'Phone', 'digest', DateTime(2026, 11, 12)),
+    ],
+  );
+  @override
+  Future<void> revokeDevice(String id) async {
+    revoked = id;
+    state = state.copyWith(pairedDevices: []);
+  }
 }
 
 /// Records the models loaded from the page.
@@ -71,6 +92,34 @@ Widget harness({bool running = false}) => ProviderScope(
 );
 
 void main() {
+  testWidgets('paired device roster revokes the selected device', (
+    tester,
+  ) async {
+    PairedHost.revoked = null;
+    tester.view.physicalSize = const Size(500, 4000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith(TestSettings.new),
+          modelManagerProvider.overrideWith(TestModels.new),
+          deviceHostingProvider.overrideWith(PairedHost.new),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.dark,
+          home: const DeviceHostingPage(),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Phone'), findsOneWidget);
+    await tester.tap(find.text('Revoke'));
+    await tester.pump();
+    expect(PairedHost.revoked, 'phone-id');
+    expect(find.text('Phone'), findsNothing);
+  });
+
   testWidgets('setup: the port is checked as it is typed', (tester) async {
     tester.view.physicalSize = const Size(360, 1600);
     tester.view.devicePixelRatio = 1;
@@ -109,6 +158,13 @@ void main() {
     await tester.tap(find.byKey(const Key('show-qr')));
     await tester.pump();
     expect(find.byType(QrView), findsOneWidget);
+    expect(find.byKey(const Key('host-pair-code')), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('host-pair-fingerprint'))).data,
+      PairingCode.shortFingerprint(
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      ),
+    );
     final qr = tester.widget<QrView>(find.byType(QrView)).data;
     expect(qr, contains('"secret"'));
     expect(qr, contains('"hostId"'));

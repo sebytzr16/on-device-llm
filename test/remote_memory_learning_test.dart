@@ -657,4 +657,55 @@ void main() {
       ]);
     },
   );
+  test(
+    'forgetting everything while remote extraction is in flight stores nothing',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      final mainEngine = _PrivateRemoteEngine();
+      final gate = Completer<void>();
+      final adapter = _MemoryAdapter('custom', gate: gate);
+      const profile = RemoteProfile(
+        id: 'test',
+        name: 'Remote',
+        baseUrl: 'https://example.com',
+        model: 'fixture',
+        shareMemory: true,
+        learnMemory: true,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          remoteEngineProvider.overrideWithValue(mainEngine),
+          remoteMemoryEngineFactoryProvider.overrideWithValue(
+            () => RemoteEngine(
+              dio: Dio()..httpClientAdapter = adapter,
+              usage: mainEngine.usage,
+            ),
+          ),
+          settingsProvider.overrideWith(
+            () => RemoteMemoryTestSettings(profile),
+          ),
+          modelManagerProvider.overrideWith(TestModels.new),
+        ],
+      );
+      addTearDown(() async {
+        if (!gate.isCompleted) gate.complete();
+        container.dispose();
+        mainEngine.dispose();
+        await db.close();
+      });
+      await container
+          .read(chatProvider.notifier)
+          .send('My hobby is restoring motorcycles.');
+      await _eventually(() => adapter.requests.isNotEmpty);
+      // The extraction result is held behind the gate: forget everything
+      // before it lands, then release it — every insert must be dropped.
+      await container.read(memoryStoreProvider).clear();
+      gate.complete();
+      await _eventually(() => adapter.closed);
+      expect(container.read(chatProvider).error, isNull);
+      expect(await container.read(memoryStoreProvider).facts(), isEmpty);
+    },
+  );
 }

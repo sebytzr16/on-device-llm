@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -12,6 +13,7 @@ import 'local_backup_service_test.dart' show BackupPaths;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => SharedPreferences.setMockInitialValues({}));
 
   test('M-02: a pin on plain HTTP is a typed pairing failure', () async {
     await expectLater(

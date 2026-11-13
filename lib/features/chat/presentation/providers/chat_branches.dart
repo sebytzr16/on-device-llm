@@ -19,6 +19,9 @@ mixin _ChatBranches on _ChatBase {
         messageId,
         pair: pair,
       );
+      if (deletion != null) {
+        unawaited(_discardDeletedAttachments(db, deletion));
+      }
       if (_alive && state.chatId == id) {
         state = state.copyWith(
           messages: (await db.getMessages(id)).map(_fromRow).toList(),
@@ -27,6 +30,25 @@ mixin _ChatBranches on _ChatBase {
       return deletion;
     } finally {
       if (_alive) state = state.copyWith(isGenerating: false);
+    }
+  }
+
+  /// A deleted turn's files go once Undo has closed (S13), not before: Undo
+  /// restores the rows that reference them. [db] is the database the turn
+  /// lived in (a temporary chat has its own), so a file a surviving turn still
+  /// uses stays.
+  Future<void> _discardDeletedAttachments(
+    AppDatabase db,
+    MessageDeletion deletion,
+  ) async {
+    await Future<void>.delayed(MessageDeletion.undoWindow);
+    if (!_alive) return;
+    try {
+      await deletion.purgeAttachments(db);
+    } catch (error, stack) {
+      Logger(
+        'chat.deletion',
+      ).warning('Attachment cleanup failed', error, stack);
     }
   }
 
@@ -245,7 +267,9 @@ mixin _ChatBranches on _ChatBase {
     if (ok && before != null && before.id != other.id && _alive) {
       try {
         await ref.read(modelManagerProvider.notifier).loadModel(before);
-      } catch (_) {}
+      } catch (e, st) {
+        quietFailure('chat_branches:270', e, st);
+      }
     }
     return ok;
   }

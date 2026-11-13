@@ -18,9 +18,11 @@ import '../../domain/entities/model_info.dart';
 import '../../../settings/presentation/providers/model_profiles_provider.dart';
 import '../../../settings/presentation/screens/model_profile_page.dart';
 import '../providers/hidden_library_models.dart';
+import '../recommended_models.dart';
 import '../providers/model_manager_provider.dart';
 import '../widgets/config_card_flow.dart';
 import '../widgets/model_card.dart';
+import '../widgets/model_tags.dart';
 import 'hf_search_page.dart';
 import 'model_readiness_page.dart';
 import '../../../../core/l10n/l10n.dart';
@@ -67,7 +69,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
-              spacing: AppDesign.md,
+              spacing: AppSpace.md,
               children: [
                 Text(
                   fromLink
@@ -76,7 +78,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                   style: context.text.bodyMuted,
                 ),
                 if (fromLink) ...[
-                  const SizedBox(height: AppDesign.lg),
+                  const SizedBox(height: AppSpace.lg),
                   TextField(
                     controller: url,
                     autofocus: true,
@@ -263,10 +265,10 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
         onBenchmark: () => showBenchmarkDialog(context, ref, model),
         onRemoveEntry: model.isDownloaded
             ? null
-            : catalogModels.any((m) => m.id == model.id)
-            ? () =>
-                  ref.read(hiddenLibraryModelsProvider.notifier).hide(model.id)
-            : () => _attempt(context, () => manager.deleteModel(model)),
+            : () => _attempt(
+                context,
+                () => removeLibraryEntry(ref, manager, model),
+              ),
         onProfile: model.isDownloaded
             ? () => Navigator.push(
                 context,
@@ -294,12 +296,15 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
     final state = ref.watch(modelManagerProvider);
     final memory = ref.watch(deviceMemoryProvider).value;
     final busy = ref.watch(sessionBusyProvider) || state.isLoadingModel;
-    final onDevice = state.catalog.where((m) => m.isDownloaded).toList();
+    final onDevice = loadedFirst(
+      state.catalog.where((m) => m.isDownloaded),
+      state.loadedModelId,
+    );
     final hidden = ref.watch(hiddenLibraryModelsProvider);
-    final available = availableLibraryModels(
-      state.catalog,
+    final available = rankRecommended(
+      availableLibraryModels(state.catalog, desktop: false, hidden: hidden),
+      fit: (m) => modelFit(memory, m),
       desktop: false,
-      hidden: hidden,
     );
     return Scaffold(
       appBar: AppBar(
@@ -354,25 +359,28 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
           slivers: [
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(
-                AppDesign.lg,
-                AppDesign.sm,
-                AppDesign.lg,
-                AppDesign.xxxl,
+                AppSpace.phonePage,
+                AppSpace.sm,
+                AppSpace.phonePage,
+                AppSpace.xxl,
               ),
               sliver: SliverMainAxisGroup(
                 slivers: [
                   SliverList.list(
                     children: [
-                      Text(
-                        context.l10n.yourModelLibrary,
-                        style: context.text.display,
+                      Semantics(
+                        header: true,
+                        child: Text(
+                          context.l10n.yourModelLibrary,
+                          style: context.text.headline,
+                        ),
                       ),
-                      const SizedBox(height: AppDesign.md),
+                      const SizedBox(height: AppSpace.row),
                       Text(
                         context.l10n.libraryHint,
                         style: context.text.bodyMuted,
                       ),
-                      const SizedBox(height: AppDesign.lg),
+                      const SizedBox(height: AppSpace.lg),
                       Row(
                         children: [
                           Icon(
@@ -380,7 +388,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                             size: 16,
                             color: c.textFaint,
                           ),
-                          const SizedBox(width: AppDesign.sm),
+                          const SizedBox(width: AppSpace.row),
                           Text(
                             memory == null
                                 ? context.l10n.phoneRamUnknown
@@ -392,7 +400,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                         ],
                       ),
                       const SizedBox(
-                        height: AppDesign.xl,
+                        height: AppSpace.section,
                       ), // Search is the main way in; a link or a file are the two others.
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -410,7 +418,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                             icon: const Icon(Icons.search, size: 18),
                             label: Text(context.l10n.searchHf),
                           ),
-                          const SizedBox(height: AppDesign.sm),
+                          const SizedBox(height: AppSpace.row),
                           Row(
                             children: [
                               Expanded(
@@ -426,7 +434,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: AppDesign.sm),
+                              const SizedBox(width: AppSpace.row),
                               Expanded(
                                 child: OutlinedButton.icon(
                                   onPressed: state.isImporting
@@ -447,6 +455,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: AppSpace.lg),
                       ModelCategoryFilters(
                         selected: _category,
                         onChanged: (value) => setState(() => _category = value),
@@ -456,7 +465,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                       if (state.isLoadingModel)
                         _StatusLine(context.l10n.loadingModel),
                       if (state.error != null) _ErrorCard(state.error!),
-                      const SizedBox(height: AppDesign.xxl),
+                      const SizedBox(height: AppSpace.section),
                     ],
                   ),
                   if (_category != null && _category != ModelCategory.llm)
@@ -467,7 +476,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
-                          vertical: AppDesign.xl,
+                          vertical: AppSpace.section,
                         ),
                         child: Row(
                           children: [
@@ -476,7 +485,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                               height: 16,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             ),
-                            const SizedBox(width: AppDesign.md),
+                            const SizedBox(width: AppSpace.row),
                             Text(
                               context.l10n.preparingLibrary,
                               style: context.text.bodyMuted,
@@ -494,7 +503,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                             if (onDevice.isEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(
-                                  bottom: AppDesign.md,
+                                  bottom: AppSpace.md,
                                 ),
                                 child: Text(
                                   context.l10n.nothingDownloaded,
@@ -508,7 +517,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                         SliverList.separated(
                           itemCount: onDevice.length,
                           separatorBuilder: (context, index) =>
-                              const SizedBox(height: AppDesign.md),
+                              const SizedBox(height: AppSpace.md),
                           itemBuilder: (context, index) {
                             final m = onDevice[index];
                             return _card(
@@ -523,33 +532,12 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                         ),
                         SliverList.list(
                           children: [
-                            const SizedBox(height: AppDesign.xl),
+                            const SizedBox(height: AppSpace.section),
                             _SectionLabel(context.l10n.availableToDownload),
-                            if (hidden.isNotEmpty)
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: TextButton.icon(
-                                  key: const Key('restore-removed-models'),
-                                  onPressed: () => ref
-                                      .read(
-                                        hiddenLibraryModelsProvider.notifier,
-                                      )
-                                      .restoreAll(),
-                                  icon: const Icon(
-                                    Icons.undo_rounded,
-                                    size: 16,
-                                  ),
-                                  label: Text(
-                                    context.l10n.modelRestoreRemoved(
-                                      hidden.length,
-                                    ),
-                                  ),
-                                ),
-                              ),
                             if (available.isEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(
-                                  bottom: AppDesign.md,
+                                  bottom: AppSpace.md,
                                 ),
                                 child: Text(
                                   context.l10n.everythingOnPhone,
@@ -563,7 +551,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                         SliverList.separated(
                           itemCount: available.length,
                           separatorBuilder: (context, index) =>
-                              const SizedBox(height: AppDesign.md),
+                              const SizedBox(height: AppSpace.md),
                           itemBuilder: (context, index) {
                             final m = available[index];
                             return _card(
@@ -580,7 +568,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                     ),
                   SliverList.list(
                     children: [
-                      const SizedBox(height: AppDesign.sm),
+                      const SizedBox(height: AppSpace.row),
                       Text(
                         context.l10n.modelsFootnote,
                         style: context.text.small.copyWith(color: c.textFaint),
@@ -604,11 +592,11 @@ class _SectionLabel extends StatelessWidget {
   Widget build(BuildContext context) => Semantics(
     header: true,
     child: Padding(
-      padding: const EdgeInsets.only(bottom: AppDesign.md),
+      padding: const EdgeInsets.only(bottom: AppSpace.md),
       child: Row(
         children: [
           Container(width: 3, height: 18, color: context.colors.accent),
-          const SizedBox(width: AppDesign.sm + 2),
+          const SizedBox(width: AppSpace.sm),
           Expanded(
             child: Text(
               text,
@@ -629,7 +617,7 @@ class _StatusLine extends StatelessWidget {
   const _StatusLine(this.text);
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: AppDesign.lg),
+    padding: const EdgeInsets.only(top: AppSpace.lg),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -637,7 +625,7 @@ class _StatusLine extends StatelessWidget {
           borderRadius: AppDesign.radius(AppDesign.rFull),
           child: const LinearProgressIndicator(minHeight: 3),
         ),
-        const SizedBox(height: AppDesign.sm),
+        const SizedBox(height: AppSpace.row),
         Text(text, style: context.text.mono),
       ],
     ),
@@ -651,8 +639,8 @@ class _ErrorCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     return Container(
-      margin: const EdgeInsets.only(top: AppDesign.lg),
-      padding: const EdgeInsets.all(AppDesign.md),
+      margin: const EdgeInsets.only(top: AppSpace.lg),
+      padding: const EdgeInsets.all(AppSpace.md),
       decoration: BoxDecoration(
         color: c.danger.fade(0.08),
         borderRadius: AppDesign.radius(AppDesign.rMd),
@@ -662,7 +650,7 @@ class _ErrorCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(Icons.error_outline, size: 18, color: c.danger),
-          const SizedBox(width: AppDesign.sm + 2),
+          const SizedBox(width: AppSpace.sm),
           Expanded(
             child: Text(
               message,

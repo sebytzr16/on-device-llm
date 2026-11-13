@@ -47,12 +47,12 @@ class _GoalActions extends StatelessWidget {
           64 +
           (MediaQuery.textScalerOf(context).scale(14) - 14).clamp(0, 60) * 2;
       return Wrap(
-        spacing: AppDesign.sm,
-        runSpacing: AppDesign.sm,
+        spacing: AppSpace.sm,
+        runSpacing: AppSpace.sm,
         children: [
           for (final button in children)
             SizedBox(
-              width: (bounds.maxWidth - AppDesign.sm) / 2,
+              width: (bounds.maxWidth - AppSpace.sm) / 2,
               height: height.toDouble(),
               child: button,
             ),
@@ -112,7 +112,7 @@ class _TaskTile extends StatelessWidget {
         (task.error?.isNotEmpty ?? false) ||
         trace != null;
     Widget label(String text) => Padding(
-      padding: const EdgeInsets.only(top: AppDesign.md, bottom: AppDesign.xs),
+      padding: const EdgeInsets.only(top: AppSpace.md, bottom: AppSpace.xs),
       child: Text(text, style: context.text.label.copyWith(color: c.textMuted)),
     );
     return Theme(
@@ -121,8 +121,8 @@ class _TaskTile extends StatelessWidget {
         key: Key('goal-task-$index'),
         tilePadding: EdgeInsets.zero,
         childrenPadding: const EdgeInsets.only(
-          left: AppDesign.xxl,
-          bottom: AppDesign.md,
+          left: AppSpace.xxl,
+          bottom: AppSpace.md,
         ),
         expandedCrossAxisAlignment: CrossAxisAlignment.start,
         leading: icon,
@@ -145,7 +145,7 @@ class _TaskTile extends StatelessWidget {
         children: [
           if (task.checks.isNotEmpty) _ChecksLine(checks: task.checks),
           if (task.findings.isNotEmpty)
-            MarkdownBody(
+            SafeMarkdownBody(
               inlineSyntaxes: [MathSyntax()],
               builders: {'math': MathBuilder()},
               data: task.findings,
@@ -165,7 +165,7 @@ class _TaskTile extends StatelessWidget {
             label(t.goalStepTools),
             for (final tool in trace.tools)
               Padding(
-                padding: const EdgeInsets.only(bottom: AppDesign.xs),
+                padding: const EdgeInsets.only(bottom: AppSpace.xs),
                 child: Text(
                   '${tool['ok'] == false ? '✗' : '▸'} ${tool['name']}'
                   '${(tool['args'] as String?)?.isNotEmpty == true ? ' ${tool['args']}' : ''}'
@@ -182,7 +182,9 @@ class _TaskTile extends StatelessWidget {
                   onTap: () async {
                     try {
                       await openExternalLink(sources[n - 1].url);
-                    } catch (_) {}
+                    } catch (e, st) {
+                      quietFailure('goal_tiles:185', e, st);
+                    }
                   },
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2),
@@ -199,7 +201,7 @@ class _TaskTile extends StatelessWidget {
             _Notes(title: t.goalStepReasoning, text: trace.reasoning),
           if (trace != null && (trace.tokens > 0 || trace.ms > 0))
             Padding(
-              padding: const EdgeInsets.only(top: AppDesign.sm),
+              padding: const EdgeInsets.only(top: AppSpace.sm),
               child: Text(
                 t.goalStepStats(
                   trace.promptTokens,
@@ -258,7 +260,7 @@ class _ChecksLine extends StatelessWidget {
         if (_notes.contains(x.kind)) x,
     ];
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppDesign.sm),
+      padding: const EdgeInsets.only(bottom: AppSpace.sm),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -297,7 +299,7 @@ class _ChecksLine extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(icon, size: 15, color: color),
-            const SizedBox(width: AppDesign.xs),
+            const SizedBox(width: AppSpace.xs),
             Expanded(
               child: Text(
                 text,
@@ -327,7 +329,7 @@ class _Notes extends StatelessWidget {
           title,
           style: context.text.label.copyWith(color: c.textMuted),
         ),
-        childrenPadding: const EdgeInsets.only(bottom: AppDesign.sm),
+        childrenPadding: const EdgeInsets.only(bottom: AppSpace.sm),
         children: [SelectableText(text, style: context.text.small)],
       ),
     );
@@ -341,7 +343,7 @@ class _Pill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: AppDesign.sm, vertical: 2),
+    padding: const EdgeInsets.symmetric(horizontal: AppSpace.sm, vertical: 2),
     decoration: BoxDecoration(
       color: color.withValues(alpha: 0.08),
       borderRadius: AppDesign.radius(AppDesign.rSm),
@@ -359,7 +361,7 @@ class _Banner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(AppDesign.md),
+    padding: const EdgeInsets.all(AppSpace.md),
     decoration: BoxDecoration(
       color: color.withValues(alpha: 0.08),
       border: Border.all(color: color.withValues(alpha: 0.4)),
@@ -369,7 +371,7 @@ class _Banner extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(icon, size: 18, color: color),
-        const SizedBox(width: AppDesign.sm),
+        const SizedBox(width: AppSpace.sm),
         Expanded(child: Text(text, style: context.text.body)),
       ],
     ),

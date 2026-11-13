@@ -32,6 +32,7 @@ class _Engine implements TextEngine {
     'firstTokenMs': 1000,
     'tokensPerSecond': 212,
     'backend': 'test backend',
+    'nativeLibrary': 'libondevice_llm_test.so',
     'effectiveSettings': {'batchSize': 512, 'threads': 4},
     'draftAcceptRate': 0.75,
   };
@@ -103,6 +104,8 @@ void main() {
       expect(receipt['draftFile'], 'mtp-head.gguf');
       expect(receipt['sizeBytes'], testModel.sizeBytes);
       expect(receipt['sha256'], testModel.sha256);
+      expect(receipt['quant'], 'Q4_K_M');
+      expect(receipt['nativeLibrary'], 'libondevice_llm_test.so');
       expect(receipt['backend'], 'test backend');
       expect(receipt['effective'], {'batchSize': 512, 'threads': 4});
       final classes = receipt['promptClasses'] as Map;

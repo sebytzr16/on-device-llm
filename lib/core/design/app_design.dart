@@ -8,12 +8,12 @@ import 'package:flutter/material.dart';
 /// extension below; never hard-code hex values in a screen.
 abstract final class AppDesign {
   // ----- Spacing scale (4px base) -----
-  static const double xs = 4;
-  static const double sm = 8;
-  static const double md = 12;
-  static const double lg = 16;
-  static const double xl = 24;
-  static const double xxl = 32;
+  static const double xs = AppSpace.xs;
+  static const double sm = AppSpace.sm;
+  static const double md = AppSpace.md;
+  static const double lg = AppSpace.lg;
+  static const double xl = AppSpace.xl;
+  static const double xxl = AppSpace.xxl;
   static const double xxxl = 48;
 
   // Shared component dimensions from the reference board.
@@ -136,30 +136,32 @@ class AppColors extends ThemeExtension<AppColors> {
     reasoning: AppDesign.reasoning,
   );
 
-  /// The light scheme: warm grey instead of charcoal, the same accent. No
-  /// pure white surfaces (owner, 2026-11-01): cards sit one step above the
-  /// page, so nothing glares.
+  /// The light scheme: a plain mid grey, never white or light grey (owner
+  /// 2026-11-12: "it has to be gray, just gray"). Text and statuses are
+  /// darkened to keep WCAG AA (4.5:1) on every surface; cards sit one step
+  /// above the page.
   static const light = AppColors(
-    ink: Color(0xFFE8E5DF),
-    surface: Color(0xFFF1EFEA),
-    surfaceRaised: Color(0xFFDEDAD2),
-    surfaceOverlay: Color(0xFFD8D4CA),
-    hairline: Color(0xFFD0CBC1),
-    hairlineStrong: Color(0xFFB8B2A6),
-    text: Color(0xFF1C1B17),
-    textMuted: Color(0xFF45433C),
-    textFaint: Color(0xFF524F48),
-    accent: Color(0xFF744C04),
-    accentDeep: Color(0xFF8F6407),
+    ink: Color(0xFF898C91),
+    surface: Color(0xFF8E9196),
+    surfaceRaised: Color(0xFF95989D),
+    surfaceOverlay: Color(0xFF9A9DA2),
+    hairline: Color(0xFF74777C),
+    hairlineStrong: Color(0xFF5F6267),
+    text: Color(0xFF000000),
+    textMuted: Color(0xFF0C0D0F),
+    textFaint: Color(0xFF0E0F11),
+    accent: Color(0xFF2E1E00),
+    accentDeep: Color(0xFF3A2600),
     onAccent: Color(0xFFFFFFFF),
-    info: Color(0xFF244FA8),
-    success: Color(0xFF115F31),
-    warning: Color(0xFF744C04),
-    danger: Color(0xFFA12828),
-    reasoning: Color(0xFF405485),
+    info: Color(0xFF08194A),
+    success: Color(0xFF02240F),
+    warning: Color(0xFF2E1E00),
+    danger: Color(0xFF480A0A),
+    reasoning: Color(0xFF17213A),
   );
 
-  bool get isDark => ink.computeLuminance() < 0.5;
+  // Text, not ink: the light theme's mid-grey ink is darker than 50 %.
+  bool get isDark => text.computeLuminance() > 0.5;
 
   @override
   bool operator ==(Object other) =>
@@ -351,3 +353,76 @@ abstract final class AppText {
     color: AppDesign.reasoning,
   );
 }
+
+/// Shared spacing for desktop pages and phone content.
+abstract final class AppSpace {
+  static const double xs = 4, sm = 8, md = 12, lg = 16, xl = 24, xxl = 32;
+  static const double desktopPage = xl, phonePage = lg, section = xl, row = sm;
+}
+
+/// Editorial page heading with optional actions and tabs or filters.
+class AppPageHeader extends StatelessWidget {
+  final String title;
+  final String? subtitle;
+  final List<Widget> actions;
+  final Widget? bottom;
+  const AppPageHeader({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.actions = const [],
+    this.bottom,
+  });
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Semantics(
+                  header: true,
+                  child: Text(title, style: context.text.headline),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: AppSpace.sm),
+                  Text(subtitle!, style: context.text.bodyMuted),
+                ],
+              ],
+            ),
+          ),
+          if (actions.isNotEmpty) ...[
+            const SizedBox(width: AppSpace.lg),
+            // Align fills the share Flexible gets, so the actions sit at the
+            // far right instead of where that share ends (owner 2026-11-12).
+            Flexible(
+              child: Align(
+                alignment: AlignmentDirectional.topEnd,
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: AppSpace.sm,
+                  runSpacing: AppSpace.sm,
+                  children: actions,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+      if (bottom != null) ...[const SizedBox(height: AppSpace.lg), bottom!],
+    ],
+  );
+}
+
+/// Amber tonal actions remain secondary in both palettes and desktop themes.
+ButtonStyle appTonalButtonStyle(BuildContext context) => FilledButton.styleFrom(
+  foregroundColor: context.colors.accent,
+  backgroundColor: context.colors.accent.fade(0.12),
+);

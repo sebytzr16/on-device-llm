@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../../core/storage/device_encryption.dart';
 
 import 'package:flutter/services.dart';
 
@@ -23,7 +24,7 @@ Future<void> runGoalWatchBackground() async {
         : const InferenceSettings();
     search = DuckDuckGoScraper();
     DuckDuckGoScraper.preferredRegion = settings.searchRegion;
-    final watches = GoalWatches.decode('${work['watches'] ?? '[]'}');
+    final watches = await GoalWatchStore.decode('${work['watches'] ?? '[]'}');
     final start = DateTime.now();
     var checked = 0;
     for (final watch in watches) {
@@ -54,6 +55,8 @@ Future<void> runGoalWatchBackground() async {
         });
       }
     }
+  } on EncryptionRecovery {
+    // Keep the encrypted watch and wait for secure-storage recovery.
   } finally {
     search?.dispose();
     await channel.invokeMethod<void>('finished', {'retry': retry});

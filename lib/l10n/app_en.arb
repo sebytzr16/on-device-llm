@@ -217,6 +217,45 @@
   "builtOnLlamaHint": "Inference engine by the ggml project",
   "openSourceLicences": "Open-source licences",
   "openSourceLicencesHint": "Packages, models and voices, with their licences",
+  "checkForUpdates": "Check for updates",
+  "updateCheckHint": "Asks the public GitHub Releases API for the latest version. No account or device identifier is sent.",
+  "checkingForUpdates": "Checking for updates…",
+  "updateUpToDate": "You have the latest version ({version}).",
+  "@updateUpToDate": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "updateAvailable": "Version {version} is available.",
+  "@updateAvailable": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "updateCurrentVersion": "You are on {current}.",
+  "@updateCurrentVersion": {
+    "placeholders": {
+      "current": {
+        "type": "String"
+      }
+    }
+  },
+  "updateReleaseNotesTitle": "What’s new in {version}",
+  "@updateReleaseNotesTitle": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "updateOpenReleasePage": "Open release page",
+  "updateNoReleaseNotes": "This release has no notes.",
+  "updateCheckOffline": "You appear to be offline. Check your connection and try again.",
+  "updateCheckFailed": "Could not check for updates. Check your connection and try again.",
   "resetQuestion": "Reset to defaults?",
   "resetHint": "All assistant, model and advanced settings return to the defaults for this device. Your chats are not affected.",
   "reset": "Reset",
@@ -260,6 +299,9 @@
   "downloadInterruptedHint": "You can retry now, or skip and download later from the model library. The app works without a model, it just cannot answer yet.",
   "retry": "Retry",
   "skipForNow": "Skip for now",
+  "onboardingSaveFailedTitle": "Could not save onboarding choice",
+  "onboardingSaveFailedBody": "Your onboarding completion could not be saved. You can retry, or continue for this session only (you will see onboarding again next time).",
+  "onboardingContinueSession": "Continue for this session",
   "verifyingSha": "Verifying SHA-256…",
   "pausedOf": "Paused · {received} of {size}",
   "@pausedOf": {
@@ -495,6 +537,18 @@
       }
     }
   },
+  "deleteModelQuestion": "Delete this model?",
+  "deleteModelHint": "Permanently delete {model} from this app and free {size}? This cannot be undone. Your chats will be kept.",
+  "@deleteModelHint": {
+    "placeholders": {
+      "model": {
+        "type": "Object"
+      },
+      "size": {
+        "type": "Object"
+      }
+    }
+  },
   "browseHf": "Browse Hugging Face",
   "yourModelLibrary": "Your model library",
   "libraryHint": "Download a starter model, add a Hugging Face file link, or import a GGUF you already own. After download, inference works offline.",
@@ -505,7 +559,7 @@
   "preparingLibrary": "Preparing your library…",
   "onThisDevice": "On this device",
   "nothingDownloaded": "Nothing downloaded yet. Pick a model below to get started.",
-  "availableToDownload": "Available to download",
+  "availableToDownload": "Recommended",
   "everythingOnPhone": "Everything in the catalog is on this phone.",
   "justNow": "just now",
   "minutesAgo": "{n} min ago",
@@ -996,12 +1050,29 @@
       }
     }
   },
+  "startupFailedTitle": "Startup failed",
+  "startupFailedBody": "The database could not be opened. Retry, or export the database and its recovery files. Reset starts an empty database and keeps a local safety copy. Exports contain private data; store them securely.",
+  "startupRetry": "Retry",
+  "startupCopyDetails": "Copy details",
   "backupTitle": "Encrypted backup",
   "backupIntro": "Back up chats, knowledge, attachments, Goals, and settings to a password-protected file. Model weights and saved API keys stay on this device. The backup limit is 96 MB.",
   "backupPasswordLabel": "Backup password",
   "backupConfirmPassword": "Confirm password for a new backup",
   "backupCreateAction": "Create encrypted backup",
   "backupRestoreBackup": "Restore backup",
+  "backupSaveToFile": "Save to file",
+  "backupShareAction": "Share",
+  "backupSavedToFile": "Encrypted backup saved to file. Keep the password safe; it cannot be recovered.",
+  "backupSaveFailed": "Failed to save backup: {error}",
+  "@backupSaveFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "backupPasswordMinLength": "At least {minLength} characters",
+  "backupPasswordsMatch": "Passwords match",
   "uiRemoteProfilePageDeleteConnection": "Delete connection?",
   "uiRemoteProfilePageCancel": "Cancel",
   "uiRemoteProfilePageDelete": "Delete",
@@ -1078,12 +1149,20 @@
   "uiAdvancedPagesFlagUnsupportedFigures": "Flag unsupported figures",
   "uiAdvancedPagesAfterAGroundedAnswerNumbersVersions": "After a grounded answer, numbers, versions and dates that appear in no supplied passage are called out as unverified.",
   "supportCheckTitle": "Check sentences by meaning",
-  "supportCheckHint": "A small model (Qwen3 Reranker 0.6B) reads the closest source passage before a sentence is flagged, so a correct sentence in other words is not called unsupported. A separate download; it runs for a few seconds after an answer from sources.",
+  "supportCheckHint": "A small model (Qwen3 Reranker 0.6B, English, French and Spanish) reads the closest source passage for each sentence: a correct sentence in other words is not called unsupported, and a sentence its passage does not state is marked Not backed even when the words match. A separate download; it runs for a few seconds after an answer from sources.",
   "uiHfSearchPageSearchHuggingFace": "Search Hugging Face",
   "uiHfSearchPageModelNameEGQwen34B": "Model name, e.g. Qwen3 4B, Phi-4, Llama 3.2",
   "uiHfSearchPageNoGGUFRepositoriesMatch": "No GGUF repositories match.",
   "uiHfSearchPageNoSingleFileGGUFWeightsIn": "No single-file GGUF weights in this repository.",
   "uiHfSearchPageNotAddableHere": "Not addable here",
+  "imageDiscoverFilesError": "Could not load files. Try again.",
+  "imageDiscoverTitle": "Discover image & video models",
+  "imageDiscoverFilterImage": "Showing text-to-image models",
+  "imageDiscoverFilterVideo": "Showing text-to-video models",
+  "imageDiscoverSearchHint": "Model name, e.g. SDXL, Flux, SVD",
+  "imageDiscoverIntro": "Public diffusion repositories (GGUF and Diffusers), most downloaded first. Each file is verified against the Hub's SHA-256. Pick a weight to add it to your library.",
+  "imageDiscoverEmpty": "No diffusion repositories match.",
+  "imageDiscoverNoFiles": "No diffusion weights (GGUF or safetensors) in this repository.",
   "uiBenchmarkDialogBenchmarkCopied": "Benchmark copied",
   "uiBenchmarkDialogCopy": "Copy",
   "uiBenchmarkDialogShare": "Share",
@@ -1733,6 +1812,7 @@
   "fitFits": "Fits this device",
   "fitTight": "Tight on RAM",
   "fitTooLarge": "Too large for this device",
+  "ternaryVulkanCpuNotice": "This model type runs on the processor with the Vulkan engine; the CUDA engine runs it on the graphics card.",
   "configApplyNote": "Applying replaces that model's profile. Web research and hardware stay as you set them.",
   "configApplied": "Applied to {model}. It takes effect on the next answer.",
   "@configApplied": {
@@ -2681,6 +2761,8 @@
   "talkOverTitle": "Talk over the answer",
   "talkOverHint": "In a conversation, interrupt by speaking. The answer then sounds like a phone call. Off: clear sound, tap to interrupt.",
   "talkOverHintPc": "In a conversation, interrupt by speaking. The answer then sounds like a phone call. Off: clear sound, click to interrupt.",
+  "conversationHearsAudioTitle": "Let the model hear your voice",
+  "conversationHearsAudioHint": "When the chat model can listen (Gemma 4 E2B/E4B), it gets your recording as well as the text.",
   "spokenLengthTitle": "Spoken answer length",
   "spokenLengthHint": "How much of an answer Conversation says out loud. Lists are always read in full.",
   "readingSpeedTitle": "Reading speed",
@@ -2691,10 +2773,12 @@
   "voiceListeningPack": "Listening (Whisper)",
   "voiceSpeakingPack": "Speaking (Kokoro)",
   "listeningModelTitle": "Listening model",
-  "listeningModelHint": "Parakeet v3 heard every test phrase on the phone and answers faster than Whisper; it also understands French and Spanish better. It is a separate download and uses more memory while you talk. Parakeet TDT 0.6B v3 by NVIDIA, CC BY 4.0.",
-  "listeningModelHintPc": "Parakeet v3 heard every test phrase and answers faster than Whisper; it also understands French and Spanish better. It is a separate download and uses more memory while you talk. Parakeet TDT 0.6B v3 by NVIDIA, CC BY 4.0.",
+  "listeningModelHint": "Parakeet Ultra heard every test phrase on the phone and answers faster than Whisper; it also understands French and Spanish better. It is a separate download and uses more memory while you talk. Parakeet Ultra by Moondream, based on NVIDIA's Parakeet TDT 0.6B v3, CC BY 4.0.",
+  "listeningModelHintPc": "Parakeet Ultra heard every test phrase and answers faster than Whisper; it also understands French and Spanish better. It is a separate download and uses more memory while you talk. Parakeet Ultra by Moondream, based on NVIDIA's Parakeet TDT 0.6B v3, CC BY 4.0.",
   "listeningWhisper": "Whisper base",
-  "listeningParakeet": "Parakeet v3",
+  "listeningParakeet": "Parakeet Ultra",
+  "liveCaptionsTitle": "Live captions (Nemotron streaming)",
+  "liveCaptionsHint": "Shows your words as you speak, in 25 languages. 475 MB.",
   "voiceUnpacking": "Unpacking…",
   "voicePick": "Voice",
   "voiceTry": "Try",
@@ -2744,6 +2828,7 @@
   },
   "convHint": "Just talk. I answer out loud; talk over me to interrupt.",
   "convInterrupt": "Interrupt",
+  "convSynthesisFailed": "Speech synthesis failed. Falling back to system voice.",
   "actionEvent": "Add to calendar",
   "actionReminder": "Add reminder",
   "actionAlarm": "Set alarm",
@@ -2761,6 +2846,31 @@
       }
     }
   },
+  "actionExpand": "Show details",
+  "actionCollapse": "Hide details",
+  "actionSaveButton": "Save",
+  "actionShareButton": "Share",
+  "actionEventTitle": "Title",
+  "actionEventStart": "Start",
+  "actionEventEnd": "End",
+  "actionEventLocation": "Location",
+  "actionEventNotes": "Notes",
+  "actionEventAllDay": "All day",
+  "actionReminderText": "Reminder",
+  "actionReminderWhen": "When",
+  "actionAlarmTime": "Time",
+  "actionAlarmLabel": "Label",
+  "actionAlarmDays": "Repeats",
+  "actionTimerDuration": "Duration",
+  "actionTimerLabel": "Label",
+  "actionMessageTo": "To",
+  "actionMessageSubject": "Subject",
+  "actionMessageBody": "Message",
+  "actionMessageChannel": "Via",
+  "actionFileName": "File name",
+  "actionFileFormat": "Format",
+  "actionFileContent": "Content",
+  "actionHtmlEscapedNotice": "HTML content shown as source (not rendered).",
   "goalAwaitingActions": "Waiting for your action confirmation",
   "actionReadyAnswer": "Ready. Check the card below and tap its button to finish.",
   "@actionReadyAnswer": {
@@ -2904,6 +3014,16 @@
   "desktopServerPairHint": "On the phone, open Settings > Remote server. Tap Scan QR code, or tap Find nearby hosts, pick this PC and enter the pairing code. Both devices must be on the same Wi-Fi.",
   "desktopServerPairOff": "Turn on \"Share on the local network\" and start the server to show a pairing code.",
   "desktopServerNeedsModel": "Load a model first: phones and apps get answers from the model loaded here.",
+  "hostPairFingerprint": "Server fingerprint",
+  "remotePairFingerprintMessage": "Compare this fingerprint with the one shown next to the pairing code on the host device:\n\n{fingerprint}\n\nContinue only if they match exactly.",
+  "@remotePairFingerprintMessage": {
+    "placeholders": {
+      "fingerprint": {
+        "type": "String"
+      }
+    }
+  },
+  "remotePairFingerprintConfirm": "It matches",
   "hostPairCode": "Pairing code",
   "remotePairCodeMessage": "Enter the 6-digit pairing code shown next to the server on {name}. Leave it empty to type an access token instead.",
   "@remotePairCodeMessage": {
@@ -2963,7 +3083,7 @@
   },
   "desktopNoModels": "No models on this PC yet. Import a GGUF or download one under Models.",
   "desktopLocalModels": "On this PC",
-  "desktopCatalog": "Available to download",
+  "desktopCatalog": "Recommended",
   "desktopLoad": "Load",
   "desktopEject": "Eject",
   "desktopLoaded": "Loaded",
@@ -3338,6 +3458,7 @@
     }
   },
   "mcpUnsupportedContent": "The MCP server returned non-text content (image, audio or resource); this chat tool result includes text only.",
+  "mcpBatchArgsError": "Windows batch file arguments must not contain & | < > ^ % or \".",
   "structuredFormatText": "Text",
   "structuredFormatGrammar": "Grammar",
   "structuredSchemaEmpty": "No schema: any JSON object will be accepted.",
@@ -3773,7 +3894,9 @@
       }
     }
   },
-  "desktopOptimizeKept": "The optimized settings were not faster, so the current ones were kept.",
+  "desktopOptimizeKept": "No acceptable setup was measurably faster (more than 3% beyond measurement noise), so the current settings were kept.",
+  "desktopOptimizeKeptOutput": "Tested answers differed too much from the baseline, so the current settings were kept.",
+  "desktopOptimizeKeptBaseline": "Your current settings could not be measured reliably, so the tested settings could not be compared with their answers; the current ones were kept.",
   "desktopOptimizeRates": "Before: {before} tok/s · After: {after} tok/s",
   "@desktopOptimizeRates": {
     "placeholders": {
@@ -3960,6 +4083,33 @@
   "imageSquare": "Square",
   "imageSharp": "Sharp",
   "imageCleanUp": "Clean up",
+  "imageAddModel": "Add model",
+  "imageRemoveModel": "Remove model",
+  "imageImportTitle": "Add an image or video model",
+  "imageImportRepo": "Hugging Face repository",
+  "imageImportRepoHint": "owner/repository",
+  "imageImportFind": "Find files",
+  "imageImportMode": "Mode",
+  "imageModeImage": "Image",
+  "imageImportFile": "File",
+  "imageImportNoSupported": "No .gguf or .safetensors file supported by stable-diffusion.cpp was found in this repository.",
+  "imageImportUnsupported": "{file} is not supported. Choose a .gguf or .safetensors file that stable-diffusion.cpp can load.",
+  "@imageImportUnsupported": {
+    "placeholders": {
+      "file": {
+        "type": "String"
+      }
+    }
+  },
+  "imageImportDownload": "Download and add",
+  "imageImportFailed": "Could not add the model: {error}",
+  "@imageImportFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "reasoningThinking": "Thinking…",
   "reasoningTitle": "Reasoning",
   "reasoningDuration": "Reasoning · {seconds} s",
@@ -4122,6 +4272,15 @@
       }
     }
   },
+  "documentEpubFallback": "Package layout was incomplete; chapters were read in file order.",
+  "documentImagesOmitted": "{count} image(s) not extracted",
+  "@documentImagesOmitted": {
+    "placeholders": {
+      "count": {
+        "type": "num"
+      }
+    }
+  },
   "documentScanUnreadable": "[{count} pages could not be read.]",
   "@documentScanUnreadable": {
     "placeholders": {
@@ -4147,6 +4306,20 @@
       }
     }
   },
+  "documentTextRecognitionFailed": "Text recognition failed; the photo is available for visual search.",
+  "documentMediaNotTranscribed": "Media is searchable, but its facts cannot be used until a transcript or caption is available.",
+  "documentTextLimitReached": "Text reached the extraction limit; part of the document may be missing.",
+  "voiceDictationUnavailable": "Dictation unavailable: {error}",
+  "voiceDictationFailed": "Dictation failed: {error}",
+  "voiceOfflineDictationUnavailable": "On-device dictation is unavailable. Install an offline speech service and language pack. No network recognizer was started.",
+  "voiceOfflineRecognitionFailed": "On-device dictation failed. Check the offline language pack in the phone's speech settings. No network recognizer was started.",
+  "voiceErrorNoMatch": "No speech recognised.",
+  "voiceErrorSpeechTimeout": "No speech heard.",
+  "voiceErrorPermission": "Microphone permission is needed for dictation.",
+  "voiceErrorLanguageUnavailable": "On-device recognition has no language pack installed. Install one in the phone's speech settings, or allow the network recognizer.",
+  "voiceErrorNetwork": "The recognizer needs a network and none is available.",
+  "voiceErrorUnknown": "Dictation error ({code}).",
+  "voiceCodeOmitted": "code omitted",
   "mtpNeedsTarget": "Download the target model first.",
   "mtpReadFailed": "Cannot read MTP head: {error}",
   "@mtpReadFailed": {
@@ -4244,6 +4417,8 @@
   "dgUnreadable": "DiffusionGemma model file is not a readable GGUF.",
   "dgLoadFirst": "Load DiffusionGemma first.",
   "dgTextOnly": "DiffusionGemma supports text chat only.",
+  "dgFixedSettings": "DiffusionGemma runs in its own host: it honours context, GPU layers, threads and seed only. The settings disabled here are fixed by its engine.",
+  "dgNoContinuation": "DiffusionGemma cannot continue a partial answer; send the question again for a new one.",
   "hostPairValidUntil": "Valid until {time}, for one device.",
   "@hostPairValidUntil": {
     "placeholders": {
@@ -4336,8 +4511,8 @@
   "helperTask": "Task",
   "helperResult": "Result",
   "readingVoiceTitle": "Reading voice",
-  "readingVoiceHint": "Compare Kokoro and Supertonic 2 in English, French and Spanish. Download the selected voice below. Supertonic 2 weights: OpenRAIL-M; code: MIT.",
-  "supertonicSpeakingPack": "Speaking (Supertonic 2)",
+  "readingVoiceHint": "Compare Kokoro and Supertonic 3 in English, French and Spanish. Download the selected voice below. Supertonic 3 weights: OpenRAIL-M; code: MIT.",
+  "supertonicSpeakingPack": "Speaking (Supertonic 3)",
   "supertonicSpeaker": "Voice {number}",
   "@supertonicSpeaker": {
     "placeholders": {
@@ -4728,6 +4903,37 @@
       }
     }
   },
+  "chatImageNeedsDesktop": "Drawing pictures needs the desktop app. This phone can chat and search, but image generation runs on the PC.",
+  "chatImageNoModel": "Download Qwen-Image 2.1 fast from Create before generating an image.",
+  "chatImageWrongModel": "The model selected in Create makes video. Choose an image model in Create first.",
+  "chatImagePreparing": "Loading the image model…",
+  "chatImageDrawing": "Drawing the picture: step {step} of {total}…",
+  "@chatImageDrawing": {
+    "placeholders": {
+      "step": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "generatedImageName": "Generated image",
+  "chatImageEditNeedsPicture": "Editing a picture needs a picture model, not a video model.",
+  "chatImageNoPictureToEdit": "There is no picture in this chat to edit. Attach one or ask for a new picture first.",
+  "chatImageEditing": "Editing the picture: step {step} of {total}…",
+  "@chatImageEditing": {
+    "placeholders": {
+      "step": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "editedImageName": "Edited image",
+  "chatImageAnswer": "Here is the picture you asked for.",
   "modelDownloadLicenseNotice": "{size} from Hugging Face.\n\nLicense: {license}\n\nBy continuing, you acknowledge the publisher’s model license. The file is verified with SHA-256 before use.",
   "@modelDownloadLicenseNotice": {
     "placeholders": {
@@ -4792,6 +4998,16 @@
   "appearanceTextScaleHint": "Scales all text in the app on top of the system setting.",
   "contextBatchNextLoad": "Context and batch changes apply the next time a model loads.",
   "hardwareNextLoad": "Hardware changes apply on the next model load.",
+  "detectedHardware": "Detected hardware",
+  "detectedHardwareCpu": "CPU",
+  "detectedHardwareCpuUnknown": "Unknown CPU",
+  "detectedHardwareRam": "RAM",
+  "detectedHardwareGpu": "GPU",
+  "detectedHardwareNone": "None",
+  "detectedHardwareGpuUnknown": "Unknown GPU",
+  "detectedHardwareVram": "VRAM",
+  "detectedHardwareBackend": "Backend",
+  "detectedHardwareUnknown": "Unknown",
   "searchRegionCanadaEnglish": "Canada (English)",
   "searchRegionUnitedStates": "United States",
   "searchRegionUnitedKingdom": "United Kingdom",
@@ -5169,6 +5385,15 @@
   "historyClearConfirm": "Delete all saved comparison runs?",
   "historyStorage": "History uses {size} · newest 300 kept",
   "historyFailed": "Could not access history: {error}",
+  "historyDamaged": "{count} saved comparison(s) cannot be read and are hidden.",
+  "@historyDamaged": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "historyRepair": "Remove them",
   "historyReadOnly": "Saved run · press Run to compare again.",
   "@historyStorage": {
     "placeholders": {
@@ -5234,5 +5459,95 @@
   "@answerTokensContextLimit": {"placeholders": {"context": {"type": "int"}}},
   "answerTokensHint": "The longest answer the model may write. Drag up to 64,000, or tap Custom to type any value. The context window still limits how much fits.",
   "modelRestoreRemoved": "Restore removed ({count})",
-  "@modelRestoreRemoved": {"placeholders": {"count": {"type": "int"}}}
+  "@modelRestoreRemoved": {"placeholders": {"count": {"type": "int"}}},
+  "desktopSpeculationMode": "Speculative decoding",
+  "desktopDraftModel": "Draft model",
+  "desktopDFlash": "DFlash (block diffusion)",
+  "desktopDFlashUnavailable": "This native library does not support DFlash.",
+  "desktopDraftRequired": "Choose a draft GGUF model.",
+  "desktopDraftBrowse": "Browse for a draft GGUF…",
+  "desktopDraftModeMismatch": "This GGUF does not match the selected speculative decoding mode.",
+  "desktopDFlashConvert": "This dflash-draft GGUF uses a different format. Reconvert it with the pinned llama.cpp converter and its target model; the supported architecture is dflash.",
+  "desktopDFlashInvalid": "This DFlash draft has invalid metadata or does not match the target model’s dimensions and layers.",
+  "hostPairedDevices": "Paired devices",
+  "hostRevokeDevice": "Revoke",
+  "hostLegacyDevices": "Legacy shared token",
+  "hostLegacyDevicesHint": "Revoke access for all devices using the old shared token. Pair them again to give each device its own token.",
+  "mcpExecutableReview": "Review executable access",
+  "mcpEnableExecutable": "Trust and enable",
+  "mcpExecutableWarning": "Enable only a trusted preinstalled executable using its absolute path. Direct launches of npx, npm, uvx, uv, pip and common shell wrappers are blocked. This server runs outside an OS sandbox: it can read or change files outside its dedicated working directory and access the network. Enabling it is an exception to the app’s strict no-server, file-access and network rules. Review the command, arguments and environment below. Configuration changes require approval again.",
+  "hostTlsIdentityError": "The host TLS identity is unavailable. Restore secure storage before hosting again. Resetting the identity requires revoking all devices and pairing them again.",
+  "hostResetIdentity": "Reset identity",
+  "hostResetIdentityConfirm": "Create a new host identity? Every paired device is revoked and must pair again.",
+  "startupExport": "Export database files",
+  "startupResetTitle": "Reset database?",
+  "startupResetBody": "This removes chats, knowledge and memories from the active database. A local safety copy is kept. Export the database files first to keep a separate copy.",
+  "deviceEncryptionTitle": "Encrypt data on this device",
+  "deviceEncryptionHint": "Protects chats, memory, knowledge, drafts, attachments, cached vectors and saved Goals. Restart the app to apply chat database encryption changes. Off by default. Back up first; losing secure storage can make encrypted data unreadable.",
+  "deviceEncryptionWorking": "Migrating local files… Keep the app open.",
+  "deviceEncryptionFailed": "The change could not finish. Existing files were retained. Retry to finish the migration; do not reset app data.",
+  "deviceEncryptionRecovery": "Encrypted data could not be opened. Restore access to this device’s secure storage or restore a password-protected backup. Keep the original files; do not reset app data. No data was deleted.",
+  "deviceEncryptionDoneOn": "Encryption is on for files. Restart the app to encrypt chats, memory and knowledge.",
+  "deviceEncryptionDoneOff": "Encryption is off for files. Restart the app to decrypt chats, memory and knowledge.",
+  "deviceEncryptionRetry": "Retry migration",
+  "engineVersionsTitle": "Engine versions",
+  "engineLlamaCppBuild": "llama.cpp build",
+  "engineSdCppRevision": "stable-diffusion.cpp revision",
+  "engineCudaRuntime": "CUDA runtime",
+  "engineNvidiaDriver": "NVIDIA driver",
+  "engineNotDetected": "Not detected",
+  "engineCheckUpdates": "Check for engine updates",
+  "engineChecking": "Checking…",
+  "engineUpToDate": "{name}: up to date",
+  "@engineUpToDate": {"placeholders": {"name": {"type": "String"}}},
+  "engineNewerAvailable": "Newer {name} available: {latest} (bundled {bundled}) - it arrives with the next app update",
+  "@engineNewerAvailable": {"placeholders": {"name": {"type": "String"}, "latest": {"type": "String"}, "bundled": {"type": "String"}}},
+  "engineUpdateUnknown": "{name}: could not compare versions",
+  "@engineUpdateUnknown": {"placeholders": {"name": {"type": "String"}}},
+  "engineUpdateOffline": "{name}: could not reach GitHub (offline?)",
+  "@engineUpdateOffline": {"placeholders": {"name": {"type": "String"}}},
+  "engineDriverOk": "Driver {driver} supports CUDA {major} (needs {required} or newer)",
+  "@engineDriverOk": {"placeholders": {"driver": {"type": "String"}, "major": {"type": "String"}, "required": {"type": "String"}}},
+  "engineDriverTooOld": "Driver {driver} is older than the {required} that CUDA {major} needs",
+  "@engineDriverTooOld": {"placeholders": {"driver": {"type": "String"}, "major": {"type": "String"}, "required": {"type": "String"}}},
+  "engineCudaNote": "CUDA runtime updates come with app updates.",
+  "desktopCompareDone": "Done",
+  "desktopCompareFailed": "Failed",
+  "desktopOptimizeKeptNoise": "Measurements were unstable, so no speedup could be verified. Current settings kept; try Optimize again when the device is idle.",
+  "imageModelReady": "Ready",
+  "imageModelDownloaded": "Downloaded",
+  "imageModelPartial": "Partially downloaded",
+  "imageModelNotDownloaded": "Not downloaded",
+  "imageMissingFiles": "Missing: {files}",
+  "imageCompanionsUnknown": "This file holds only the diffusion model; it needs a compatible text encoder and VAE. Import a supported Qwen-Image 2.1, Wan 2.2 5B or LTX-2.3 model.",
+  "@imageMissingFiles": {
+    "placeholders": {
+      "files": {
+        "type": "String"
+      }
+    }
+  },
+  "imageDownloadRequired": "Download the missing files for {model} in Create before generating an image.",
+  "@imageDownloadRequired": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "projectFolder": "Project folder",
+  "projectFolderPick": "Choose folder",
+  "projectFolderClear": "Detach folder",
+  "projectFileDiff": "Change diff",
+  "projectFileApprove": "Approve",
+  "projectFileReject": "Reject",
+  "projectFileAllowChat": "Allow edits in this chat",
+  "projectFileUndo": "Undo",
+  "projectFileUndone": "Change undone",
+  "projectFileFinished": "Review finished",
+  "attachmentDetails": "Details",
+  "kvFp8E4m3": "FP8 E4M3 (supported backends)",
+  "nativeSetMoeCacheSizeMb": "MoE device cache (MiB, 0 = disabled)",
+  "nativeSetMoeCacheCpuShare": "MoE cache misses computed on CPU (0–1)",
+  "kvCacheFp8": "FP8"
 }

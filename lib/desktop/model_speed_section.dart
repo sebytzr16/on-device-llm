@@ -53,6 +53,7 @@ class _ModelSpeedSectionState extends ConsumerState<ModelSpeedSection> {
     final receipts = ref.read(benchmarkReceiptsProvider.notifier);
     final model = widget.model, settings = widget.settings;
     BenchmarkReceipt? measured;
+    final draftFile = await manager.draftPathFor(model, settings.draftModelId);
     final run = TuneBenchmarkRun(
       engine: engine,
       model: model,
@@ -69,7 +70,7 @@ class _ModelSpeedSectionState extends ConsumerState<ModelSpeedSection> {
         await receipts.save(receipt);
         measured = receipt;
       },
-      draftFile: manager.draftPathFor(model, settings.draftModelId),
+      draftFile: draftFile,
     );
     busy.state = true;
     setState(() {

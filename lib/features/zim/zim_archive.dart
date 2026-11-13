@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
+import 'package:collection/collection.dart';
+import 'package:crypto/crypto.dart';
 
 import 'package:archive/archive.dart';
 
@@ -40,6 +42,7 @@ class ZimArchive {
   static const _magic = 72173914;
   static const maxClusterBytes = 64 * 1024 * 1024;
   static const maxCachedClusterBytes = 64 * 1024 * 1024;
+  static const _checksumChunkBytes = 1024 * 1024;
 
   final RandomAccessFile _file;
   final String identity;
@@ -74,10 +77,14 @@ class ZimArchive {
        _checksumPos = checksumPos, // ignore: prefer_initializing_formals
        _mimes = mimes; // ignore: prefer_initializing_formals
 
+  /// Opens [path]. [verifyChecksum] reads the whole archive once to compare
+  /// its MD5; callers that already verified it at import can pass false so a
+  /// normal read does not scan a multi-gigabyte file again.
   static Future<ZimArchive> open(
     String path, {
     int clusterByteLimit = maxClusterBytes,
     int cacheByteLimit = maxCachedClusterBytes,
+    bool verifyChecksum = true,
   }) async {
     if (clusterByteLimit < 1 ||
         clusterByteLimit > maxClusterBytes ||
@@ -104,7 +111,7 @@ class ZimArchive {
       final count = h.getUint32(24, Endian.little);
       final clusters = h.getUint32(28, Endian.little);
       final checksum = u64(72);
-      if (checksum < 80 || checksum > length - 16) {
+      if (checksum < 80 || checksum > length) {
         throw const FormatException('ZIM: truncated content or checksum');
       }
       void table(int pos, int bytes) {
@@ -126,7 +133,9 @@ class ZimArchive {
       for (var i = 0; i < mimeBytes.length; i++) {
         if (mimeBytes[i] != 0) continue;
         if (i == start) break;
-        mimes.add(utf8.decode(mimeBytes.sublist(start, i)));
+        mimes.add(
+          utf8.decode(mimeBytes.sublist(start, i), allowMalformed: true),
+        );
         start = i + 1;
       }
       final archive = ZimArchive._(
@@ -146,6 +155,20 @@ class ZimArchive {
         checksumPos: u64(72),
         mimes: mimes,
       );
+      // Verify the MD5 checksum (S24): it covers bytes 0..checksumPos-1.
+      // Some hand-built and legacy files leave the 16 trailing bytes zeroed,
+      // meaning no checksum was recorded; those open unverified rather than
+      // being rejected as corrupt.
+      final expectedChecksum = await _readAt(file, archive._checksumPos, 16);
+      if (expectedChecksum.length != 16) {
+        throw const FormatException('ZIM: truncated checksum');
+      }
+      if (verifyChecksum && expectedChecksum.any((byte) => byte != 0)) {
+        final actual = await _md5Of(file, archive._checksumPos);
+        if (!const ListEquality().equals(actual.bytes, expectedChecksum)) {
+          throw const FormatException('ZIM: checksum mismatch');
+        }
+      }
       await archive._loadTitleListing();
       return archive;
     } catch (_) {
@@ -199,6 +222,30 @@ class ZimArchive {
   static Future<Uint8List> _readAt(RandomAccessFile f, int pos, int n) async {
     await f.setPosition(pos);
     return f.read(n);
+  }
+
+  /// The MD5 of [file]'s first [length] bytes, read in bounded chunks so a
+  /// large archive is never held in memory at once.
+  static Future<Digest> _md5Of(RandomAccessFile file, int length) async {
+    final sink = _DigestSink();
+    final input = md5.startChunkedConversion(sink);
+    try {
+      await file.setPosition(0);
+      var remaining = length;
+      while (remaining > 0) {
+        final chunk = await file.read(
+          remaining < _checksumChunkBytes ? remaining : _checksumChunkBytes,
+        );
+        if (chunk.isEmpty) {
+          throw const FormatException('ZIM: truncated content or checksum');
+        }
+        input.add(chunk);
+        remaining -= chunk.length;
+      }
+    } finally {
+      input.close();
+    }
+    return sink.value!;
   }
 
   Future<int> _u64At(int pos) async {
@@ -458,4 +505,15 @@ class _BoundedClusterOutput extends OutputMemoryStream {
     _check(count);
     super.writeBackReference(distance, count);
   }
+}
+
+/// Collects the single [Digest] a chunked hash conversion emits.
+class _DigestSink implements Sink<Digest> {
+  Digest? value;
+
+  @override
+  void add(Digest data) => value = data;
+
+  @override
+  void close() {}
 }

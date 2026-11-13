@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../../../data/network/web_search/search_models.dart';
 import '../../retrieval/domain/evidence.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// Small steps of a web search turn: reading the judge and query
 /// replies, merging pages into the sources, the second query.
@@ -43,7 +44,9 @@ class SearchSteps {
     var u = url;
     try {
       u = Uri.decodeFull(url);
-    } catch (_) {}
+    } catch (e, st) {
+      quietFailure('search_steps:46', e, st);
+    }
     return u
         .replaceFirst(RegExp(r'^https?://(www\.|m\.)?'), '')
         .replaceFirst('.m.wikipedia.org', '.wikipedia.org')

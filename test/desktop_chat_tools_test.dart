@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
@@ -11,6 +12,8 @@ import 'package:ondevice_llm/features/chat/domain/entities/chat_message.dart';
 import 'package:ondevice_llm/features/chat/domain/export/desktop_chat_export.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   final date = DateTime.utc(2026, 1, 2, 3, 4, 5);
   final messages = [
     ChatMessage(

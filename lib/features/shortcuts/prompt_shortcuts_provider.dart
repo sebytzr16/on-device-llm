@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/storage/prefs_rescue.dart';
 
 import 'domain/prompt_shortcut.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 const _kShortcutsKey = 'prompt_shortcuts_v1';
 
@@ -59,7 +60,9 @@ class PromptShortcutsNotifier extends Notifier<List<PromptShortcut>> {
         _kShortcutsKey,
         jsonEncode([for (final s in own) s.toJson()]),
       );
-    } catch (_) {}
+    } catch (e, st) {
+      quietFailure('prompt_shortcuts_provider:62', e, st);
+    }
   }
 
   /// Adds or replaces (by name, [previousName] when renamed) a shortcut.

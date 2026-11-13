@@ -377,6 +377,7 @@ class EvidenceRanker {
   }
 
   static List<EvidenceChunk> chunk(String text, {required int sourceIndex}) {
+    // Web-oriented chunking: strips reference markers, no overlap.
     text = stripReferenceMarkers(text);
     final out = <EvidenceChunk>[];
     final buffer = StringBuffer();
@@ -409,6 +410,90 @@ class EvidenceRanker {
     }
     flush();
     return out;
+  }
+
+  /// Document-oriented chunking: preserves references, adds modest overlap,
+  /// and keeps heading context with child chunks (audit A12).
+  static List<EvidenceChunk> chunkDocument(
+    String text, {
+    required int sourceIndex,
+  }) {
+    // Do NOT strip reference markers for private documents.
+    final out = <EvidenceChunk>[];
+    final lines = text.split('\n');
+    String currentHeading = '';
+    final buffer = StringBuffer();
+    int ordinal = 0;
+
+    void flush() {
+      final t = buffer.toString().trim();
+      if (t.isNotEmpty) {
+        out.add(
+          EvidenceChunk(sourceIndex: sourceIndex, ordinal: ordinal++, text: t),
+        );
+      }
+      buffer.clear();
+    }
+
+    for (var i = 0; i < lines.length; i++) {
+      final raw = lines[i];
+      final line = raw.trim();
+      if (line.isEmpty) continue;
+
+      // Detect headings (markdown, all-caps, or numbered sections).
+      final isHeading = _isHeading(line);
+      if (isHeading) {
+        currentHeading = line;
+      }
+
+      if (line.length > maxChars) {
+        flush();
+        for (final piece in _splitLong(line)) {
+          buffer.write(
+            currentHeading.isNotEmpty ? '$currentHeading\n$piece' : piece,
+          );
+          flush();
+        }
+        continue;
+      }
+
+      if (buffer.length + line.length + 1 > targetChars && buffer.isNotEmpty) {
+        // Keep overlap: retain last ~200 chars of previous chunk as context.
+        final overlap = _getOverlap(buffer.toString());
+        flush();
+        if (overlap.isNotEmpty) buffer.write('$overlap\n');
+      }
+      if (buffer.isNotEmpty) buffer.write('\n');
+      buffer.write(currentHeading.isNotEmpty ? '$currentHeading\n$line' : line);
+    }
+    flush();
+    return out;
+  }
+
+  static bool _isHeading(String line) {
+    // Markdown headings
+    if (RegExp(r'^#{1,6}\s').hasMatch(line)) return true;
+    // All caps (at least 3 chars, not all punctuation)
+    if (line.length >= 3 &&
+        line == line.toUpperCase() &&
+        RegExp(r'[A-Z]').hasMatch(line))
+      return true;
+    // Numbered sections like "1. Introduction" or "1.1 Overview"
+    if (RegExp(r'^\d+(\.\d+)*\s+\S').hasMatch(line)) return true;
+    return false;
+  }
+
+  /// Returns the last ~200 characters of [text] for overlap.
+  static String _getOverlap(String text) {
+    const overlapChars = 200;
+    if (text.length <= overlapChars) return text;
+    // Try to split at a sentence boundary.
+    final candidate = text.substring(text.length - overlapChars);
+    final sentenceEnd = candidate.lastIndexOf(RegExp(r'[.!?]\s'));
+    if (sentenceEnd > overlapChars ~/ 2) {
+      return candidate.substring(sentenceEnd + 1);
+    }
+    return candidate;
   }
 
   static Iterable<String> _splitLong(String line) sync* {

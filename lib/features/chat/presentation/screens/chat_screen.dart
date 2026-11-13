@@ -1,3 +1,4 @@
+import '../../../tools/file_approval.dart';
 import '../../../shortcuts/presentation/chat_slash_actions.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -11,7 +12,6 @@ import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
 import '../../../../app.dart';
 import '../../../../core/design/app_design.dart';
@@ -19,6 +19,7 @@ import '../../../../core/design/app_sheet.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/motion/motion.dart';
+import '../../../../core/widgets/safe_markdown.dart';
 import '../../../attachments/data/attachment_store.dart';
 import '../../../attachments/domain/attachment.dart';
 import '../../../attachments/presentation/attachment_picker.dart';
@@ -69,6 +70,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/memory_banner.dart';
 import '../widgets/notice_sheet.dart';
 import '../../../../core/design/app_dialog.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 part 'chat_screen_actions.dart';
 part 'chat_screen_widgets.dart';
@@ -372,7 +374,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         if (await file.length() > 256 * 1024) continue;
         final card = ModelConfigCard.decode(await file.readAsString());
         if (card != null) return card;
-      } catch (_) {}
+      } catch (e, st) {
+        quietFailure('chat_screen:375', e, st);
+      }
     }
     return null;
   }
@@ -868,6 +872,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       drawer: const Drawer(child: ConversationsSheet()),
       body: Column(
         children: [
+          FileChangesPanel(chatId: state.chatId),
           for (final question
               in ref
                   .watch(agentWebQuestionsProvider)
@@ -924,7 +929,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                 child: ListView.builder(
                                   controller: _scroll,
                                   padding: const EdgeInsets.symmetric(
-                                    vertical: AppDesign.lg,
+                                    vertical: AppSpace.lg,
                                   ),
                                   itemCount:
                                       state.messages.length +
@@ -1052,9 +1057,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           ),
                         ),
                         Positioned(
-                          bottom: AppDesign.sm,
-                          left: AppDesign.lg,
-                          right: AppDesign.lg,
+                          bottom: AppSpace.sm,
+                          left: AppSpace.phonePage,
+                          right: AppSpace.phonePage,
                           child: _NoticeToast(
                             notice: noticeUp ? state.notice : null,
                             id: noticeUp ? infoKey : '',
@@ -1069,7 +1074,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           ),
                         ),
                         Positioned(
-                          bottom: AppDesign.md,
+                          bottom: AppSpace.md,
                           left: 0,
                           right: 0,
                           child: Center(
@@ -1095,7 +1100,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ),
           // Reserve space above the composer so agents never cover messages.
           const Padding(
-            padding: EdgeInsets.symmetric(horizontal: AppDesign.md),
+            padding: EdgeInsets.symmetric(horizontal: AppSpace.md),
             child: HelperLivePanel(),
           ),
           ChatComposer(

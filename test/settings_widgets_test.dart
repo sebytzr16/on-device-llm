@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ondevice_llm/core/providers/shared_providers.dart';
 import 'package:ondevice_llm/core/theme/app_theme.dart';
 import 'package:ondevice_llm/features/models/domain/entities/model_info.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
@@ -45,6 +46,7 @@ Widget harness() => ProviderScope(
   overrides: [
     settingsProvider.overrideWith(TestSettings.new),
     modelManagerProvider.overrideWith(TestModels.new),
+    detectedHardwareProvider.overrideWith((ref) async => null),
   ],
   child: MaterialApp(theme: AppTheme.dark, home: const SettingsScreen()),
 );

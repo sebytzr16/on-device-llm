@@ -98,6 +98,7 @@ class _Engine extends LlamaEngine {
     required String modelPath,
     required InferenceSettings settings,
     String? mmprojPath,
+    List<({String path, double scale})> adapters = const [],
     String? draftModelPath,
   }) async => estimateSeen;
 

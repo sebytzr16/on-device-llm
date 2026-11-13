@@ -35,8 +35,8 @@ class ChatEmptyState extends StatelessWidget {
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(
-          horizontal: AppDesign.xl,
-          vertical: AppDesign.xl,
+          horizontal: AppSpace.phonePage,
+          vertical: AppSpace.section,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -49,13 +49,13 @@ class ChatEmptyState extends StatelessWidget {
               scaleAlignment: Alignment.centerLeft,
               child: Container(width: 28, height: 2, color: c.accent),
             ),
-            const SizedBox(height: AppDesign.lg),
+            const SizedBox(height: AppSpace.lg),
             SpringEntrance(
               delay: SpringEntrance.cascade(1, stepMs: 60),
               from: const Offset(0, 18),
               child: Text(context.l10n.emptyTitle, style: context.text.display),
             ),
-            const SizedBox(height: AppDesign.md),
+            const SizedBox(height: AppSpace.md),
             SpringEntrance(
               delay: SpringEntrance.cascade(2, stepMs: 60),
               from: const Offset(0, 12),
@@ -68,10 +68,10 @@ class ChatEmptyState extends StatelessWidget {
                 style: context.text.bodyMuted,
               ),
             ),
-            const SizedBox(height: AppDesign.xl),
+            const SizedBox(height: AppSpace.section),
             Wrap(
-              spacing: AppDesign.sm,
-              runSpacing: AppDesign.sm,
+              spacing: AppSpace.sm,
+              runSpacing: AppSpace.sm,
               children: [
                 for (final (i, chip) in [
                   // Goals first and marked with the accent: a different kind

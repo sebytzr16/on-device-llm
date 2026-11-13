@@ -58,28 +58,22 @@ class AppearancePage extends ConsumerWidget {
               },
               onChanged: (v) => n.update(s.copyWith(motion: v)),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppDesign.lg,
-                AppDesign.sm,
-                AppDesign.lg,
-                AppDesign.sm,
-              ),
-              child: Column(
+            SettingsTile(
+              title: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(context.l10n.uiAdvancedAppearancePageAccentColour),
-                  const SizedBox(height: AppDesign.sm),
+                  const SizedBox(height: AppSpace.sm),
                   Wrap(
-                    spacing: AppDesign.md,
+                    spacing: AppSpace.md,
                     children: [
                       for (final a in AccentChoice.values)
                         GestureDetector(
                           key: Key('accent-${a.name}'),
                           onTap: () => n.update(s.copyWith(accent: a)),
                           child: Container(
-                            width: 36,
-                            height: 36,
+                            width: AppDesign.iconTile,
+                            height: AppDesign.iconTile,
                             decoration: BoxDecoration(
                               color: AppTheme.palette(a, dark: dark).accent,
                               shape: BoxShape.circle,

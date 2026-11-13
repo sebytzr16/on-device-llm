@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../../core/storage/device_encryption.dart';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -30,8 +31,12 @@ class GoalWatchNotifier extends Notifier<List<GoalWatch>> {
   }
 
   Future<void> _load() async {
-    final watches = await GoalWatchStore.list();
-    if (ref.mounted) state = watches;
+    try {
+      final watches = await GoalWatchStore.list();
+      if (ref.mounted) state = watches;
+    } on EncryptionRecovery {
+      // Keep existing state and disk bytes; the global banner explains recovery.
+    }
   }
 
   Future<void> _persist({GoalWatch? watch, GoalWatch? expected, int? remove}) {
@@ -129,6 +134,8 @@ class GoalWatchNotifier extends Notifier<List<GoalWatch>> {
       if (!ref.mounted || !state.any((x) => x.id == id)) return;
       state = [for (final x in state) x.id == id ? next : x];
       await _persist(watch: next, expected: w);
+    } on EncryptionRecovery {
+      // Recovery notice is shown by the app shell; retain encrypted results.
     } finally {
       _checking.remove(id);
       if (ref.mounted) state = [...state];

@@ -28,7 +28,7 @@ List<Widget> _headerBlocks(
       Row(
         children: [
           Icon(_kindIcon(goal.spec.specialization), size: 16, color: c.accent),
-          const SizedBox(width: AppDesign.xs),
+          const SizedBox(width: AppSpace.xs),
           Text(
             goal.spec.specialization.labelIn(t),
             style: context.text.label.copyWith(color: c.accent),
@@ -40,13 +40,13 @@ List<Widget> _headerBlocks(
       style: compact ? context.text.title : context.text.headline,
     ),
     if (!compact && goal.spec.successCriteria.trim().isNotEmpty) ...[
-      const SizedBox(height: AppDesign.xs),
+      const SizedBox(height: AppSpace.xs),
       Text(goal.spec.successCriteria, style: context.text.bodyMuted),
     ],
     if (!compact &&
         goal.spec.clarifications.isNotEmpty &&
         goal.awaitingInputSince == null) ...[
-      const SizedBox(height: AppDesign.sm),
+      const SizedBox(height: AppSpace.sm),
       Text(t.goalClarificationAnswers, style: context.text.label),
       for (final q in goal.spec.clarifications)
         Text(
@@ -55,10 +55,10 @@ List<Widget> _headerBlocks(
         ),
     ],
     if (goal.spec.subject.isNotEmpty || goal.spec.rules.trim().isNotEmpty) ...[
-      const SizedBox(height: AppDesign.sm),
+      const SizedBox(height: AppSpace.sm),
       Wrap(
-        spacing: AppDesign.xs,
-        runSpacing: AppDesign.xs,
+        spacing: AppSpace.xs,
+        runSpacing: AppSpace.xs,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           Icon(Icons.shield_outlined, size: 14, color: c.accent),
@@ -114,7 +114,7 @@ Widget _statusRow(BuildContext context, GoalProgress goal) {
     children: [
       if (goal.status == GoalStatus.running)
         const Padding(
-          padding: EdgeInsets.only(right: AppDesign.sm),
+          padding: EdgeInsets.only(right: AppSpace.sm),
           child: SizedBox(
             width: 14,
             height: 14,
@@ -138,10 +138,10 @@ List<Widget> _statsBlocks(BuildContext context, GoalProgress goal) {
       '${goal.usedToolCalls}${goal.spec.maxToolCalls == null ? '' : ' / ${goal.spec.maxToolCalls}'} ${t.goalToolCallsWord}',
       style: context.text.mono.copyWith(color: c.textFaint),
     ),
-    const SizedBox(height: AppDesign.xs),
+    const SizedBox(height: AppSpace.xs),
     _GoalModelIndicator(used: goal.models),
     if (goal.error != null) ...[
-      const SizedBox(height: AppDesign.md),
+      const SizedBox(height: AppSpace.md),
       _Banner(icon: Icons.error_outline, text: goal.error!, color: c.danger),
     ],
   ];
@@ -157,7 +157,7 @@ List<Widget> _criteriaBlocks(
   final c = context.colors;
   final t = context.l10n;
   return [
-    const SizedBox(height: AppDesign.md),
+    const SizedBox(height: AppSpace.md),
     Text(
       t.goalCoverage(
         (goal.spec.coverage(goal.criteria) * 100).round(),
@@ -202,7 +202,7 @@ List<Widget> _reportBlocks(
   final c = context.colors;
   final t = context.l10n;
   return [
-    const SizedBox(height: AppDesign.lg),
+    const SizedBox(height: AppSpace.lg),
     Row(
       children: [
         Expanded(
@@ -229,13 +229,13 @@ List<Widget> _reportBlocks(
     ),
     Container(
       key: const Key('goal-report'),
-      padding: const EdgeInsets.all(AppDesign.lg),
+      padding: const EdgeInsets.all(AppSpace.lg),
       decoration: BoxDecoration(
         color: c.surfaceRaised,
         border: Border.all(color: c.hairline),
         borderRadius: AppDesign.radius(AppDesign.rMd),
       ),
-      child: MarkdownBody(
+      child: SafeMarkdownBody(
         inlineSyntaxes: [MathSyntax()],
         builders: {'math': MathBuilder()},
         data: goal.report,
@@ -246,14 +246,14 @@ List<Widget> _reportBlocks(
       ),
     ),
     if (goal.phase == GoalPhase.done || goal.status == GoalStatus.paused) ...[
-      const SizedBox(height: AppDesign.sm),
+      const SizedBox(height: AppSpace.sm),
       _ChecksLine(checks: goal.reportChecks, report: true),
     ],
     if (!running) ...[
-      const SizedBox(height: AppDesign.sm),
+      const SizedBox(height: AppSpace.sm),
       Wrap(
-        spacing: AppDesign.sm,
-        runSpacing: AppDesign.sm,
+        spacing: AppSpace.sm,
+        runSpacing: AppSpace.sm,
         children: [
           OutlinedButton.icon(
             key: const Key('goal-save-report'),
@@ -284,22 +284,22 @@ List<Widget> _actionBlocks(BuildContext context, GoalProgress goal) {
     if (goal.preparingActions ||
         (goal.phase == GoalPhase.delivering &&
             goal.status == GoalStatus.running)) ...[
-      const SizedBox(height: AppDesign.xl),
+      const SizedBox(height: AppSpace.xl),
       Row(
         children: [
           const SizedBox.square(
             dimension: 16,
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
-          const SizedBox(width: AppDesign.sm),
+          const SizedBox(width: AppSpace.sm),
           Text(t.goalPreparingActions, style: context.text.bodyMuted),
         ],
       ),
     ],
     if (goal.actions.isNotEmpty) ...[
-      const SizedBox(height: AppDesign.xl),
+      const SizedBox(height: AppSpace.xl),
       Text(t.goalActionsTitle, style: context.text.title),
-      const SizedBox(height: AppDesign.sm),
+      const SizedBox(height: AppSpace.sm),
       Consumer(
         builder: (context, ref, _) => PhoneActionCards(
           actions: goal.actions,
@@ -363,11 +363,11 @@ List<Widget> _detailBlocks(
   final t = context.l10n;
   return [
     if (goal.tasks.isNotEmpty) ...[
-      const SizedBox(height: AppDesign.xl),
+      const SizedBox(height: AppSpace.xl),
       Text(t.goalPlan, style: context.text.title),
       if (goal.planNotes.isNotEmpty)
         _Notes(title: t.goalPlanNotes, text: goal.planNotes),
-      const SizedBox(height: AppDesign.xs),
+      const SizedBox(height: AppSpace.xs),
       // Steps spring in as the plan fills in (a cascade when a finished
       // goal opens).
       for (var i = 0; i < goal.tasks.length; i++)
@@ -387,7 +387,7 @@ List<Widget> _detailBlocks(
     ],
     // A finished report can still have gaps the last review named.
     if (goal.missing.isNotEmpty) ...[
-      const SizedBox(height: AppDesign.lg),
+      const SizedBox(height: AppSpace.lg),
       Text(
         goal.status == GoalStatus.completed
             ? t.goalNotCovered
@@ -400,7 +400,7 @@ List<Widget> _detailBlocks(
     if (goal.reviewNotes.isNotEmpty)
       _Notes(title: t.goalReviewNotes, text: goal.reviewNotes),
     if (goal.sources.isNotEmpty) ...[
-      const SizedBox(height: AppDesign.xl),
+      const SizedBox(height: AppSpace.xl),
       Text(t.goalSourcesTitle, style: context.text.title),
       for (var i = 0; i < goal.sources.length; i++)
         ListTile(
@@ -420,7 +420,9 @@ List<Widget> _detailBlocks(
           onTap: () async {
             try {
               await openExternalLink(goal.sources[i].url);
-            } catch (_) {}
+            } catch (e, st) {
+              quietFailure('goal_blocks:423', e, st);
+            }
           },
         ),
     ],

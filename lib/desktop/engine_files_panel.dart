@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../core/design/app_design.dart';
 import '../core/l10n/l10n.dart';
-import 'developer_widgets.dart';
+import '../features/settings/presentation/widgets/settings_widgets.dart';
 import 'engine_files.dart';
 
 class EngineFilesPanel extends StatefulWidget {
@@ -69,10 +69,10 @@ class _EngineFilesPanelState extends State<EngineFilesPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        DeveloperButton(
-          label: t.engineFilesVerify,
-          onPressed: _busy ? null : _verify,
-          icon: Icons.fact_check_outlined,
+        SettingsTile(
+          title: Text(t.engineFilesVerify),
+          onTap: _busy ? null : _verify,
+          leading: const Icon(Icons.fact_check_outlined),
         ),
         if (_busy) ...[
           LinearProgressIndicator(

@@ -15,55 +15,80 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
-    'official Supertonic 2 archive is pinned and independently selectable',
+    'official Supertonic 3 archive is pinned and independently selectable',
     () {
       const pack = VoiceModels.supertonic;
       expect(VoiceModels.all, contains(pack));
       expect(VoiceModels.packs, isNot(contains(pack)));
-      expect(pack.downloadKey, 'voice:supertonic-2');
-      expect(pack.sizeBytes, 84692981);
+      expect(pack.downloadKey, 'voice:supertonic-3');
+      expect(pack.sizeBytes, 128774318);
       expect(
         pack.files.single.url,
-        'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-tts-int8-2026-03-06.tar.bz2',
+        'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2',
       );
       expect(
         pack.files.single.sha256,
-        '8c74359f63edd5045d47747f65331f0f6dbcbc91d7e898dd756d631295fe3259',
+        '82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427',
       );
+      expect(pack.unpackTo, 'sherpa-onnx-supertonic-3-tts-int8-2026-05-11');
+      expect(VoiceModels.packsFor('supertonic-3'), [
+        VoiceModels.listening,
+        pack,
+      ]);
+      // The saved Supertonic 2 preference still selects Supertonic.
       expect(VoiceModels.packsFor('supertonic-2'), [
         VoiceModels.listening,
         pack,
       ]);
       expect(VoiceModels.packsFor('unknown'), VoiceModels.packs);
+      expect(VoiceModels.isSupertonic('supertonic-2'), isTrue);
+      expect(VoiceModels.isSupertonic('kokoro'), isFalse);
     },
   );
+
+  test('Supertonic 3 languages are those it reads; others fall back', () {
+    expect(VoiceModels.supertonicLanguages, hasLength(31));
+    for (final lang in ['en', 'fr', 'es', 'de', 'ko', 'ja', 'vi', 'uk']) {
+      expect(VoiceModels.supertonicLanguage(lang), lang, reason: lang);
+    }
+    expect(VoiceModels.supertonicLanguage('zh'), 'en');
+    expect(VoiceModels.supertonicLanguage(''), 'en');
+  });
+
+  test('only Supertonic falls back to an older unpacked folder', () async {
+    expect(await VoiceModels.isLegacyReady(VoiceModels.listening), isFalse);
+    expect(await VoiceModels.isLegacyReady(VoiceModels.speaking), isFalse);
+  });
 
   test('readiness belongs to the selected engine', () {
     const onlyKokoro = VoiceModelsState({
       'kokoro-v1.0': VoicePackState(VoicePackStatus.ready),
     });
     const onlySupertonic = VoiceModelsState({
-      'supertonic-2': VoicePackState(VoicePackStatus.ready),
+      'supertonic-3': VoicePackState(VoicePackStatus.ready),
     });
-    expect(onlyKokoro.canSpeakWith('supertonic-2'), isFalse);
+    expect(onlyKokoro.canSpeakWith('supertonic-3'), isFalse);
     expect(onlyKokoro.canSpeakWith('kokoro'), isTrue);
+    expect(onlySupertonic.canSpeakWith('supertonic-3'), isTrue);
     expect(onlySupertonic.canSpeakWith('supertonic-2'), isTrue);
     expect(onlySupertonic.canSpeak, isFalse);
   });
 
   for (final lang in ['en', 'fr', 'es']) {
     test('Supertonic sends $lang and the slider rate to sherpa', () {
-      for (final speed in [0.6, 1.0, 1.3, 1.6]) {
-        final config = speakingGenerationConfig({
-          'engine': 'supertonic-2',
-          'lang': lang,
-          'sid': 4,
-          'speed': speed,
-        });
-        expect(config.speed, speed);
-        expect(config.extra, {'lang': lang});
-        expect(config.sid, 4);
-        expect(config.numSteps, 5);
+      for (final engine in ['supertonic-2', 'supertonic-3']) {
+        for (final speed in [0.6, 1.0, 1.3, 1.6]) {
+          final config = speakingGenerationConfig({
+            'engine': engine,
+            'lang': lang,
+            'sid': 4,
+            'speed': speed,
+          });
+          expect(config.speed, speed);
+          expect(config.extra, {'lang': lang});
+          expect(config.sid, 4);
+          expect(config.numSteps, 5);
+        }
       }
     });
   }
@@ -175,11 +200,11 @@ void main() {
       addTearDown(second.dispose);
       await second.read(settingsProvider.notifier).ready;
       final restored = second.read(settingsProvider);
-      expect(restored.readingVoice, 'supertonic-2');
+      expect(restored.readingVoice, 'supertonic-3');
       expect(restored.supertonicSid, 7);
       expect(restored.readingSpeed, 1.3);
       final engine = second.read(sherpaVoiceProvider);
-      expect(engine.readingVoice, 'supertonic-2');
+      expect(engine.readingVoice, 'supertonic-3');
       final voice = second.read(voiceProvider.notifier).kokoroVoice();
       expect(voice.lang, 'fr');
       expect(voice.sid, 7);

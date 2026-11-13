@@ -1,4 +1,7 @@
 import 'dart:io';
+import 'dart:convert';
+import 'package:archive/archive.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -17,6 +20,16 @@ void main() {
       final previous = PathProviderPlatform.instance;
       PathProviderPlatform.instance = BackupPaths(dir.path, dir.path);
       SharedPreferences.setMockInitialValues({});
+      FlutterSecureStorage.setMockInitialValues({
+        'hosting_tls.test': 'HOST-PRIVATE-KEY-SENTINEL',
+        'host_paired_devices': 'HOST-DEVICE-SECRET-SENTINEL',
+      });
+      await File(
+        '${dir.path}/hosting-tls.json',
+      ).writeAsString('{"key":"LEGACY-HOST-PRIVATE-KEY-SENTINEL"}');
+      await File(
+        '${dir.path}/hosting-tls.fingerprint',
+      ).writeAsString('public-pin');
       final db = AppDatabase.forTesting(NativeDatabase.memory());
       addTearDown(() async {
         await db.close();
@@ -27,10 +40,18 @@ void main() {
         db,
         'a strong backup password',
       );
-      expect(
-        await BackupCipher.decrypt(encrypted, 'a strong backup password'),
-        isNotEmpty,
+      final plain = await BackupCipher.decrypt(
+        encrypted,
+        'a strong backup password',
       );
+      expect(plain, isNotEmpty);
+      final archive = ZipDecoder().decodeBytes(plain);
+      expect(archive.files.any((f) => f.name.contains('hosting-tls')), isFalse);
+      for (final file in archive.files.where((f) => f.isFile)) {
+        final text = utf8.decode(file.content, allowMalformed: true);
+        expect(text, isNot(contains('HOST-PRIVATE-KEY-SENTINEL')));
+        expect(text, isNot(contains('HOST-DEVICE-SECRET-SENTINEL')));
+      }
       expect(
         await dir
             .list()

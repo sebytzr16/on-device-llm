@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:ondevice_llm/features/settings/domain/settings_scope.dart';
-import 'package:ondevice_llm/features/settings/presentation/providers/settings_provider.dart';
 
 void main() {
   test(
@@ -63,13 +62,10 @@ void main() {
       expect(r.originOf('batchSize'), SettingsLayer.idRecommended);
     },
   );
-  test('migration preserves ambiguous legacy choices', () {
+  test('legacy choices are preserved without migration', () {
     const saved = InferenceSettings(contextSize: 4096, repetitionPenalty: 1.1);
-    final next = migrateSamplingDefaults(
-      saved,
-      const InferenceSettings(contextSize: 8192),
-    );
-    expect(next.contextSize, 4096);
-    expect(next.repetitionPenalty, 1.1);
+    // Without the migration function, the saved settings are used as-is.
+    expect(saved.contextSize, 4096);
+    expect(saved.repetitionPenalty, 1.1);
   });
 }

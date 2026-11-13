@@ -137,7 +137,7 @@ void main() {
       expect(reloaded.servers['fixture']!.config.toJson(), original);
       expect(reloaded.serverEnabled('fixture'), isFalse);
       expect(reloaded.toolEnabled('fixture__echo'), isFalse);
-      await registry.enableServer('fixture', true);
+      await registry.enableServer('fixture', true, reviewed: true);
       expect(registry.servers['fixture']!.status, McpStatus.ready);
       expect(registry.specs.where((s) => s.name == 'fixture__echo'), isEmpty);
     },
@@ -157,6 +157,7 @@ void main() {
       await registry.saveConfig(
         '{"mcpServers":{"fixture":{"command":"original"}}}',
       );
+      await registry.enableServer('fixture', true, reviewed: true);
       final undo = await registry.remove('fixture');
       await undo();
       expect(registry.serverEnabled('fixture'), isTrue);

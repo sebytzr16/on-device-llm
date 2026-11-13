@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/design/app_design.dart';
 import '../../../../core/design/app_dialog.dart';
 import '../../../../core/platform/desktop_host.dart';
+import '../../../../core/platform/form_factor.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../domain/entities/model_catalog.dart';
 import '../../domain/entities/model_info.dart';
@@ -59,7 +60,7 @@ class ModelDetailsPage extends ConsumerWidget {
         : t.modelUnknown;
     final projector = model.projector ?? visionProjectors[model.id];
     Widget fact(String label, String value) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: AppSpace.sm),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -77,20 +78,22 @@ class ModelDetailsPage extends ConsumerWidget {
             : null,
       ),
       body: ListView(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(
+          context.isDesktop ? AppSpace.desktopPage : AppSpace.phonePage,
+        ),
         children: [
           Row(
             children: [
               ModelBrandIcon('$source ${model.displayName}'),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpace.row),
               Expanded(
                 child: Text(model.displayName, style: context.text.title),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpace.row),
           ModelCapabilityBadges(model: model),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpace.row),
           fact(t.modelSize, model.sizeLabel),
           fact(t.modelQuantization, model.quantLabel),
           fact(t.modelArchitecture, facts?.architecture ?? model.family.name),
@@ -111,7 +114,9 @@ class ModelDetailsPage extends ConsumerWidget {
                 context,
               ).formatMediumDate(date.toLocal()),
             ),
+          const SizedBox(height: AppSpace.section),
           const Divider(),
+          const SizedBox(height: AppSpace.row),
           Text(t.modelFiles, style: context.text.title),
           if (model.parts.isEmpty)
             fact(
@@ -141,7 +146,9 @@ class ModelDetailsPage extends ConsumerWidget {
                   }),
             ),
           if (model.sha256 case final hash?) fact(t.verifyingSha, hash),
+          const SizedBox(height: AppSpace.section),
           const Divider(),
+          const SizedBox(height: AppSpace.row),
           Text(t.modelProfile, style: context.text.title),
           if (profile.isEmpty)
             Text(t.modelProfileDefaults, style: context.text.body)

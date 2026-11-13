@@ -79,7 +79,11 @@ void main() {
           }
         }),
       );
-      expect(results.whereType<String>(), [server.accessToken]);
+      expect(results.whereType<String>(), hasLength(1));
+      expect(
+        server.pairedDevices.principal(results.whereType<String>().single),
+        isNotNull,
+      );
       expect(server.pairingSecret, isNot(original.secret));
       expect(server.pairCode, isNot('482913'));
       final client = HttpClient();
@@ -104,7 +108,7 @@ void main() {
     );
     expect(
       jsonDecode(await PairingCode.redeemQr(original))['key'],
-      server.accessToken,
+      isNot(server.accessToken),
     );
   });
   test(
@@ -135,7 +139,7 @@ void main() {
       );
       expect(
         jsonDecode(await PairingCode.redeemQr(qr(server)))['key'],
-        server.accessToken,
+        isNot(server.accessToken),
       );
     },
   );
@@ -240,7 +244,7 @@ void main() {
     }
     expect(
       jsonDecode(await PairingCode.redeem(endpoint, server.pairCode!))['key'],
-      server.accessToken,
+      isNot(server.accessToken),
     );
   });
   test(

@@ -55,6 +55,7 @@ String webModeShort(WebMode m, [AppLocalizations? strings]) => switch (m) {
 };
 
 String kvCacheLabel(KvCacheType t, [AppLocalizations? strings]) => switch (t) {
+  KvCacheType.f8_e4m3 => (strings ?? AppLocalizationsEn()).kvFp8E4m3,
   KvCacheType.fp16 => (strings ?? AppLocalizationsEn()).kvFp16Default,
   KvCacheType.q8_0 => (strings ?? AppLocalizationsEn()).kvQ8SavesRam,
   KvCacheType.q4_0 => (strings ?? AppLocalizationsEn()).kvQ4SavesMoreRam,

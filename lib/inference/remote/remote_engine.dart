@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:isolate';
+import '../../core/storage/device_encryption.dart';
 import 'dart:math';
 
 import 'package:dio/dio.dart';
@@ -15,6 +15,7 @@ import '../engine/text_engine.dart';
 import 'remote_provider.dart';
 import 'remote_usage.dart';
 import '../../core/l10n/l10n.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// A model the remote provider offers.
 class RemoteModel {
@@ -253,6 +254,7 @@ class RemoteEngine implements TextEngine {
       'Content-Type': 'application/json',
       'Accept': 'text/event-stream, application/json',
       ...?profile?.headers,
+      ...?s.remoteHeaders[profile?.id],
       ...provider.authHeaders(s.remoteApiKey),
     };
   }
@@ -573,7 +575,7 @@ class RemoteEngine implements TextEngine {
   /// Reads and encodes a photo off the UI isolate: a large one would
   /// otherwise hitch the send (P3-26).
   static Future<String> _base64File(String path) =>
-      Isolate.run(() => base64Encode(File(path).readAsBytesSync()));
+      DeviceEncryption.instance.read(File(path)).then(base64Encode);
 
   static String _mediaType(String path) {
     final ext = path.toLowerCase().split('.').last;
@@ -651,7 +653,9 @@ class RemoteEngine implements TextEngine {
       try {
         final v = jsonDecode(arguments);
         if (v is Map) return Map<String, dynamic>.from(v);
-      } catch (_) {}
+      } catch (e, st) {
+        quietFailure('remote_engine:655', e, st);
+      }
     }
     return const {};
   }
@@ -1357,7 +1361,9 @@ class RemoteEngine implements TextEngine {
           .join()
           .timeout(const Duration(seconds: 5));
       e.response!.data = text;
-    } catch (_) {}
+    } catch (e, st) {
+      quietFailure('remote_engine:1361', e, st);
+    }
     return e;
   }
 

@@ -3,16 +3,31 @@ import 'package:flutter/material.dart';
 import '../../../../core/design/app_design.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/platform/device_info.dart';
+import '../../../../inference/engine/ternary_backend.dart';
 import '../../domain/entities/model_catalog.dart';
 import '../../domain/entities/model_info.dart';
 
 /// How a model's memory needs compare with this phone.
 enum ModelFit { fits, tight, tooLarge, unknown }
 
-ModelFit modelFit(DeviceMemory? memory, ModelInfo model) {
+ModelFit modelFit(
+  DeviceMemory? memory,
+  ModelInfo model, {
+  String? backend,
+  int? fileType,
+}) {
   if (memory == null) return ModelFit.unknown;
   final minRam = catalogMeta[model.id]?.minRamGb ?? 0;
-  if (memory.fits(model.sizeBytes, minRamGb: minRam)) return ModelFit.fits;
+  if (memory.fits(model.sizeBytes, minRamGb: minRam)) {
+    // The Vulkan, OpenCL, Metal and QNN bridges have no ternary kernels, so
+    // a ternary model only runs on the processor there: keep the badge from
+    // claiming the graphics-card fit.
+    final ternaryOnCpu = ternaryNeedsCpu(
+      backend: backend ?? '',
+      ternary: isTernaryModel(catalogId: model.id, fileType: fileType),
+    );
+    return ternaryOnCpu ? ModelFit.unknown : ModelFit.fits;
+  }
   // Borderline: the publisher's floor or the byte budget is missed by a small
   // margin. Loading may still work with a smaller context.
   final nearBytes = memory.fits((model.sizeBytes * 0.85).round());
@@ -100,12 +115,21 @@ class FitBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return switch (fit) {
-      ModelFit.fits => ModelTag(context.l10n.fitFits, color: c.success),
-      ModelFit.tight => ModelTag(context.l10n.fitTight, color: c.warning),
-      ModelFit.tooLarge => ModelTag(context.l10n.fitTooLarge, color: c.danger),
-      ModelFit.unknown => const SizedBox.shrink(),
+    if (fit == ModelFit.unknown) return const SizedBox.shrink();
+    final (label, color) = switch (fit) {
+      ModelFit.fits => (context.l10n.fitFits, c.success),
+      ModelFit.tight => (context.l10n.fitTight, c.warning),
+      ModelFit.tooLarge => (context.l10n.fitTooLarge, c.danger),
+      ModelFit.unknown => ('', c.textMuted),
     };
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.circle, size: 6, color: color),
+        const SizedBox(width: AppSpace.xs),
+        Text(label, style: context.text.caption.copyWith(color: color)),
+      ],
+    );
   }
 }
 
@@ -114,24 +138,40 @@ class ModelTagRow extends StatelessWidget {
   final ModelInfo model;
   final DeviceMemory? memory;
   final bool showFit;
+  final int? contextLength;
+  final String? benchmarkSummary;
   const ModelTagRow({
     super.key,
     required this.model,
     this.memory,
     this.showFit = true,
+    this.contextLength,
+    this.benchmarkSummary,
   });
 
   @override
   Widget build(BuildContext context) {
     final params = paramLabel(model);
-    return Wrap(
-      spacing: AppDesign.sm - 2,
-      runSpacing: AppDesign.sm - 2,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (params.isNotEmpty) ModelTag(params),
-        ModelTag(quantLabel(model)),
-        ModelTag(model.sizeLabel),
+        Text(
+          [
+            model.family.name,
+            if (params.isNotEmpty) params,
+            if (contextLength case final count? when count > 0)
+              context.l10n.modelContextBadge(
+                count >= 1024 ? '${(count / 1024).round()}K' : '$count',
+              ),
+            quantLabel(model),
+            model.sizeLabel,
+            if (benchmarkSummary case final summary?)
+              summary.split(' \u00b7 ').first,
+          ].join(' \u00b7 '),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: context.text.small,
+        ),
         if (showFit) FitBadge(modelFit(memory, model)),
       ],
     );

@@ -11,6 +11,12 @@ import 'core/model_licences.dart';
 import 'core/logging/developer_logs.dart';
 import 'core/platform/desktop_host.dart';
 import 'core/platform/frame_timing_log.dart';
+import 'core/storage/staging_cleanup.dart';
+import 'core/storage/app_directories.dart';
+import 'core/storage/database_encryption.dart';
+import 'core/storage/device_encryption.dart';
+import 'package:path/path.dart' as p;
+import 'core/storage/startup_recovery.dart';
 import 'data/local/database/app_database.dart';
 import 'desktop/desktop_app.dart';
 import 'desktop/desktop_window.dart';
@@ -46,31 +52,66 @@ Future<void> main() async {
 
   registerModelLicences();
 
-  FlutterError.onError = FlutterError.presentError;
+  // Build and layout errors reach the Logs page too: a release build shows
+  // a failed widget as an empty gap with no other trace (owner 2026-11-12:
+  // Recommended stayed empty).
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    Logger('flutter').severe(details.exceptionAsString(), null, details.stack);
+  };
   PlatformDispatcher.instance.onError = (error, stack) {
     Logger('main').severe('Uncaught', error, stack);
     return true;
   };
 
-  // A validated restore is applied before SQLite opens its WAL files.
+  runApp(StartupRecoveryApp(initialize: () => _initialize(desktop)));
+}
+
+Future<Widget> _initialize(bool desktop) async {
+  AppDatabase? db;
   try {
+    try {
+      await StagingCleanup.sweep();
+    } catch (error, stack) {
+      Logger('main').warning('Staging cleanup failed', error, stack);
+    }
+    final encryption = DeviceEncryption.instance;
+    final databaseFile = File(
+      p.join((await appDataDirectory()).path, 'ondevice_llm.sqlite'),
+    );
+    final databaseEncryption = DatabaseEncryption(encryption);
+    // Resolve any interrupted database rename before a restore replaces it.
+    if (await File('${databaseFile.path}.dbenc-original').exists() ||
+        await File('${databaseFile.path}.dbenc-pending').exists()) {
+      await databaseEncryption.prepare(databaseFile);
+    } else {
+      await databaseEncryption.verifyExisting(databaseFile);
+    }
     await LocalBackupService.applyPendingRestore();
-  } catch (error, stack) {
-    Logger('main').severe('Restore could not be applied', error, stack);
-  }
-  // WAL + foreign keys now live inside the DB's MigrationStrategy.
-  final db = AppDatabase();
-  await LocalBackupService.finishRestore(db);
-  // CHAT-01: a run the OS killed mid-answer becomes an interrupted message.
-  await db.markInterruptedRuns();
-
-  // Windows gets its own window-shaped interface over the same providers.
-  if (desktop) await DesktopWindow.init();
-
-  runApp(
-    ProviderScope(
+    final encrypt = await encryption.enabled();
+    if (encrypt || await encryption.migrationPending()) {
+      await encryption.setEnabled(encrypt);
+    }
+    // Restores install a portable plaintext database. Apply local policy before
+    // opening Drift, including when resuming an interrupted restore.
+    await databaseEncryption.prepare(databaseFile);
+    db = AppDatabase();
+    await LocalBackupService.finishRestore(db);
+    await encryption.completeMigration();
+    await db.markInterruptedRuns();
+    if (desktop) await DesktopWindow.init();
+    return ProviderScope(
       overrides: [appDatabaseProvider.overrideWithValue(db)],
       child: desktop ? const DesktopApp() : const OnDeviceLlmApp(),
-    ),
-  );
+    );
+  } catch (error, stack) {
+    Logger('main').severe('Startup failed', error, stack);
+    // Release SQLite/WAL handles before retry, raw backup or reset.
+    try {
+      await db?.close();
+    } catch (closeError, closeStack) {
+      Logger('main').warning('Closing failed database', closeError, closeStack);
+    }
+    rethrow;
+  }
 }

@@ -7,6 +7,7 @@ import '../../../../core/design/app_design.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/motion/motion.dart';
 import '../../../../core/design/mermaid/mermaid_widget.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// Replaces flutter_markdown's fenced-code rendering with a raised mono
 /// panel carrying the language tag and a copy button.
@@ -35,7 +36,9 @@ class CodeBlockBuilder extends MarkdownElementBuilder {
           'language-',
           '',
         );
-      } catch (_) {}
+      } catch (e, st) {
+        quietFailure('code_block:38', e, st);
+      }
       if (lang != null) break;
     }
     final block = CodeBlock(
@@ -59,7 +62,7 @@ class CodeBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: AppDesign.sm),
+      margin: const EdgeInsets.symmetric(vertical: AppSpace.sm),
       decoration: BoxDecoration(
         color: c.surfaceRaised,
         borderRadius: AppDesign.radius(AppDesign.rMd),
@@ -71,7 +74,7 @@ class CodeBlock extends StatelessWidget {
         children: [
           Container(
             height: 32,
-            padding: const EdgeInsets.only(left: AppDesign.md),
+            padding: const EdgeInsets.only(left: AppSpace.md),
             decoration: BoxDecoration(
               border: Border(bottom: BorderSide(color: c.hairline)),
             ),
@@ -103,7 +106,7 @@ class CodeBlock extends StatelessWidget {
           ),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.all(AppDesign.md),
+            padding: const EdgeInsets.all(AppSpace.md),
             child: SelectableText(
               code,
               style: context.text.mono.copyWith(color: c.text),

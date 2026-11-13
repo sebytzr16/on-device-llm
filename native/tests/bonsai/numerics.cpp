@@ -81,17 +81,17 @@ static void scalar_tests() {
         }
     }
     std::printf("scalar: %zu exhaustive decoded values, 2000 dot products, max_abs_error=%.9g\n", values, max_error);
-    for (int t = 43; t < 142; ++t) {
+    for (int t = 44; t < 142; ++t) {
         require(ggml_blck_size(ggml_type(t)) == 0, "reserved block size");
         require(std::strcmp(ggml_type_name(ggml_type(t)), "UNKNOWN") == 0, "reserved type name");
     }
     unsigned char dummy[128] = {};
-    require(!ggml_validate_row_data(ggml_type(43), dummy, sizeof(dummy)), "reserved type rejected without division by zero");
+    require(!ggml_validate_row_data(ggml_type(44), dummy, sizeof(dummy)), "reserved type rejected without division by zero");
     // Minimal valid GGUF envelope with one tensor, but a reserved type id.
     std::vector<unsigned char> gguf;
     auto append = [&](uint64_t v,int bytes) { for(int i=0;i<bytes;++i) gguf.push_back((v>>(8*i))&255); };
     append(0x46554747,4); append(3,4); append(1,8); append(0,8);
-    append(1,8); append('x',1); append(1,4); append(128,8); append(43,4); append(0,8);
+    append(1,8); append('x',1); append(1,4); append(128,8); append(44,4); append(0,8);
     while(gguf.size()%32) gguf.push_back(0);
     gguf.resize(gguf.size()+128);
     require(gguf_init_from_buffer(gguf.data(),gguf.size(),{true,nullptr})==nullptr,"GGUF reserved type rejected");

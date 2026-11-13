@@ -134,6 +134,30 @@ void main() {
     },
   );
 
+  test(
+    'importing a file already inside the managed models folder stays in place',
+    () async {
+      final single = await File(
+        p.join(models.path, 'single.gguf'),
+      ).writeAsBytes(bytes(1));
+      final notifier = await manager();
+      await notifier.importFile(single.path, ModelFamily.qwen);
+      expect(container.read(modelManagerProvider).error, isNull);
+      final hash = sha256.convert(bytes(1)).toString().substring(0, 20);
+      final row = (await db.allModels()).singleWhere(
+        (r) => r.id.startsWith('local-'),
+      );
+      // In place: localPath is the original file, nothing copied or renamed.
+      expect(row.localPath, single.path);
+      expect(row.fileName, 'local-$hash.gguf');
+      expect(await File(single.path).exists(), true);
+      expect(
+        await File(p.join(models.path, 'local-$hash.gguf')).exists(),
+        false,
+      );
+    },
+  );
+
   test('missing import shard gives a filename and copies nothing', () async {
     final sources = await weights(source, count: 2);
     final notifier = await manager();

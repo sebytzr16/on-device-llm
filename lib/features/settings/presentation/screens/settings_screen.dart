@@ -14,6 +14,7 @@ import '../../domain/entities/inference_settings.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/settings_labels.dart';
 import '../widgets/settings_widgets.dart';
+import '../widgets/device_encryption_setting.dart';
 import '../../../adapters/adapter_store.dart';
 import '../providers/effective_settings_provider.dart';
 import 'advanced_pages.dart';
@@ -29,6 +30,7 @@ import '../../../hosting/presentation/device_hosting_page.dart';
 import '../../../schedule/schedule_page.dart';
 import '../../../schedule/scheduled_prompt.dart';
 import '../../../shortcuts/presentation/shortcuts_page.dart';
+import '../../../updates/presentation/update_check_tile.dart';
 import '../../../backup/backup_page.dart';
 import '../../../voice/voice_settings.dart';
 import '../../../../core/motion/motion.dart';
@@ -392,6 +394,7 @@ class SettingsScreen extends ConsumerWidget {
                     summary: context.l10n.backupRowHint,
                     page: const BackupPage(),
                   ),
+                  const DeviceEncryptionSetting(),
                 ],
               ),
             if (_show(SettingsPart.advanced)) ...[
@@ -617,6 +620,7 @@ class SettingsScreen extends ConsumerWidget {
                       applicationVersion: 'v$_appVersion',
                     ),
                   ),
+                  const UpdateCheckTile(),
                   // The whole screen keeps reset in its menu; a desktop page
                   // has no menu, so it is the last About row.
                   if (!whole)
@@ -792,13 +796,13 @@ class _PrivacyCard extends StatelessWidget {
     final c = context.colors;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(AppDesign.lg),
+        padding: const EdgeInsets.all(AppSpace.phonePage),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 36,
-              height: 36,
+              width: AppDesign.iconTile,
+              height: AppDesign.iconTile,
               decoration: BoxDecoration(
                 color: c.accent.fade(0.12),
                 borderRadius: AppDesign.radius(AppDesign.rMd),

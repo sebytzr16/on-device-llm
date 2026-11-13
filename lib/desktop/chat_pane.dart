@@ -1,3 +1,5 @@
+import '../features/tools/file_approval.dart';
+import '../features/models/presentation/widgets/model_categories.dart';
 import '../features/shortcuts/presentation/slash_command_composer.dart';
 import '../features/shortcuts/presentation/chat_slash_actions.dart';
 import 'dart:async';
@@ -87,10 +89,25 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
       // Hide the previous chat's panel without stopping its helper execution.
       ref.read(helperJobsProvider.notifier).dismiss();
     });
-    final state = ref.watch(chatProvider);
-    final count = state.messages.length + (state.showsLiveAnswer ? 1 : 0);
+    // Watch only what the shell needs. The streaming tick (repaintInterval)
+    // mutates partialAnswer/reasoning/notice; those are observed by _LiveAnswer
+    // alone, so the whole conversation list is not rebuilt on every 33 ms
+    // tick (E17).
+    final messages = ref.watch(chatProvider.select((s) => s.messages));
+    final showsLiveAnswer = ref.watch(
+      chatProvider.select((s) => s.showsLiveAnswer),
+    );
+    final count = messages.length + (showsLiveAnswer ? 1 : 0);
+    final isGenerating = ref.watch(chatProvider.select((s) => s.isGenerating));
+    final chatId = ref.watch(chatProvider.select((s) => s.chatId));
+    final temporary = ref.watch(chatProvider.select((s) => s.temporary));
+    final isLoadingModel = ref.watch(
+      chatProvider.select((s) => s.isLoadingModel),
+    );
+    final error = ref.watch(chatProvider.select((s) => s.error));
+    final notice = ref.watch(chatProvider.select((s) => s.notice));
     return DropTarget(
-      enable: !state.isGenerating,
+      enable: !isGenerating,
       onDragEntered: (_) => setState(() => _dropping = true),
       onDragExited: (_) => setState(() => _dropping = false),
       onDragDone: (details) async {
@@ -106,31 +123,26 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      context.l10n.desktopChatTitle,
-                      style: context.text.headline,
-                    ),
-                    Text(
-                      context.l10n.desktopChatExplanation,
-                      style: context.text.small,
-                    ),
-                  ],
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpace.desktopPage,
+                  AppSpace.desktopPage,
+                  AppSpace.desktopPage,
+                  0,
+                ),
+                child: AppPageHeader(
+                  title: context.l10n.desktopChatTitle,
+                  subtitle: context.l10n.desktopChatExplanation,
                 ),
               ),
+              FileChangesPanel(chatId: chatId),
               for (final question
                   in ref
                       .watch(agentWebQuestionsProvider)
                       .entries
                       .where(
                         (q) =>
-                            (q.key == state.chatId ||
-                                q.key.startsWith(
-                                  '${state.chatId}:workspace:',
-                                )) &&
+                            (q.key == chatId ||
+                                q.key.startsWith('$chatId:workspace:')) &&
                             !q.value.answer.isCompleted,
                       ))
                 AgentWebApprovalCard(
@@ -144,7 +156,20 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const HelperSideColumn(),
-                    Expanded(child: _conversation(context, ref, state, count)),
+                    Expanded(
+                      child: _conversation(
+                        context,
+                        ref,
+                        messages,
+                        count,
+                        isGenerating: isGenerating,
+                        temporary: temporary,
+                        chatId: chatId,
+                        isLoadingModel: isLoadingModel,
+                        error: error,
+                        notice: notice,
+                      ),
+                    ),
                     const DesktopInspectorSlot(),
                   ],
                 ),
@@ -206,6 +231,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
           (m) =>
               m.isDownloaded &&
               m.id != answer.modelId &&
+              modelCategory(m.fileName) == ModelCategory.llm &&
               desktopModelVisible(
                 m,
                 advanced: ref.read(desktopPreferencesProvider).advanced,
@@ -270,14 +296,19 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
   Widget _conversation(
     BuildContext context,
     WidgetRef ref,
-    ChatState state,
-    int count,
-  ) {
-    final busy = state.isGenerating;
+    List<ChatMessage> messages,
+    int count, {
+    required bool isGenerating,
+    required bool temporary,
+    required String? chatId,
+    required bool isLoadingModel,
+    required String? error,
+    required String? notice,
+  }) {
+    final busy = isGenerating;
     final notifier = ref.read(chatProvider.notifier);
     final models = ref.watch(modelManagerProvider);
     final speakingId = ref.watch(voiceProvider.select((v) => v.speakingId));
-    final messages = state.messages;
     final live = messages.where(ChatNotifier.isLive).toList();
     final lastAssistant = live
         .where((m) => m.role == ChatRole.assistant)
@@ -319,201 +350,204 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
       fallback: models.loadedModel?.displayName,
     );
 
-    return Column(
-      children: [
-        if (state.temporary)
-          // A rounded pill at the top, like the phone's temporary banner.
-          Padding(
-            key: const Key('desktop-temporary-indicator'),
-            padding: const EdgeInsets.only(top: 10),
-            child: Tooltip(
-              message: context.l10n.temporaryChatHint,
-              child: DecoratedBox(
-                decoration: ShapeDecoration(
-                  color: context.colors.accent.fade(0.1),
-                  shape: StadiumBorder(
-                    side: BorderSide(color: context.colors.accent.fade(0.3)),
+    // Settings > Appearance > Compact bubbles: the same density the phone's
+    // chat screen provides, so the toggle re-lays out the conversation live.
+    return ChatBubbleDensity(
+      compact: ref.watch(settingsProvider.select((s) => s.compactBubbles)),
+      child: Column(
+        children: [
+          if (temporary)
+            // A rounded pill at the top, like the phone's temporary banner.
+            Padding(
+              key: const Key('desktop-temporary-indicator'),
+              padding: const EdgeInsets.only(top: 10),
+              child: Tooltip(
+                message: context.l10n.temporaryChatHint,
+                child: DecoratedBox(
+                  decoration: ShapeDecoration(
+                    color: context.colors.accent.fade(0.1),
+                    shape: StadiumBorder(
+                      side: BorderSide(color: context.colors.accent.fade(0.3)),
+                    ),
                   ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 5,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.visibility_off_outlined,
-                        size: 14,
-                        color: context.colors.accent,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        context.l10n.temporaryChat,
-                        style: context.text.small.copyWith(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 5,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.visibility_off_outlined,
+                          size: 14,
                           color: context.colors.accent,
-                          fontWeight: FontWeight.w600,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 6),
+                        Text(
+                          context.l10n.temporaryChat,
+                          style: context.text.small.copyWith(
+                            color: context.colors.accent,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        Align(
-          alignment: Alignment.centerRight,
-          child: MenuAnchor(
-            menuChildren: [
-              MenuItemButton(
-                onPressed: state.chatId == null || state.temporary
-                    ? null
-                    : () => exportDesktopChat(context, ref),
-                child: Text(context.l10n.desktopChatExport),
+          Align(
+            alignment: Alignment.centerRight,
+            child: MenuAnchor(
+              menuChildren: [
+                MenuItemButton(
+                  onPressed: chatId == null || temporary
+                      ? null
+                      : () => exportDesktopChat(context, ref),
+                  child: Text(context.l10n.desktopChatExport),
+                ),
+              ],
+              builder: (context, controller, child) => IconButton(
+                tooltip: context.l10n.desktopChatMenu,
+                onPressed: () =>
+                    controller.isOpen ? controller.close() : controller.open(),
+                icon: const Icon(Icons.more_horiz),
               ),
-            ],
-            builder: (context, controller, child) => IconButton(
-              tooltip: context.l10n.desktopChatMenu,
-              onPressed: () =>
-                  controller.isOpen ? controller.close() : controller.open(),
-              icon: const Icon(Icons.more_horiz),
             ),
           ),
-        ),
-        Expanded(
-          child: messages.isEmpty && !busy
-              ? const _EmptyState()
-              : SelectionArea(
-                  // A right-click on a message with nothing selected opens
-                  // that message's actions instead of the text menu.
-                  contextMenuBuilder: (context, region) {
-                    final pending = ChatBubble.takeRightClick();
-                    final selected = region.contextMenuButtonItems.any(
-                      (i) => i.type == ContextMenuButtonType.copy,
-                    );
-                    if (pending == null || selected) {
-                      return AdaptiveTextSelectionToolbar.selectableRegion(
-                        selectableRegionState: region,
+          Expanded(
+            child: messages.isEmpty && !busy
+                ? const _EmptyState()
+                : SelectionArea(
+                    // A right-click on a message with nothing selected opens
+                    // that message's actions instead of the text menu.
+                    contextMenuBuilder: (context, region) {
+                      final pending = ChatBubble.takeRightClick();
+                      final selected = region.contextMenuButtonItems.any(
+                        (i) => i.type == ContextMenuButtonType.copy,
                       );
-                    }
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      region.hideToolbar();
-                      pending();
-                    });
-                    return const SizedBox.shrink();
-                  },
-                  // Newest at the bottom; a reversed list stays pinned to
-                  // the answer being written without scroll bookkeeping.
-                  child: ListView.builder(
-                    reverse: true,
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    itemCount: count,
-                    itemBuilder: (context, i) {
-                      final index = count - 1 - i;
-                      final Widget child;
-                      if (index >= messages.length) {
-                        child = state.isLoadingModel
-                            ? const _LoadingRow()
-                            : _LiveAnswer(
-                                modelName: remoteActive
-                                    ? modelName('remote:$remote')
-                                    : models.loadedModel?.displayName,
-                              );
-                      } else {
-                        final m = messages[index];
-                        final lastAnswer = !busy && m.id == lastAssistant?.id;
-                        child = ChatBubble(
-                          key: ValueKey(m.id),
-                          message: m,
-                          helperChip: HelperUsedChip(messageId: m.id),
-                          modelName: m.role == ChatRole.assistant
-                              ? modelName(m.modelId)
-                              : null,
-                          versions: m.role == ChatRole.user
-                              ? versionsByParent[m.parentId] ?? const []
-                              : const [],
-                          onRestoreVersion: !busy && m.role == ChatRole.user
-                              ? (branch) =>
-                                    unawaited(notifier.restoreBranch(branch))
-                              : null,
-                          onRestore: !busy && m.branch != null
-                              ? () => notifier.restoreBranch(m.branch!)
-                              : null,
-                          onDelete: !busy && !m.isSuperseded && !m.isAlternative
-                              ? (pair) => _deleteTurn(m, pair: pair)
-                              : null,
-                          onSpeak: m.role == ChatRole.assistant
-                              ? () => ref
-                                    .read(voiceProvider.notifier)
-                                    .speak(m.content, id: m.id)
-                              : null,
-                          speaking: speakingId == m.id,
-                          onEdit: !busy && m.role == ChatRole.user
-                              ? (text) => m.id == lastUser?.id
-                                    ? notifier.editLast(text)
-                                    : notifier.editTurn(m, text)
-                              : null,
-                          onRegenerate:
-                              lastAnswer ||
-                                  (!busy &&
-                                      m.role == ChatRole.user &&
-                                      m.id == live.lastOrNull?.id)
-                              ? notifier.regenerate
-                              : null,
-                          onSearchWeb:
-                              lastAnswer &&
-                                  memoryAnswerQuestion != null &&
-                                  m.responseStatus == 'complete' &&
-                                  m.content.isNotEmpty
-                              ? notifier.searchAgain
-                              : null,
-                          onCompare:
-                              lastAnswer &&
-                                  !remoteActive &&
-                                  downloadedModelCount > 1
-                              ? () => _compare(m)
-                              : null,
-                          onContinue:
-                              lastAnswer &&
-                                  m.content.isNotEmpty &&
-                                  const {
-                                    'stopped',
-                                    'interrupted',
-                                    'error',
-                                  }.contains(m.status)
-                              ? notifier.continueAnswer
-                              : null,
-                          // A branch copies the conversation up to here into
-                          // a new chat.
-                          onBranch:
-                              !busy &&
-                                  !state.temporary &&
-                                  state.chatId != null &&
-                                  ChatNotifier.isLive(m)
-                              ? () => notifier.copyChat(
-                                  state.chatId!,
-                                  throughMessageId: m.id,
-                                )
-                              : null,
+                      if (pending == null || selected) {
+                        return AdaptiveTextSelectionToolbar.selectableRegion(
+                          selectableRegionState: region,
                         );
                       }
-                      return _Column(child: child);
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        region.hideToolbar();
+                        pending();
+                      });
+                      return const SizedBox.shrink();
                     },
+                    // Newest at the bottom; a reversed list stays pinned to
+                    // the answer being written without scroll bookkeeping.
+                    child: ListView.builder(
+                      reverse: true,
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      itemCount: count,
+                      itemBuilder: (context, i) {
+                        final index = count - 1 - i;
+                        final Widget child;
+                        if (index >= messages.length) {
+                          child = isLoadingModel
+                              ? const _LoadingRow()
+                              : _LiveAnswer(
+                                  modelName: remoteActive
+                                      ? modelName('remote:$remote')
+                                      : models.loadedModel?.displayName,
+                                );
+                        } else {
+                          final m = messages[index];
+                          final lastAnswer = !busy && m.id == lastAssistant?.id;
+                          child = ChatBubble(
+                            key: ValueKey(m.id),
+                            message: m,
+                            helperChip: HelperUsedChip(messageId: m.id),
+                            modelName: m.role == ChatRole.assistant
+                                ? modelName(m.modelId)
+                                : null,
+                            versions: m.role == ChatRole.user
+                                ? versionsByParent[m.parentId] ?? const []
+                                : const [],
+                            onRestoreVersion: !busy && m.role == ChatRole.user
+                                ? (branch) =>
+                                      unawaited(notifier.restoreBranch(branch))
+                                : null,
+                            onRestore: !busy && m.branch != null
+                                ? () => notifier.restoreBranch(m.branch!)
+                                : null,
+                            onDelete:
+                                !busy && !m.isSuperseded && !m.isAlternative
+                                ? (pair) => _deleteTurn(m, pair: pair)
+                                : null,
+                            onSpeak: m.role == ChatRole.assistant
+                                ? () => ref
+                                      .read(voiceProvider.notifier)
+                                      .speak(m.content, id: m.id)
+                                : null,
+                            speaking: speakingId == m.id,
+                            onEdit: !busy && m.role == ChatRole.user
+                                ? (text) => m.id == lastUser?.id
+                                      ? notifier.editLast(text)
+                                      : notifier.editTurn(m, text)
+                                : null,
+                            onRegenerate:
+                                lastAnswer ||
+                                    (!busy &&
+                                        m.role == ChatRole.user &&
+                                        m.id == live.lastOrNull?.id)
+                                ? notifier.regenerate
+                                : null,
+                            onSearchWeb:
+                                lastAnswer &&
+                                    memoryAnswerQuestion != null &&
+                                    m.responseStatus == 'complete' &&
+                                    m.content.isNotEmpty
+                                ? notifier.searchAgain
+                                : null,
+                            onCompare:
+                                lastAnswer &&
+                                    !remoteActive &&
+                                    downloadedModelCount > 1
+                                ? () => _compare(m)
+                                : null,
+                            onContinue:
+                                lastAnswer &&
+                                    m.content.isNotEmpty &&
+                                    const {
+                                      'stopped',
+                                      'interrupted',
+                                      'error',
+                                    }.contains(m.status)
+                                ? notifier.continueAnswer
+                                : null,
+                            // A branch copies the conversation up to here into
+                            // a new chat.
+                            onBranch:
+                                !busy &&
+                                    !temporary &&
+                                    chatId != null &&
+                                    ChatNotifier.isLive(m)
+                                ? () => notifier.copyChat(
+                                    chatId,
+                                    throughMessageId: m.id,
+                                  )
+                                : null,
+                          );
+                        }
+                        return _Column(child: child);
+                      },
+                    ),
                   ),
-                ),
-        ),
-        if (state.error != null || state.notice != null)
-          _Column(
-            child: _Notice(
-              text: state.error ?? state.notice!,
-              error: state.error != null,
-            ),
           ),
-        _Column(
-          child: _Composer(key: _composer, focus: widget.composerFocus),
-        ),
-      ],
+          if (error != null || notice != null)
+            _Column(
+              child: _Notice(text: error ?? notice!, error: error != null),
+            ),
+          _Column(
+            child: _Composer(key: _composer, focus: widget.composerFocus),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -612,10 +646,10 @@ class _EmptyState extends ConsumerWidget {
                 style: context.text.bodyMuted.copyWith(fontSize: 13.5),
               ),
               if (loading) ...[
-                const SizedBox(height: 24),
+                const SizedBox(height: AppSpace.section),
                 const SizedBox(width: 360, child: ModelLoadProgress()),
               ] else if (!hasModel) ...[
-                const SizedBox(height: 20),
+                const SizedBox(height: AppSpace.section),
                 DecoratedBox(
                   decoration: BoxDecoration(
                     border: Border.all(color: c.hairline),
@@ -1073,7 +1107,7 @@ class _ComposerState extends ConsumerState<_Composer> {
                                     onRemove: busy ? null : _remove,
                                   ),
                                   if (!busy) ...[
-                                    const SizedBox(height: 8),
+                                    const SizedBox(height: AppSpace.row),
                                     Wrap(
                                       spacing: 6,
                                       runSpacing: 6,

@@ -31,7 +31,7 @@ Future<void> showNoticeSheet(
                 color: warning ? c.warning : c.textFaint,
               ),
             ),
-            const SizedBox(width: AppDesign.sm),
+            const SizedBox(width: AppSpace.sm),
             Expanded(
               child: SelectableText(
                 notice,

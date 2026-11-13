@@ -58,6 +58,11 @@ class ImageGenModel {
   /// CUDA in stable-diffusion.cpp (white video), so it pays ~2 min on the CPU.
   final bool textEncoderOnCpu;
 
+  /// The Hugging Face repository an imported model came from; null for a
+  /// built-in catalog entry.
+  final String? sourceRepo;
+  final String? sourceRevision;
+
   const ImageGenModel({
     required this.id,
     required this.displayName,
@@ -76,10 +81,15 @@ class ImageGenModel {
     this.textEncoderOnCpu = false,
     this.frames = 0,
     this.fps = 0,
+    this.sourceRepo,
+    this.sourceRevision,
   });
 
   String get downloadKey => 'image-gen:$id';
   int get sizeBytes => files.fold(0, (a, f) => a + f.sizeBytes);
+
+  /// Added by the user from Hugging Face rather than shipped in the catalog.
+  bool get imported => sourceRepo != null;
 
   ImageGenComponent? file(ImageGenRole role) {
     for (final f in files) {
@@ -88,9 +98,13 @@ class ImageGenModel {
     return null;
   }
 
-  /// Load settings for `od_sd_load`, given each component's path. Weights
-  /// stay in RAM and stream to the GPU: none of these fit 8 GB VRAM at once.
-  Map<String, Object> loadSettings(Map<ImageGenRole, String> paths) => {
+  /// Auto-fit measures tensors and live device memory, retaining weights on
+  /// the compute device first, then RAM/disk as needed. An explicit override
+  /// remains available for callers that require host streaming.
+  Map<String, Object> loadSettings(
+    Map<ImageGenRole, String> paths, {
+    bool? offloadToCpu,
+  }) => {
     'diffusionModelPath': paths[ImageGenRole.diffusion]!,
     if (paths[ImageGenRole.llm] != null) 'llmPath': paths[ImageGenRole.llm]!,
     if (paths[ImageGenRole.t5xxl] != null)
@@ -99,7 +113,7 @@ class ImageGenModel {
       'embeddingsConnectorsPath': paths[ImageGenRole.embeddingsConnectors]!,
     if (paths[ImageGenRole.audioVae] != null)
       'audioVaePath': paths[ImageGenRole.audioVae]!,
-    'offloadToCpu': true,
+    if (offloadToCpu != null) 'offloadToCpu': offloadToCpu,
     'flashAttn': true,
     if (mmap) 'mmap': true,
     if (textEncoderOnCpu) 'textEncoderOnCpu': true,
@@ -134,6 +148,8 @@ const _qwenImage =
     '$_hf/leejet/Qwen-Image-2.1-GGUF/resolve/cc11433936a06e9765f7c0c0b1f0436cfd2b9856';
 const _ltx =
     '$_hf/unsloth/LTX-2.3-GGUF/resolve/96e8ed4925ead3db9ff4d0084f165ef6a74f28d0';
+const _ltx25 =
+    '$_hf/unsloth/LTX-2.5-GGUF/resolve/ac3c540c6025903784336e99b2dc179385c4c3b7';
 
 /// The VAE, text encoder and upscaler both Qwen-Image quants use.
 const _qwenImageShared = [
@@ -378,4 +394,108 @@ const imageGenCatalog = <ImageGenModel>[
       ),
     ],
   ),
+  // LTX-2.5 (stable-diffusion.cpp docs/ltx2.md): same transformer family,
+  // Gemma 4 12B text encoder with the projection built in (no connectors
+  // file), and the conv video VAE (the default one is a diffusion decoder
+  // sd.cpp does not run). Sizes and hashes from the Hugging Face API,
+  // 2026-11-13.
+  ImageGenModel(
+    id: 'ltx-2.5-22b-distilled-q4km',
+    displayName: 'LTX-2.5 22B',
+    blurb:
+        'Text or picture to video from Lightricks, newer than LTX-2.3. '
+        'Distilled to 8 steps; needs 32 GB of RAM and a 26 GB text encoder.',
+    license: 'LTX-2 Community License',
+    kind: ImageGenKind.video,
+    width: 768,
+    height: 512,
+    steps: 8,
+    cfgScale: 1,
+    sigmas: '1.0,0.99375,0.9875,0.98125,0.975,0.909375,0.725,0.421875,0.0',
+    mmap: true,
+    textEncoderOnCpu: true,
+    frames: 49,
+    fps: 24,
+    files: [
+      ImageGenComponent(
+        role: ImageGenRole.diffusion,
+        fileName: 'ltx-2.5-22b-distilled-Q4_K_M.gguf',
+        url: '$_ltx25/distilled/ltx-2.5-22b-distilled-Q4_K_M.gguf',
+        sha256:
+            'ba40d53770314e69e88361661e55c6cc3b12a363646ba2ea53c8bcd459b66747',
+        sizeBytes: 13584703872,
+      ),
+      ImageGenComponent(
+        role: ImageGenRole.vae,
+        fileName: 'ltx-2.5-video-vae-conv-bf16.safetensors',
+        url: '$_ltx25/vae/ltx-2.5-video-vae-conv-bf16.safetensors',
+        sha256:
+            '685b06ee3d9b2039647698fc4ea33175112462fc374e2777312c907897dfce8d',
+        sizeBytes: 1452269922,
+      ),
+      ImageGenComponent(
+        role: ImageGenRole.audioVae,
+        fileName: 'ltx-2.5-audio-vae-bf16.safetensors',
+        url: '$_ltx25/vae/ltx-2.5-audio-vae-bf16.safetensors',
+        sha256:
+            'c52733d37f6a7fb7949c3dc0fb468c6cb2169e4d836983a73babb9f0d54837a5',
+        sizeBytes: 364866540,
+      ),
+      ImageGenComponent(
+        role: ImageGenRole.llm,
+        fileName: 'gemma4-12b-with-proj-ltx-2.5-bf16.safetensors',
+        url:
+            '$_ltx25/text_encoders/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors',
+        sha256:
+            'ef7243612fdae7a75cb4d5cee9433e81380675fb6c213bd98ae74a9cd16561d1',
+        sizeBytes: 26263858182,
+      ),
+    ],
+  ),
 ];
+
+/// Create's first model when the user has not picked one (owner
+/// 2026-11-12: the fastest image model that fits). Speed follows the
+/// diffusion weights' size on any card, since smaller weights both stay on
+/// the graphics card more often and do less work per step; so it is the
+/// picture model with the smallest diffusion file, among downloaded ones
+/// when any are, else among all of [models].
+/// The catalog picture model and video model to recommend for a graphics
+/// card with [vramMb] of memory (owner 2026-11-12: one of each per GPU):
+/// of each kind, the one with the largest diffusion weights that stay on
+/// the card with 2 GB to spare for the text encoder's turn and compute
+/// buffers, else the smallest. Imported models are never recommended;
+/// nothing is when the card's memory is unknown.
+Set<String> recommendedImageGenModels(double vramMb) {
+  if (vramMb <= 0) return const {};
+  int weights(ImageGenModel m) =>
+      m.file(ImageGenRole.diffusion)?.sizeBytes ?? m.sizeBytes;
+  final picks = <String>{};
+  for (final kind in ImageGenKind.values) {
+    final all = imageGenCatalog.where((m) => m.kind == kind).toList();
+    if (all.isEmpty) continue;
+    final fit = all
+        .where((m) => weights(m) / 1048576 + 2048 <= vramMb)
+        .toList();
+    picks.add(
+      (fit.isEmpty
+              ? all.reduce((a, b) => weights(b) < weights(a) ? b : a)
+              : fit.reduce((a, b) => weights(b) > weights(a) ? b : a))
+          .id,
+    );
+  }
+  return picks;
+}
+
+ImageGenModel defaultImageGenModel(
+  List<ImageGenModel> models, {
+  Set<String> downloaded = const {},
+}) {
+  final pictures = models.where((m) => m.kind == ImageGenKind.image).toList();
+  if (pictures.isEmpty) return models.first;
+  final ready = pictures.where((m) => downloaded.contains(m.id)).toList();
+  final pool = ready.isEmpty ? pictures : ready;
+  int weights(ImageGenModel m) =>
+      m.file(ImageGenRole.diffusion)?.sizeBytes ?? m.sizeBytes;
+  return pool.reduce((a, b) => weights(b) < weights(a) ? b : a);
+}

@@ -58,6 +58,53 @@ class _SettingsSearchPageState extends ConsumerState<SettingsSearchPage> {
         (bool v) => s.copyWith(batterySaver: v),
       ),
     ].where((e) => q.isNotEmpty && hit('${e.$1} ${e.$2}'));
+    // Related rows share one card, as on every other settings page.
+    final pageLinks = <Widget>[
+      if (_query.isEmpty ||
+          'memory mémoire memoria'.contains(_query.toLowerCase()))
+        SettingsRow(
+          title: Text(t.memory),
+          leading: const Icon(Icons.psychology_outlined),
+          onTap: () => _open(const MemoryPage()),
+        ),
+      if (_query.isEmpty ||
+          'knowledge documents documents documentos'.contains(
+            _query.toLowerCase(),
+          ))
+        SettingsRow(
+          title: Text(t.knowledgeLibrary),
+          leading: const Icon(Icons.menu_book),
+          onTap: () => _open(const KnowledgePage()),
+        ),
+      // The PC's "Connect a phone" steps point here (Settings > Remote server).
+      if (_query.isEmpty ||
+          '${t.remoteServer} remote server pair pc serveur distant servidor remoto'
+              .toLowerCase()
+              .contains(_query.toLowerCase()))
+        SettingsRow(
+          title: Text(t.remoteServer),
+          leading: const Icon(Icons.dns_outlined),
+          onTap: () => _open(const RemoteServerPage()),
+        ),
+    ];
+    final switchRows = <Widget>[
+      for (final e in switches)
+        SwitchListTile(
+          title: Text(e.$1),
+          subtitle: e.$2.isEmpty ? null : Text(e.$2),
+          value: e.$3,
+          onChanged: (v) => notifier.update(e.$4(v)),
+        ),
+    ];
+    final matchRows = <Widget>[
+      for (final spec in matches)
+        SettingsRow(
+          title: Text(spec.labelIn(t)),
+          subtitle: Text(spec.group),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => _setting(spec),
+        ),
+    ];
     return Scaffold(
       appBar: AppBar(title: Text(t.settingsSearch)),
       body: ListView(
@@ -76,8 +123,8 @@ class _SettingsSearchPageState extends ConsumerState<SettingsSearchPage> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppDesign.lg),
             child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: AppSpace.sm,
+              runSpacing: AppSpace.sm,
               children: [
                 ActionChip(
                   label: Text(t.settingsFaster),
@@ -108,46 +155,15 @@ class _SettingsSearchPageState extends ConsumerState<SettingsSearchPage> {
               ],
             ),
           ),
-          if (_query.isEmpty ||
-              'memory mémoire memoria'.contains(_query.toLowerCase()))
-            SettingsRow(
-              title: Text(t.memory),
-              leading: const Icon(Icons.psychology_outlined),
-              onTap: () => _open(const MemoryPage()),
-            ),
-          if (_query.isEmpty ||
-              'knowledge documents documents documentos'.contains(
-                _query.toLowerCase(),
-              ))
-            SettingsRow(
-              title: Text(t.knowledgeLibrary),
-              leading: const Icon(Icons.menu_book),
-              onTap: () => _open(const KnowledgePage()),
-            ),
-          // The PC's "Connect a phone" steps point here (Settings > Remote server).
-          if (_query.isEmpty ||
-              '${t.remoteServer} remote server pair pc serveur distant servidor remoto'
-                  .toLowerCase()
-                  .contains(_query.toLowerCase()))
-            SettingsRow(
-              title: Text(t.remoteServer),
-              leading: const Icon(Icons.dns_outlined),
-              onTap: () => _open(const RemoteServerPage()),
-            ),
-          for (final e in switches)
-            SwitchListTile(
-              title: Text(e.$1),
-              subtitle: e.$2.isEmpty ? null : Text(e.$2),
-              value: e.$3,
-              onChanged: (v) => notifier.update(e.$4(v)),
-            ),
-          for (final spec in matches)
-            SettingsRow(
-              title: Text(spec.labelIn(t)),
-              subtitle: Text(spec.group),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _setting(spec),
-            ),
+          for (final rows in [pageLinks, switchRows, matchRows])
+            if (rows.isNotEmpty) ...[
+              const SizedBox(height: AppSpace.xl),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppDesign.lg),
+                child: SettingsGroup(children: rows),
+              ),
+            ],
+          const SizedBox(height: AppSpace.xxl),
         ],
       ),
     );

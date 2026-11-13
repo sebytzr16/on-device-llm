@@ -11,10 +11,23 @@ class OnboardingNotifier extends AsyncNotifier<bool> {
     return prefs.getBool(_kOnboardingDone) ?? false;
   }
 
-  Future<void> complete() async {
+  /// Completes onboarding with explicit finishing state and checked persistence.
+  /// Returns true if persisted successfully, false if the write failed.
+  /// The caller should offer retry or continue-for-this-session on false.
+  Future<bool> complete() async {
     state = const AsyncData(true);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kOnboardingDone, true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final ok = await prefs.setBool(_kOnboardingDone, true);
+      if (!ok) {
+        state = AsyncData(false);
+        return false;
+      }
+      return true;
+    } catch (_) {
+      state = AsyncData(false);
+      return false;
+    }
   }
 }
 

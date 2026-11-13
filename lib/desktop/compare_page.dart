@@ -1,5 +1,7 @@
+import '../features/models/presentation/widgets/model_categories.dart';
 import '../core/platform/desktop_preferences.dart';
 import 'model_visibility.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -31,6 +33,9 @@ class _CompareColumn {
   bool ownEngine = false;
   bool loading = false;
   bool generating = false;
+  bool done = false;
+  bool follow = true;
+  final scroll = ScrollController();
   double? progress;
   String answer = '';
   String? error;
@@ -61,6 +66,7 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
     for (final column in _columns) {
       column.epoch++;
       if (column.loading || column.generating) column.engine?.cancel();
+      column.scroll.dispose();
       unawaited(_release(column));
     }
     _prompt.dispose();
@@ -110,6 +116,8 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
     setState(() {
       column.modelId = id;
       column.answer = '';
+      column.done = false;
+      column.follow = true;
       column.error = null;
       column.metrics = const {};
       column.elapsed = null;
@@ -135,6 +143,14 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
     final prompt = _prompt.text.trim();
     final system = _system.text.trim();
     if (prompt.isEmpty || _running) return;
+    if (ref.read(sessionBusyProvider) ||
+        ref.read(llamaEngineProvider).isBusy ||
+        ref.read(modelManagerProvider).isLoadingModel) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.l10n.desktopCompareBusy)));
+      return;
+    }
     final catalog = ref.read(modelManagerProvider).catalog;
     final chosen = [
       for (final column in _columns)
@@ -152,12 +168,26 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
       _running = true;
       for (final column in _columns) {
         column.answer = '';
+        column.done = false;
+        column.follow = true;
         column.error = null;
         column.metrics = const {};
         column.elapsed = null;
       }
     });
     try {
+      // Compare owns its runtimes. Free chat through the manager so title-bar
+      // and served-model state are cleared along with the native allocation.
+      if (ref.read(llamaEngineProvider).isLoaded ||
+          ref.read(modelManagerProvider).loadedModelId != null) {
+        await ref.read(modelManagerProvider.notifier).unloadModel();
+        if (!mounted) return;
+        if (ref.read(llamaEngineProvider).isLoaded ||
+            ref.read(modelManagerProvider).loadedModelId != null) {
+          throw StateError(context.l10n.desktopCompareBusy);
+        }
+      }
+      if (_runEpoch != run || !mounted) return;
       if (_sideBySide) {
         await Future.wait([
           _answer(_columns[0], chosen[0]!, prompt, system, run),
@@ -172,6 +202,14 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
           if (_runEpoch != run) break;
           await _answer(_columns[index], chosen[index]!, prompt, system, run);
         }
+      }
+    } catch (error) {
+      if (mounted && _runEpoch == run) {
+        setState(() {
+          for (final column in _columns) {
+            column.error = error.toString();
+          }
+        });
       }
     } finally {
       // Snapshot before allowing another run or history selection to mutate panes.
@@ -219,38 +257,19 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
       final totalWatch = Stopwatch()..start();
       LlamaEngine? engine = column.engine;
       try {
-        final chat = ref.read(llamaEngineProvider);
-        if (engine == chat &&
-            (chat.isBusy ||
-                ref.read(sessionBusyProvider) ||
-                ref.read(modelManagerProvider).loadedModelId != model.id)) {
-          column.engine = null;
-          engine = null;
-        }
         if (engine == null) {
-          final chatModel = ref.read(modelManagerProvider).loadedModelId;
-          if (chatModel == model.id &&
-              chat.isLoaded &&
-              !chat.isBusy &&
-              !ref.read(sessionBusyProvider) &&
-              !_columns.any((c) => c != column && c.engine == chat)) {
-            engine = chat;
-            column.ownEngine = false;
-          } else {
-            engine = ref.read(engineFactoryProvider)();
-            column.ownEngine = true;
-            column.loading = true;
-            column.progressSubscription = engine.loadProgressChanges.listen((
-              value,
-            ) {
-              if (mounted && column.epoch == epoch) {
-                setState(() => column.progress = value);
-              }
-            });
-            column.engine = engine;
-            if (mounted) setState(() {});
-          }
+          engine = ref.read(engineFactoryProvider)();
+          column.ownEngine = true;
+          column.loading = true;
+          column.progressSubscription = engine.loadProgressChanges.listen((
+            value,
+          ) {
+            if (mounted && column.epoch == epoch) {
+              setState(() => column.progress = value);
+            }
+          });
           column.engine = engine;
+          if (mounted) setState(() {});
         }
         if (column.ownEngine) {
           column.loading = true;
@@ -281,10 +300,12 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
         )) {
           if (_runEpoch != run || column.epoch != epoch || !mounted) break;
           setState(() => column.answer += chunk);
+          _followAnswer(column);
         }
         watch.stop();
         if (mounted && column.epoch == epoch) {
           setState(() {
+            column.done = _runEpoch == run;
             column.metrics = Map.of(engine!.metrics);
             column.elapsed = watch.elapsed;
           });
@@ -327,6 +348,13 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
     if (column.task == task) column.task = null;
   }
 
+  void _followAnswer(_CompareColumn column) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !column.follow || !column.scroll.hasClients) return;
+      column.scroll.jumpTo(column.scroll.position.maxScrollExtent);
+    });
+  }
+
   void _historyError(Object error) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -353,6 +381,7 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
         column.modelId = side['modelId'] as String;
         column.answer = side['answer'] as String;
         column.error = side['error'] as String?;
+        column.done = column.error == null && entry.data['interrupted'] != true;
         column.metrics = Map<String, dynamic>.from(side['metrics'] as Map);
         column.elapsed = side['totalMs'] == null
             ? null
@@ -520,6 +549,7 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
         .where(
           (m) =>
               m.isDownloaded &&
+              modelCategory(m.fileName) == ModelCategory.llm &&
               desktopModelVisible(
                 m,
                 advanced: ref.watch(desktopPreferencesProvider).advanced,
@@ -530,18 +560,13 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
         _columns.every((column) => column.modelId != null) &&
         _columns[0].modelId != _columns[1].modelId;
     return Padding(
-      padding: const EdgeInsets.all(AppDesign.lg),
+      padding: const EdgeInsets.all(AppSpace.desktopPage),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  t.desktopCompareTitle,
-                  style: context.text.headline,
-                ),
-              ),
+          AppPageHeader(
+            title: t.desktopCompareTitle,
+            actions: [
               TextButton.icon(
                 onPressed: () => setState(() => _showHistory = !_showHistory),
                 icon: const Icon(Icons.history),
@@ -635,10 +660,18 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
     final column = _columns[index];
     final model = models.where((m) => m.id == column.modelId).firstOrNull;
     final m = column.metrics;
+    final outline = column.error != null
+        ? c.danger
+        : column.generating
+        ? c.accent
+        : column.done
+        ? c.success
+        : c.hairline;
     return DecoratedBox(
+      key: Key('desktopCompareCard$index'),
       decoration: BoxDecoration(
         color: c.surfaceRaised,
-        border: Border.all(color: c.hairline),
+        border: Border.all(color: outline),
         borderRadius: AppDesign.radius(AppDesign.rLg),
       ),
       child: Column(
@@ -686,6 +719,16 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
                     ),
                   ),
                 ),
+                if (column.error != null || column.done)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Text(
+                      column.error != null
+                          ? t.desktopCompareFailed
+                          : t.desktopCompareDone,
+                      style: context.text.caption.copyWith(color: outline),
+                    ),
+                  ),
                 if (column.ownEngine)
                   IconButton(
                     tooltip: t.desktopCompareUnload,
@@ -723,19 +766,31 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
               child: Text(column.error!, style: TextStyle(color: c.danger)),
             ),
           Expanded(
-            child: SingleChildScrollView(
-              child: column.answer.isEmpty
-                  ? const SizedBox.shrink()
-                  : ChatBubble(
-                      streaming: column.generating,
-                      modelName: model?.displayName ?? column.modelId,
-                      message: ChatMessage(
-                        id: 'compare-$index',
-                        role: ChatRole.assistant,
-                        content: column.answer,
-                        timestamp: DateTime.now(),
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                if (notification is UserScrollNotification ||
+                    notification is ScrollUpdateNotification &&
+                        notification.dragDetails != null) {
+                  column.follow = notification.metrics.extentAfter <= 32;
+                }
+                return false;
+              },
+              child: SingleChildScrollView(
+                key: Key('desktopCompareAnswer$index'),
+                controller: column.scroll,
+                child: column.answer.isEmpty
+                    ? const SizedBox.shrink()
+                    : ChatBubble(
+                        streaming: column.generating,
+                        modelName: model?.displayName ?? column.modelId,
+                        message: ChatMessage(
+                          id: 'compare-$index',
+                          role: ChatRole.assistant,
+                          content: column.answer,
+                          timestamp: DateTime.now(),
+                        ),
                       ),
-                    ),
+              ),
             ),
           ),
           if (column.elapsed != null)

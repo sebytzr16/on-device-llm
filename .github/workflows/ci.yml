@@ -15,6 +15,9 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
+      # Resolved dependencies must match the committed lockfile (S19).
+      - name: Verify pubspec.lock is committed
+        run: git diff --exit-code pubspec.lock
       - run: dart run build_runner build
       # Formatter output differs between Dart versions; check with the build's Flutter.
       - if: matrix.flutter == '3.47.5'
@@ -36,7 +39,7 @@ jobs:
       - run: bash scripts/build_android.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: android-arm64-cpu
+          name: android-arm64-cpu-debug-signed
           path: build/app/outputs/flutter-apk/app-release.apk
 
   ios:

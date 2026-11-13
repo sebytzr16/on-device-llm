@@ -392,7 +392,8 @@ void main() {
         limits: {'x/y': RemoteLimit(perMinute: 3, perDay: 100)},
       );
       final back = RemoteProfile.fromJson(p.toJson())!;
-      expect(back.headers, p.headers);
+      // Header values are keystore-only now, never part of the settings JSON.
+      expect(back.headers, isEmpty);
       expect(back.limit.perDay, 100);
       expect(
         RemoteProfile.fromJson({

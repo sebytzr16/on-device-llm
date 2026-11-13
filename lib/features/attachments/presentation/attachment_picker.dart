@@ -1,3 +1,4 @@
+import 'dart:async';
 import '../../../core/motion/motion.dart';
 import 'dart:typed_data';
 
@@ -300,7 +301,8 @@ Future<List<Attachment>> importAttachments(
     }
   }
   await done.catchError((_) {});
-  await route.completed;
-  progress.dispose();
+  // Removing the dialog finishes the import. Its overlay can be disposed on
+  // a later frame; keep its notifier alive until then without blocking callers.
+  unawaited(route.completed.then((_) => progress.dispose()));
   return out;
 }

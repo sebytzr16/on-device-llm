@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cstring>
 #include <fstream>
+#include <mmdeviceapi.h>
+#include <ks.h>
+#include <ksmedia.h>
 #include <flutter/event_stream_handler_functions.h>
 #include <flutter/standard_method_codec.h>
 #include "utils.h"
@@ -14,6 +17,7 @@ constexpr int kRate = 16000;
 constexpr int kFrame = 512;
 // Closes an idle output device shortly after the last sentence.
 constexpr UINT_PTR kOutputIdleTimer = 0x564f4f55;
+constexpr UINT_PTR kCaptureTimer = 0x564f4145;
 
 bool MicrophoneDenied() {
   constexpr const wchar_t* keys[] = {
@@ -83,7 +87,17 @@ VoiceAudio::VoiceAudio(HWND window, flutter::BinaryMessenger* messenger)
       StopPlayback();
       result->Success();
     } else if (name == "conversation") {
+      const auto* on = Arg(call.arguments(), "on");
+      const auto* call_path = Arg(call.arguments(), "call");
+      const bool enabled = on && std::get_if<bool>(on) && std::get<bool>(*on);
+      const bool call_enabled = !call_path ||
+          (std::get_if<bool>(call_path) && std::get<bool>(*call_path));
+      const bool conversation = enabled && call_enabled;
+      if (conversation != conversation_) StopMic();
+      conversation_ = conversation;
       result->Success();
+    } else if (name == "aecActive") {
+      result->Success(Value(AecActive()));
     } else if (name == "micPrivacyDenied") {
       result->Success(Value(MicrophoneDenied()));
     } else {
@@ -100,7 +114,7 @@ VoiceAudio::~VoiceAudio() {
 }
 
 void VoiceAudio::StartMic(const Value* args, std::unique_ptr<Result> result) {
-  if (input_ || !wav_samples_.empty()) {
+  if (input_ || capture_audio_ || !wav_samples_.empty()) {
     result->Success(Value(true));
     return;
   }
@@ -119,6 +133,12 @@ void VoiceAudio::StartMic(const Value* args, std::unique_ptr<Result> result) {
     result->Error("microphone_denied", "Microphone blocked by Windows privacy");
     return;
   }
+  if (conversation_ && StartCommunicationsMic()) {
+    result->Success(Value(true));
+    return;
+  }
+  // Communications capture is best effort. Legacy capture remains usable,
+  // but AecActive() returns false, so Dart rests the mic during playback.
   WAVEFORMATEX format{WAVE_FORMAT_PCM, 1, kRate, kRate * 2, 2, 16, 0};
   if (waveInOpen(&input_, WAVE_MAPPER, &format,
                  reinterpret_cast<DWORD_PTR>(window_), 0, CALLBACK_WINDOW) !=
@@ -147,6 +167,12 @@ void VoiceAudio::StartMic(const Value* args, std::unique_ptr<Result> result) {
 }
 
 void VoiceAudio::StopMic() {
+  KillTimer(window_, kCaptureTimer);
+  if (capture_audio_) capture_audio_->Stop();
+  capture_client_.Reset();
+  capture_audio_.Reset();
+  aec_reference_set_ = false;
+  capture_bytes_ = 0;
   KillTimer(window_, kWavTimer);
   wav_samples_.clear();
   wav_offset_ = 0;
@@ -160,6 +186,134 @@ void VoiceAudio::StopMic() {
   }
   waveInClose(input_);
   input_ = nullptr;
+}
+
+bool VoiceAudio::StartCommunicationsMic() {
+  using Microsoft::WRL::ComPtr;
+  ComPtr<IMMDeviceEnumerator> enumerator;
+  ComPtr<IMMDevice> device;
+  ComPtr<IAudioClient2> audio;
+  ComPtr<IAudioCaptureClient> capture;
+  if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr,
+          CLSCTX_INPROC_SERVER, IID_PPV_ARGS(enumerator.GetAddressOf()))) ||
+      FAILED(enumerator->GetDefaultAudioEndpoint(eCapture, eCommunications,
+          device.GetAddressOf())) ||
+      FAILED(device->Activate(__uuidof(IAudioClient2), CLSCTX_INPROC_SERVER,
+          nullptr, reinterpret_cast<void**>(audio.GetAddressOf())))) return false;
+
+  AudioClientProperties properties{};
+  properties.cbSize = sizeof(properties);
+  properties.eCategory = AudioCategory_Communications;
+  // NONE preserves the system processing/APOs; RAW would disable AEC.
+  properties.Options = AUDCLNT_STREAMOPTIONS_NONE;
+  WAVEFORMATEX format{WAVE_FORMAT_PCM, 1, kRate, kRate * 2, 2, 16, 0};
+  if (FAILED(audio->SetClientProperties(&properties)) ||
+      FAILED(audio->Initialize(AUDCLNT_SHAREMODE_SHARED,
+          AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY,
+          5000000, 0, &format, nullptr)) ||
+      FAILED(audio->GetService(IID_PPV_ARGS(capture.GetAddressOf()))) ||
+      FAILED(audio->Start())) return false;
+  capture_audio_ = audio;
+  capture_client_ = capture;
+#ifdef __IAudioEffectsManager_INTERFACE_DEFINED__
+  Microsoft::WRL::ComPtr<IAudioEffectsManager> manager;
+  if (SUCCEEDED(audio->GetService(IID_PPV_ARGS(manager.GetAddressOf())))) {
+    AUDIO_EFFECT* effects = nullptr;
+    UINT32 count = 0;
+    if (SUCCEEDED(manager->GetAudioEffects(&effects, &count))) {
+      for (UINT32 i = 0; i < count; ++i) {
+        if (IsEqualGUID(effects[i].id, AUDIO_EFFECT_TYPE_ACOUSTIC_ECHO_CANCELLATION) &&
+            effects[i].canSetState && effects[i].state == AUDIO_EFFECT_STATE_OFF) {
+          // Best effort: AecActive() independently verifies the resulting state.
+          manager->SetAudioEffectState(effects[i].id, AUDIO_EFFECT_STATE_ON);
+        }
+      }
+      CoTaskMemFree(effects);
+    }
+  }
+#endif
+#ifdef __IAcousticEchoCancellationControl_INTERFACE_DEFINED__
+  // waveOut's WAVE_MAPPER uses the default multimedia render endpoint.
+  // Explicitly use that speaker as the AEC reference, even if the user's
+  // default communications speaker is a different device.
+  ComPtr<IMMDevice> render;
+  ComPtr<IAcousticEchoCancellationControl> control;
+  LPWSTR render_id = nullptr;
+  if (SUCCEEDED(enumerator->GetDefaultAudioEndpoint(eRender, eMultimedia,
+          render.GetAddressOf())) &&
+      SUCCEEDED(render->GetId(&render_id)) &&
+      SUCCEEDED(audio->GetService(IID_PPV_ARGS(control.GetAddressOf())))) {
+    aec_reference_set_ = SUCCEEDED(control->SetEchoCancellationRenderEndpoint(render_id));
+  }
+  CoTaskMemFree(render_id);
+#endif
+  capture_bytes_ = 0;
+  if (!SetTimer(window_, kCaptureTimer, 10, nullptr)) {
+    StopMic();
+    return false;
+  }
+  return true;
+}
+
+bool VoiceAudio::AecActive() {
+  if (!conversation_ || !capture_audio_ || !aec_reference_set_) return false;
+#ifdef __IAudioEffectsManager_INTERFACE_DEFINED__
+  // Category selection alone does not prove that this endpoint has AEC.
+  // Older Windows versions without this service conservatively report false.
+  Microsoft::WRL::ComPtr<IAudioEffectsManager> manager;
+  if (FAILED(capture_audio_->GetService(
+          IID_PPV_ARGS(manager.GetAddressOf())))) return false;
+  AUDIO_EFFECT* effects = nullptr;
+  UINT32 count = 0;
+  if (FAILED(manager->GetAudioEffects(&effects, &count))) return false;
+  bool active = false;
+  for (UINT32 i = 0; i < count; ++i) {
+    if (IsEqualGUID(effects[i].id, AUDIO_EFFECT_TYPE_ACOUSTIC_ECHO_CANCELLATION) &&
+        effects[i].state == AUDIO_EFFECT_STATE_ON) active = true;
+  }
+  CoTaskMemFree(effects);
+  return active;
+#else
+  return false;
+#endif
+}
+
+void VoiceAudio::PollCapture() {
+  UINT32 available = 0;
+  while (capture_client_) {
+    if (FAILED(capture_client_->GetNextPacketSize(&available))) {
+      StopMic();
+      return;
+    }
+    if (!available) return;
+    BYTE* data = nullptr;
+    UINT32 frames = 0;
+    DWORD flags = 0;
+    if (FAILED(capture_client_->GetBuffer(&data, &frames, &flags, nullptr, nullptr))) {
+      StopMic();
+      return;
+    }
+    if (flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY) capture_bytes_ = 0;
+    const size_t bytes = static_cast<size_t>(frames) * 2;
+    size_t offset = 0;
+    while (offset < bytes) {
+      const size_t take = std::min(bytes - offset, capture_frame_.size() - capture_bytes_);
+      if (flags & AUDCLNT_BUFFERFLAGS_SILENT)
+        std::memset(capture_frame_.data() + capture_bytes_, 0, take);
+      else
+        std::memcpy(capture_frame_.data() + capture_bytes_, data + offset, take);
+      offset += take;
+      capture_bytes_ += take;
+      if (capture_bytes_ == capture_frame_.size()) {
+        EmitFrame(capture_frame_.data());
+        capture_bytes_ = 0;
+      }
+    }
+    if (FAILED(capture_client_->ReleaseBuffer(frames))) {
+      StopMic();
+      return;
+    }
+  }
 }
 
 bool VoiceAudio::LoadWav(const std::string& path) {
@@ -246,6 +400,10 @@ void VoiceAudio::StopPlayback() {
 }
 
 bool VoiceAudio::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
+  if (message == WM_TIMER && wparam == kCaptureTimer) {
+    PollCapture();
+    return true;
+  }
   if (message == WM_TIMER && wparam == kWavTimer) {
     if (wav_samples_.empty()) return true;
     std::array<char, 1024> frame{};

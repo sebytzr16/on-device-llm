@@ -134,7 +134,7 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpace.row),
           SizedBox(
             height: 38,
             child: TextField(
@@ -553,7 +553,7 @@ class _ChatRowState extends ConsumerState<_ChatRow> {
   }
 }
 
-class _NavRow extends StatelessWidget {
+class _NavRow extends StatefulWidget {
   final IconData icon;
   final String label;
   final String? shortcut;
@@ -568,52 +568,66 @@ class _NavRow extends StatelessWidget {
   });
 
   @override
+  State<_NavRow> createState() => _NavRowState();
+}
+
+class _NavRowState extends State<_NavRow> {
+  bool _hover = false, _focused = false;
+  IconData get icon => widget.icon;
+  String get label => widget.label;
+  String? get shortcut => widget.shortcut;
+  bool get selected => widget.selected;
+  VoidCallback get onTap => widget.onTap;
+
+  @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return Tooltip(
-      message: shortcut == null ? label : '$label ($shortcut)',
-      child: Pressable(
-        pressedScale: 0.97,
-        child: DesktopFocusRing(
-          label: label,
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: AppDesign.radius(AppDesign.rMd),
-            child: AnimatedContainer(
-              duration: DesktopTheme.fast,
-              height: 34,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(
-                color: selected ? c.text.fade(0.08) : Colors.transparent,
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: Focus(
+        canRequestFocus: false,
+        onFocusChange: (value) => setState(() => _focused = value),
+        child: Tooltip(
+          message: shortcut == null ? label : '$label ($shortcut)',
+          child: Pressable(
+            pressedScale: 0.97,
+            child: DesktopFocusRing(
+              label: label,
+              child: InkWell(
+                onTap: onTap,
                 borderRadius: AppDesign.radius(AppDesign.rMd),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    icon,
-                    size: 17,
-                    color: selected ? c.accent : c.textMuted,
+                child: AnimatedContainer(
+                  duration: DesktopTheme.fast,
+                  height: 34,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: selected ? c.text.fade(0.08) : Colors.transparent,
+                    borderRadius: AppDesign.radius(AppDesign.rMd),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      label,
-                      overflow: TextOverflow.ellipsis,
-                      style: context.text.body.copyWith(
-                        fontSize: 13.5,
-                        color: selected ? c.text : c.textMuted,
+                  child: Row(
+                    children: [
+                      Icon(
+                        icon,
+                        size: 17,
+                        color: selected ? c.accent : c.textMuted,
                       ),
-                    ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          label,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.text.body.copyWith(
+                            fontSize: 13.5,
+                            color: selected ? c.text : c.textMuted,
+                          ),
+                        ),
+                      ),
+                      if (shortcut != null && (_hover || _focused))
+                        Text(shortcut!, style: context.text.caption),
+                    ],
                   ),
-                  if (shortcut != null)
-                    Text(
-                      shortcut!,
-                      style: context.text.mono.copyWith(
-                        fontSize: 11,
-                        color: c.textFaint,
-                      ),
-                    ),
-                ],
+                ),
               ),
             ),
           ),

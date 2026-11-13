@@ -27,37 +27,37 @@ void main() {
     expect(facts.contextLength, 32768);
     expect(ModelCapabilities.derive().tools, isFalse);
   });
-  testWidgets(
-    'HF badges expose tools vision thinking draft embedding and context',
-    (tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(
-            home: Scaffold(
-              body: ModelCapabilityBadges(
-                tags: [
-                  'tool-use',
-                  'vision',
-                  'thinking',
-                  'mtp',
-                  'feature-extraction',
-                ],
-                contextLength: 8192,
-              ),
+  testWidgets('HF badges show capabilities without a duplicate context chip', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: ModelCapabilityBadges(
+              tags: [
+                'tool-use',
+                'vision',
+                'thinking',
+                'mtp',
+                'feature-extraction',
+              ],
+              contextLength: 8192,
             ),
           ),
         ),
-      );
-      for (final label in [
-        'Tools',
-        'Vision',
-        'Thinking',
-        'MTP / draft ready',
-        'Embedding',
-        '8192 tokens of context',
-      ]) {
-        expect(find.text(label), findsOneWidget);
-      }
-    },
-  );
+      ),
+    );
+    for (final label in [
+      'Tools',
+      'Vision',
+      'Thinking',
+      'MTP / draft ready',
+      'Embedding',
+    ]) {
+      expect(find.text(label), findsOneWidget);
+      expect(tester.widget<Text>(find.text(label)).style?.fontFamily, 'Inter');
+    }
+    expect(find.text('8192 tokens of context'), findsNothing);
+  });
 }

@@ -15,6 +15,10 @@ void main() {
     'offloadKv': false,
     'swaFull': true,
     'nCpuMoe': 4,
+    'moeCacheSizeMb': 256,
+    'moeCacheCpuShare': 0.5,
+    'kvCacheType': 'f8_e4m3',
+    'vCacheType': 'f8_e4m3',
     'expertsUsed': 4,
     'draftGpuLayers': 99,
     'keepTokens': 16,
@@ -33,6 +37,10 @@ void main() {
       offloadKv: false,
       swaFull: true,
       nCpuMoe: 4,
+      moeCacheSizeMb: 256,
+      moeCacheCpuShare: 0.5,
+      kvCacheType: KvCacheType.f8_e4m3,
+      vCacheType: KvCacheType.f8_e4m3,
       expertsUsed: 4,
       draftGpuLayers: 99,
       keepTokens: 16,
@@ -64,6 +72,8 @@ void main() {
     expect(s.offloadKv, true);
     expect(s.swaFull, false);
     expect(s.nCpuMoe, -1);
+    expect(s.moeCacheSizeMb, 0);
+    expect(s.moeCacheCpuShare, 0.0);
     expect(s.expertsUsed, -1);
     expect(s.draftGpuLayers, 0);
     expect(s.keepTokens, 0);
@@ -73,6 +83,8 @@ void main() {
       'splitMode': 'bad',
       'contextOverflow': 'bad',
       'nCpuMoe': -9,
+      'moeCacheSizeMb': -10,
+      'moeCacheCpuShare': 7.0,
       'expertsUsed': -9,
       'draftGpuLayers': -3,
       'keepTokens': -5,
@@ -81,6 +93,8 @@ void main() {
     expect(bad.splitMode, 'layer');
     expect(bad.contextOverflow, 'trim');
     expect(bad.nCpuMoe, -1);
+    expect(bad.moeCacheSizeMb, 0);
+    expect(bad.moeCacheCpuShare, 1.0);
     expect(bad.expertsUsed, -1);
     expect(bad.draftGpuLayers, 0);
     expect(bad.keepTokens, 0);
@@ -95,7 +109,9 @@ void main() {
       SettingSpec.visible
           .map((s) => s.key)
           .toSet()
-          .intersection(values.keys.toSet()),
+          .intersection(
+            values.keys.toSet().difference({'kvCacheType', 'vCacheType'}),
+          ),
       isEmpty,
     );
     DesktopHost.active = true;

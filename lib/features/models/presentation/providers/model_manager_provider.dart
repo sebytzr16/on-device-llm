@@ -2,11 +2,13 @@ import '../../../../data/storage/download_history.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'package:dio/dio.dart';
 import 'package:drift/drift.dart' as drift;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/island/status_island.dart';
@@ -23,6 +25,7 @@ import '../../../../data/storage/gguf_metadata.dart';
 import '../../../../data/storage/gguf_split.dart';
 import '../../../../inference/engine/llama_engine.dart';
 import '../../../../inference/engine/diffusiongemma_engine.dart';
+import '../../../../inference/engine/ternary_backend.dart';
 import 'model_recommendations_provider.dart';
 import '../../../adapters/adapter_store.dart';
 import '../../../helper/helper_runner.dart';
@@ -38,6 +41,9 @@ import '../../../settings/presentation/widgets/settings_labels.dart';
 import '../../domain/entities/model_catalog.dart';
 import '../../domain/entities/model_info.dart';
 import 'retired_model_names.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
+
+final _log = Logger('models');
 
 /// The note for a load whose context the bridge shortened, to the model's
 /// trained length or to what fits in the memory free right now
@@ -163,6 +169,7 @@ typedef ChatLoad = ({
   InferenceSettings settings,
   String? mmprojPath,
   String? draftModelPath,
+  List<({String path, double scale})> adapters,
 });
 
 class ModelManagerNotifier extends Notifier<ModelManagerState> {
@@ -677,7 +684,11 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
           throw UnsupportedError('DiffusionGemma requires Windows desktop.');
         }
         await engine.unload();
-        await ref.read(diffusionGemmaEngineProvider).loadModel(info.localPath!);
+        // The host honours context, GPU layers, threads and seed; the rest
+        // of the profile is disabled in its load settings (audit E23).
+        await ref
+            .read(diffusionGemmaEngineProvider)
+            .loadModel(info.localPath!, settings: resolved);
         if (_alive) {
           state = state.copyWith(
             loadedModelId: info.id,
@@ -756,6 +767,10 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
 
   bool _loadStopped = false;
 
+  /// The one explanation that a ternary model runs on the processor with
+  /// Vulkan; later loads in this session stay quiet.
+  bool _ternaryCpuNoticed = false;
+
   void _checkStopped() {
     if (_loadStopped) throw const ModelLoadStopped();
   }
@@ -789,6 +804,12 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     bool vision = false,
   }) async {
     final plan = await _plan(info, resolved, vision: vision);
+    if (plan.ternaryCpu) {
+      _log.info(
+        'Ternary model ${info.id}: ${plan.backend} has no ternary kernels; '
+        'loading with 0 GPU layers on the CPU',
+      );
+    }
     await engine.loadModel(
       modelPath: plan.path,
       settings: plan.load.settings,
@@ -796,6 +817,32 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       adapters: plan.adapters,
       draftModelPath: plan.load.draftModelPath,
     );
+    if (plan.ternaryCpu && plan.backend == 'vulkan' && !_ternaryCpuNoticed) {
+      // Once: a send that reuses the loaded model never gets here, so this
+      // is not repeated per turn, and the long sentence needs time to read.
+      _ternaryCpuNoticed = true;
+      ref
+          .read(islandProvider.notifier)
+          .toast(
+            stringsFor(
+              ref.read(settingsProvider).localeCode,
+            ).ternaryVulkanCpuNotice,
+            icon: Icons.memory_rounded,
+            duration: const Duration(seconds: 6),
+          );
+    }
+    final fallback = engine.metrics['fallbackReason'];
+    if (fallback is String && fallback.isNotEmpty) {
+      final description = modelLoadErrorMessage(fallback);
+      ref
+          .read(islandProvider.notifier)
+          .toast(
+            description == fallback
+                ? fallback
+                : '$description Using normal decoding.',
+            tone: IslandTone.warning,
+          );
+    }
     if (plan.missingDraft != null) {
       ref
           .read(islandProvider.notifier)
@@ -819,6 +866,8 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       List<({String path, double scale})> adapters,
       String config,
       String? missingDraft,
+      bool ternaryCpu,
+      String backend,
     })
   >
   _plan(
@@ -827,15 +876,33 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     bool vision = false,
   }) async {
     final projector = info.projector ?? visionProjectors[info.id];
-    final draft = draftPathFor(info, resolved.draftModelId);
+    final draft = resolved.speculationMode == 'off'
+        ? null
+        : await draftPathFor(info, resolved.draftModelId);
     final selected = resolved.draftModelId;
     final missingDraft =
-        selected.isNotEmpty &&
+        resolved.speculationMode != 'off' &&
+        (selected.isNotEmpty ||
+            resolved.speculationMode == 'draft' ||
+            resolved.speculationMode == 'dflash') &&
         selected != '$mtpHeadPrefix$mtpOff' &&
         selected != info.id &&
         draft == null;
     if (draft != null) {
       final metadata = await GgufMetadata.inspect(draft);
+      final t = stringsFor(ref.read(settingsProvider).localeCode);
+      if (metadata.architecture == 'dflash-draft') {
+        throw StateError(t.desktopDFlashConvert);
+      }
+      if (metadata.isDFlash && resolved.speculationMode == 'auto') {
+        resolved = resolved.copyWith(speculationMode: 'dflash');
+      }
+      if ((resolved.speculationMode == 'dflash' && !metadata.isDFlash) ||
+          (resolved.speculationMode == 'draft' &&
+              (metadata.isDFlash || metadata.isMtpOnly)) ||
+          (resolved.speculationMode == 'mtp' && !metadata.isMtpOnly)) {
+        throw StateError(t.desktopDraftModeMismatch);
+      }
       if (metadata.isMtpOnly) {
         final target = await GgufMetadata.inspect(info.localPath!);
         final issue = metadata.mtpHeadIssueFor(
@@ -845,6 +912,11 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         if (issue != null) throw StateError(issue);
       }
     }
+    if ((resolved.speculationMode == 'draft' ||
+            resolved.speculationMode == 'dflash') &&
+        draft == null) {
+      resolved = resolved.copyWith(speculationMode: 'off', mtp: false);
+    }
     // A head found on its own drafts 2 tokens a step: the best measured
     // with real sampling (2026-10-28, E4B Q8 on a 3070: 80-88 tok/s vs
     // 61 without the head; 3 or more drafts were slower).
@@ -853,7 +925,23 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         resolved.draftMaxTokens == const InferenceSettings().draftMaxTokens) {
       resolved = resolved.copyWith(draftMaxTokens: 2);
     }
-    final settings = await _resolveBackend(resolved);
+    var settings = await _resolveBackend(resolved);
+    // A ternary model is only fast on the CPU or CUDA: every other GPU
+    // bridge dequantizes its weights on the CPU first (0.06 tok/s on Vulkan
+    // against 27 on the CPU, owner report 2026-11-13). Load it on the
+    // processor there instead of parking it on the card for nothing.
+    final ternary = isTernaryModel(
+      catalogId: info.id,
+      fileType: GgufMetadata.cached(info.localPath!)?.fileType,
+    );
+    final backend = ternary
+        ? await _loadBackend(settings)
+        : settings.backend.name;
+    final ternaryCpu =
+        ternary && ternaryNeedsCpu(backend: backend, ternary: true);
+    if (ternaryCpu) {
+      settings = settings.copyWith(backend: GpuBackend.cpu, nGpuLayers: 0);
+    }
     // The projector loads for a chat with a photo ([vision]) and then stays
     // while the model is loaded, so later turns do not reload; a model
     // whose vision is off never loads it (owner, 2026-11-01).
@@ -881,6 +969,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         settings: settings,
         mmprojPath: mmproj,
         draftModelPath: draft,
+        adapters: adapters,
       ),
       adapters: adapters,
       config: LlamaEngine.loadConfig(
@@ -890,6 +979,8 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         draftModelPath: draft,
       ),
       missingDraft: missingDraft ? selected : null,
+      ternaryCpu: ternaryCpu,
+      backend: backend,
     );
   }
 
@@ -968,21 +1059,31 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
   /// (`mtp:<path>`). Null turns speculation off.
   /// On the desktop an empty id is Auto: the matching MTP head, when one
   /// is on disk ([autoMtpHead]); `mtp:off` turns it off.
-  String? draftPathFor(ModelInfo info, String draftModelId) {
+  /// The draft path for [info]: a chosen draft model's file, or the MTP head
+  /// auto-discovered beside it (off the UI isolate, audit E16). `mtp:off`
+  /// turns it off.
+  Future<String?> draftPathFor(ModelInfo info, String draftModelId) async {
     if (draftModelId.isEmpty) {
       final path = info.localPath;
-      return DesktopHost.active && path != null ? autoMtpHead(path) : null;
+      return DesktopHost.active && path != null
+          ? await autoMtpHead(path)
+          : null;
     }
     if (draftModelId == info.id) return null;
+    if (draftModelId.startsWith('draft:')) {
+      final path = draftModelId.substring('draft:'.length);
+      if (path == info.localPath) return null;
+      return await File(path).exists() ? path : null;
+    }
     if (draftModelId.startsWith(mtpHeadPrefix)) {
       final path = draftModelId.substring(mtpHeadPrefix.length);
-      return path != mtpOff && File(path).existsSync() ? path : null;
+      return path != mtpOff && await File(path).exists() ? path : null;
     }
     final draft = state.catalog.where((m) => m.id == draftModelId).firstOrNull;
     if (draft == null || !draft.isDownloaded || draft.localPath == null) {
       return null;
     }
-    return File(draft.localPath!).existsSync() ? draft.localPath : null;
+    return await File(draft.localPath!).exists() ? draft.localPath : null;
   }
 
   /// Auto is the compatibility/per-answer-speed policy: CPU. Accelerators
@@ -991,8 +1092,14 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
   /// Windows a discrete GPU wins at both, so the bridge chooses there.
   bool _autoCpu = false;
 
+  /// The backend Windows' automatic choice uses, learned once: the estimate
+  /// behind it is expensive and must not run on every send.
+  String? _autoBackend;
+
   Future<InferenceSettings> _resolveBackend(InferenceSettings s) async {
     _autoCpu = s.backend == GpuBackend.auto && !DesktopHost.active;
+    // Choosing a backend explicitly can change what Auto would open.
+    if (s.backend != GpuBackend.auto) _autoBackend = null;
     return _autoCpu ? s.copyWith(backend: GpuBackend.cpu) : s;
   }
 
@@ -1001,23 +1108,74 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       ? 'Automatic resolved to CPU. OpenCL is explicit because it reads research prompts about 2x faster but decodes answers about 15% slower (measured).'
       : null;
 
+  /// The backend a load with [settings] would use. Windows opens one bridge
+  /// DLL for 'auto' (CUDA, then Vulkan, then the CPU); the estimator opens
+  /// that same bridge to list its devices, so its GPU family says which one.
+  /// A failed lookup keeps the CPU, leaving CUDA and CPU loads untouched.
+  Future<String> _loadBackend(InferenceSettings settings) async {
+    if (settings.backend != GpuBackend.auto) return settings.backend.name;
+    if (!DesktopHost.active) return GpuBackend.cpu.name;
+    final known = _autoBackend;
+    if (known != null) return known;
+    try {
+      final facts = await ref.read(detectedHardwareProvider.future);
+      final devices = (facts?['devices'] as List? ?? const []).whereType<Map>();
+      for (final device in devices) {
+        // Automatic takes a discrete GPU; integrated cards stay an explicit
+        // Vulkan choice, so they do not answer this.
+        if (device['type'] != 'gpu') continue;
+        final family = '${device['backend']}'.trim().toLowerCase();
+        if (family.isEmpty) continue;
+        _autoBackend = family;
+        return family;
+      }
+      _autoBackend = GpuBackend.cpu.name;
+      return GpuBackend.cpu.name;
+    } catch (e, st) {
+      quietFailure('modelManager.loadBackend', e, st);
+      return GpuBackend.cpu.name;
+    }
+  }
+
   /// Releases the model's memory without leaving the chat. The next message
   /// loads it again.
   /// [ownsBusy]: the caller set the session busy itself (a tuning run) and
   /// unloads between its own loads.
-  Future<void> unloadModel({bool ownsBusy = false}) async {
-    if (state.isLoadingModel || (!ownsBusy && ref.read(sessionBusyProvider))) {
-      throw StateError(
-        stringsFor(ref.read(settingsProvider).localeCode).modelStopUnload,
-      );
+  Future<void>? _unloading;
+
+  Future<void> unloadModel({bool ownsBusy = false}) => _unloading ??=
+      _unloadModel(ownsBusy: ownsBusy).whenComplete(() => _unloading = null);
+
+  Future<void> _unloadModel({required bool ownsBusy}) async {
+    try {
+      if (state.isLoadingModel) {
+        stopLoad();
+        throw const InferenceException(
+          'Model loading is stopping. Retry Eject shortly.',
+        );
+      }
+      if (!ownsBusy && ref.read(sessionBusyProvider)) {
+        ref.read(chatProvider.notifier).cancel();
+      }
+      final engine = ref.read(llamaEngineProvider);
+      await engine.stopAndWait();
+      // Shared hosting moves away before its weights are freed.
+      await ref
+          .read(engineHandoffProvider)
+          ?.call('')
+          .timeout(engine.stopTimeout);
+      await ref.read(helperRunnerProvider).unload().timeout(engine.stopTimeout);
+      await engine.unload();
+      ref.read(diffusionGemmaEngineProvider).dispose();
+      if (_alive) state = state.copyWith(clearLoaded: true);
+    } catch (e) {
+      if (_alive) {
+        state = state.copyWith(
+          error: modelLoadErrorMessage(e),
+          clearLoaded: !ref.read(llamaEngineProvider).isLoaded,
+        );
+      }
     }
-    // The local server may share this runtime: its model moves to its own
-    // first, so ejecting the chat's model does not stop the server's.
-    await ref.read(engineHandoffProvider)?.call('');
-    await ref.read(helperRunnerProvider).unload();
-    await ref.read(llamaEngineProvider).unload();
-    ref.read(diffusionGemmaEngineProvider).dispose();
-    if (_alive) state = state.copyWith(clearLoaded: true);
   }
 
   /// The makers' sampling for a model just placed on the phone: its file's
@@ -1189,7 +1347,9 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
           } finally {
             guard.release();
           }
-        } catch (_) {}
+        } catch (e, st) {
+          quietFailure('model_manager_provider:1228', e, st);
+        }
       }
     }
     if (_alive) {
@@ -1470,7 +1630,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         totalSize += await source.length();
       }
       final hash = hashes.first;
-      final id = 'local-${hash.substring(0, 20)}';
+      var id = 'local-${hash.substring(0, 20)}';
       final split = GgufSplit.parse(p.basename(path));
       final names = split == null
           ? ['$id.gguf']
@@ -1479,60 +1639,91 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
                 split.name(i, prefix: id),
             ];
       final name = names.first;
-      final destination = await ModelStorage.modelFile(name);
-      final destinations = [
-        for (final name in names) File(p.join(destination.parent.path, name)),
-      ];
-      var requiredBytes = 0;
-      for (var i = 0; i < sources.length; i++) {
-        if (!await destinations[i].exists()) {
-          requiredBytes += await sources[i].length();
-        }
-      }
-      final capacity = await ModelStorage.availableStorage();
-      if (capacity != null &&
-          requiredBytes > 0 &&
-          capacity.availableBytes < requiredBytes + 128 * 1024 * 1024) {
-        throw const DownloadException(
-          'Not enough free storage to import all model parts.',
-        );
-      }
-      for (var i = 0; i < sources.length; i++) {
-        final target = destinations[i];
-        if (await target.exists()) {
-          if (await ModelStorage.validateAndHash(target.path) != hashes[i]) {
-            throw StateError(
-              'A different model already exists at ${names[i]}.',
-            );
+      // Import an already-local file in place when it lives inside a models
+      // folder the app manages (no copy, no rehash); otherwise copy it into
+      // the models folder as before (audit E20).
+      final inPlace =
+          DesktopHost.active &&
+          await _isManagedModelsFolder(sources.first.parent);
+      String? destinationPath;
+      if (!inPlace) {
+        final destination = await ModelStorage.modelFile(name);
+        final destinations = [
+          for (final name in names) File(p.join(destination.parent.path, name)),
+        ];
+        var requiredBytes = 0;
+        for (var i = 0; i < sources.length; i++) {
+          if (!await destinations[i].exists()) {
+            requiredBytes += await sources[i].length();
           }
-          continue;
         }
-        partial = File('${target.path}.part');
-        await sources[i].copy(partial.path);
-        if (await ModelStorage.validateAndHash(partial.path) != hashes[i]) {
-          throw StateError('Import changed while copying. Try again.');
+        final capacity = await ModelStorage.availableStorage();
+        if (capacity != null &&
+            requiredBytes > 0 &&
+            capacity.availableBytes < requiredBytes + 128 * 1024 * 1024) {
+          throw const DownloadException(
+            'Not enough free storage to import all model parts.',
+          );
         }
-        await ModelStorage.excludeFromICloud(partial);
-        await partial.rename(target.path);
-        partial = null;
+        for (var i = 0; i < sources.length; i++) {
+          final target = destinations[i];
+          if (await target.exists()) {
+            if (await ModelStorage.validateAndHash(target.path) != hashes[i]) {
+              throw StateError(
+                'A different model already exists at ${names[i]}.',
+              );
+            }
+            continue;
+          }
+          partial = File('${target.path}.part');
+          await sources[i].copy(partial.path);
+          if (await ModelStorage.validateAndHash(partial.path) != hashes[i]) {
+            throw StateError('Import changed while copying. Try again.');
+          }
+          await ModelStorage.excludeFromICloud(partial);
+          await partial.rename(target.path);
+          partial = null;
+        }
+        destinationPath = destination.path;
+      } else {
+        destinationPath = sources.first.path;
       }
-      // A vision model's projector is copied along, so photos work.
+      // A file the orphan scan already listed from this very folder is the
+      // same model: the import takes over that row instead of creating a
+      // second one for the same file, and keeps the file where it is.
+      if (inPlace) {
+        final taken = (await ref.read(appDatabaseProvider).allModels())
+            .where((r) => r.isDownloaded && r.localPath == path)
+            .firstOrNull;
+        if (taken != null) id = taken.id;
+      }
+      // A vision model's projector is copied along, so photos work. When
+      // importing in place, the projector beside the source is used in place.
       VisionProjector? projector;
       final source = projectorBeside(path);
       if (source != null) {
-        final file = await ModelStorage.modelFile('$id-mmproj.gguf');
-        if (!await file.exists()) {
-          partial = File('${file.path}.part');
-          await source.copy(partial.path);
-          await partial.rename(file.path);
-          partial = null;
+        if (inPlace) {
+          projector = VisionProjector(
+            fileName: p.basename(source.path),
+            downloadUrl: '',
+            sha256: '',
+            sizeBytes: await source.length(),
+          );
+        } else {
+          final file = await ModelStorage.modelFile('$id-mmproj.gguf');
+          if (!await file.exists()) {
+            partial = File('${file.path}.part');
+            await source.copy(partial.path);
+            await partial.rename(file.path);
+            partial = null;
+          }
+          projector = VisionProjector(
+            fileName: p.basename(file.path),
+            downloadUrl: '',
+            sha256: '',
+            sizeBytes: await file.length(),
+          );
         }
-        projector = VisionProjector(
-          fileName: p.basename(file.path),
-          downloadUrl: '',
-          sha256: '',
-          sizeBytes: await file.length(),
-        );
       }
       final info = ModelInfo(
         id: id,
@@ -1557,8 +1748,8 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         license: 'Imported file · check publisher license',
         projector: projector,
       );
-      await save(info, localPath: destination.path);
-      await _learnSampling(info.copyWith(localPath: destination.path));
+      await save(info, localPath: destinationPath);
+      await _learnSampling(info.copyWith(localPath: destinationPath));
     } catch (e) {
       if (_alive) state = state.copyWith(error: '$e');
     } finally {
@@ -1785,6 +1976,23 @@ List<String> _mtpSearchRoots() {
   return [if (home != null) p.join(home, '.lmstudio', 'models')];
 }
 
+/// Whether [dir] sits inside one of the desktop models folders the app
+/// manages (current root or an older retained root), so an already-local
+/// file can be imported in place instead of copied and rehashed (audit E20).
+Future<bool> _isManagedModelsFolder(Directory dir) async {
+  if (!DesktopHost.active) return false;
+  final folders = await ModelStorage.desktopFolders();
+  final roots = folders.roots;
+  final normalized = p.normalize(p.absolute(dir.path));
+  for (final root in roots) {
+    final absRoot = p.normalize(p.absolute(root));
+    if (p.isWithin(absRoot, normalized) || p.equals(absRoot, normalized)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /// Found heads and misses by model size and folder. A miss expires after
 /// a minute, so a head downloaded later is found, but a send no longer
 /// re-lists LM Studio's folders each time (audit P2-34).
@@ -1794,19 +2002,35 @@ final Map<String, ({String? path, DateTime at})> _autoMtpCache = {};
 /// `mtp-gemma-4-<size>*.gguf` beside the model, else in LM Studio's model
 /// folder (three levels deep). Null when the model has no known head or
 /// none is on disk.
-String? autoMtpHead(String modelPath) {
+/// The MTP head for the model at [modelPath] found on disk: an
+/// `mtp-gemma-4-<size>*.gguf` beside the model, else in LM Studio's model
+/// folder (three levels deep). Null when the model has no known head or
+/// none is on disk. The blocking directory scan runs on a background isolate
+/// so a large or slow library does not block the UI isolate (audit E16).
+Future<String?> autoMtpHead(String modelPath) async {
   final size = gemma4Size(p.basename(modelPath));
   if (size == null || isMtpHeadFile(modelPath)) return null;
   final key = '$size|${File(modelPath).parent.path}';
   final cached = _autoMtpCache[key];
   if (cached != null) {
     final path = cached.path;
-    if (path != null && File(path).existsSync()) return path;
+    if (path != null && await File(path).exists()) return path;
     if (path == null &&
         DateTime.now().difference(cached.at) < const Duration(minutes: 1)) {
       return null;
     }
   }
+  final found = await Isolate.run(
+    () => _mtpHeadCandidates(File(modelPath).parent.path, size),
+  );
+  final head = found.firstOrNull;
+  _autoMtpCache[key] = (path: head, at: DateTime.now());
+  return head;
+}
+
+/// The blocking MTP head scan (recursive list + stat + sort), run on a
+/// background isolate so it does not block the UI isolate (audit E16).
+List<String> _mtpHeadCandidates(String parent, String size) {
   final found = <String>[];
   void scan(Directory dir, int depth) {
     try {
@@ -1824,7 +2048,7 @@ String? autoMtpHead(String modelPath) {
     }
   }
 
-  scan(File(modelPath).parent, 0);
+  scan(Directory(parent), 0);
   if (found.isEmpty) {
     for (final root in _mtpSearchRoots()) {
       scan(Directory(root), 3);
@@ -1837,18 +2061,19 @@ String? autoMtpHead(String modelPath) {
         (a.toLowerCase().contains('q8') ? 1 : 0);
     return q != 0 ? q : File(a).lengthSync().compareTo(File(b).lengthSync());
   });
-  final head = found.firstOrNull;
-  _autoMtpCache[key] = (path: head, at: DateTime.now());
-  return head;
+  return found;
 }
 
 /// The MTP head files in the models folder, by path.
 Future<List<String>> mtpHeadFiles() async {
   try {
-    return [
-      for (final f in (await ModelStorage.modelsDir()).listSync())
-        if (f is File && isMtpHeadFile(f.path)) f.path,
-    ]..sort();
+    final dir = await ModelStorage.modelsDir();
+    final found = <String>[];
+    await for (final f in dir.list(followLinks: false)) {
+      if (f is File && isMtpHeadFile(f.path)) found.add(f.path);
+    }
+    found..sort();
+    return found;
   } catch (_) {
     return const [];
   }

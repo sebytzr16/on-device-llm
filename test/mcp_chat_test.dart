@@ -74,7 +74,7 @@ void main() {
           connector: (_) async => transport,
         );
         await registry.saveConfig(
-          '{"mcpServers":{"fixture":{"command":"fake"}}}',
+          '{"mcpServers":{"fixture":{"url":"http://localhost:1/mcp"}}}',
         );
         var confirmations = 0;
         registry.confirm = (_, _) async {

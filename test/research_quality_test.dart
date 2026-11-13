@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/features/retrieval/domain/evidence_audit.dart';
 import 'package:ondevice_llm/features/goals/goal_runner.dart';
@@ -8,6 +9,8 @@ import 'package:ondevice_llm/inference/engine/turn_budget.dart';
 import 'package:ondevice_llm/features/chat/domain/answer_shape.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   test('explicit sentence limits override default answer structure', () {
     for (final question in [
       'Summarize the article in three sentences.',

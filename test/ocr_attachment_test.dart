@@ -39,4 +39,26 @@ void main() {
     );
     expect(hidden['content'], isNot(contains('Total 19.95')));
   });
+
+  test('a picture made by an answer is not sent back as another photo', () {
+    final answer = ChatMessage(
+      id: 'answer',
+      role: ChatRole.assistant,
+      content: 'Here is the picture.',
+      timestamp: DateTime.utc(2026),
+      attachments: const [
+        Attachment(
+          id: 'made',
+          kind: AttachmentKind.image,
+          name: 'Generated image',
+          mime: 'image/png',
+          path: '/private/made.png',
+          sizeBytes: 100,
+        ),
+      ],
+    );
+    final rendered = TurnPrompts.renderTurn(answer, vision: true);
+    expect(rendered['content'], 'Here is the picture.');
+    expect(rendered.containsKey('images'), isFalse);
+  });
 }

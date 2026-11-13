@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'features/settings/presentation/widgets/device_encryption_setting.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,6 +8,7 @@ import 'core/motion/motion.dart';
 import 'core/providers/first_launch_provider.dart';
 import 'core/theme/app_theme.dart';
 import 'core/l10n/l10n.dart';
+import 'core/design/text_scaler.dart';
 import 'features/settings/domain/entities/inference_settings.dart';
 import 'features/settings/presentation/providers/settings_provider.dart';
 import 'features/chat/presentation/screens/chat_screen.dart';
@@ -94,18 +96,24 @@ class OnDeviceLlmApp extends ConsumerWidget {
         ThemeChoice.light => ThemeMode.light,
         ThemeChoice.system => ThemeMode.system,
       },
-      // The app's text size multiplies the phone's accessibility setting.
+      // The app's text size multiplies the platform's accessibility scaler,
+      // preserving nonlinear scaling behavior at different font sizes.
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
-          textScaler: TextScaler.linear(
-            MediaQuery.of(context).textScaler.scale(1) * textScale,
+          textScaler: ComposedTextScaler(
+            MediaQuery.of(context).textScaler,
+            textScale,
           ),
         ),
         // The status island floats above every page, sheet and dialog.
         child: MotionScope(
           choice: motion,
           child: Stack(
-            children: [child ?? const SizedBox.shrink(), const StatusIsland()],
+            children: [
+              child ?? const SizedBox.shrink(),
+              const StatusIsland(),
+              const EncryptionRecoveryNotice(),
+            ],
           ),
         ),
       ),

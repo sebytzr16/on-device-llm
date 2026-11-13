@@ -20,6 +20,7 @@ import 'knowledge_embedder.dart';
 import 'knowledge_media.dart';
 import '../../core/l10n/l10n.dart';
 import '../settings/presentation/providers/settings_provider.dart';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// Knowledge library (FX-02): documents imported once, split into passages
 /// and retrieved for any later question — lexically (FTS5 bm25) and, once
@@ -163,6 +164,7 @@ class KnowledgeStore {
     bool Function()? cancelled,
   }) async {
     final hash = await contentHash(bytes);
+    if (cancelled?.call() == true) throw const ScanCancelled();
     final existing = await _db.knowledgeDocsIn(collection.trim());
     final duplicate = existing.where((d) => d.contentHash == hash).firstOrNull;
     if (duplicate != null) {
@@ -192,7 +194,9 @@ class KnowledgeStore {
             name,
             pdfText: pdfText,
             localeCode: _locale?.call() ?? '',
+            cancelled: cancelled,
           );
+    if (cancelled?.call() == true) throw const ScanCancelled();
     if (extracted.text.trim().isEmpty) {
       throw FormatException(_t.documentNoText);
     }
@@ -212,6 +216,7 @@ class KnowledgeStore {
       // One passage per recording segment: the indexer embeds segment N of
       // the audio for passage N, so the two must stay aligned.
       for (var i = 0; i < segments.length; i++) {
+        if (cancelled?.call() == true) throw const ScanCancelled();
         chunks.add((
           text: extracted.text
               .substring(
@@ -228,7 +233,7 @@ class KnowledgeStore {
       // A photo's first passage stands for the photo itself (it gets the
       // image vector); recognised text beyond it is split as usual.
       final body = extracted.text;
-      final parts = EvidenceRanker.chunk(body, sourceIndex: 0);
+      final parts = EvidenceRanker.chunkDocument(body, sourceIndex: 0);
       chunks.addAll(
         parts.isEmpty
             ? [(text: body, page: null)]
@@ -236,13 +241,14 @@ class KnowledgeStore {
       );
     } else if (pageMarks.isEmpty) {
       chunks.addAll(
-        EvidenceRanker.chunk(
+        EvidenceRanker.chunkDocument(
           extracted.text,
           sourceIndex: 0,
         ).map((c) => (text: c.text, page: null)),
       );
     } else {
       for (var i = 0; i < pageMarks.length; i++) {
+        if (cancelled?.call() == true) throw const ScanCancelled();
         final mark = pageMarks[i];
         final pageText = extracted.text.substring(
           mark.end,
@@ -251,7 +257,7 @@ class KnowledgeStore {
               : extracted.text.length,
         );
         chunks.addAll(
-          EvidenceRanker.chunk(
+          EvidenceRanker.chunkDocument(
             pageText,
             sourceIndex: 0,
           ).map((c) => (text: c.text, page: int.parse(mark[1]!))),
@@ -260,6 +266,7 @@ class KnowledgeStore {
     }
     File? savedOriginal;
     if (directory != null) {
+      if (cancelled?.call() == true) throw const ScanCancelled();
       await directory.create(recursive: true);
       savedOriginal = File(p.join(directory.path, '$id.original'));
       final staged = File('${savedOriginal.path}.part');
@@ -272,6 +279,7 @@ class KnowledgeStore {
         rethrow;
       }
     }
+    if (cancelled?.call() == true) throw const ScanCancelled();
     final doc = KnowledgeDocsCompanion.insert(
       id: id,
       collection: collection.trim(),
@@ -287,21 +295,22 @@ class KnowledgeStore {
         extracted.text.contains(OcrUnavailable.notice)
             ? _t.documentOcrUnavailable
             : extracted.text.contains('[Text recognition failed:')
-            ? 'Text recognition failed; the photo is available for visual search.'
+            ? _t.documentTextRecognitionFailed
             : media &&
                   (extracted.text.contains('[Audio not transcribed]') ||
                       extracted.text.contains(
                         '[Photo has no caption or readable text]',
                       ))
-            ? 'Media is searchable, but its facts cannot be used until a transcript or caption is available.'
+            ? _t.documentMediaNotTranscribed
             : extracted.text.length >= DocumentText.maxChars
-            ? 'Text reached the extraction limit; part of the document may be missing.'
+            ? _t.documentTextLimitReached
             : null,
       ),
       originalFile: drift.Value(
         savedOriginal == null ? null : p.basename(savedOriginal.path),
       ),
     );
+    if (cancelled?.call() == true) throw const ScanCancelled();
     try {
       await _db.transaction(() async {
         final current = await _db.knowledgeDocsIn(collection.trim());
@@ -393,7 +402,9 @@ class KnowledgeStore {
       if (!segmented) {
         try {
           transcript = (await transcribe?.call(file))?.trim();
-        } catch (_) {}
+        } catch (e, st) {
+          quietFailure('knowledge_store:404', e, st);
+        }
       }
       const step = EmbeddingModel.mediaAudioSeconds;
       final parts = (seconds / step).ceil();
@@ -494,8 +505,11 @@ class KnowledgeStore {
       }
     });
     if (file != null) await file.delete();
-    if (file != null) {
-      final derived = File(p.join(file.parent.path, '${doc.id}.audio.wav'));
+    // The derived WAV stays beside the original; remove it even when the
+    // original is already gone (S13).
+    final directory = file?.parent ?? await _directory();
+    if (directory != null) {
+      final derived = File(p.join(directory.path, '${doc.id}.audio.wav'));
       if (await derived.exists()) await derived.delete();
     }
   }
@@ -589,21 +603,8 @@ class KnowledgeStore {
     } catch (_) {
       return lexical;
     }
-    // Keep only the best few while scanning. Sorting every indexed passage
-    // made large libraries spend O(N log N) time and allocate one copied
-    // float vector per passage on every question.
-    final semantic = <(double, String)>[];
-    for (final (id, _, embedding) in indexed) {
-      if (embedding.lengthInBytes != q.lengthInBytes) continue;
-      final score = dotBytes(q, embedding);
-      if (semantic.length >= limit && score <= semantic.last.$1) continue;
-      var position = 0;
-      while (position < semantic.length && semantic[position].$1 >= score) {
-        position++;
-      }
-      semantic.insert(position, (score, id));
-      if (semantic.length > limit) semantic.removeLast();
-    }
+    // Move the O(N×D) vector scan off the UI isolate (audit A13).
+    final semantic = await _scanVectors(indexed, q, limit);
     final byId = <String, KnowledgeChunk>{
       for (final (c, _) in lexical) c.id: c,
     };
@@ -626,6 +627,58 @@ class KnowledgeStore {
         if (byId[id] case final c? when docs[c.docId] != null)
           (c, docs[c.docId]!),
     ];
+  }
+
+  /// Scans vectors in a background isolate to avoid blocking the UI thread.
+  /// Returns top-[limit] (score, chunkId) pairs sorted by score descending.
+  static Future<List<(double, String)>> _scanVectors(
+    List<(String, String, Uint8List)> indexed,
+    Float32List query,
+    int limit,
+  ) async {
+    // Prepare sendable data for the isolate.
+    final embeddings = <Float32List>[];
+    final ids = <String>[];
+    for (final (id, _, embedding) in indexed) {
+      if (embedding.lengthInBytes == query.lengthInBytes) {
+        ids.add(id);
+        embeddings.add(Float32List.fromList(embedding.buffer.asFloat32List()));
+      }
+    }
+    if (embeddings.isEmpty) return const [];
+    final queryVec = Float32List.fromList(query.buffer.asFloat32List());
+    return Isolate.run(
+      () => _scanVectorsSync(embeddings, ids, queryVec, limit),
+    );
+  }
+
+  static List<(double, String)> _scanVectorsSync(
+    List<Float32List> embeddings,
+    List<String> ids,
+    Float32List query,
+    int limit,
+  ) {
+    final semantic = <(double, String)>[];
+    for (var i = 0; i < embeddings.length; i++) {
+      final embedding = embeddings[i];
+      final score = _dot(query, embedding);
+      if (semantic.length >= limit && score <= semantic.last.$1) continue;
+      var position = 0;
+      while (position < semantic.length && semantic[position].$1 >= score) {
+        position++;
+      }
+      semantic.insert(position, (score, ids[i]));
+      if (semantic.length > limit) semantic.removeLast();
+    }
+    return semantic;
+  }
+
+  static double _dot(Float32List a, Float32List b) {
+    double sum = 0;
+    for (var i = 0; i < a.length; i++) {
+      sum += a[i] * b[i];
+    }
+    return sum;
   }
 
   static bool isKnowledgeUrl(String url) => url.startsWith('$scheme://');

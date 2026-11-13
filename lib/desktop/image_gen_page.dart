@@ -18,10 +18,17 @@ import '../core/l10n/l10n.dart';
 import '../features/settings/presentation/providers/settings_provider.dart';
 import '../features/models/presentation/providers/model_manager_provider.dart';
 import '../features/image_gen/domain/entities/image_gen_model.dart';
+import '../features/image_gen/image_gen_model_widgets.dart';
 import '../features/image_gen/image_gen_downloads.dart';
+import '../features/models/presentation/widgets/model_capabilities.dart';
+import 'hf_discover.dart';
+import '../features/image_gen/image_gen_imports.dart';
+import '../features/image_gen/image_gen_preferences.dart';
+import '../data/network/hugging_face.dart';
 import '../inference/engine/sd_engine.dart';
 import '../inference/ffi/sd_bindings.dart';
 import 'focus_ring.dart';
+import 'image_gen_import_dialog.dart';
 
 // ---------------------------------------------------------------------------
 // State
@@ -138,9 +145,6 @@ class _ImageGenNotifier extends Notifier<_ImageGenState> {
   // the notifier and stay available when the page is opened again.
   void _releaseWhenIdle() {
     if (!_alive || state.busy) return;
-    // Unsaved video frames still belong to the worker. Once history is
-    // durable, exports use that file and the worker can be released.
-    if ((state.result?.videoId ?? 0) != 0 && state.historyEntry == null) return;
     _idleRelease?.cancel();
     _releasing ??= _engine.dispose().whenComplete(() => _releasing = null);
     unawaited(_releasing);
@@ -171,7 +175,7 @@ class _ImageGenNotifier extends Notifier<_ImageGenState> {
       unawaited(_releasing ?? _engine.dispose());
       _disposeFrames(frames);
     });
-    return _ImageGenState(model: imageGenCatalog.first);
+    return _ImageGenState(model: defaultImageGenModel(imageGenCatalog));
   }
 
   void selectModel(ImageGenModel model) {
@@ -205,37 +209,18 @@ class _ImageGenNotifier extends Notifier<_ImageGenState> {
     try {
       await _releasing;
       if (_stopped(epoch)) return;
-      final paths = await ImageGenDownloadsNotifier.paths(model);
-      if (_stopped(epoch)) return;
-      await _engine.load(
-        key: model.id,
-        vaePath: paths[ImageGenRole.vae] ?? '',
-        settings: model.loadSettings(paths),
-      );
-      if (_stopped(epoch)) return;
-      state = state.copyWith(status: _GenStatus.generating);
       final video = model.kind == ImageGenKind.video;
-      final plan = video
-          ? (width: r.width, height: r.height, upscale: 1)
-          : pictureSizePlan(r.width, r.height);
-      final upscaler = paths[ImageGenRole.upscaler];
-      if (plan.upscale > 1 && upscaler == null) {
-        throw StateError(_t.imageMaxSide);
-      }
-      var result = await _engine.generate(
-        {
-          'prompt': r.prompt,
-          'negativePrompt': r.negativePrompt,
-          'width': plan.width,
-          'height': plan.height,
-          'steps': r.steps,
-          'cfgScale': r.cfgScale,
-          'seed': r.seed,
-          'sampler': model.sampler,
-          ...model.samplerExtras,
-          if (video) ...{'frames': r.frames, 'fps': model.fps},
-        },
-        video: video,
+      final result = await runImageGeneration(
+        engine: _engine,
+        model: model,
+        request: r,
+        t: _t,
+        cancelled: () => _stopped(epoch),
+        loaded: () => state = state.copyWith(status: _GenStatus.generating),
+        upscaling: (factor) => state = state.copyWith(
+          status: _GenStatus.upscaling,
+          factor: factor,
+        ),
         onProgress: (step, total) {
           if (!_stopped(epoch) && state.busy) {
             state = state.copyWith(progressStep: step, progressTotal: total);
@@ -243,15 +228,6 @@ class _ImageGenNotifier extends Notifier<_ImageGenState> {
         },
       );
       if (_stopped(epoch)) return;
-      if (plan.upscale > 1) {
-        state = state.copyWith(
-          status: _GenStatus.upscaling,
-          factor: plan.upscale,
-        );
-        result = await _engine.upscale(upscaler!, result, factor: plan.upscale);
-      }
-      if (_stopped(epoch)) return;
-      if (!video) result = result.cropCentre(r.width, r.height);
       final frames = <ui.Image>[];
       try {
         for (var i = 0; i < result.frames; i++) {
@@ -287,7 +263,17 @@ class _ImageGenNotifier extends Notifier<_ImageGenState> {
       state = state.copyWith(
         status: _GenStatus.done,
         historyEntry: entry,
-        result: result,
+        // The saved video file is durable, so drop the Dart RGBA copy; only
+        // the decoded preview frames stay for playback (E12: no extra copies).
+        result: video
+            ? SdResult(
+                Uint8List(0),
+                result.width,
+                result.height,
+                frames: result.frames,
+                fps: result.fps,
+              )
+            : result,
         frames: frames,
         took: DateTime.now().difference(state.startedAt!),
       );
@@ -463,9 +449,9 @@ class _ImageGenNotifier extends Notifier<_ImageGenState> {
         return;
       }
       final d = entry.data;
-      final model = imageGenCatalog
-          .where((m) => m.id == d['modelId'])
-          .firstOrNull;
+      final model = imageGenSelectableModels(
+        ref.read(imageGenImportsProvider),
+      ).where((m) => m.id == d['modelId']).firstOrNull;
       final previous = state.frames;
       state = state.copyWith(
         model: model,
@@ -575,6 +561,118 @@ Future<SdResult> decodePicture(Uint8List encoded) async {
   }
 }
 
+/// One picture or video on [engine]: the load, the planned draw size, the
+/// generation and the upscale Create runs. Shared with the chat's
+/// generate_image tool, which has no page state. [cancelled] is checked
+/// after each await so a stopped job does not go on.
+Future<SdResult> runImageGeneration({
+  required SdEngine engine,
+  required ImageGenModel model,
+  required ImageGenRequest request,
+  required AppLocalizations t,
+  bool Function()? cancelled,
+  void Function()? loaded,
+  void Function(int factor)? upscaling,
+  void Function(int step, int total)? onProgress,
+  SdResult? edit,
+  double strength = 0.65,
+}) async {
+  void check() {
+    if (cancelled?.call() == true) throw const SdOperationStopped();
+  }
+
+  model = resolveImageGenCompanions(model);
+  final paths = await ImageGenDownloadsNotifier.paths(model);
+  check();
+  await engine.load(
+    key: model.id,
+    vaePath: paths[ImageGenRole.vae] ?? '',
+    settings: model.loadSettings(paths),
+  );
+  check();
+  loaded?.call();
+  final video = model.kind == ImageGenKind.video;
+  if (edit != null) {
+    // Image to image: the drawing keeps the starting picture's shape and is
+    // returned as drawn (no upscale, no crop).
+    if (video) throw StateError(t.chatImageEditNeedsPicture);
+    final result = await engine.generate(
+      {
+        'prompt': request.prompt,
+        'negativePrompt': request.negativePrompt,
+        'width': edit.width,
+        'height': edit.height,
+        'steps': request.steps,
+        'cfgScale': request.cfgScale,
+        'seed': request.seed,
+        'strength': strength.clamp(0.05, 1.0),
+        'sampler': model.sampler,
+        ...model.samplerExtras,
+      },
+      edit: true,
+      init: edit,
+      onProgress: onProgress,
+    );
+    check();
+    return result;
+  }
+  final plan = video
+      ? (width: request.width, height: request.height, upscale: 1)
+      : pictureSizePlan(request.width, request.height);
+  final upscaler = paths[ImageGenRole.upscaler];
+  if (plan.upscale > 1 && upscaler == null) {
+    throw StateError(t.imageMaxSide);
+  }
+  var result = await engine.generate(
+    {
+      'prompt': request.prompt,
+      'negativePrompt': request.negativePrompt,
+      'width': plan.width,
+      'height': plan.height,
+      'steps': request.steps,
+      'cfgScale': request.cfgScale,
+      'seed': request.seed,
+      'sampler': model.sampler,
+      ...model.samplerExtras,
+      if (video) ...{'frames': request.frames, 'fps': model.fps},
+    },
+    video: video,
+    onProgress: onProgress,
+  );
+  check();
+  if (plan.upscale > 1) {
+    upscaling?.call(plan.upscale);
+    result = await engine.upscale(upscaler!, result, factor: plan.upscale);
+    check();
+  }
+  if (!video) result = result.cropCentre(request.width, request.height);
+  return result;
+}
+
+/// [result]'s first frame as PNG, the format attachments are stored in.
+Future<Uint8List> encodePicturePng(SdResult result) async {
+  final buffer = await ui.ImmutableBuffer.fromUint8List(result.frame(0));
+  final descriptor = ui.ImageDescriptor.raw(
+    buffer,
+    width: result.width,
+    height: result.height,
+    pixelFormat: ui.PixelFormat.rgba8888,
+  );
+  final codec = await descriptor.instantiateCodec();
+  final frame = await codec.getNextFrame();
+  final image = frame.image;
+  try {
+    final data = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (data == null) throw StateError('Could not encode the picture');
+    return data.buffer.asUint8List();
+  } finally {
+    image.dispose();
+    codec.dispose();
+    descriptor.dispose();
+    buffer.dispose();
+  }
+}
+
 final desktopImageGenProvider =
     NotifierProvider<_ImageGenNotifier, _ImageGenState>(_ImageGenNotifier.new);
 
@@ -599,6 +697,133 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
     super.initState();
     _notifier = ref.read(desktopImageGenProvider.notifier);
     _notifier.pageEntered();
+    unawaited(_restorePreferred());
+  }
+
+  /// Opens Create with the model and mode last used, once preferences and
+  /// imported models have loaded.
+  Future<void> _restorePreferred() async {
+    final preferences = ref.read(imageGenPreferencesProvider.notifier);
+    await preferences.ready;
+    await ref.read(imageGenImportsProvider.notifier).ready;
+    if (!mounted) return;
+    final settings = ref.read(imageGenPreferencesProvider);
+    final imported = ref.read(imageGenImportsProvider);
+    final last = settings.lastMode ?? ImageGenMode.image;
+    if (last == ImageGenMode.upscale) {
+      final upscalers = imageGenUpscalerModels(imported);
+      final selected = upscalers
+          .where((m) => m.id == settings.of(ImageGenMode.upscale))
+          .firstOrNull;
+      setState(() {
+        _upscaleMode = true;
+        if (selected != null) _upscaler = selected;
+      });
+      return;
+    }
+    final models = imageGenSelectableModels(imported);
+    var selected = models.where((m) => m.id == settings.of(last)).firstOrNull;
+    if (selected == null && last == ImageGenMode.image) {
+      // Nothing picked yet: the fastest picture model, a downloaded one
+      // first.
+      final downloaded = <String>{};
+      for (final m in models) {
+        if (m.kind != ImageGenKind.image) continue;
+        try {
+          if (await ImageGenDownloadsNotifier.isReady(m)) downloaded.add(m.id);
+        } catch (_) {}
+      }
+      if (!mounted) return;
+      selected = defaultImageGenModel(models, downloaded: downloaded);
+    }
+    if (selected != null && !ref.read(desktopImageGenProvider).busy) {
+      _notifier.selectModel(selected);
+    }
+  }
+
+  void _chooseModel(ImageGenModel model) {
+    _notifier.selectModel(model);
+    unawaited(
+      ref
+          .read(imageGenPreferencesProvider.notifier)
+          .remember(ImageGenMode.of(model), model.id),
+    );
+  }
+
+  void _chooseUpscaler(ImageGenModel model) {
+    setState(() => _upscaler = model);
+    unawaited(
+      ref
+          .read(imageGenPreferencesProvider.notifier)
+          .remember(ImageGenMode.upscale, model.id),
+    );
+  }
+
+  void _setUpscaleMode(bool upscale) {
+    setState(() => _upscaleMode = upscale);
+    final mode = upscale
+        ? ImageGenMode.upscale
+        : ImageGenMode.of(ref.read(desktopImageGenProvider).model);
+    unawaited(
+      ref.read(imageGenPreferencesProvider.notifier).rememberMode(mode),
+    );
+  }
+
+  Future<void> _openImport() async {
+    // Upscalers are single files with no diffusion pipeline tag, so they keep
+    // the paste-a-repo dialog; generation models open Hugging Face discovery.
+    if (_upscaleMode) return _importUpscaler();
+    final result = await showImageGenDiscovery(context);
+    if (result == null || !mounted) return;
+    final mode = result.pipeline == HfImagePipeline.textToVideo
+        ? ImageGenMode.video
+        : ImageGenMode.image;
+    try {
+      final imported = importedImageGenModel(
+        repo: result.files.repo,
+        revision: result.files.revision,
+        file: result.file,
+        license: result.files.license,
+        mode: mode,
+      );
+      await _addImported(imported, mode);
+    } catch (e) {
+      _importFailed(e);
+    }
+  }
+
+  Future<void> _importUpscaler() async {
+    final imported = await showImageGenImportDialog(context);
+    if (imported == null || !mounted) return;
+    try {
+      await _addImported(imported, ImageGenMode.of(imported));
+    } catch (e) {
+      _importFailed(e);
+    }
+  }
+
+  Future<void> _addImported(ImageGenModel imported, ImageGenMode mode) async {
+    await ref.read(imageGenImportsProvider.notifier).add(imported);
+    await ref
+        .read(imageGenPreferencesProvider.notifier)
+        .remember(mode, imported.id);
+    if (!mounted) return;
+    if (mode == ImageGenMode.upscale) {
+      setState(() {
+        _upscaleMode = true;
+        _upscaler = imported;
+      });
+    } else {
+      _notifier.selectModel(imported);
+    }
+    unawaited(ref.read(imageGenDownloadsProvider.notifier).download(imported));
+  }
+
+  void _importFailed(Object e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(context.l10n.imageImportFailed('$e'))),
+    );
   }
 
   final _promptCtrl = TextEditingController();
@@ -638,7 +863,9 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
         _upscaleMode = d['kind'] == 'upscale';
         if (_upscaleMode) {
           _upscaler =
-              upscalerTools.where((m) => m.id == d['modelId']).firstOrNull ??
+              imageGenUpscalerModels(
+                ref.read(imageGenImportsProvider),
+              ).where((m) => m.id == d['modelId']).firstOrNull ??
               _upscaler;
           _factor = d['factor'] as int? ?? 2;
         }
@@ -876,9 +1103,14 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
     }
   }
 
-  Widget _upscalePanel(_ImageGenState st, _ImageGenNotifier notifier) {
+  Widget _upscalePanel(
+    _ImageGenState st,
+    _ImageGenNotifier notifier,
+    List<ImageGenModel> upscalers,
+    ImageGenModel upscaler,
+  ) {
     final c = context.colors;
-    final download = ref.watch(imageGenDownloadsProvider).of(_upscaler);
+    final download = ref.watch(imageGenDownloadsProvider).of(upscaler);
     final size = _pictureSize;
     final problem = _pictureError ?? st.errorMessage;
     return Column(
@@ -886,7 +1118,7 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
       children: [
         SegmentedButton<ImageGenModel>(
           segments: [
-            for (final m in upscalerTools)
+            for (final m in upscalers)
               ButtonSegment(
                 value: m,
                 label: Text(
@@ -898,13 +1130,11 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
                 ),
               ),
           ],
-          selected: {_upscaler},
-          onSelectionChanged: st.busy
-              ? null
-              : (v) => setState(() => _upscaler = v.single),
+          selected: {upscaler},
+          onSelectionChanged: st.busy ? null : (v) => _chooseUpscaler(v.single),
         ),
-        const SizedBox(height: 8),
-        _ModelFiles(model: _upscaler, state: download),
+        const SizedBox(height: AppSpace.row),
+        _ModelFiles(model: upscaler, state: download),
         if (download.status == ImageGenModelStatus.ready) ...[
           const SizedBox(height: 12),
           Row(
@@ -959,15 +1189,16 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
             ),
           ],
           if (problem != null) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpace.row),
             Text(problem, style: TextStyle(color: c.danger, fontSize: 12)),
           ],
           const SizedBox(height: 16),
           DesktopFocusRing(
-            child: FilledButton.icon(
+            child: FilledButton.tonalIcon(
+              style: appTonalButtonStyle(context),
               onPressed: st.busy || _picture == null || _pictureError != null
                   ? null
-                  : () => notifier.upscale(_picture!, _factor, _upscaler),
+                  : () => notifier.upscale(_picture!, _factor, upscaler),
               icon: st.busy
                   ? const SizedBox.square(
                       dimension: 14,
@@ -993,18 +1224,40 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
 
     final st = ref.watch(desktopImageGenProvider);
     final notifier = ref.read(desktopImageGenProvider.notifier);
-    final download = ref.watch(imageGenDownloadsProvider).of(st.model);
-    _defaults(st.model);
-    final video = st.model.kind == ImageGenKind.video;
+    final imported = ref.watch(imageGenImportsProvider);
+    final models = imageGenSelectableModels(imported);
+    final upscalers = imageGenUpscalerModels(imported);
+    final selected = models.where((m) => m.id == st.model.id).firstOrNull;
+    if (selected == null) {
+      // The selected imported model was removed: fall back after this frame.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final current = ref.read(desktopImageGenProvider);
+        if (!current.busy && !models.any((m) => m.id == current.model.id)) {
+          _notifier.selectModel(models.first);
+        }
+      });
+    }
+    final model = selected ?? models.first;
+    final recommended = recommendedImageGenModels(
+      desktopMemoryMb(ref.watch(desktopHfMemoryProvider).asData?.value).$2,
+    );
+    final upscaler =
+        upscalers.where((m) => m.id == _upscaler.id).firstOrNull ??
+        upscalers.first;
+    final download = ref.watch(imageGenDownloadsProvider).of(model);
+    _defaults(model);
+    final video = model.kind == ImageGenKind.video;
 
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
           width: 300,
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
-              key: ValueKey('${st.model.id}$_upscaleMode$_sizeKey'),
+              key: ValueKey('${model.id}$_upscaleMode$_sizeKey'),
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 SegmentedButton<bool>(
@@ -1023,36 +1276,64 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
                   selected: {_upscaleMode},
                   onSelectionChanged: st.busy
                       ? null
-                      : (v) => setState(() => _upscaleMode = v.single),
+                      : (v) => _setUpscaleMode(v.single),
                 ),
                 const SizedBox(height: 12),
                 if (_upscaleMode)
-                  _upscalePanel(st, notifier)
+                  _upscalePanel(st, notifier, upscalers, upscaler)
                 else ...[
                   DropdownButtonFormField<ImageGenModel>(
                     decoration: InputDecoration(
                       labelText: context.l10n.imageModel,
                       isDense: true,
                     ),
-                    initialValue: st.model,
+                    isExpanded: true,
+                    itemHeight: 64,
+                    initialValue: model,
+                    // The closed field shows the model alone; the open list
+                    // adds a delete button to downloaded models (owner
+                    // 2026-11-12).
+                    selectedItemBuilder: (_) => [
+                      for (final m in models)
+                        ImageGenModelOption(
+                          model: m,
+                          recommended: recommended.contains(m.id),
+                        ),
+                    ],
                     items: [
-                      for (final m in imageGenCatalog)
+                      for (final m in models)
                         DropdownMenuItem(
                           value: m,
-                          child: Text(
-                            '${m.id == 'qwen-image-2.1-q4k' ? context.l10n.imageFastName : m.displayName} · '
-                            '${m.kind == ImageGenKind.video ? context.l10n.imageVideo : context.l10n.imagePicture}',
+                          child: ImageGenModelOption(
+                            model: m,
+                            recommended: recommended.contains(m.id),
+                            onDelete: st.busy
+                                ? null
+                                : (menu) {
+                                    Navigator.of(menu).pop();
+                                    unawaited(
+                                      deleteImageGenModel(context, ref, m),
+                                    );
+                                  },
                           ),
                         ),
                     ],
                     onChanged: st.busy
                         ? null
                         : (m) {
-                            if (m != null) notifier.selectModel(m);
+                            if (m != null) _chooseModel(m);
                           },
                   ),
-                  const SizedBox(height: 8),
-                  _ModelFiles(model: st.model, state: download),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      key: const Key('image-add-model'),
+                      onPressed: st.busy ? null : _openImport,
+                      icon: const Icon(Icons.add_rounded, size: 16),
+                      label: Text(context.l10n.imageAddModel),
+                    ),
+                  ),
+                  _ModelFiles(model: model, state: download),
                   if (download.status == ImageGenModelStatus.ready) ...[
                     const SizedBox(height: 12),
                     TextField(
@@ -1066,7 +1347,7 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: AppSpace.row),
                     TextField(
                       controller: _negCtrl,
                       maxLines: 2,
@@ -1101,7 +1382,7 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
                             ),
                         ],
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppSpace.row),
                     ],
                     Row(
                       key: ValueKey(_sizeKey),
@@ -1127,7 +1408,7 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: AppSpace.row),
                     Row(
                       children: [
                         Expanded(
@@ -1151,7 +1432,7 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: AppSpace.row),
                     Row(
                       children: [
                         if (video) ...[
@@ -1181,8 +1462,8 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
                     Text(
                       video
                           ? context.l10n.imageVideoSizeHint(
-                              (_frames / st.model.fps).toStringAsFixed(1),
-                              '${st.model.fps}',
+                              (_frames / model.fps).toStringAsFixed(1),
+                              '${model.fps}',
                             )
                           : _width > 2048 || _height > 2048
                           ? context.l10n.imageHalfSizeHint
@@ -1190,7 +1471,7 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
                       style: TextStyle(fontSize: 11, color: c.textFaint),
                     ),
                     if (st.errorMessage != null) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppSpace.row),
                       Text(
                         st.errorMessage!,
                         style: TextStyle(color: c.danger, fontSize: 12),
@@ -1198,7 +1479,8 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
                     ],
                     const SizedBox(height: 16),
                     DesktopFocusRing(
-                      child: FilledButton.icon(
+                      child: FilledButton.tonalIcon(
+                        style: appTonalButtonStyle(context),
                         onPressed: st.busy
                             ? null
                             : () => notifier.generate(
@@ -1236,7 +1518,7 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
                       ),
                     ),
                     if (st.busy) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppSpace.row),
                       DesktopFocusRing(
                         child: OutlinedButton(
                           onPressed: notifier.cancel,
@@ -1320,6 +1602,18 @@ class _ModelFiles extends ConsumerWidget {
     final c = context.colors;
     final downloads = ref.read(imageGenDownloadsProvider.notifier);
     final caption = TextStyle(fontSize: 12, color: c.textMuted);
+    Future<void> remove() async {
+      try {
+        await downloads.delete(model);
+      } on StateError {
+        if (context.mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(context.l10n.modelFilesInUse)));
+        }
+      }
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1339,26 +1633,24 @@ class _ModelFiles extends ConsumerWidget {
           '${model.license}',
           style: TextStyle(fontSize: 11, color: c.textFaint),
         ),
-        const SizedBox(height: 8),
-        switch (state.status) {
-          ImageGenModelStatus.ready => Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () async {
-                try {
-                  await downloads.delete(model);
-                } on StateError {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(context.l10n.modelFilesInUse)),
-                    );
-                  }
-                }
-              },
-              icon: const Icon(Icons.delete_outline, size: 16),
-              label: Text(context.l10n.imageDeleteFiles),
-            ),
+        if (state.missingFiles.isNotEmpty)
+          Text(
+            context.l10n.imageMissingFiles(state.missingFiles.join(', ')),
+            style: caption,
           ),
+        const SizedBox(height: AppSpace.row),
+        switch (state.status) {
+          ImageGenModelStatus.ready =>
+            model.imported
+                ? const SizedBox.shrink()
+                : Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: remove,
+                      icon: const Icon(Icons.delete_outline, size: 16),
+                      label: Text(context.l10n.imageDeleteFiles),
+                    ),
+                  ),
           ImageGenModelStatus.downloading => Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1387,7 +1679,7 @@ class _ModelFiles extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               DesktopFocusRing(
-                child: FilledButton.tonalIcon(
+                child: FilledButton.icon(
                   onPressed: () => downloads.download(model),
                   icon: const Icon(Icons.download_rounded, size: 16),
                   label: Text(
@@ -1407,10 +1699,21 @@ class _ModelFiles extends ConsumerWidget {
             ],
           ),
         },
+        if (model.imported)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              key: Key('image-remove-imported-${model.id}'),
+              onPressed: remove,
+              icon: const Icon(Icons.remove_circle_outline, size: 16),
+              label: Text(context.l10n.imageRemoveModel),
+            ),
+          ),
         Align(
           alignment: Alignment.centerLeft,
-          child: TextButton.icon(
+          child: TextButton(
             key: const Key('image-remove-unused'),
+            style: TextButton.styleFrom(foregroundColor: c.textMuted),
             onPressed: state.status == ImageGenModelStatus.downloading
                 ? null
                 : () async {
@@ -1433,8 +1736,7 @@ class _ModelFiles extends ConsumerWidget {
                       }
                     }
                   },
-            icon: const Icon(Icons.cleaning_services_outlined, size: 16),
-            label: Text(context.l10n.imageRemoveUnusedParts),
+            child: Text(context.l10n.imageRemoveUnusedParts),
           ),
         ),
       ],
@@ -1584,7 +1886,7 @@ class _Canvas extends StatelessWidget {
               size: 64,
               color: c.textFaint.withValues(alpha: 0.3),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpace.row),
             Text(
               context.l10n.imageChoosePicture,
               style: TextStyle(color: c.textFaint),
@@ -1604,7 +1906,7 @@ class _Canvas extends StatelessWidget {
             size: 64,
             color: c.textFaint.withValues(alpha: 0.3),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpace.row),
           Text(
             context.l10n.imageDescribe,
             style: TextStyle(color: c.textFaint),

@@ -4,8 +4,8 @@
 ask about photos and documents, talk out loud, research the web with cited
 sources, generate images, and let several local AI agents work on one task at
 the same time. You need no account, no subscription and no cloud. The model
-runs on your device; only model downloads, web research and remote
-connections you turn on use the network.
+runs on your device; only model downloads, web research, the manual update
+check and remote connections you turn on use the network.
 
 OnDevice LLM is a free, open-source **local LLM app** for **Android** and
 **Windows**, built with Flutter on [llama.cpp](https://github.com/ggml-org/llama.cpp).
@@ -50,12 +50,13 @@ ChatGPT or Gemini.
 | 🔒 | **100% local and private** | Models run on your own device. Chats, photos, documents and memory never leave it unless you turn on web search or connect a server yourself. No account, no telemetry. |
 | ✈️ | **Works offline** | Once a model (and, for voice, a voice pack) is downloaded, chat, photos, documents, voice and phone actions work in airplane mode. |
 | 🤖 | **Local AI agents** | Ask for "four agents" and up to 4 agents work in parallel on your GPU or CPU. You watch each one live, then the chat model writes one complete answer from all their work. |
-| 🧠 | **Gemma 4, Qwen and your own GGUF files** | A catalog of tested models pinned to SHA-256 hashes, plus Hugging Face search and import of any GGUF that llama.cpp supports. Phones run 0.8B to 4B models; PCs run up to 35B mixture-of-experts models. |
-| ⚡ | **Fast on real hardware** | About 255 tokens/s on a laptop RTX 3070 and 40–48 tokens/s on a Galaxy S25+ (Qwen3.5 0.8B). **Optimize for this PC** finds the fastest settings in one click. |
+| 🧠 | **Gemma 4, Qwen and your own GGUF files** | A catalog of tested models pinned to SHA-256 hashes, plus Hugging Face search and import of any GGUF that llama.cpp supports. Phones run 0.8B to 4B models; PCs run up to 35B mixture-of-experts models; Models > All lists every model file (chat, picture, video, draft, embedding, speech) with a delete button. |
+| ⚡ | **Fast on real hardware** | About 255 tokens/s on a laptop RTX 3070 and 40–48 tokens/s on a Galaxy S25+ (Qwen3.5 0.8B). **Optimize for this PC** finds the fastest settings in one click, including a matching draft model and where MoE experts go. |
 | 🔎 | **Web research with sources** | Optional DuckDuckGo, Wikipedia and news search. Every answer cites its sources, opens them at the passage used, and flags claims no source supports. |
 | 📄 | **Photos and documents** | Ask about photos (vision models and on-device OCR) and PDF, Word, Excel, PowerPoint, EPUB and more. Build searchable knowledge collections (local RAG). |
-| 🎙️ | **Voice** | Dictation, read-aloud and a hands-free Conversation screen with on-device speech-to-text (Whisper, Parakeet) and text-to-speech (Kokoro, Supertonic 2). |
-| 🎨 | **Create images and video** (Windows) | Text-to-image, short videos and upscaling on your own GPU, with a history you can reopen. |
+| 🎙️ | **Voice that sounds human** | Dictation, read-aloud and a hands-free Conversation screen, all on-device: Parakeet Ultra or Whisper listen, Supertonic 3 (31 languages) or Kokoro speak, optional live captions show your words as you talk, and Gemma 4 can hear your actual recording, not just the transcript. |
+| 🎨 | **Create images and video** (Windows) | Text-to-image (Qwen-Image, DiffusionGemma), text/image-to-video (Wan 2.2, LTX 2.3) and upscaling on your own GPU, with a history you can reopen. Create suggests one picture and one video model for your graphics card, and chat can draw and edit pictures for you. |
+| 🌱 | **Ternary Bonsai models** | Runs PrismML's 1.58-bit Ternary Bonsai 2 (9B, 27B) out of the box, so a 27B model fits in a fraction of the usual memory. Stock llama.cpp builds can't load these files. |
 | ⚖️ | **Compare models** (Windows) | Send the same prompt to two models side by side and keep the results. |
 | 🔌 | **Local OpenAI-compatible server** (Windows) | An OpenAI- and Anthropic-compatible API on your PC for other apps, protected by a token. |
 | 📱 | **Phone + PC together** | Pair the phone with your PC and run big models, agents, searches and file analysis on the PC while the phone shows everything live. |
@@ -78,9 +79,10 @@ Full steps and requirements are in [Install](#install).
 
 - [Top features](#top-features)
 - [Quick start](#quick-start)
-- [What's new in 1.4.0](#whats-new-in-140)
+- [What's new in 1.5.0](#whats-new-in-150)
 - [Screenshots](#screenshots)
 - [Why OnDevice LLM](#why-ondevice-llm)
+- [How it compares](#how-it-compares)
 - [Local agents](#local-agents)
 - [Two apps, one project](#two-apps-one-project)
 - [What it does](#what-it-does)
@@ -96,7 +98,27 @@ Full steps and requirements are in [Install](#install).
 - [Support the project](#support-the-project)
 - [License](#license)
 
-## What's new in 1.4.0
+## What's new in 1.5.0
+
+- **Voice that feels human.** Parakeet Ultra listens better in 25 languages
+  (also in noise and long talks), and Supertonic 3 reads aloud in 31
+  languages with natural laughs, breaths and sighs. Your downloaded
+  Parakeet v3 and Supertonic 2 keep working until you update.
+- **Live captions.** An optional Nemotron 3.5 streaming pack shows your
+  words as you speak, on the phone and the PC.
+- **The model hears you.** In Conversation, Gemma 4 E2B/E4B gets your
+  recording together with the transcript, so names, mixed languages and
+  tone come through (you can turn it off).
+- **Faster big models.** FP8 KV cache (26-30 tokens/s on Qwen3.6 35B on an
+  8 GB laptop GPU), MoE expert cache settings, and Optimize now also tests a
+  matching draft model and the fewest experts in RAM.
+- **Ternary Bonsai** loads on any PC, also with the Vulkan engine.
+- **Pictures in chat.** Chat can edit the latest picture, and a full-screen
+  viewer zooms and saves images.
+- **Models > All** lists every model file, picture and video models
+  included, each with a delete button. Gemma 4 31B joins the catalog.
+
+### Earlier: 1.4.0
 
 - **Agents always finish.** A request such as "use four agents" now ends
   with one complete answer: the agents work in parallel, the main model waits
@@ -117,6 +139,11 @@ See [CHANGELOG.md](CHANGELOG.md) for every change.
 ## Screenshots
 
 ### Windows desktop app
+
+<p align="center">
+  <img src="docs/screenshots/desktop-chat-image.png" width="96%" alt="Windows: a local Gemma 4 chat asked to draw a red apple on a wooden table and answered with the picture, generated on the laptop's own GPU">
+  <br><em>Ask in chat and the picture is drawn on your own GPU. No cloud, no account.</em>
+</p>
 
 | Local agents working in parallel | Chat with a local model |
 | --- | --- |
@@ -173,6 +200,40 @@ OnDevice LLM shows how far your own hardware can go:
 - **A team, not just a chatbot.** Local agents split a big request into
   parallel jobs on your own GPU or CPU, and you can watch every one of them
   work.
+
+## How it compares
+
+LM Studio and Ollama are excellent tools for running chat models on a
+computer. OnDevice LLM runs the same kind of GGUF models (it is built on the
+same llama.cpp), and adds a lot around them. Built-in features, checked
+against the public documentation in November 2026:
+
+| | OnDevice LLM | LM Studio | Ollama |
+| --- | :---: | :---: | :---: |
+| Chat with local GGUF models on a PC | ✅ | ✅ | ✅ |
+| Local OpenAI-compatible server | ✅ | ✅ | ✅ |
+| **Android phone app** (models run on the phone) | ✅ | ❌ | ❌ |
+| **Phone + PC pairing** (phone uses the PC's models) | ✅ | ❌ | ❌ |
+| **Create images** on your GPU | ✅ | ❌ ¹ | ⚠️ experimental ² |
+| **Create videos** on your GPU | ✅ | ❌ | ❌ |
+| **Ternary Bonsai** (1.58-bit) models | ✅ | ❌ ³ | ❌ ³ |
+| **Hands-free voice conversation** (speech in and out) | ✅ | ❌ | ❌ |
+| **Several local agents in parallel** on one task | ✅ | ❌ | ❌ |
+| **Web research with cited sources, checked claim by claim** | ✅ | ⚠️ ⁴ | ⚠️ ⁴ |
+| Free and open source | ✅ (MIT) | ❌ (free app) | ✅ (MIT) |
+
+¹ Only through community plugins, some of which call a cloud service.
+² Experimental and limited to some platforms.
+³ PrismML says stock llama.cpp builds, which these apps bundle, can't load
+ternary files yet; OnDevice LLM ships a build that can.
+⁴ Web search through tools, plugins or an online API, without the
+passage-level source check.
+
+Those apps do things this one doesn't (Apple Silicon and MLX, Linux, a large
+ecosystem of integrations). If you only need a chat model behind an API on a
+Mac or Linux box, they are a great choice. If you want one private app for
+your phone and your PC that also talks, draws, makes videos and researches,
+that's what OnDevice LLM is for.
 
 ## Local agents
 
@@ -363,6 +424,10 @@ your own computer and use it from your phone too.
   - **Web research**, off by default. Your search query, the pages read and
     your network address reach DuckDuckGo, Wikipedia, the news feeds and the
     websites read.
+  - **A manual update check**, only when you press **Check for updates** in
+    Settings > About. One request asks the public GitHub Releases API for the
+    latest release; it sends no account or device identifier, only a generic
+    `OnDeviceLLM` User-Agent.
   - **A remote connection** you configure yourself. Messages, plus any
     images, documents and web evidence you allow, go to that server only.
     API keys are stored in the system keystore and never exported.
@@ -551,8 +616,9 @@ connections are separate settings that you turn on yourself.
   speeds up reading long prompts on Adreno GPUs, but the CPU writes answers
   as fast or faster. The NPU is not used.
 - **French and Spanish need a native-speaker review.**
-- **No in-app update check yet.** On GitHub, choose **Watch → Custom →
-  Releases** to hear about new versions.
+- **The update check is manual.** In Settings > About, **Check for updates**
+  asks GitHub for the latest release and links to it; the app never checks on
+  its own. On GitHub, choose **Watch → Custom → Releases** to be notified.
 
 ## FAQ
 
@@ -587,8 +653,8 @@ parallel on your own GPU or CPU. You see each agent work live, and the chat
 model merges their replies into one answer. See [Local agents](#local-agents).
 
 **Does it send my data anywhere?**
-Only for what you turn on: model downloads, web research and a remote
-connection you set up yourself. See [Privacy](#privacy).
+Only for what you turn on: model downloads, web research, the manual update
+check and a remote connection you set up yourself. See [Privacy](#privacy).
 
 **Is there an iPhone or Mac version?**
 Not yet. The code is Flutter and has an iOS build path, but there is no

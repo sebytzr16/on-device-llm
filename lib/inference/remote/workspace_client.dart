@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import '../../core/storage/device_encryption.dart';
 
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -104,10 +105,11 @@ class WorkspaceClient {
     CancelToken? cancel,
   }) async {
     final file = File(path);
-    final size = await file.length();
+    final bytes = await DeviceEncryption.instance.read(file);
+    final size = bytes.length;
     final response = await _client(settings).postUri(
       endpoint(settings, 'uploads').replace(queryParameters: {'name': name}),
-      data: file.openRead(),
+      data: Stream.value(bytes),
       options: options(settings)
         ..headers!.addAll({
           'Content-Type': 'application/octet-stream',

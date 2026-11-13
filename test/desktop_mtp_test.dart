@@ -24,6 +24,9 @@ import 'advanced_pages_2_test.dart' show TestSettings, TestModels, testModel;
 
 class _Engine extends LlamaEngine {
   @override
+  Future<Map<String, dynamic>> probe() async => {'supportsDFlash': true};
+
+  @override
   Future<Map<String, dynamic>> adapterInfo(String path) async => {'keys': {}};
 
   @override
@@ -109,7 +112,7 @@ void main() {
     expect(isMtpHeadFile('/m/mtp-notes.txt'), isFalse);
   });
 
-  testWidgets('MTP switch saves, reopens and resets with the model profile', (
+  testWidgets('MTP mode saves, reopens and resets with the model profile', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
@@ -148,7 +151,7 @@ void main() {
         ),
       ),
     );
-    final toggle = find.byKey(const Key('desktop-mtp'));
+    final toggle = find.byKey(const Key('desktop-speculation-mode'));
     Future<void> open() async {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
@@ -161,19 +164,20 @@ void main() {
     }
 
     await open();
-    expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
+    expect(tester.widget<DropdownButton<String>>(toggle).value, 'off');
+    tester.widget<DropdownButton<String>>(toggle).onChanged!('mtp');
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('desktop-mtp-head')), findsOneWidget);
     expect(find.text(t.desktopMtpHeadAutoNone), findsOneWidget);
     expect(find.text(t.desktopMtpHeadTokens), findsNothing);
-    await tester.tap(toggle);
-    await tester.pumpAndSettle();
+
     await tester.tap(find.text(t.save));
     await tester.pumpAndSettle();
     expect(container.read(modelProfilesProvider)['test']?['mtp'], isTrue);
     // Every layer stays "all" (999), so the engine may move the projector.
     expect(container.read(modelProfilesProvider)['test']?['nGpuLayers'], 999);
     await open();
-    expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
+    expect(tester.widget<DropdownButton<String>>(toggle).value, 'mtp');
     await tester.tap(find.text(t.desktopLoadSettingsReset));
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.save));

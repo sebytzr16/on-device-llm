@@ -83,6 +83,14 @@ const visionProjectors = <String, VisionProjector>{
     sha256: 'd00f211a7d4f7fb19bd9b75d8e9342eccffb5920b08fd9562167560fdfcc5dd1',
     sizeBytes: 1193058784,
   ),
+  // Checked 2026-11-12 via the Hub API (LFS SHA-256).
+  'gemma4-31b-qat': VisionProjector(
+    fileName: 'gemma-4-31B-mmproj-F16.gguf',
+    downloadUrl:
+        'https://huggingface.co/unsloth/gemma-4-31B-it-qat-GGUF/resolve/43cc1aeb31adf47ec06a854507ce552cd9862e6f/mmproj-F16.gguf',
+    sha256: '4775e1bf6ef6f8df94caed2d672c74432f0722565e5225a170c72949ebe4cf23',
+    sizeBytes: 1198957024,
+  ),
   'bonsai2-9b-q2_0': VisionProjector(
     fileName: 'Ternary-Bonsai-2-9B-mmproj-Q8_0.gguf',
     downloadUrl:
@@ -210,6 +218,13 @@ const catalogMeta = <String, CatalogMeta>{
     minRamGb: 24,
     blurb:
         'Google Gemma 4 26B, a mixture of experts with 4B active: big-model answers at small-model speed. Experts that do not fit the graphics card stay in RAM.',
+  ),
+  'gemma4-31b-qat': CatalogMeta(
+    parameterCountB: 31,
+    reasoning: true,
+    minRamGb: 24,
+    blurb:
+        'Google Gemma 4 31B, dense: the strongest Gemma. Fast on a 24 GB graphics card; on smaller cards most layers run from RAM and it is slow.',
   ),
   'bonsai2-9b-q2_0': CatalogMeta(
     parameterCountB: 9,
@@ -477,6 +492,21 @@ const desktopCatalog = <ModelInfo>[
     sha256: 'a7c5bc715f5ff8e99a3e8901ce7d2b42b402c669bf24f7c5250747633d0f5891',
     sizeBytes: 14249047104,
     parameterCountB: 26,
+    family: ModelFamily.gemma,
+    quantization: ModelQuantization.q4_k_m,
+    license: 'Apache-2.0',
+  ),
+  // Owner 2026-11-12: list models that need a bigger card than this PC's,
+  // with their fit badge, for other users.
+  ModelInfo(
+    id: 'gemma4-31b-qat',
+    displayName: 'Gemma 4 31B',
+    fileName: 'gemma-4-31B-it-qat-UD-Q4_K_XL.gguf',
+    downloadUrl:
+        'https://huggingface.co/unsloth/gemma-4-31B-it-qat-GGUF/resolve/43cc1aeb31adf47ec06a854507ce552cd9862e6f/gemma-4-31B-it-qat-UD-Q4_K_XL.gguf',
+    sha256: '00b5a7c497f0c8934033088c10a7fa9a4c015e46ee6d89e9c6890650ba5d0e71',
+    sizeBytes: 17287670048,
+    parameterCountB: 31,
     family: ModelFamily.gemma,
     quantization: ModelQuantization.q4_k_m,
     license: 'Apache-2.0',

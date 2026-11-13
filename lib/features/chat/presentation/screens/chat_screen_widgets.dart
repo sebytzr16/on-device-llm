@@ -8,7 +8,7 @@ class _MenuRow extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     children: [
       Icon(icon, size: 18, color: context.colors.textMuted),
-      const SizedBox(width: AppDesign.md),
+      const SizedBox(width: AppSpace.row),
       Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
     ],
   );
@@ -54,8 +54,8 @@ class _LoadingModelRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.symmetric(
-      horizontal: AppDesign.lg,
-      vertical: AppDesign.lg,
+      horizontal: AppSpace.lg,
+      vertical: AppSpace.lg,
     ),
     child: Row(
       children: [
@@ -63,7 +63,7 @@ class _LoadingModelRow extends StatelessWidget {
           dimension: 16,
           child: CircularProgressIndicator(strokeWidth: 2),
         ),
-        const SizedBox(width: AppDesign.md),
+        const SizedBox(width: AppSpace.md),
         Expanded(
           child: Text(
             context.l10n.loadingModel,
@@ -93,16 +93,16 @@ class _ErrorBannerState extends State<_ErrorBanner> {
     final c = context.colors;
     return Container(
       margin: const EdgeInsets.fromLTRB(
-        AppDesign.lg,
-        AppDesign.sm,
-        AppDesign.lg,
+        AppSpace.lg,
+        AppSpace.sm,
+        AppSpace.lg,
         0,
       ),
       padding: const EdgeInsets.fromLTRB(
-        AppDesign.md,
-        AppDesign.sm,
-        AppDesign.xs,
-        AppDesign.sm,
+        AppSpace.md,
+        AppSpace.sm,
+        AppSpace.xs,
+        AppSpace.sm,
       ),
       decoration: BoxDecoration(
         color: c.danger.fade(0.10),
@@ -116,7 +116,7 @@ class _ErrorBannerState extends State<_ErrorBanner> {
             padding: const EdgeInsets.only(top: 2),
             child: Icon(Icons.error_outline, size: 16, color: c.danger),
           ),
-          const SizedBox(width: AppDesign.sm),
+          const SizedBox(width: AppSpace.row),
           Expanded(
             child: SelectableText(
               widget.error,
@@ -364,8 +364,8 @@ class _NoticeToastState extends State<_NoticeToast> {
               },
               child: Padding(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: AppDesign.md,
-                  vertical: AppDesign.sm,
+                  horizontal: AppSpace.md,
+                  vertical: AppSpace.sm,
                 ),
                 child: Row(
                   children: [
@@ -376,7 +376,7 @@ class _NoticeToastState extends State<_NoticeToast> {
                       size: 16,
                       color: tone,
                     ),
-                    const SizedBox(width: AppDesign.sm),
+                    const SizedBox(width: AppSpace.row),
                     Expanded(
                       child: Text(
                         _text,

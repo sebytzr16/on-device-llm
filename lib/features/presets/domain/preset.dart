@@ -146,7 +146,7 @@ class Preset {
   InferenceSettings apply(InferenceSettings s) => InferenceSettings.fromJson({
     ...s.toJson(),
     ...toOverrides(),
-  }).copyWith(remoteApiKeys: s.remoteApiKeys);
+  }).copyWith(remoteApiKeys: s.remoteApiKeys, remoteHeaders: s.remoteHeaders);
 
   Map<String, dynamic> toJson() => {
     'id': id,

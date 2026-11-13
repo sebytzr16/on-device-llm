@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -234,11 +233,12 @@ void main() {
     );
     await tester.tap(find.text('Test Model'));
     await tester.pumpAndSettle();
-    expect(find.widgetWithText(MenuItemButton, 'Draft Model'), findsOneWidget);
+    // draft.gguf is a speculative-decoding drafter: it cannot chat.
+    expect(find.widgetWithText(MenuItemButton, 'Draft Model'), findsNothing);
     expect(find.widgetWithText(MenuItemButton, t.desktopEject), findsOneWidget);
     await tester.tap(find.text('Test Model').first);
     await tester.pumpAndSettle();
-    expect(find.widgetWithText(MenuItemButton, 'Draft Model'), findsNothing);
+    expect(find.widgetWithText(MenuItemButton, t.desktopEject), findsNothing);
     expect(container.read(modelManagerProvider).loadedModelId, 'test');
   });
 
@@ -279,35 +279,26 @@ void main() {
         } else {
           file.writeAsStringSync('Reference text');
         }
-        await mount(tester);
+        final chat = await mount(tester);
         final target = tester.widget<DropTarget>(find.byType(DropTarget));
         await tester.runAsync(() async {
-          final imported =
-              Function.apply(target.onDragDone!, [
-                    DropDoneDetails(
-                      files: [DropItemFile(file.path, name: name)],
-                      localPosition: Offset.zero,
-                      globalPosition: Offset.zero,
-                    ),
-                  ])
-                  as Future<void>;
-          // The import waits for its progress dialog to finish closing,
-          // and that animation only advances when frames are pumped.
-          var finished = false;
-          unawaited(imported.whenComplete(() => finished = true));
-          while (!finished) {
-            await tester.pump(const Duration(milliseconds: 50));
-            await Future<void>.delayed(const Duration(milliseconds: 5));
-          }
-          await imported;
+          await (Function.apply(target.onDragDone!, [
+                DropDoneDetails(
+                  files: [DropItemFile(file.path, name: name)],
+                  localPosition: Offset.zero,
+                  globalPosition: Offset.zero,
+                ),
+              ])
+              as Future<void>);
           if (image) {
-            // Finish decoding before the thumbnail starts listening in the
-            // fake async zone, so cleanup cannot race an open image file.
             final stored = await Directory(
               p.join(directory.path, 'attachments'),
-            ).list().single;
+            ).list().toList();
+            // One import leaves exactly one stored file; the OCR copy is
+            // temporary and removed before the import completes.
+            expect(stored, hasLength(1));
             await precacheImage(
-              FileImage(File(stored.path)),
+              MemoryImage(await File(stored.single.path).readAsBytes()),
               tester.element(find.byType(DesktopChatPane)),
             );
           }
@@ -322,6 +313,15 @@ void main() {
         if (!image) expect(attachment.text, 'Reference text');
         expect(File(attachment.path).existsSync(), isTrue);
         expect(tester.widget<IconButton>(send).onPressed, isNotNull);
+        // Exercise the real composer's attachment-only send path, then reject
+        // the handoff so the restored chip can also be removed below.
+        chat.accepts = false;
+        await tester.tap(send);
+        await tester.pumpAndSettle();
+        expect(chat.sent, ['']);
+        expect(chat.sentAttachments.single.single.id, attachment.id);
+        expect(chat.sentAttachments.single.single.path, attachment.path);
+        expect(find.byType(AttachmentChips), findsOneWidget);
         await tester.tap(
           find.descendant(
             of: find.byType(AttachmentChips),

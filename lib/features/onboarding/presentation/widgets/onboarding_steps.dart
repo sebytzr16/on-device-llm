@@ -24,25 +24,25 @@ class StepFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(
-      AppDesign.xl,
+      AppSpace.phonePage,
       0,
-      AppDesign.xl,
-      AppDesign.xl,
+      AppSpace.phonePage,
+      AppSpace.phonePage,
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.only(top: AppDesign.xl),
+            padding: const EdgeInsets.only(top: AppSpace.lg),
             children: [
               Text(headline, style: context.text.display),
-              const SizedBox(height: AppDesign.lg),
+              const SizedBox(height: AppSpace.lg),
               body,
             ],
           ),
         ),
-        const SizedBox(height: AppDesign.lg),
+        const SizedBox(height: AppSpace.lg),
         ...actions,
       ],
     ),
@@ -60,7 +60,7 @@ class PrivacyStep extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(context.l10n.obPrivateBody, style: context.text.bodyMuted),
-        const SizedBox(height: AppDesign.xl),
+        const SizedBox(height: AppSpace.xl),
         _Promise(
           Icons.person_off_outlined,
           context.l10n.obNoAccount,
@@ -93,7 +93,7 @@ class _Promise extends StatelessWidget {
   const _Promise(this.icon, this.title, this.detail);
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: AppDesign.lg),
+    padding: const EdgeInsets.only(bottom: AppSpace.lg),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -107,7 +107,7 @@ class _Promise extends StatelessWidget {
           ),
           child: Icon(icon, size: 18, color: context.colors.accent),
         ),
-        const SizedBox(width: AppDesign.md),
+        const SizedBox(width: AppSpace.md),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -158,9 +158,9 @@ class PickModelStep extends StatelessWidget {
                 : context.l10n.phoneRam(memory!.totalGb.toStringAsFixed(1)),
             style: context.text.mono,
           ),
-          const SizedBox(height: AppDesign.lg),
+          const SizedBox(height: AppSpace.lg),
           Container(
-            padding: const EdgeInsets.all(AppDesign.lg),
+            padding: const EdgeInsets.all(AppSpace.lg),
             decoration: BoxDecoration(
               color: c.surface,
               borderRadius: AppDesign.radius(AppDesign.rLg),
@@ -181,22 +181,22 @@ class PickModelStep extends StatelessWidget {
                       ModelTag(context.l10n.recommended, color: c.accent),
                   ],
                 ),
-                const SizedBox(height: AppDesign.sm + 2),
+                const SizedBox(height: AppSpace.sm),
                 ModelTagRow(model: selected, memory: memory),
                 if (meta != null) ...[
-                  const SizedBox(height: AppDesign.sm + 2),
+                  const SizedBox(height: AppSpace.sm),
                   Text(meta.blurb, style: context.text.bodyMuted),
                 ],
               ],
             ),
           ),
           if (alternatives.isNotEmpty) ...[
-            const SizedBox(height: AppDesign.xl),
+            const SizedBox(height: AppSpace.xl),
             Text(context.l10n.orChooseAnother, style: context.text.label),
-            const SizedBox(height: AppDesign.md),
+            const SizedBox(height: AppSpace.md),
             for (final m in alternatives)
               Padding(
-                padding: const EdgeInsets.only(bottom: AppDesign.sm),
+                padding: const EdgeInsets.only(bottom: AppSpace.sm),
                 child: Material(
                   color: c.surfaceRaised,
                   borderRadius: AppDesign.radius(AppDesign.rMd),
@@ -204,7 +204,7 @@ class PickModelStep extends StatelessWidget {
                     onTap: () => onSelect(m),
                     borderRadius: AppDesign.radius(AppDesign.rMd),
                     child: Container(
-                      padding: const EdgeInsets.all(AppDesign.md),
+                      padding: const EdgeInsets.all(AppSpace.md),
                       decoration: BoxDecoration(
                         borderRadius: AppDesign.radius(AppDesign.rMd),
                         border: Border.all(color: c.hairline),
@@ -216,7 +216,7 @@ class PickModelStep extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(m.displayName, style: context.text.title),
-                                const SizedBox(height: AppDesign.sm - 2),
+                                const SizedBox(height: AppSpace.sm),
                                 ModelTagRow(model: m, memory: memory),
                               ],
                             ),
@@ -229,7 +229,7 @@ class PickModelStep extends StatelessWidget {
                 ),
               ),
           ],
-          const SizedBox(height: AppDesign.lg),
+          const SizedBox(height: AppSpace.lg),
           Text(
             context.l10n.onboardingModelLicenseNotice(
               selected.sizeLabel,
@@ -256,7 +256,7 @@ class PickModelStep extends StatelessWidget {
           icon: const Icon(Icons.download_outlined, size: 18),
           label: Text(context.l10n.download),
         ),
-        const SizedBox(height: AppDesign.sm),
+        const SizedBox(height: AppSpace.sm),
         TextButton(onPressed: onLater, child: Text(context.l10n.later)),
       ],
     );
@@ -302,7 +302,7 @@ class DownloadStep extends StatelessWidget {
               context.l10n.onboardingModelReadyPrivacy(model.displayName),
               style: context.text.bodyMuted,
             ),
-            const SizedBox(height: AppDesign.lg),
+            const SizedBox(height: AppSpace.lg),
             ModelTagRow(model: model, showFit: false),
           ],
         ),
@@ -335,7 +335,7 @@ class DownloadStep extends StatelessWidget {
               error!,
               style: context.text.bodyMuted.copyWith(color: c.danger),
             ),
-            const SizedBox(height: AppDesign.md),
+            const SizedBox(height: AppSpace.md),
             Text(
               context.l10n.downloadInterruptedHint,
               style: context.text.bodyMuted,
@@ -348,7 +348,7 @@ class DownloadStep extends StatelessWidget {
             icon: const Icon(Icons.refresh, size: 18),
             label: Text(context.l10n.retry),
           ),
-          const SizedBox(height: AppDesign.sm),
+          const SizedBox(height: AppSpace.sm),
           TextButton(onPressed: onSkip, child: Text(context.l10n.skipForNow)),
         ],
       );
@@ -372,15 +372,15 @@ class DownloadStep extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(model.displayName, style: context.text.bodyMuted),
-          const SizedBox(height: AppDesign.xxl),
+          const SizedBox(height: AppSpace.xxl),
           // The percentage rolls up digit by digit as the download runs.
           RollingText(
             verifying ? '100%' : '${(fraction * 100).toStringAsFixed(0)}%',
             style: _big.copyWith(color: c.text),
           ),
-          const SizedBox(height: AppDesign.md),
+          const SizedBox(height: AppSpace.md),
           Text(detail, style: context.text.mono),
-          const SizedBox(height: AppDesign.lg),
+          const SizedBox(height: AppSpace.lg),
           ClipRRect(
             borderRadius: AppDesign.radius(AppDesign.rFull),
             child: LinearProgressIndicator(
@@ -388,7 +388,7 @@ class DownloadStep extends StatelessWidget {
               minHeight: 6,
             ),
           ),
-          const SizedBox(height: AppDesign.xl),
+          const SizedBox(height: AppSpace.xl),
           Text(context.l10n.downloadingHint, style: context.text.bodyMuted),
         ],
       ),

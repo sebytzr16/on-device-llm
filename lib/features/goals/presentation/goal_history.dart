@@ -20,9 +20,9 @@ class _Watches extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: AppDesign.xl),
+        const SizedBox(height: AppSpace.xl),
         Text(t.goalWatchesTitle, style: context.text.title),
-        const SizedBox(height: AppDesign.sm),
+        const SizedBox(height: AppSpace.sm),
         for (final w in watches)
           Builder(
             builder: (context) {
@@ -50,7 +50,7 @@ class _Watches extends ConsumerWidget {
               return ExpansionTile(
                 key: Key('goal-watch-${w.id}'),
                 tilePadding: EdgeInsets.zero,
-                childrenPadding: const EdgeInsets.only(bottom: AppDesign.md),
+                childrenPadding: const EdgeInsets.only(bottom: AppSpace.md),
                 leading: Icon(
                   change != null && !change.isEmpty
                       ? Icons.notifications_active
@@ -82,10 +82,10 @@ class _Watches extends ConsumerWidget {
                         '• ${f.item.title}: ${f.before.join(', ')} → ${f.after.join(', ')}',
                         style: context.text.bodyMuted,
                       ),
-                  const SizedBox(height: AppDesign.sm),
+                  const SizedBox(height: AppSpace.sm),
                   Wrap(
-                    spacing: AppDesign.sm,
-                    runSpacing: AppDesign.sm,
+                    spacing: AppSpace.sm,
+                    runSpacing: AppSpace.sm,
                     children: [
                       OutlinedButton.icon(
                         key: Key('goal-watch-check-${w.id}'),
@@ -109,7 +109,9 @@ class _Watches extends ConsumerWidget {
                             final items = [...await ScheduleStore.list()];
                             items.removeWhere((p) => p.id == w.id);
                             await ScheduleStore.save(items);
-                          } catch (_) {}
+                          } catch (e, st) {
+                            quietFailure('goal_history:112', e, st);
+                          }
                         },
                         icon: const Icon(
                           Icons.visibility_off_outlined,
@@ -141,9 +143,9 @@ class _PastGoals extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: AppDesign.xl),
+        const SizedBox(height: AppSpace.xl),
         Text(t.goalPastTitle, style: context.text.title),
-        const SizedBox(height: AppDesign.sm),
+        const SizedBox(height: AppSpace.sm),
         for (final e in history)
           ListTile(
             key: Key('goal-past-${e.id}'),
@@ -195,7 +197,14 @@ String _pastStatus(AppLocalizations t, GoalStatus s) => switch (s) {
 /// chat, or deleted.
 class GoalHistoryPage extends ConsumerWidget {
   final GoalHistoryEntry entry;
-  const GoalHistoryPage({super.key, required this.entry});
+  final bool embedded;
+  final VoidCallback? onClose;
+  const GoalHistoryPage({
+    super.key,
+    required this.entry,
+    this.embedded = false,
+    this.onClose,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -206,7 +215,8 @@ class GoalHistoryPage extends ConsumerWidget {
     final busy = current != null && !GoalNotifier.isFinished(current);
     return Scaffold(
       appBar: AppBar(
-        title: Text(t.goalsTitle),
+        automaticallyImplyLeading: !embedded,
+        title: Text(embedded ? t.goalPastTitle : t.goalsTitle),
         actions: [
           IconButton(
             key: const Key('goal-past-delete'),
@@ -215,24 +225,30 @@ class GoalHistoryPage extends ConsumerWidget {
             onPressed: () async {
               final navigator = Navigator.of(context);
               await ref.read(goalHistoryProvider.notifier).remove(entry.id);
-              navigator.pop();
+              if (embedded) {
+                onClose?.call();
+              } else {
+                navigator.pop();
+              }
             },
           ),
         ],
       ),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.all(AppDesign.xl),
+          padding: EdgeInsets.all(
+            context.isDesktop ? AppSpace.desktopPage : AppSpace.phonePage,
+          ),
           children: [
             ..._headerBlocks(context, goal, compact: true),
-            const SizedBox(height: AppDesign.sm),
+            const SizedBox(height: AppSpace.sm),
             _statusRow(context, goal),
             ..._reportBlocks(context, goal, running: false),
             ..._actionBlocks(context, goal),
-            const SizedBox(height: AppDesign.lg),
+            const SizedBox(height: AppSpace.lg),
             Wrap(
-              spacing: AppDesign.sm,
-              runSpacing: AppDesign.sm,
+              spacing: AppSpace.sm,
+              runSpacing: AppSpace.sm,
               children: [
                 if (entry.chatId != null)
                   OutlinedButton.icon(
@@ -261,7 +277,11 @@ class GoalHistoryPage extends ConsumerWidget {
                           if (await ref
                               .read(goalProvider.notifier)
                               .reopen(entry)) {
-                            navigator.pop();
+                            if (embedded) {
+                              onClose?.call();
+                            } else {
+                              navigator.pop();
+                            }
                           }
                         },
                   icon: const Icon(Icons.tune),
@@ -269,11 +289,11 @@ class GoalHistoryPage extends ConsumerWidget {
                 ),
               ],
             ),
-            const SizedBox(height: AppDesign.xl),
+            const SizedBox(height: AppSpace.xl),
             Divider(color: c.hairline),
-            const SizedBox(height: AppDesign.sm),
+            const SizedBox(height: AppSpace.sm),
             Text(t.goalHowMade, style: context.text.title),
-            const SizedBox(height: AppDesign.sm),
+            const SizedBox(height: AppSpace.sm),
             ..._statsBlocks(context, goal),
             ..._criteriaBlocks(context, goal),
             ..._detailBlocks(context, goal, running: false),

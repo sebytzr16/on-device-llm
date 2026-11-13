@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'device_model_server.dart';
 import 'pairing_code.dart';
@@ -16,7 +17,16 @@ class WorkspaceApi {
   final Future<void> Function(WorkspaceJob, Map<String, dynamic>) run;
   final List<String> capabilities;
   final WorkspaceUploads uploads;
-  final _imageDirectories = <String, Directory>{};
+  final _jobOwners = <String, String>{};
+  final _uploadOwners = <String, String>{};
+
+  /// Lets a test own a job it submitted directly to [jobs] (jobs submitted
+  /// through the API are owned by the calling principal).
+  @visibleForTesting
+  void debugAssignOwner(String jobId, String principal) =>
+      _jobOwners[jobId] = principal;
+  final _jobUploads = <String, Set<String>>{};
+  final _imageDirectories = <String, Future<Directory>>{};
   static const _completionHeader = 'x-workspace-completion';
   final _completionSecret = PairingCode.secret();
   final _completionClients = <String, String>{};
@@ -48,7 +58,10 @@ class WorkspaceApi {
   }) : jobs = jobs ?? WorkspaceJobs(),
        uploads = uploads ?? WorkspaceUploads();
 
-  Future<void> handle(HttpRequest request) async {
+  Future<void> handle(
+    HttpRequest request, {
+    String principal = 'legacy',
+  }) async {
     final response = request.response;
     var detached = false;
     void json(int code, Object body) {
@@ -67,6 +80,7 @@ class WorkspaceApi {
           path.length == 1 &&
           path.first == 'uploads') {
         final upload = await uploads.receive(request);
+        _uploadOwners[upload.id] = principal;
         json(201, {'uploadId': upload.id});
         return;
       }
@@ -89,8 +103,33 @@ class WorkspaceApi {
             'A JSON request with requestId is required.',
           );
         }
+        final requestId = input['requestId'] as String;
+        if (requestId.isEmpty || requestId.length > 128) {
+          throw const FormatException('A bounded request ID is required.');
+        }
+        if (input['uploads'] is List) {
+          for (final upload in input['uploads'] as List) {
+            if (upload is Map &&
+                upload['uploadId'] is String &&
+                _uploadOwners[upload['uploadId']] != principal) {
+              json(404, {'error': 'Upload not found.'});
+              return;
+            }
+          }
+        }
+        _jobOwners.removeWhere((id, _) => jobs[id] == null);
+        _jobUploads.removeWhere((id, _) => jobs[id] == null);
+        // Retain upload ownership while a retained job can be retried, even
+        // after its bytes have been released by completed execution.
+        _uploadOwners.removeWhere(
+          (id, _) =>
+              uploads[id] == null &&
+              !_jobUploads.values.any((ids) => ids.contains(id)),
+        );
         final job = jobs.submit(
-          requestId: input['requestId'] as String,
+          requestId: sha256
+              .convert(utf8.encode(jsonEncode([principal, requestId])))
+              .toString(),
           fingerprint: sha256.convert(utf8.encode(raw)).toString(),
           run: (job) async {
             // submit calls this synchronously only for newly accepted jobs;
@@ -121,6 +160,13 @@ class WorkspaceApi {
             }
           },
         );
+        _jobOwners[job.id] = principal;
+        _jobUploads[job.id] = {
+          if (input['uploads'] is List)
+            for (final upload in input['uploads'] as List)
+              if (upload is Map && upload['uploadId'] is String)
+                upload['uploadId'] as String,
+        };
         json(202, {
           'jobId': job.id,
           'sequence': job.sequence,
@@ -133,7 +179,7 @@ class WorkspaceApi {
         return;
       }
       final job = jobs[path[1]];
-      if (job == null) {
+      if (job == null || _jobOwners[job.id] != principal) {
         json(404, {
           'error': 'Job expired or the server restarted. Submit a new request.',
         });
@@ -244,29 +290,53 @@ class WorkspaceApi {
   }
 
   /// Decode inline images into a private directory owned by this job's run.
-  List<Map<String, Object>> decodeMessages(
+  Future<List<Map<String, Object>>> decodeMessages(
     WorkspaceJob job,
     Object? source, {
     required bool vision,
     required List<File> images,
-  }) => DeviceModelServer.decodeWorkspaceMessages(
-    source,
-    vision: vision,
-    images: images,
-    imageDirectory: _imageDirectories.putIfAbsent(
+  }) async {
+    // The map holds the creation future so concurrent calls for one job share
+    // the same directory instead of racing to create two.
+    final directory = await _imageDirectories.putIfAbsent(
       job.id,
-      () => Directory.systemTemp.createTempSync('desktopServe-'),
-    ),
-  );
+      () => Directory.systemTemp.createTemp('desktopServe-'),
+    );
+    return DeviceModelServer.decodeWorkspaceMessages(
+      source,
+      vision: vision,
+      images: images,
+      imageDirectory: directory,
+    );
+  }
 
   Future<void> _removeImageDirectory(String jobId) async {
     final directory = _imageDirectories[jobId];
     if (directory == null) return;
     try {
-      if (await directory.exists()) await directory.delete(recursive: true);
+      final resolved = await directory;
+      if (await resolved.exists()) await resolved.delete(recursive: true);
       _imageDirectories.remove(jobId);
     } on FileSystemException {
       // Keep failed cleanup for another attempt when the server stops.
+    }
+  }
+
+  Future<void> revokePrincipal(String principal) async {
+    final stopped = <Future<void>>[];
+    for (final entry in _jobOwners.entries) {
+      final job = jobs[entry.key];
+      if (entry.value == principal && job != null) {
+        job.stop();
+        stopped.add(job.execution);
+      }
+    }
+    await Future.wait(stopped);
+    for (final entry in _uploadOwners.entries.toList()) {
+      if (entry.value == principal) {
+        _uploadOwners.remove(entry.key);
+        await uploads.release(entry.key);
+      }
     }
   }
 

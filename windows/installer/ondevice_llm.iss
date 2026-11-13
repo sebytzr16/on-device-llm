@@ -65,11 +65,11 @@ spanish.GgufModel=Modelo GGUF
 
 [Components]
 Name: "cpu"; Description: "OnDevice LLM and CPU inference (required)"; Types: standard custom; Flags: fixed
-#if IncludeCuda
+#if Str(IncludeCuda) == "1"
 Name: "cuda"; Description: "NVIDIA GPU acceleration (CUDA 13, plus CUDA 12 for older drivers and GTX 10-series cards)"; Types: standard
 #endif
 
-#if IncludeVulkan
+#if Str(IncludeVulkan) == "1"
 Name: "vulkan"; Description: "GPU acceleration (Vulkan)"; Types: standard
 #endif
 
@@ -96,7 +96,7 @@ Source: "{#BundleDir}\vcruntime140_1.dll"; DestDir: "{app}"; Flags: ignoreversio
 Source: "{#BundleDir}\msvcp140_1.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist; Components: cpu
 Source: "{#BundleDir}\msvcp140_2.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist; Components: cpu
 Source: "{#BundleDir}\concrt140.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist; Components: cpu
-#if IncludeCuda
+#if Str(IncludeCuda) == "1"
 Source: "{#BundleDir}\ondevice_llm_cuda.dll"; DestDir: "{app}"; Flags: ignoreversion; Components: cuda
 Source: "{#BundleDir}\ondevice_llm_cuda12.dll"; DestDir: "{app}"; Flags: ignoreversion; Components: cuda
 Source: "{#BundleDir}\cudart64_*.dll"; DestDir: "{app}"; Flags: ignoreversion; Components: cuda
@@ -107,7 +107,7 @@ Source: "{#BundleDir}\ondevice_sd.dll"; DestDir: "{app}"; Flags: ignoreversion s
 Source: "{#BundleDir}\diffusiongemma\*"; DestDir: "{app}\diffusiongemma"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: cuda
 #endif
 
-#if IncludeVulkan
+#if Str(IncludeVulkan) == "1"
 Source: "{#BundleDir}\ondevice_llm_vulkan.dll"; DestDir: "{app}"; Flags: ignoreversion; Components: vulkan
 #endif
 
@@ -122,7 +122,7 @@ Name: "{autodesktop}\OnDevice LLM"; Filename: "{app}\ondevice_llm.exe"; Tasks: d
 
 [InstallDelete]
 ; Remove only old packaged GPU binaries when upgrading to CPU or deselecting CUDA.
-#if IncludeCuda
+#if Str(IncludeCuda) == "1"
 Type: files; Name: "{app}\ondevice_llm_cuda.dll"; Check: not WizardIsComponentSelected('cuda')
 Type: files; Name: "{app}\ondevice_llm_cuda12.dll"; Check: not WizardIsComponentSelected('cuda')
 Type: files; Name: "{app}\cudart64_*.dll"; Check: not WizardIsComponentSelected('cuda')
@@ -136,7 +136,7 @@ Type: files; Name: "{app}\cublas64_*.dll"
 Type: files; Name: "{app}\cublasLt64_*.dll"
 #endif
 
-#if IncludeVulkan
+#if Str(IncludeVulkan) == "1"
 Type: files; Name: "{app}\ondevice_llm_vulkan.dll"; Check: not WizardIsComponentSelected('vulkan')
 #else
 Type: files; Name: "{app}\ondevice_llm_vulkan.dll"
@@ -150,10 +150,10 @@ var
   Selected: String;
 begin
   Selected := '';
-#if IncludeCuda
+#if Str(IncludeCuda) == "1"
   if WizardIsComponentSelected('cuda') then Selected := 'cuda';
 #endif
-#if IncludeVulkan
+#if Str(IncludeVulkan) == "1"
   if WizardIsComponentSelected('vulkan') then begin
     if Selected <> '' then Selected := Selected + '-';
     Selected := Selected + 'vulkan';

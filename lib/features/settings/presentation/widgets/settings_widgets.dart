@@ -69,32 +69,6 @@ class SettingsGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final builder = itemBuilder;
-    // On a PC each setting is its own card, stacked with a small gap, as
-    // Windows Settings draws them.
-    if (context.isDesktop) {
-      if (builder != null) {
-        return SliverList.separated(
-          itemCount: itemCount!,
-          separatorBuilder: (_, _) => const SizedBox(height: _desktopGap),
-          itemBuilder: (context, index) =>
-              _DesktopCard(child: builder(context, index)),
-        );
-      }
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var i = 0; i < children.length; i++) ...[
-            if (i > 0) const SizedBox(height: _desktopGap),
-            SpringEntrance(
-              delay: SpringEntrance.cascade(i, stepMs: 30),
-              from: const Offset(0, AppDesign.xs),
-              child: _DesktopCard(child: children[i]),
-            ),
-          ],
-        ],
-      );
-    }
     if (builder != null) {
       return DecoratedSliver(
         decoration: BoxDecoration(
@@ -154,27 +128,9 @@ class SettingsGroup extends StatelessWidget {
   }
 }
 
-const double _desktopGap = 4;
-
-class _DesktopCard extends StatelessWidget {
-  final Widget child;
-  const _DesktopCard({required this.child});
-
-  @override
-  Widget build(BuildContext context) => Material(
-    color: context.colors.surface,
-    clipBehavior: Clip.antiAlias,
-    shape: RoundedRectangleBorder(
-      borderRadius: AppDesign.radius(AppDesign.rSm),
-      side: BorderSide(color: context.colors.hairline),
-    ),
-    child: child,
-  );
-}
-
 /// Keeps existing ListTile semantics and keys with the shared row geometry.
-class SettingsRow extends ListTile {
-  const SettingsRow({
+class SettingsTile extends ListTile {
+  const SettingsTile({
     super.key,
     super.title,
     super.subtitle,
@@ -195,7 +151,6 @@ class SettingsRow extends ListTile {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    if (context.isDesktop) return _desktop(context, c);
     return Pressable(
       enabled: enabled && (onTap != null || trailing != null),
       child: ListTile(
@@ -244,43 +199,27 @@ class SettingsRow extends ListTile {
       ),
     );
   }
+}
 
-  /// A Windows settings card row: a plain line icon, 14 px title, muted
-  /// description and the control on the right; hover instead of a press.
-  Widget _desktop(BuildContext context, AppColors c) => ListTile(
-    enabled: enabled,
-    selected: selected,
-    selectedTileColor: selectedTileColor,
-    tileColor: tileColor,
-    dense: dense,
-    isThreeLine: isThreeLine,
-    visualDensity: visualDensity,
-    minTileHeight: dense == true ? null : 64,
-    minVerticalPadding: dense == true ? AppDesign.sm : AppDesign.md,
-    horizontalTitleGap: AppDesign.lg,
-    contentPadding:
-        contentPadding ?? const EdgeInsets.symmetric(horizontal: AppDesign.lg),
-    leading: leading == null
-        ? null
-        : IconTheme(
-            data: IconThemeData(size: 20, color: c.text),
-            child: leading!,
-          ),
-    title: title,
-    titleTextStyle: context.text.body.copyWith(fontSize: 14, color: c.text),
-    subtitle: subtitle,
-    subtitleTextStyle: context.text.small.copyWith(
-      fontSize: 12,
-      color: c.textMuted,
-    ),
-    trailing:
-        trailing ??
-        (onTap == null
-            ? null
-            : Icon(Icons.chevron_right, size: 18, color: c.textMuted)),
-    onTap: onTap,
-    onLongPress: onLongPress,
-  );
+/// Compatibility name for existing settings pages and ListTile finders.
+class SettingsRow extends SettingsTile {
+  const SettingsRow({
+    super.key,
+    super.title,
+    super.subtitle,
+    super.leading,
+    super.trailing,
+    super.onTap,
+    super.onLongPress,
+    super.enabled,
+    super.dense,
+    super.isThreeLine,
+    super.contentPadding,
+    super.selected,
+    super.selectedTileColor,
+    super.tileColor,
+    super.visualDensity,
+  });
 }
 
 /// The existing spring switch and haptics on a standard settings row.
@@ -352,80 +291,12 @@ class SettingSlider extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    if (!context.isDesktop) return _stacked(context);
-    // Label and hint on the left, a fixed-width track and its value on the
-    // right, like every other PC setting card; stacked when the window is
-    // too narrow for both.
-    return LayoutBuilder(
-      builder: (context, box) =>
-          box.maxWidth < 560 ? _stacked(context) : _inline(context),
-    );
-  }
-
-  Widget _inline(BuildContext context) {
-    final c = context.colors;
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppDesign.lg,
-        vertical: AppDesign.md,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: context.text.body.copyWith(fontSize: 14)),
-                const SizedBox(height: 2),
-                Text(
-                  hint,
-                  style: context.text.small.copyWith(
-                    fontSize: 12,
-                    color: c.textMuted,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: AppDesign.xl),
-          SizedBox(
-            width: 240,
-            child: Slider(
-              value: value.clamp(min, max),
-              min: min,
-              max: max,
-              divisions: divisions,
-              label: display,
-              onChanged: onChanged,
-            ),
-          ),
-          SizedBox(
-            width: 72,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerRight,
-              child: RollingText(
-                display,
-                style: context.text.mono.copyWith(color: c.text),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => _stacked(context);
 
   Widget _stacked(BuildContext context) {
     final c = context.colors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppDesign.lg,
-        AppDesign.md,
-        AppDesign.lg,
-        AppDesign.xs,
-      ),
-      child: Column(
+    return SettingsTile(
+      title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -437,7 +308,7 @@ class SettingSlider extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: AppSpace.xs),
           Text(hint, style: context.text.small.copyWith(color: c.textFaint)),
           SliderTheme(
             data: SliderTheme.of(context).copyWith(
@@ -732,14 +603,8 @@ class SettingChoice<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     final custom = !options.contains(value);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppDesign.lg,
-        AppDesign.md,
-        AppDesign.lg,
-        AppDesign.md,
-      ),
-      child: Column(
+    return SettingsTile(
+      title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -751,7 +616,7 @@ class SettingChoice<T> extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: AppSpace.xs),
           Text(hint, style: context.text.small.copyWith(color: c.textFaint)),
           const SizedBox(height: AppDesign.sm),
           Wrap(

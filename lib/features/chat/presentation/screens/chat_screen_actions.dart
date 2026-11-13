@@ -29,7 +29,7 @@ extension _ChatScreenActions on _ChatScreenState {
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              spacing: AppDesign.md,
+              spacing: AppSpace.md,
               children: [
                 Text(dialog.l10n.contextSummaryHint),
                 Text('${source.length} ${dialog.l10n.contextMessages}'),
@@ -129,7 +129,7 @@ extension _ChatScreenActions on _ChatScreenState {
             padding: EdgeInsets.zero,
             itemCount: models.length + 1,
             separatorBuilder: (context, index) =>
-                const SizedBox(height: AppDesign.md),
+                const SizedBox(height: AppSpace.md),
             itemBuilder: (context, index) {
               if (index == 0) {
                 return ListTile(
@@ -184,7 +184,7 @@ extension _ChatScreenActions on _ChatScreenState {
             padding: EdgeInsets.zero,
             itemCount: candidates.length,
             separatorBuilder: (context, index) =>
-                const SizedBox(height: AppDesign.md),
+                const SizedBox(height: AppSpace.md),
             itemBuilder: (context, index) {
               final m = candidates[index];
               return ListTile(
@@ -283,7 +283,7 @@ extension _ChatScreenActions on _ChatScreenState {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
-                spacing: AppDesign.md,
+                spacing: AppSpace.md,
                 children: [
                   Text(dialog.l10n.knowledgeSaveHint),
                   TextField(
@@ -294,9 +294,9 @@ extension _ChatScreenActions on _ChatScreenState {
                     ),
                   ),
                   if (collections.isNotEmpty) ...[
-                    const SizedBox(height: AppDesign.sm),
+                    const SizedBox(height: AppSpace.row),
                     Wrap(
-                      spacing: 6,
+                      spacing: AppSpace.sm,
                       children: [
                         for (final collection in collections)
                           ActionChip(
@@ -458,7 +458,7 @@ extension _ChatScreenActions on _ChatScreenState {
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              spacing: AppDesign.md,
+              spacing: AppSpace.md,
               children: [
                 TextFormField(
                   initialValue: title,
@@ -725,7 +725,7 @@ extension _ChatScreenActions on _ChatScreenState {
                 width: 600,
                 height: 360,
                 child: Column(
-                  spacing: AppDesign.md,
+                  spacing: AppSpace.md,
                   children: [
                     TabBar(
                       tabs: [
@@ -763,8 +763,10 @@ extension _ChatScreenActions on _ChatScreenState {
                           ),
                           ValueListenableBuilder<TextEditingValue>(
                             valueListenable: editor,
-                            builder: (_, value, _) =>
-                                Markdown(data: value.text, selectable: true),
+                            builder: (_, value, _) => SafeMarkdown(
+                              data: value.text,
+                              selectable: true,
+                            ),
                           ),
                         ],
                       ),

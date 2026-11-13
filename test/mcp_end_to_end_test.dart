@@ -88,6 +88,7 @@ void main() {
       await registry
           .saveConfig(configuration())
           .timeout(const Duration(seconds: 15));
+      await registry.enableServer(name, true, reviewed: true);
       final state = registry.servers[name]!;
       expect(state.status, McpStatus.ready);
       expect(state.error, isNull);
@@ -151,6 +152,7 @@ void main() {
         timeout: const Duration(seconds: 5),
       );
       await registry.load().timeout(const Duration(seconds: 15));
+      await registry.enableServer(name, true, reviewed: true);
       expect(registry.servers[name]!.status, McpStatus.ready);
       expect(registry.alwaysAllowed(echoName), isTrue);
       expect(
@@ -185,10 +187,11 @@ void main() {
       await registry
           .saveConfig(configuration(command: missing))
           .timeout(const Duration(seconds: 15));
+      await registry.enableServer(name, true, reviewed: true);
       final state = registry.servers[name]!;
       expect(state.status, McpStatus.error);
-      expect(state.error, isA<ProcessException>());
-      expect(mcpExplain(t, state.error!), contains(missing));
+      expect(state.error, isA<McpException>());
+      expect(mcpExplain(t, state.error!), t.mcpConfigError);
       expect(registry.specs, isEmpty);
       expect((await echo('unavailable')).output, t.mcpUnavailableError);
     },
@@ -200,6 +203,7 @@ void main() {
       await registry
           .saveConfig(configuration(extraArgs: ['--exit-immediately']))
           .timeout(const Duration(seconds: 15));
+      await registry.enableServer(name, true, reviewed: true);
       final state = registry.servers[name]!;
       expect(state.status, McpStatus.error);
       expect(
@@ -221,6 +225,7 @@ void main() {
       await registry
           .saveConfig(configuration())
           .timeout(const Duration(seconds: 15));
+      await registry.enableServer(name, true, reviewed: true);
       final client = registry.servers[name]!.client!;
       await expectLater(
         client.callTool('crash', {}).timeout(const Duration(seconds: 10)),

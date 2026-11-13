@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:async';
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -10,6 +9,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/domain/entities/model_catalog.dart';
 import '../attachments/domain/scan_options.dart';
+import '../attachments/domain/image_decoder.dart';
 
 /// Photos and voice notes in the knowledge library: what the embedding
 /// projector reads (a small PNG, 16 kHz mono WAV segments) is derived from
@@ -93,31 +93,16 @@ class KnowledgeMedia {
     Uint8List bytes, {
     int edge = EmbeddingModel.mediaImageEdge,
   }) async {
-    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-    final descriptor = await ui.ImageDescriptor.encoded(buffer);
-    final w = descriptor.width, h = descriptor.height;
-    final scale = edge / (w > h ? w : h);
-    final codec = scale < 1
-        ? await descriptor.instantiateCodec(
-            targetWidth: (w * scale).round(),
-            targetHeight: (h * scale).round(),
-          )
-        : await descriptor.instantiateCodec();
-    final frame = await codec.getNextFrame();
-    try {
-      final png = await frame.image.toByteData(format: ui.ImageByteFormat.png);
-      if (png == null) throw const FormatException('Photo could not be read.');
-      final file = File(
-        p.join((await _scratch()).path, '${const Uuid().v4()}.png'),
-      );
-      await file.writeAsBytes(png.buffer.asUint8List(), flush: true);
-      return file;
-    } finally {
-      frame.image.dispose();
-      codec.dispose();
-      descriptor.dispose();
-      buffer.dispose();
-    }
+    final pngBytes = await decodeAndBoundImage(
+      bytes,
+      maxEdge: edge,
+      errorMessage: 'Photo could not be read.',
+    );
+    final file = File(
+      p.join((await _scratch()).path, '${const Uuid().v4()}.png'),
+    );
+    await file.writeAsBytes(pngBytes, flush: true);
+    return file;
   }
 
   /// Segment [index] (each [seconds] long) of a 16-bit mono WAV, as its own

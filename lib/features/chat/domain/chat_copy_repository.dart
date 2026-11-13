@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import '../../../core/storage/device_encryption.dart';
 
 import 'package:drift/drift.dart';
 import 'package:path/path.dart' as p;
@@ -65,7 +66,10 @@ class ChatCopyRepository {
             );
             final file = File(path);
             createdFiles.add(file);
-            await File(a.path).copy(path);
+            await DeviceEncryption.instance.write(
+              file,
+              await DeviceEncryption.instance.read(File(a.path)),
+            );
             copied.add({...a.toJson(), 'id': attachmentId, 'path': path});
           }
           await db.insertMessage(

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/design/app_design.dart';
+import 'settings_widgets.dart';
 import '../../../../core/design/app_dialog.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../chat/presentation/providers/chat_provider.dart';
@@ -120,78 +121,72 @@ class _AnswerTokensControlState extends State<AnswerTokensControl> {
             ),
           )
         : Text(widget.label, style: context.text.body.copyWith(fontSize: 14));
-    return Padding(
-      padding: compact
-          ? EdgeInsets.zero
-          : const EdgeInsets.symmetric(
-              horizontal: AppDesign.lg,
-              vertical: AppDesign.sm,
-            ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(child: label),
-              if (widget.source != null)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Text(
-                    widget.source!,
-                    style: context.text.caption.copyWith(
-                      fontSize: 11,
-                      color: c.textFaint,
-                    ),
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: label),
+            if (widget.source != null)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Text(
+                  widget.source!,
+                  style: context.text.caption.copyWith(
+                    fontSize: 11,
+                    color: c.textFaint,
                   ),
                 ),
-              Text(
-                number.format(widget.value),
-                style: context.text.mono.copyWith(
-                  fontSize: compact ? 12 : 14,
-                  color: c.accent,
-                ),
               ),
-              const SizedBox(width: 4),
-              TextButton(
-                key: const Key('answer-tokens-custom'),
-                style: TextButton.styleFrom(
-                  minimumSize: const Size(0, 28),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                  textStyle: context.text.caption.copyWith(fontSize: 12),
-                ),
-                onPressed: _custom,
-                child: Text(context.l10n.settingCustomOption),
-              ),
-            ],
-          ),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 3,
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-            ),
-            child: Slider(
-              value: widget.value
-                  .clamp(1, AnswerTokensControl.sliderMaximum)
-                  .toDouble(),
-              min: 1,
-              max: AnswerTokensControl.sliderMaximum.toDouble(),
-              label: number.format(widget.value),
-              onChanged: (v) => widget.onChanged(v.round()),
-            ),
-          ),
-          if (widget.value > widget.contextWindow)
             Text(
-              context.l10n.answerTokensContextLimit(widget.contextWindow),
-              style: context.text.small.copyWith(
-                fontSize: 12,
-                color: c.textMuted,
+              number.format(widget.value),
+              style: context.text.mono.copyWith(
+                fontSize: compact ? 12 : 14,
+                color: c.accent,
               ),
             ),
-          if (compact) const SizedBox(height: 4),
-        ],
-      ),
+            const SizedBox(width: 4),
+            TextButton(
+              key: const Key('answer-tokens-custom'),
+              style: TextButton.styleFrom(
+                minimumSize: const Size(0, 28),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+                textStyle: context.text.caption.copyWith(fontSize: 12),
+              ),
+              onPressed: _custom,
+              child: Text(context.l10n.settingCustomOption),
+            ),
+          ],
+        ),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            padding: const EdgeInsets.symmetric(vertical: AppSpace.sm),
+            trackHeight: 3,
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+          ),
+          child: Slider(
+            value: widget.value
+                .clamp(1, AnswerTokensControl.sliderMaximum)
+                .toDouble(),
+            min: 1,
+            max: AnswerTokensControl.sliderMaximum.toDouble(),
+            label: number.format(widget.value),
+            onChanged: (v) => widget.onChanged(v.round()),
+          ),
+        ),
+        if (widget.value > widget.contextWindow)
+          Text(
+            context.l10n.answerTokensContextLimit(widget.contextWindow),
+            style: context.text.small.copyWith(
+              fontSize: 12,
+              color: c.textMuted,
+            ),
+          ),
+        if (compact) const SizedBox(height: 4),
+      ],
     );
+    return compact ? content : SettingsTile(title: content);
   }
 }

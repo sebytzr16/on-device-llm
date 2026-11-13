@@ -37,16 +37,34 @@ void main() {
     expect(PairingCode.normalize(' 482-913 '), '482913');
   });
 
+  test('short fingerprint uses the first 16 hex digits in four groups', () {
+    const fingerprint =
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    expect(PairingCode.shortFingerprint(fingerprint), '0123 4567 89AB CDEF');
+    expect(PairingCode.shortFingerprint('0' * 64), '0000 0000 0000 0000');
+    for (final invalid in ['', '0123456789abcdef', 'g' * 64, 'A' * 64]) {
+      expect(
+        () => PairingCode.shortFingerprint(invalid),
+        throwsFormatException,
+      );
+    }
+  });
+
   test(
     'the right code returns the same connection the QR code holds',
     () async {
       await start();
       final pairing = jsonDecode(await PairingCode.redeem(endpoint, '482 913'));
+      expect(pairing['key'], isNot(token));
+      expect(
+        server!.pairedDevices.principal(pairing['key'] as String),
+        isNotNull,
+      );
       expect(pairing, {
         'ondevice_llm': 'connection',
         'url': endpoint,
         'model': 'test-model',
-        'key': token,
+        'key': pairing['key'],
       });
     },
   );

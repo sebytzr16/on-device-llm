@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.5.0 - 2026-11-13
+
+### Voice
+- Listening: Parakeet Ultra (Moondream, from Parakeet TDT 0.6B v3); existing v3 files keep working until Ultra is downloaded
+- Reading voice: Supertonic 3 (31 languages); a downloaded Supertonic 2 keeps working; laugh/breath/sigh tags never read aloud by other voices
+- Live captions: optional Nemotron 3.5 streaming pack shows words while you speak (own worker isolate)
+- Conversation: a model that can hear (Gemma 4 E2B/E4B audio projector) gets the recording with the transcript, for that answer only (setting to turn off)
+
+### Engine
+- FP8 (E4M3) KV cache on CUDA/CPU with q8_0 fallback and reason; MoE expert cache size/CPU share settings (off by default)
+- Bonsai ternary models load on the CPU when the engine is Vulkan
+- llama.cpp updated to b12342, retaining Bonsai ternary and host projector weights.
+
+### Models
+- Catalog lists Gemma 4 31B (dense, needs a ~24 GB card; fit badge says so on smaller PCs)
+- Models "All" lists image/video models and every other model file; every row can be deleted (asks first; shared image files kept)
+- Create's model list has a delete button on downloaded models
+- Create recommends one picture and one video model for this graphics card (largest weights that stay on the card with 2 GB spare)
+
+### Create
+- Create starts on the fastest picture model, a downloaded one first
+
+### Chat
+- Chat pictures: answer images show at 240 px; tapping a sent picture opens a full-screen zoomable viewer with Save (decrypted copy via the save dialog), Close and Details
+- Chat picture Save: file name gets an extension from the MIME type; the viewer closes and confirms where it saved
+
+### Speed
+- Optimize tries a matching draft on disk (same family, a third the size or less) with and without; a setup the engine refuses is skipped
+- Optimize: on MoE models whose experts miss the card, also measures the fewest experts in RAM that fit (+2, +4); a draft model the user picked is measured with and without
+
+### Chat (more)
+- Chat can edit pictures: edit_image redraws the chat's latest picture with the selected picture model
+- Source check also reads sentences the word check placed and flags ones their passage does not state
+
+### Fixes
+- Startup no longer stops at "Encrypted data could not be opened" when only the write-ahead log is unreadable (left by a killed process): if the database itself opens and passes its check, the log is moved to a dated `recovered-wal-…` folder beside it and the app starts; nothing is deleted
+- Windows package no longer ships an unused plain `sqlite3.dll`
+
 ## 1.4.0 (2026-11-08)
 
 ### Agents

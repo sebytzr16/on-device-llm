@@ -3,6 +3,8 @@ import '../goals/goal_watch_store.dart';
 import '../goals/goal_watch.dart';
 import '../attachments/data/bounded_zip.dart';
 import 'dart:convert';
+import '../../core/storage/device_encryption.dart';
+import '../../core/storage/database_encryption.dart';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -16,6 +18,7 @@ import 'package:sqlite3/sqlite3.dart';
 import '../../core/storage/app_directories.dart';
 import '../../data/local/database/app_database.dart';
 import '../attachments/data/attachment_store.dart';
+import '../chat/domain/deletion_cleanup.dart';
 import '../chat/domain/temporary_files.dart';
 import 'backup_cipher.dart';
 
@@ -25,6 +28,8 @@ import 'backup_cipher.dart';
 class LocalBackupService {
   static const maxEntries = 10000;
   static const backedUpPreferenceKeys = [
+    'imageGenImportedModels',
+    'imageGenPreferredModels',
     'text_recognition_options_v1',
     'conversation_workspace_v1',
     'context_summaries_v1',
@@ -53,6 +58,8 @@ class LocalBackupService {
     'active_model_downloads_v1': 'Transfers belong to this installation.',
     'model_download_history_v1': 'Transfers belong to this installation.',
     'temporary_attachment_cleanup_v1': 'Temporary attachments are excluded.',
+    'imageGenVerifiedHashes':
+        'Local file-check cache: rebuilt by hashing files again.',
     'desktop.modelsFolder': 'Device-local model paths.',
     'desktop.previousModelFolders': 'Device-local model paths.',
     'device_host_access_token': 'Secret; never included in a backup.',
@@ -69,6 +76,8 @@ class LocalBackupService {
     'thinking_off_profiles_2026_09_28': 'One-time migration marker.',
     'thinking_off_2026_09_28': 'One-time migration marker.',
     'sampling_defaults_2026_10_04': 'One-time migration marker.',
+    DeviceEncryption.settingKey: 'Device-local file encryption policy.',
+    DeviceEncryption.migrationKey: 'Device-local encryption migration marker.',
     'desktop_advanced': 'Device-local presentation preference.',
     'desktop_lean_prompt': 'Device-local prompt preference.',
   };
@@ -95,6 +104,27 @@ class LocalBackupService {
     try {
       final snapshot = File(p.join(temp.path, 'data.sqlite'));
       await db.customStatement('VACUUM INTO ?', [snapshot.path]);
+      // sqlite3mc may inherit the live key. Decrypt only the private snapshot,
+      // never the live connection. finally removes all plaintext staging.
+      final codec = DatabaseEncryption(DeviceEncryption.instance);
+      final snapshotKey = await codec.keyForFile(snapshot);
+      if (snapshotKey != null) {
+        final exported = sqlite3.open(snapshot.path);
+        try {
+          DatabaseEncryption.setup(exported, snapshotKey);
+          exported.execute("PRAGMA rekey=''");
+          if (exported.select('PRAGMA quick_check').first.values.first !=
+              'ok') {
+            throw const EncryptionRecovery();
+          }
+        } finally {
+          exported.close();
+          snapshotKey.fillRange(0, snapshotKey.length, 0);
+        }
+      }
+      if (await DatabaseEncryption.isEncrypted(snapshot)) {
+        throw const EncryptionRecovery();
+      }
       final attachments = await AttachmentStore.directory();
       final prefs = await SharedPreferences.getInstance();
       final temporaryFiles =
@@ -108,6 +138,16 @@ class LocalBackupService {
         if (schedules.isNotEmpty)
           _schedules: jsonEncode([for (final s in schedules) s.toJson()]),
       };
+      for (final key in DeviceEncryption.goalKeys) {
+        if (key != GoalWatchStore.key && metadata.containsKey(key)) {
+          final value = await DeviceEncryption.instance.readGoal(
+            key,
+            allowUnavailable: false,
+          );
+          if (value == null) throw const EncryptionRecovery();
+          metadata[key] = value;
+        }
+      }
       final prefsFile = File(p.join(temp.path, 'preferences.json'));
       await prefsFile.writeAsString(jsonEncode(metadata), flush: true);
       final manifest = File(p.join(temp.path, 'manifest.json'));
@@ -125,10 +165,14 @@ class LocalBackupService {
         (manifest, 'manifest.json'),
       ];
       var total = await snapshot.length();
+      // Only files a live row, document or draft still owns travel; an
+      // orphan from an interrupted deletion stays behind (S13).
+      final live = await DeletionCleanup.liveAttachmentPaths(db);
       await for (final file in attachments.list(followLinks: false)) {
         if (file is! File ||
             !_safeName(p.basename(file.path)) ||
-            temporaryFiles.contains(p.basename(file.path))) {
+            temporaryFiles.contains(p.basename(file.path)) ||
+            !live.contains(p.normalize(p.absolute(file.path)))) {
           continue;
         }
         total += await file.length();
@@ -159,7 +203,17 @@ class LocalBackupService {
       final encoder = ZipFileEncoder()..create(zip.path);
       try {
         for (final (file, name) in files) {
-          await encoder.addFile(file, name);
+          if (name.startsWith('attachments/') || name.startsWith('drafts/')) {
+            final clear = File(p.join(temp.path, 'export-entry'));
+            await clear.writeAsBytes(
+              await DeviceEncryption.instance.read(file),
+              flush: true,
+            );
+            await encoder.addFile(clear, name);
+            await clear.delete();
+          } else {
+            await encoder.addFile(file, name);
+          }
         }
       } finally {
         await encoder.close();
@@ -429,12 +483,12 @@ class LocalBackupService {
         if (file is! File) throw const FormatException('Invalid draft.');
         if (!file.path.endsWith('.json')) continue;
         final encoded = jsonEncode(
-          rewrite(jsonDecode(await file.readAsString())),
+          rewrite(
+            jsonDecode(utf8.decode(await DeviceEncryption.instance.read(file))),
+          ),
         );
         if (!validateOnly) {
-          final temp = File('${file.path}.tmp');
-          await temp.writeAsString(encoded, flush: true);
-          await temp.rename(file.path);
+          await DeviceEncryption.instance.write(file, utf8.encode(encoded));
         }
       }
     }
@@ -634,7 +688,9 @@ class LocalBackupService {
       final value = savedPrefs[key];
       final bool saved;
       if (value is String) {
-        saved = await prefs.setString(key, value);
+        saved = DeviceEncryption.goalKeys.contains(key)
+            ? await DeviceEncryption.instance.writeGoal(key, value)
+            : await prefs.setString(key, value);
       } else if (value is bool) {
         saved = await prefs.setBool(key, value);
       } else if (value is List && value.every((item) => item is String)) {
@@ -643,6 +699,11 @@ class LocalBackupService {
         saved = await prefs.remove(key);
       }
       if (!saved) throw StateError('Could not restore preference $key.');
+    }
+    final encryption = DeviceEncryption.instance;
+    final encrypt = await encryption.enabled();
+    if (encrypt || await encryption.migrationPending()) {
+      await encryption.setEnabled(encrypt);
     }
     checkpoint?.call('settings');
     await _saveJournal(marker, {...journal, 'phase': 'complete'});

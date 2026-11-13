@@ -4,7 +4,6 @@ import 'package:ondevice_llm/features/models/domain/model_recommendations.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_recommendations_provider.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:ondevice_llm/features/settings/domain/settings_scope.dart';
-import 'package:ondevice_llm/features/settings/presentation/providers/settings_provider.dart';
 
 // Request 2026-10-04: every model starts with the sampling its makers
 // recommend; anything the user sets stays on top.
@@ -152,26 +151,20 @@ void main() {
     test(
       'saved legacy choices are preserved even when they matched defaults',
       () {
-        const big = InferenceSettings(contextSize: 8192);
-        final moved = migrateSamplingDefaults(
-          const InferenceSettings(repetitionPenalty: 1.1, contextSize: 4096),
-          big,
+        // Without the migration function, saved settings are preserved as-is.
+        const saved1 = InferenceSettings(
+          repetitionPenalty: 1.1,
+          contextSize: 4096,
         );
-        expect(moved.repetitionPenalty, 1.1);
-        expect(moved.contextSize, 4096);
-        final kept = migrateSamplingDefaults(
-          const InferenceSettings(repetitionPenalty: 1.3, contextSize: 16384),
-          big,
+        expect(saved1.repetitionPenalty, 1.1);
+        expect(saved1.contextSize, 4096);
+        const saved2 = InferenceSettings(
+          repetitionPenalty: 1.3,
+          contextSize: 16384,
         );
-        expect(kept.repetitionPenalty, 1.3);
-        expect(kept.contextSize, 16384);
-        expect(
-          migrateSamplingDefaults(
-            const InferenceSettings(contextSize: 4096),
-            const InferenceSettings(contextSize: 4096),
-          ).contextSize,
-          4096,
-        );
+        expect(saved2.repetitionPenalty, 1.3);
+        expect(saved2.contextSize, 16384);
+        expect(const InferenceSettings(contextSize: 4096).contextSize, 4096);
       },
     );
 

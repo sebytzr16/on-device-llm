@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -149,4 +150,162 @@ void main() {
         ? 'Set OD_SIDE_TEST_LIBRARY and OD_SIDE_TEST_MODEL for offline GPU integration.'
         : false,
   );
+
+  // Audit E06: a helper context shares the chat weights, so it must also share
+  // the load overrides those weights were accepted with.
+  test(
+    'helper contexts inherit the RoPE and LoRA settings of the chat load',
+    () {
+      final lora = Platform.environment['OD_SIDE_TEST_LORA'];
+      final api = LlamaBindings(libraryPath: library!);
+      final options = '{}'.toNativeUtf8();
+      final runtime = api.create(options);
+      calloc.free(options);
+      final path = model!.toNativeUtf8();
+      final settings = jsonEncode({
+        'backend': Platform.environment['OD_SIDE_TEST_BACKEND'] ?? 'cuda',
+        'nGpuLayers': Platform.environment['OD_SIDE_TEST_BACKEND'] == 'cpu'
+            ? 0
+            : 999,
+        'contextSize': 4096,
+        // Deliberately not the model's own RoPE defaults.
+        'ropeScaling': 'yarn',
+        'ropeFreqScale': 4.0,
+        'yarnOrigCtx': 4096,
+        'warmup': false,
+        'loraAdapters': [
+          if (lora != null) {'path': lora, 'scale': 0.5},
+        ],
+      }).toNativeUtf8();
+      final sideOptions = jsonEncode({
+        'n_seq': 1,
+        'n_ctx_per_seq': 2048,
+        'adaptive': false,
+      }).toNativeUtf8();
+      final request = jsonEncode({
+        'messages': [
+          {'role': 'user', 'content': 'Say hello in one short sentence.'},
+        ],
+        'fallbackTemplate': 'chatml',
+        'settings': {'maxTokens': 8, 'temperature': 0.0},
+      }).toNativeUtf8();
+      Pointer<Void> side = nullptr;
+      try {
+        expect(
+          api.load(runtime, path, settings),
+          0,
+          reason: api.error(runtime).toDartString(),
+        );
+        side = api.sideOpen!(runtime, sideOptions);
+        expect(side, isNot(nullptr), reason: api.error(runtime).toDartString());
+        expect(api.sideSubmit!(side, 0, request), 0);
+        final metrics = _drainSide(api, side);
+        expect(metrics['ropeScaling'], 'yarn');
+        expect(metrics['ropeFreqScale'], 4.0);
+        expect(metrics['adapters'], lora == null ? 0 : 1);
+      } finally {
+        if (side != nullptr) api.sideClose!(side);
+        calloc.free(request);
+        calloc.free(sideOptions);
+        calloc.free(path);
+        calloc.free(settings);
+        api.destroy(runtime);
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 3)),
+    skip: library == null || model == null
+        ? 'Set OD_SIDE_TEST_LIBRARY and OD_SIDE_TEST_MODEL for offline GPU integration.'
+        : false,
+  );
+
+  // Audit E08: the bounded reasoning budget must not consume the answer.
+  test(
+    'the helper reasoning budget still yields an answer',
+    () {
+      final api = LlamaBindings(libraryPath: library!);
+      final options = '{}'.toNativeUtf8();
+      final runtime = api.create(options);
+      calloc.free(options);
+      final path = model!.toNativeUtf8();
+      final settings = jsonEncode({
+        'backend': Platform.environment['OD_SIDE_TEST_BACKEND'] ?? 'cuda',
+        'nGpuLayers': Platform.environment['OD_SIDE_TEST_BACKEND'] == 'cpu'
+            ? 0
+            : 999,
+        'contextSize': 4096,
+      }).toNativeUtf8();
+      final sideOptions = jsonEncode({
+        'n_seq': 1,
+        'n_ctx_per_seq': 4096,
+        'adaptive': false,
+      }).toNativeUtf8();
+      final request = jsonEncode({
+        'messages': [
+          {
+            'role': 'user',
+            'content': 'Think hard for a long time, then answer: 17 + 25?',
+          },
+        ],
+        'fallbackTemplate': 'chatml',
+        'settings': {
+          'maxTokens': 24,
+          'thinkingModeEnabled': true,
+          'thinkingBudgetTokens': 16,
+          'temperature': 0.3,
+        },
+      }).toNativeUtf8();
+      Pointer<Void> side = nullptr;
+      try {
+        expect(
+          api.load(runtime, path, settings),
+          0,
+          reason: api.error(runtime).toDartString(),
+        );
+        side = api.sideOpen!(runtime, sideOptions);
+        expect(side, isNot(nullptr), reason: api.error(runtime).toDartString());
+        expect(api.sideSubmit!(side, 0, request), 0);
+        final metrics = _drainSide(api, side);
+        final reasoning = metrics['reasoningTokens'];
+        expect(reasoning, isA<int>(), reason: '$metrics');
+        final tokens = metrics['tokens'] as int;
+        expect(
+          tokens - (reasoning as int),
+          greaterThan(0),
+          reason: 'the answer keeps its own allowance: $metrics',
+        );
+      } finally {
+        if (side != nullptr) api.sideClose!(side);
+        calloc.free(request);
+        calloc.free(sideOptions);
+        calloc.free(path);
+        calloc.free(settings);
+        api.destroy(runtime);
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 3)),
+    skip: library == null || model == null
+        ? 'Set OD_SIDE_TEST_LIBRARY and OD_SIDE_TEST_MODEL for offline GPU integration.'
+        : false,
+  );
+}
+
+/// Steps one helper sequence to its end and returns its last metrics.
+Map<String, dynamic> _drainSide(LlamaBindings api, Pointer<Void> side) {
+  var metrics = <String, dynamic>{};
+  for (var step = 0; step < 600; ++step) {
+    final result = jsonDecode(api.sideStep!(side).toDartString()) as Map;
+    if (result['error'] != null) {
+      fail('Helper step failed: ${result['error']}');
+    }
+    var done = false;
+    for (final raw in result['events'] as List) {
+      final event = raw as Map;
+      if (event['metrics'] case final Map values) {
+        metrics = Map<String, dynamic>.from(values);
+      }
+      done = done || event['done'] == true;
+    }
+    if (done) return metrics;
+  }
+  fail('Helper sequence did not finish: $metrics');
 }

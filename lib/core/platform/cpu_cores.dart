@@ -1,5 +1,6 @@
 import 'dart:ffi';
 import 'dart:io';
+import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// CPU cores for the desktop thread defaults: llama.cpp's own count of
 /// physical cores (od_cpu_cores), since the second thread of an SMT core
@@ -36,7 +37,9 @@ abstract final class CpuCores {
           name,
         ).lookupFunction<Int32 Function(), int Function()>('od_cpu_cores')();
         if (cores > 0) return cores;
-      } catch (_) {}
+      } catch (e, st) {
+        quietFailure('cpu_cores:39', e, st);
+      }
     }
     return null;
   }

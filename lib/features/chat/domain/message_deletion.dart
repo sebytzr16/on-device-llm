@@ -1,6 +1,11 @@
-import 'package:drift/drift.dart';
+import 'dart:convert';
 
+import 'package:drift/drift.dart';
+import 'package:logging/logging.dart';
+
+import '../../attachments/domain/attachment.dart';
 import '../../../data/local/database/app_database.dart';
+import 'deletion_cleanup.dart';
 
 /// Undo stores only the affected rows. Other turns written afterwards are never
 /// replaced by an old conversation snapshot.
@@ -10,6 +15,13 @@ class MessageDeletion {
   final Map<String, (Message, Message)> changed;
   bool _undone = false;
   MessageDeletion(this.chatId, this.removed, this.changed);
+
+  /// How long Undo stays available; its attachment files are removed after
+  /// (the toast dismisses at four seconds).
+  static const undoWindow = Duration(seconds: 6);
+
+  /// Whether [undo] restored the turns, so their files must stay.
+  bool get undone => _undone;
 
   static Future<MessageDeletion?> delete(
     AppDatabase db,
@@ -140,4 +152,30 @@ class MessageDeletion {
     _undone = true;
     return true;
   });
+
+  /// Removes the attachment files only the deleted turns used, once Undo can
+  /// no longer restore them; a file another message, draft or document still
+  /// references is kept (S13).
+  Future<int> purgeAttachments(AppDatabase db) async {
+    if (_undone) return 0;
+    final paths = <String>[];
+    for (final row in removed) {
+      for (final a in _attachments(row)) {
+        paths.add(a.path);
+      }
+    }
+    if (paths.isEmpty) return 0;
+    return DeletionCleanup.deleteUnreferenced(db, paths);
+  }
+
+  static List<Attachment> _attachments(Message row) {
+    try {
+      return Attachment.listFromJson(jsonDecode(row.attachmentsJson));
+    } on FormatException catch (error, stack) {
+      Logger(
+        'chat.deletion',
+      ).warning('Unreadable attachment list', error, stack);
+      return const [];
+    }
+  }
 }

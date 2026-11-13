@@ -76,4 +76,17 @@ class DocumentDraftStore {
     }
     await drafts.save(_key(chat, template), ChatDraft(text: text));
   }
+
+  /// Drops every saved revision of [chatId] (S14): deleting a chat must not
+  /// leave its generated documents behind for backups to export.
+  Future<void> deleteForChat(String chatId) async {
+    final prefix = 'document:$chatId:';
+    if (!persist) {
+      _memory.removeWhere((key, _) => key.startsWith(prefix));
+      return;
+    }
+    for (final key in await drafts.keys()) {
+      if (key.startsWith(prefix)) await drafts.delete(key);
+    }
+  }
 }

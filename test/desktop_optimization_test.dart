@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/core/l10n/l10n.dart';
+import 'package:ondevice_llm/core/platform/desktop_host.dart';
 import 'package:ondevice_llm/core/providers/shared_providers.dart';
 import 'package:ondevice_llm/desktop/desktop_theme.dart';
 import 'package:ondevice_llm/desktop/model_speed_section.dart';
 import 'package:ondevice_llm/desktop/model_tune_section.dart';
+import 'package:ondevice_llm/desktop/model_tuner.dart';
 import 'package:ondevice_llm/desktop/pc_optimization.dart';
 import 'package:ondevice_llm/features/models/domain/entities/model_info.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
@@ -23,6 +25,7 @@ import 'advanced_pages_2_test.dart' show TestModels, TestSettings, testModel;
 
 final _stale = const InferenceSettings().copyWith(
   kvCacheType: KvCacheType.q8_0,
+  vCacheType: KvCacheType.q4_0,
   nGpuLayers: 3,
   flashAttention: false,
   batchSize: 2048,
@@ -76,13 +79,14 @@ class _Models extends TestModels {
 class _Engine extends Fake implements TextEngine {
   Completer<void>? gate;
   int calls = 0;
+  InferenceSettings? measured;
   @override
   Map<String, dynamic> get metrics => {
     'contextSize': 32768,
     'promptTokens': 32,
     'tokens': 128,
     'firstTokenMs': 100,
-    'tokensPerSecond': 100,
+    'tokensPerSecond': (measured?.nGpuLayers ?? 0) > 3 ? 200 : 100,
   };
   @override
   Future<Map<String, dynamic>> previewPrompt({
@@ -102,14 +106,40 @@ class _Engine extends Fake implements TextEngine {
     String toolChoice = 'auto',
   }) async* {
     calls++;
+    measured = settings;
     if (gate != null) await gate!.future;
-    yield 'same answer';
+    yield output(settings);
   }
+
+  String output(InferenceSettings settings) =>
+      settings.kvCacheType == KvCacheType.q8_0
+      ? 'A seed absorbs water and grows roots then leaves toward sunlight.'
+      : 'A seed absorbs water and grows roots then leaves towards sunlight!';
 
   @override
   void cancel() {
     if (gate?.isCompleted == false) gate!.complete();
   }
+}
+
+/// Answers with different bytes once more GPU layers are used, like a setup
+/// that changes sampling behavior instead of only speed.
+class _ChangingEngine extends _Engine {
+  @override
+  String output(InferenceSettings settings) =>
+      settings.nGpuLayers > 3 ? 'changed answer' : 'same answer';
+}
+
+class _RateRunner implements TuneRunner {
+  final double rate;
+  _RateRunner(this.rate);
+  @override
+  Future<bool> fits(TuneSettings settings) async => true;
+  @override
+  Future<TuneMeasurement> measure(TuneSettings settings) async =>
+      TuneMeasurement(settings['setup'] == 0 ? 100 : rate, 'same');
+  @override
+  void cancel() {}
 }
 
 void main() {
@@ -199,6 +229,82 @@ void main() {
     );
   });
 
+  test('Optimize accepts harmless divergence but rejects unrelated answers', () {
+    const base = TuneMeasurement(
+      100,
+      'a',
+      outputs: [
+        'A seed absorbs water and grows roots then leaves toward sunlight.',
+        'def fibonacci(n): return n if n < 2 else fibonacci(n-1) + fibonacci(n-2)',
+      ],
+    );
+    const harmless = TuneMeasurement(
+      110,
+      'b',
+      outputs: [
+        'A seed absorbs water and grows roots then leaves towards sunlight!',
+        'def fibonacci(n): return n if n < 2 else fibonacci(n-1) + fibonacci(n-2)',
+      ],
+    );
+    expect(optimizeOutputAcceptable(base, harmless), isTrue);
+    expect(
+      optimizeOutputAcceptable(
+        base,
+        const TuneMeasurement(
+          200,
+          'c',
+          outputs: ['Unrelated broken output', 'different code'],
+        ),
+      ),
+      isFalse,
+    );
+    final settings = const InferenceSettings(kvCacheType: KvCacheType.fp16);
+    expect(
+      pickOptimizeWinner(
+        reference: base.outputHash,
+        baseline: base,
+        runs: [(settings: settings, measurement: harmless)],
+      )?.settings,
+      settings,
+    );
+  });
+
+  for (final rate in [102.0, 103.0, 104.0]) {
+    test('Optimize requires more than 3% throughput gain: $rate', () async {
+      final report = await ModelTuner(_RateRunner(rate), minimumGain: 0.03).run(
+        initial: {'setup': 0},
+        candidates: {
+          'setup': [1],
+        },
+      );
+      expect(report.changes.isNotEmpty, rate > 103);
+    });
+  }
+
+  test(
+    'pickOptimizeWinner only lets output-equivalent runs beat the baseline',
+    () {
+      const base = InferenceSettings(batchSize: 512);
+      const draft = InferenceSettings(batchSize: 1024);
+      TuneMeasurement m(String hash, double tok) => TuneMeasurement(tok, hash);
+      final runs = [
+        (settings: draft, measurement: m('candidate answer', 100)),
+        (settings: base, measurement: m('original answer', 50)),
+      ];
+      // No baseline: a candidate cannot stand in for the original answers.
+      expect(pickOptimizeWinner(reference: null, runs: runs), isNull);
+      expect(pickOptimizeWinner(reference: '', runs: runs), isNull);
+      // A baseline ('before') measurement: only runs matching its output can win,
+      // even when they are slower.
+      expect(
+        pickOptimizeWinner(reference: 'original answer', runs: runs)?.settings,
+        base,
+      );
+      expect(pickOptimizeWinner(reference: 'never', runs: runs), isNull);
+      expect(pickOptimizeWinner(reference: null, runs: []), isNull);
+    },
+  );
+
   test('Q8 fallback is used only when F16 cannot fit even on CPU', () async {
     final result = await pcOptimizationDefaults(
       current: _stale,
@@ -215,6 +321,9 @@ void main() {
     testWidgets(
       'Optimize button ${cancel ? 'cancels without saving' : 'measures and applies safe defaults'}',
       (tester) async {
+        // Draft and MTP choices are desktop-only settings.
+        DesktopHost.active = true;
+        addTearDown(() => DesktopHost.active = false);
         final engine = _Engine()..gate = Completer<void>();
         final c = ProviderContainer(
           overrides: [
@@ -264,13 +373,23 @@ void main() {
         } else {
           expect(model['nGpuLayers'], greaterThan(3));
           expect(model['kvCacheType'], 'fp16');
+          expect(model['vCacheType'], 'fp16');
           expect(model['flashAttention'], isTrue);
           expect(model['draftModelId'], '');
+          final loaded =
+              (c.read(modelManagerProvider.notifier) as _Models).loads.last;
+          expect(loaded.kvCacheType, KvCacheType.fp16);
+          expect(loaded.nGpuLayers, model['nGpuLayers']);
+          expect(
+            find.textContaining('kvCacheType: q8_0 -> fp16'),
+            findsOneWidget,
+          );
           final global = c.read(settingsProvider);
           // The winner goes to this model's profile only: the app-wide
           // choices other models use are kept (audit P1-13).
           expect(global.explicitOverrides, contains('kvCacheType'));
           expect(global.kvCacheType, KvCacheType.q8_0);
+          expect(global.vCacheType, KvCacheType.q4_0);
           expect(global.explicitOverrides, contains('temperature'));
           expect(find.textContaining('Before: 100.0'), findsOneWidget);
         }
@@ -278,4 +397,48 @@ void main() {
       },
     );
   }
+
+  testWidgets(
+    'Optimize keeps the current settings when no setup keeps their answer',
+    (tester) async {
+      final engine = _ChangingEngine();
+      final c = ProviderContainer(
+        overrides: [
+          settingsProvider.overrideWith(_Settings.new),
+          modelManagerProvider.overrideWith(_Models.new),
+          llamaEstimatorProvider.overrideWithValue(_Estimator()),
+          modelSpeedEngineProvider.overrideWithValue(engine),
+        ],
+      );
+      addTearDown(c.dispose);
+      final profiles = c.read(modelProfilesProvider.notifier);
+      await profiles.ready;
+      await profiles.set('test', {'temperature': 0.25, 'nGpuLayers': 3});
+      final before = Map<String, dynamic>.of(profiles.of('test'));
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: MaterialApp(
+            theme: DesktopTheme.of(AccentChoice.amber, dark: true),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: Scaffold(
+              body: ModelOptimizeSection(model: testModel, settings: _stale),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('desktop-optimize')));
+      await tester.pumpAndSettle();
+      expect(c.read(sessionBusyProvider), isFalse);
+      // The baseline matched no candidate, so nothing was saved.
+      expect(profiles.of('test'), before);
+      final reason = tester.widget<Text>(
+        find.byKey(const Key('desktop-optimize-kept-reason')),
+      );
+      expect(reason.data, AppLocalizationsEn().desktopOptimizeKeptOutput);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

@@ -87,12 +87,25 @@ class OcrReading {
   }
 }
 
+/// One page's embedded text layer, with [coverage] in characters per
+/// square point of the page. A page number or running header scores near
+/// zero; a real text layer scores far above [_minLayerCoverage].
+class PageLayer {
+  final String text;
+  final double coverage;
+  const PageLayer(this.text, {this.coverage = 0});
+}
+
 /// One page at a time, with real page numbers even after OCR skips/failures.
 /// Callbacks make limits, quality disclosure and cancellation host-testable.
 class PdfTextScanner {
+  /// A text layer this thin is treated as scanned: headers and page numbers
+  /// score near zero, a real text layer far above this.
+  static const _minLayerCoverage = 0.0005; // characters per square point
+
   static Future<String> scan({
     required int pages,
-    required Future<String> Function(int page) textLayer,
+    required Future<PageLayer> Function(int page) textLayer,
     required Future<OcrReading> Function(int page) recognize,
     required ScanOptions options,
     required int maxCharacters,
@@ -107,32 +120,42 @@ class PdfTextScanner {
     for (var page = 1; page <= pages; page++) {
       if (cancelled?.call() == true) throw const ScanCancelled();
       progress?.call(page, pages);
-      var text = (await textLayer(page)).trim();
+      final layer = await textLayer(page);
+      final layerText = layer.text.trim();
+      var ocrText = '';
       String quality = '';
-      if (text.isEmpty) {
-        if (scanned == options.maxScannedPages) {
+      final bool layerThin =
+          layerText.isEmpty || layer.coverage < _minLayerCoverage;
+      if (layerThin) {
+        if (layerText.isNotEmpty && scanned == options.maxScannedPages) {
+          // No OCR budget left: keep the thin text layer as-is.
+        } else if (scanned == options.maxScannedPages) {
           skipped++;
           continue;
-        }
-        scanned++;
-        try {
-          final read = await recognize(page);
-          text = read.text.trim();
-          quality = t.documentScanQuality(
-            read.confidence == null
-                ? t.documentScanConfidenceUnknown
-                : t.documentScanConfidence(
-                    '${(read.confidence! * 100).round()}',
-                  ),
-          );
-        } on OcrUnavailable {
-          ocrUnavailable = true;
-          text = '';
-        } catch (_) {
-          text = '';
+        } else {
+          scanned++;
+          try {
+            final read = await recognize(page);
+            ocrText = read.text.trim();
+            if (ocrText.isNotEmpty) {
+              quality =
+                  ' (OCR; ${read.confidence == null ? t.documentScanConfidenceUnknown : t.documentScanConfidence('${(read.confidence! * 100).round()}')})';
+            }
+          } on OcrUnavailable {
+            ocrUnavailable = true;
+          } catch (_) {
+            // OCR failed: fall back to the text layer alone.
+          }
         }
       }
       if (cancelled?.call() == true) throw const ScanCancelled();
+      var text = layerText;
+      if (ocrText.isNotEmpty) {
+        final layerLines = layerText.split('\n').map((l) => l.trim()).toSet();
+        final additions = ocrText.split('\n').map((l) => l.trim());
+        text =
+            '$layerText\n${additions.where((l) => l.isNotEmpty && !layerLines.contains(l)).join('\n')}';
+      }
       if (text.isEmpty) {
         unreadable++;
         continue;

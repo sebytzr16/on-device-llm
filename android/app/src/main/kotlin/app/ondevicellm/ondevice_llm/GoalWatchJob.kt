@@ -39,6 +39,15 @@ object GoalWatchData {
             .edit().putString(KEY, items.toString()).commit()) { "Watch results could not be saved." }
     }
 
+    @Synchronized fun replace(context: Context, expected: String, value: String): Boolean {
+        if (load(context).toString() != JSONArray(expected).toString()) return false
+        write(context, JSONArray(value))
+        // The migrated native list supersedes the old Flutter preference copy.
+        check(context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            .edit().remove("flutter.goal_watches_v1").commit()) { "Could not retire legacy watches." }
+        return true
+    }
+
     @Synchronized fun put(context: Context, id: Int, value: String, expected: String?): Boolean {
         val items = load(context)
         val index = (0 until items.length()).firstOrNull { items.getJSONObject(it).optInt("id") == id }
@@ -49,6 +58,11 @@ object GoalWatchData {
         }
         val next = JSONObject(value)
         require(next.getInt("id") == id)
+        // Reject a foreground/headless writer that captured the previous policy
+        // while a toggle migration was in progress. It can reload and retry.
+        val encrypted = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            .getBoolean("flutter.device_file_encryption_v1", false)
+        if (next.has("encrypted") != encrypted) return false
         if (index == null) items.put(next) else items.put(index, next)
         write(context, items)
         return true
@@ -79,6 +93,9 @@ object GoalWatchData {
     fun handle(context: Context, call: MethodCall, result: MethodChannel.Result): Boolean {
         when (call.method) {
             "watchList" -> result.success(load(context).toString())
+            "watchReplace" -> result.success(replace(context,
+                call.argument<String>("expected") ?: error("Missing expected watches"),
+                call.argument<String>("value") ?: error("Missing watches")))
             "watchPut" -> {
                 val id = call.argument<Number>("id")?.toInt() ?: error("Missing watch id")
                 result.success(put(context, id, call.argument<String>("value") ?: error("Missing watch"), call.argument<String>("expected")))
@@ -106,9 +123,11 @@ class GoalWatchJob : JobService() {
             val loader = FlutterInjector.instance().flutterLoader()
             loader.startInitialization(applicationContext)
             loader.ensureInitializationComplete(applicationContext, null)
-            // The worker uses HTTP and our two channels only. No Activity
-            // plugins, SQLite connection, microphone or native inference.
+            // Only vault and preferences plugins are needed to open watch
+            // envelopes. No Activity plugins, SQLite or native inference.
             val worker = FlutterEngine(applicationContext, null, false)
+            worker.plugins.add(com.it_nomads.fluttersecurestorage.FlutterSecureStoragePlugin())
+            worker.plugins.add(io.flutter.plugins.sharedpreferences.SharedPreferencesPlugin())
             engine = worker
             val messenger = worker.dartExecutor.binaryMessenger
             MethodChannel(messenger, "ondevice_llm/schedule").setMethodCallHandler { call, result ->

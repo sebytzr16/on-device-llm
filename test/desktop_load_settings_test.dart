@@ -9,6 +9,7 @@ import 'package:ondevice_llm/core/providers/shared_providers.dart';
 import 'package:ondevice_llm/desktop/desktop_theme.dart';
 import 'package:ondevice_llm/desktop/load_settings_dialog.dart';
 import 'package:ondevice_llm/desktop/inspector_panel.dart';
+import 'package:ondevice_llm/features/adapters/adapter_store.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:ondevice_llm/features/settings/domain/settings_scope.dart';
@@ -23,6 +24,9 @@ import 'advanced_pages_2_test.dart' show TestSettings, TestModels, testModel;
 
 class _Engine extends LlamaEngine {
   @override
+  Future<Map<String, dynamic>> probe() async => {'supportsDFlash': true};
+
+  @override
   Future<Map<String, dynamic>> adapterInfo(String path) async => {
     'keys': {'tokenizer.chat_template': '{{ messages }}'},
   };
@@ -35,6 +39,69 @@ class _Engine extends LlamaEngine {
     List<({String path, double scale})> adapters = const [],
     String? draftModelPath,
   }) async => {'layers': 24, 'contextTrain': 4096};
+}
+
+class _Adapters extends AdaptersNotifier {
+  @override
+  AdaptersState build() {
+    ready = Future.value();
+    return const AdaptersState(
+      attachments: {
+        'test': [AdapterAttachment('large.gguf', 1)],
+      },
+    );
+  }
+
+  @override
+  Future<List<({String path, double scale})>> resolved(String modelId) async =>
+      [for (final a in state.of(modelId)) (path: a.adapterId, scale: a.scale)];
+
+  void select(String path, double scale) {
+    state = state.copyWith(
+      attachments: {
+        'test': [AdapterAttachment(path, scale)],
+      },
+    );
+  }
+}
+
+class _AdapterEstimates extends _Engine {
+  final requests = <List<({String path, double scale})>>[];
+
+  @override
+  Future<Map<String, dynamic>> estimate({
+    required String modelPath,
+    required InferenceSettings settings,
+    String? mmprojPath,
+    List<({String path, double scale})> adapters = const [],
+    String? draftModelPath,
+  }) async {
+    requests.add(adapters);
+    return {'layers': 24, 'contextTrain': 4096};
+  }
+}
+
+/// Records the draft length every memory estimate was asked for.
+class _DraftEstimates extends _Engine {
+  final draftTokens = <int>[];
+
+  @override
+  Future<Map<String, dynamic>> estimate({
+    required String modelPath,
+    required InferenceSettings settings,
+    String? mmprojPath,
+    List<({String path, double scale})> adapters = const [],
+    String? draftModelPath,
+  }) async {
+    draftTokens.add(settings.draftMaxTokens);
+    return super.estimate(
+      modelPath: modelPath,
+      settings: settings,
+      mmprojPath: mmprojPath,
+      adapters: adapters,
+      draftModelPath: draftModelPath,
+    );
+  }
 }
 
 /// The card as it reads with the loaded model's 6 GB still on it.
@@ -67,6 +134,7 @@ class _LoadedModels extends TestModels {
   ChatLoad? get loadedConfig => (
     modelId: 'test',
     modelPath: 'loaded.gguf',
+    adapters: const [],
     settings: const InferenceSettings(),
     mmprojPath: null,
     draftModelPath: null,
@@ -86,6 +154,7 @@ class _RunningModels extends TestModels {
   ChatLoad? get loadedConfig => (
     modelId: same ? 'test' : 'other',
     modelPath: same ? 'test.gguf' : 'other.gguf',
+    adapters: const [],
     settings: const InferenceSettings(contextSize: 32768),
     mmprojPath: null,
     draftModelPath: null,
@@ -125,6 +194,60 @@ class _OccupiedCard extends _Engine {
 void main() {
   setUp(() => DesktopHost.active = true);
   tearDown(() => DesktopHost.active = false);
+
+  testWidgets('adapter paths and scales reach estimates and cache keys (E09)', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(1400, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final estimator = _AdapterEstimates();
+    final container = ProviderContainer(
+      overrides: [
+        settingsProvider.overrideWith(TestSettings.new),
+        modelManagerProvider.overrideWith(TestModels.new),
+        adaptersProvider.overrideWith(_Adapters.new),
+        llamaEngineProvider.overrideWithValue(estimator),
+        llamaEstimatorProvider.overrideWithValue(estimator),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: DesktopTheme.of(AccentChoice.amber, dark: true),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showDesktopLoadSettings(context, testModel),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(estimator.requests, [
+      [(path: 'large.gguf', scale: 1.0)],
+    ]);
+    final adapters = container.read(adaptersProvider.notifier) as _Adapters;
+    adapters.select('large.gguf', 0.5);
+    await tester.pumpAndSettle();
+    expect(estimator.requests.last, [(path: 'large.gguf', scale: 0.5)]);
+    expect(estimator.requests, hasLength(2));
+    adapters.select('other.gguf', 0.5);
+    await tester.pumpAndSettle();
+    expect(estimator.requests.last, [(path: 'other.gguf', scale: 0.5)]);
+    expect(estimator.requests, hasLength(3));
+    adapters.select('large.gguf', 1);
+    await tester.pumpAndSettle();
+    expect(estimator.requests, hasLength(3)); // Reuse this exact adapter set.
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'closing Load settings while MTP discovery waits is safe (P2-55)',
@@ -667,6 +790,8 @@ void main() {
           'offloadKv',
           'swaFull',
           'nCpuMoe',
+          'moeCacheSizeMb',
+          'moeCacheCpuShare',
           'expertsUsed',
         ],
         'sampling' => ['logitBias'],
@@ -729,5 +854,69 @@ void main() {
       container.read(modelProfilesProvider)['test'],
       isNot(contains('microBatchSize')),
     );
+  });
+
+  testWidgets('a new draft length asks for a fresh memory estimate (E10)', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(1400, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final estimator = _DraftEstimates();
+    final container = ProviderContainer(
+      overrides: [
+        settingsProvider.overrideWith(TestSettings.new),
+        modelManagerProvider.overrideWith(TestModels.new),
+        llamaEngineProvider.overrideWithValue(estimator),
+        llamaEstimatorProvider.overrideWithValue(estimator),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: DesktopTheme.of(AccentChoice.amber, dark: true),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showDesktopLoadSettings(context, testModel),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(estimator.draftTokens, hasLength(1));
+    final group = find.byKey(const Key('desktopDeep-group-speculative'));
+    await tester.scrollUntilVisible(
+      group,
+      180,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -180));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(of: group, matching: find.byType(ListTile)).first,
+    );
+    await tester.pumpAndSettle();
+    final field = find.byKey(const Key('desktopDeep-draftMaxTokens'));
+    await tester.ensureVisible(field);
+    await tester.enterText(
+      find.descendant(of: field, matching: find.byType(TextFormField)),
+      '3',
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    // Draft length changes n_rs_seq and the output limits, so caching the
+    // previous estimate would show the wrong memory use.
+    expect(estimator.draftTokens, hasLength(2));
+    expect(estimator.draftTokens.last, 3);
   });
 }
