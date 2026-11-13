@@ -38,7 +38,8 @@ void main() {
       'contextSize': 1 << 20,
       'maxTokens': 32768,
       'thinkingBudgetTokens': 512,
-      'batchThreads': 8,
+      // Threads are capped at the machine's cores; CI runners may have 2.
+      'batchThreads': 2,
       'promptCache': false,
       'researchTimeBudgetSeconds': 60,
       'evidencePassages': 12,
@@ -46,7 +47,7 @@ void main() {
     expect(s.contextSize, 1 << 20);
     expect(s.maxTokens, 32768);
     expect(s.thinkingBudgetTokens, 512);
-    expect(s.effectiveBatchThreads, 8);
+    expect(s.effectiveBatchThreads, 2);
     expect(s.promptCache, false);
     expect(s.researchTimeBudgetSeconds, 60);
     expect(s.evidencePassages, 12);
