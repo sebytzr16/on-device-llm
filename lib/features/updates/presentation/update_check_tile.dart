@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/design/app_design.dart';
@@ -70,7 +72,7 @@ class _UpdateCheckTileState extends State<UpdateCheckTile> {
   Future<void> _openRelease(BuildContext sheet, String url) async {
     try {
       await openExternalLink(url);
-      if (sheet.mounted) Navigator.maybePop(sheet);
+      if (sheet.mounted) unawaited(Navigator.maybePop(sheet));
     } catch (_) {
       if (sheet.mounted) {
         showIslandToast(
