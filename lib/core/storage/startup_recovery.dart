@@ -46,11 +46,12 @@ class _StartupRecoveryAppState extends State<StartupRecoveryApp> {
       final app = await widget.initialize();
       if (mounted) setState(() => _app = app);
     } catch (error, stack) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _error = error;
           _stack = stack;
         });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -61,11 +62,12 @@ class _StartupRecoveryAppState extends State<StartupRecoveryApp> {
     try {
       await action();
     } catch (error, stack) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _error = error;
           _stack = stack;
         });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

@@ -213,7 +213,7 @@ class DeviceModelServer {
   static const maxConnections = 16;
 
   DeviceModelServer({
-    required TextEngine engine,
+    required this._engine,
     required this.settings,
     required this.modelId,
     required this.fallbackTemplate,
@@ -238,8 +238,7 @@ class DeviceModelServer {
     this.generationTimeout = const Duration(minutes: 10),
   }) // A named parameter cannot be private, so no initializing formal.
     // ignore: prefer_initializing_formals
-    : pairedDevices = pairedDevices ?? PairedDevices(save: (_) async {}),
-       _engine = engine {
+    : pairedDevices = pairedDevices ?? PairedDevices(save: (_) async {}) {
     if (accessToken.length < 32) {
       throw ArgumentError.value(
         accessToken.length,

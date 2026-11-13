@@ -2072,7 +2072,7 @@ Future<List<String>> mtpHeadFiles() async {
     await for (final f in dir.list(followLinks: false)) {
       if (f is File && isMtpHeadFile(f.path)) found.add(f.path);
     }
-    found..sort();
+    found.sort();
     return found;
   } catch (_) {
     return const [];

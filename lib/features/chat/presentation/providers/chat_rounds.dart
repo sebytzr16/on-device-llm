@@ -51,8 +51,9 @@ extension _ChatRounds on ChatNotifier {
         );
       } finally {
         timer.cancel();
-        if (_alive && !_cancelled)
+        if (_alive && !_cancelled) {
           _chatState = _chatState.copyWith(clearNotice: true);
+        }
       }
       if (_cancelled || !_alive) return;
       for (var i = 0; i < results.length; i++) {

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' show AppLifecycleState;
 
 import 'package:flutter/foundation.dart';
@@ -376,7 +375,7 @@ class ConversationSession {
   final _lines = <ConversationLine>[];
 
   /// The transcript follows new words unless the user scrolled up to read.
-  var _follow = true;
+  bool follow = true;
 
   /// The question goes to the web first (the status says so).
   var _lookingUp = false;
@@ -445,8 +444,6 @@ class ConversationSession {
   bool get remote => _remote;
   String? get remoteName => _remoteName;
   String? get modelId => _modelId;
-  bool get follow => _follow;
-  set follow(bool value) => _follow = value;
   bool get closed => _closed;
 
   /// Our turn is being answered (the chat may also be busy with another).
@@ -915,7 +912,7 @@ class ConversationSession {
       _assistantCaption = '';
       _actions = const [];
       _phase = ConversationPhase.thinking;
-      _follow = true;
+      follow = true;
       final settings = wiring.settings;
       // A remote model decides itself; the status says so once it searches.
       _lookingUp =

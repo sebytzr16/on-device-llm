@@ -476,8 +476,9 @@ class EvidenceRanker {
     // All caps (at least 3 chars, not all punctuation)
     if (line.length >= 3 &&
         line == line.toUpperCase() &&
-        RegExp(r'[A-Z]').hasMatch(line))
+        RegExp(r'[A-Z]').hasMatch(line)) {
       return true;
+    }
     // Numbered sections like "1. Introduction" or "1.1 Overview"
     if (RegExp(r'^\d+(\.\d+)*\s+\S').hasMatch(line)) return true;
     return false;

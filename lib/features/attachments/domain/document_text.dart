@@ -434,8 +434,9 @@ class DocumentText {
       if (type.isEmpty ||
           target.isEmpty ||
           target.startsWith('/') ||
-          RegExp(r'^[a-zA-Z]+:').hasMatch(target))
+          RegExp(r'^[a-zA-Z]+:').hasMatch(target)) {
         continue;
+      }
       out.putIfAbsent(type.split('/').last, () => []).add('word/$target');
     }
     return out;
@@ -452,7 +453,7 @@ class DocumentText {
     final m = RegExp(
       r'<rootfile\b[^>]*\bfull-path="([^"]*)"',
     ).firstMatch(containerXml);
-    return m == null ? null : m.group(1)!;
+    return m?.group(1)!;
   }
 
   /// Spine itemref targets in document order, navigation items excluded,
@@ -496,7 +497,7 @@ class DocumentText {
   static String _resolveHref(String opfPath, String href) {
     if (href.startsWith('/')) return href;
     final base = p.dirname(opfPath);
-    var resolved = base == '.' ? href : '$base/$href';
+    final resolved = base == '.' ? href : '$base/$href';
     return resolved.replaceAll(RegExp(r'^\.\/'), '');
   }
 
@@ -571,10 +572,11 @@ class DocumentText {
     var oddNul = 0, evenNul = 0;
     for (var i = 0; i < bytes.length; i++) {
       if (bytes[i] == 0) {
-        if (i.isEven)
+        if (i.isEven) {
           evenNul++;
-        else
+        } else {
           oddNul++;
+        }
       }
     }
     return oddNul >= evenNul;

@@ -30,10 +30,11 @@ class _DeviceEncryptionSettingState extends State<DeviceEncryptionSetting> {
   Future<void> _load() async {
     try {
       final enabled = await DeviceEncryption.instance.enabled();
-      if (mounted)
+      if (mounted) {
         setState(() {
           _enabled = enabled;
         });
+      }
     } catch (_) {
       if (mounted) setState(() => _failed = true);
     } finally {

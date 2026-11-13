@@ -49,7 +49,7 @@ void main() {
       const markdown = '![Alt text](http://example.com/image.png)';
 
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(body: SafeMarkdownBody(data: markdown)),
         ),
       );
@@ -62,7 +62,7 @@ void main() {
       const markdown = '![Alt text](https://example.com/image.png)';
 
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(body: SafeMarkdownBody(data: markdown)),
         ),
       );
@@ -75,7 +75,7 @@ void main() {
       const markdown = '![Alt text](file:///path/to/image.png)';
 
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(body: SafeMarkdownBody(data: markdown)),
         ),
       );
@@ -88,7 +88,7 @@ void main() {
       const markdown = '![Alt text](data:image/png;base64,abc123)';
 
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(body: SafeMarkdownBody(data: markdown)),
         ),
       );
@@ -101,7 +101,7 @@ void main() {
       const markdown = '![](http://example.com/image.png)';
 
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(body: SafeMarkdownBody(data: markdown)),
         ),
       );
@@ -114,7 +114,7 @@ void main() {
       const markdown = '![](http://example.com/image.png)';
 
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(body: SafeMarkdownBody(data: markdown)),
         ),
       );
@@ -127,7 +127,7 @@ void main() {
       const markdown = '# Hello\n\nThis is **bold** text.';
 
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(body: SafeMarkdownBody(data: markdown)),
         ),
       );
@@ -143,7 +143,7 @@ void main() {
       const markdown = '![Alt text](http://example.com/image.png)';
 
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(body: SafeMarkdown(data: markdown)),
         ),
       );
@@ -156,7 +156,7 @@ void main() {
       const markdown = '![Alt text](https://example.com/image.png)';
 
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(body: SafeMarkdown(data: markdown)),
         ),
       );
@@ -169,7 +169,7 @@ void main() {
       const markdown = '![Alt text](file:///path/to/image.png)';
 
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(body: SafeMarkdown(data: markdown)),
         ),
       );
@@ -182,7 +182,7 @@ void main() {
       const markdown = '![Alt text](data:image/png;base64,abc123)';
 
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(body: SafeMarkdown(data: markdown)),
         ),
       );
@@ -195,7 +195,7 @@ void main() {
       const markdown = '![](http://example.com/image.png)';
 
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(body: SafeMarkdown(data: markdown)),
         ),
       );
@@ -208,7 +208,7 @@ void main() {
       const markdown = '# Hello\n\nThis is **bold** text.';
 
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(body: SafeMarkdown(data: markdown)),
         ),
       );

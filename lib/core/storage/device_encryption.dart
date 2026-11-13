@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
@@ -332,8 +331,9 @@ class DeviceEncryption {
         artifacts.add(entry);
         var path = entry.path;
         for (final suffix in ['.enc-original', '.enc-pending']) {
-          if (path.endsWith(suffix))
+          if (path.endsWith(suffix)) {
             path = path.substring(0, path.length - suffix.length);
+          }
         }
         targets[path] = File(path);
       }
@@ -362,8 +362,9 @@ class DeviceEncryption {
       try {
         final existing = await _storage.read(key: keyName);
         if (existing == null) {
-          if (hasEncrypted || (prefs.getBool(settingKey) ?? false))
+          if (hasEncrypted || (prefs.getBool(settingKey) ?? false)) {
             _unavailable();
+          }
           final key = await _cipher.newSecretKey();
           await _storage.write(
             key: keyName,

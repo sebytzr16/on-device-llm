@@ -35,8 +35,9 @@ abstract final class GoalWatchStore {
       final raw = await channel.invokeMethod<String>('watchList') ?? '[]';
       final current = await decode(raw);
       final found = current.where((w) => w.id == watch.id).firstOrNull;
-      if (old != null && (found == null || jsonEncode(found.toJson()) != old))
+      if (old != null && (found == null || jsonEncode(found.toJson()) != old)) {
         return false;
+      }
       final source = (jsonDecode(raw) as List)
           .cast<Map>()
           .where((row) => row['id'] == watch.id)
@@ -54,8 +55,9 @@ abstract final class GoalWatchStore {
     }
     final current = await list();
     final found = current.where((w) => w.id == watch.id).firstOrNull;
-    if (old != null && (found == null || jsonEncode(found.toJson()) != old))
+    if (old != null && (found == null || jsonEncode(found.toJson()) != old)) {
       return false;
+    }
     return DeviceEncryption.instance.writeGoal(
       key,
       GoalWatches.encode([watch, ...current.where((w) => w.id != watch.id)]),

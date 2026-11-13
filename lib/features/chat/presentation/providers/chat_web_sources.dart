@@ -505,8 +505,9 @@ extension _ChatWebSources on ChatNotifier {
       if (!focus.newsItem) return [whole(focus)];
       // A story seen only as a listing: its article is what "more" means.
       if (!webAllowed) return [whole(focus)];
-      if (_alive)
+      if (_alive) {
         _chatState = _chatState.copyWith(notice: _t.noticeOpeningStory);
+      }
       final article = await _articleFor(
         focus,
         settings,

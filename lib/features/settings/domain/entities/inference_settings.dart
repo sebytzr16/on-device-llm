@@ -8,6 +8,7 @@ import '../../../../inference/remote/remote_provider.dart';
 
 export '../../../../core/motion/motion_choice.dart' show MotionChoice;
 
+// ignore: constant_identifier_names
 enum KvCacheType { fp16, q8_0, q4_0, f8_e4m3 }
 
 /// Web retrieval policy (roadmap WEB-01). `auto` retrieves when the message
@@ -529,7 +530,7 @@ class InferenceSettings {
   // ----- Speculative decoding -----
 
   /// Catalog id of a smaller model with the same vocabulary that drafts
-  /// tokens for the main one, or draft:<path> for an external GGUF.
+  /// tokens for the main one, or `draft:<path>` for an external GGUF.
   /// An empty id retains automatic desktop MTP discovery in Auto/MTP mode.
   final String draftModelId;
   final int draftMaxTokens;

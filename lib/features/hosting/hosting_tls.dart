@@ -35,7 +35,7 @@ class HostingTls {
     final next = _loads
         .catchError((_) {})
         .then((_) => _load(directory: directory, storage: storage));
-    _loads = next.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _loads = next.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     try {
       return await next;
     } catch (error) {
@@ -62,7 +62,7 @@ class HostingTls {
       if (await file.exists()) await file.delete();
       if (await pending.exists()) await pending.delete();
     });
-    _loads = next.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _loads = next.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     await next;
   }
 

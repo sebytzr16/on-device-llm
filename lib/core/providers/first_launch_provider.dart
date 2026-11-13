@@ -20,12 +20,12 @@ class OnboardingNotifier extends AsyncNotifier<bool> {
       final prefs = await SharedPreferences.getInstance();
       final ok = await prefs.setBool(_kOnboardingDone, true);
       if (!ok) {
-        state = AsyncData(false);
+        state = const AsyncData(false);
         return false;
       }
       return true;
     } catch (_) {
-      state = AsyncData(false);
+      state = const AsyncData(false);
       return false;
     }
   }

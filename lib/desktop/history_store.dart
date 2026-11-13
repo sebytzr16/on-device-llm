@@ -236,7 +236,7 @@ final compareHistoryProvider = FutureProvider<List<HistoryEntry>>(
 /// Saved comparisons whose payload cannot be read. [CompareHistoryStore.list]
 /// hides them, so the count only exists to offer the user a remove action.
 final compareHistoryDamagedProvider = FutureProvider<int>(
-  (ref) async => (await ref.watch(
+  (ref) async => (ref.watch(
     compareHistoryStoreProvider,
   )).damagedIds().then((ids) => ids.length),
 );

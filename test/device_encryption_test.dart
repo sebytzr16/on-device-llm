@@ -155,14 +155,17 @@ void main() {
         await encryption.write(file, [0, 1, 2, 255]);
         await encryption.writeGoal('goal_draft_v1', '{"objective":"private"}');
         if (failure == 'missing') vault.values.clear();
-        if (failure == 'wrong')
+        if (failure == 'wrong') {
           vault.values[DeviceEncryption.keyName] = base64Encode(
             List.filled(32, 42),
           );
-        if (failure == 'malformed')
+        }
+        if (failure == 'malformed') {
           vault.values[DeviceEncryption.keyName] = 'not a key';
-        if (failure == 'unreadable')
+        }
+        if (failure == 'unreadable') {
           encryption = service(storage: UnreadableVault());
+        }
         if (failure == 'tampered' || failure == 'version') {
           final bytes = await file.readAsBytes();
           bytes[failure == 'version' ? 7 : bytes.length - 1] ^= 1;

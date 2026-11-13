@@ -56,8 +56,9 @@ extension _ChatPrime on ChatNotifier {
             : {'knowledgeCollection': project.collection},
         projectLabel: project?.name ?? 'Project',
       ).effective;
-      if (_chatState.temporary)
+      if (_chatState.temporary) {
         settings = settings.copyWith(memoryEnabled: false);
+      }
       if (settings.usesRemote || !settings.promptCache) return;
       _primedLoad = load;
       // No question-specific instructions, history or tool registrations.

@@ -113,7 +113,7 @@ class ImageGenModel {
       'embeddingsConnectorsPath': paths[ImageGenRole.embeddingsConnectors]!,
     if (paths[ImageGenRole.audioVae] != null)
       'audioVaePath': paths[ImageGenRole.audioVae]!,
-    if (offloadToCpu != null) 'offloadToCpu': offloadToCpu,
+    'offloadToCpu': ?offloadToCpu,
     'flashAttn': true,
     if (mmap) 'mmap': true,
     if (textEncoderOnCpu) 'textEncoderOnCpu': true,

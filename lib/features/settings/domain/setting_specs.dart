@@ -82,32 +82,32 @@ class SettingSpec {
 
   /// Inference overrides only; profiles cannot change privacy or credentials.
   static final all = <SettingSpec>[
-    SettingSpec(
+    const SettingSpec(
       key: 'projectorDevice',
       label: 'Vision projector',
       group: groupHardware,
       kind: SettingKind.choice,
       options: ['auto', 'gpu', 'cpu'],
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'visionEnabled',
       label: 'Vision (photos)',
       group: groupHardware,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'useMmap',
       label: 'Memory map model',
       group: groupHardware,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'useMlock',
       label: 'Lock model in memory',
       group: groupHardware,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'mainGpu',
       label: 'Main GPU index',
       group: groupHardware,
@@ -115,26 +115,26 @@ class SettingSpec {
       min: 0,
       max: 127,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'splitMode',
       label: 'GPU split mode',
       group: groupHardware,
       kind: SettingKind.choice,
       options: ['none', 'layer', 'row'],
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'offloadKv',
       label: 'Offload KV operations',
       group: groupHardware,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'swaFull',
       label: 'Full sliding-window cache',
       group: groupHardware,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'nCpuMoe',
       label: 'CPU expert layers (-1 = auto)',
       group: groupHardware,
@@ -142,7 +142,7 @@ class SettingSpec {
       min: -1,
       max: 4096,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'moeCacheSizeMb',
       label: 'MoE device cache (MiB, 0 = disabled)',
       group: groupHardware,
@@ -150,7 +150,7 @@ class SettingSpec {
       min: 0,
       max: 1 << 30,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'moeCacheCpuShare',
       label: 'MoE cache misses computed on CPU (0–1)',
       group: groupHardware,
@@ -158,7 +158,7 @@ class SettingSpec {
       min: 0,
       max: 1,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'expertsUsed',
       label: 'Experts per token (-1 = model default)',
       group: groupHardware,
@@ -166,7 +166,7 @@ class SettingSpec {
       min: -1,
       max: 256,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'keepTokens',
       label: 'Keep first tokens',
       group: groupHardware,
@@ -174,21 +174,21 @@ class SettingSpec {
       min: 0,
       max: InferenceSettings.maxContext,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'contextOverflow',
       label: 'Context overflow',
       group: groupHardware,
       kind: SettingKind.choice,
       options: ['trim', 'shift', 'stop'],
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'logitBias',
       label: 'Token logit biases (JSON)',
       group: groupHardware,
       kind: SettingKind.text,
     ),
 
-    SettingSpec(
+    const SettingSpec(
       key: 'batchSize',
       label: 'Batch size',
       group: groupContext,
@@ -196,7 +196,7 @@ class SettingSpec {
       min: 0,
       max: InferenceSettings.maxBatch,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'microBatchSize',
       label: 'Micro batch size',
       group: groupContext,
@@ -204,7 +204,7 @@ class SettingSpec {
       min: 0,
       max: InferenceSettings.maxBatch,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'maxSearchResults',
       label: 'Search results',
       group: groupWeb,
@@ -212,25 +212,25 @@ class SettingSpec {
       min: 1,
       max: 10,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'searchQueryPlanning',
       label: 'Plan search queries',
       group: groupWeb,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'searchAgain',
       label: 'Search again when pages fall short',
       group: groupWeb,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'wikipediaLookup',
       label: 'Add the Wikipedia article',
       group: groupWeb,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'researchTimeBudgetSeconds',
       label: 'Research time (seconds)',
       group: groupWeb,
@@ -238,7 +238,7 @@ class SettingSpec {
       min: InferenceSettings.minResearchSeconds,
       max: InferenceSettings.maxResearchSeconds,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'xtcProbability',
       label: 'XTC probability',
       group: groupGeneration,
@@ -246,7 +246,7 @@ class SettingSpec {
       min: 0,
       max: 1,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'xtcThreshold',
       label: 'XTC threshold',
       group: groupGeneration,
@@ -254,7 +254,7 @@ class SettingSpec {
       min: 0,
       max: 0.5,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'topNSigma',
       label: 'Top-n sigma (-1 = off)',
       group: groupGeneration,
@@ -262,7 +262,7 @@ class SettingSpec {
       min: -1,
       max: 10,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'dryMultiplier',
       label: 'DRY multiplier',
       group: groupGeneration,
@@ -270,7 +270,7 @@ class SettingSpec {
       min: 0,
       max: 5,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'dryBase',
       label: 'DRY base',
       group: groupGeneration,
@@ -278,7 +278,7 @@ class SettingSpec {
       min: 1,
       max: 4,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'dryAllowedLength',
       label: 'DRY allowed length',
       group: groupGeneration,
@@ -286,7 +286,7 @@ class SettingSpec {
       min: 1,
       max: 32,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'dryPenaltyLastN',
       label: 'DRY penalty window (-1 = context)',
       group: groupGeneration,
@@ -294,13 +294,13 @@ class SettingSpec {
       min: -1,
       max: 8192,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'samplerOrder',
       label: 'Sampler order',
       group: groupGeneration,
       kind: SettingKind.stringList,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'ropeFreqBase',
       label: 'RoPE frequency base',
       group: groupHardware,
@@ -308,7 +308,7 @@ class SettingSpec {
       min: 0,
       max: 1000000000,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'ropeFreqScale',
       label: 'RoPE frequency scale',
       group: groupHardware,
@@ -316,7 +316,7 @@ class SettingSpec {
       min: 0,
       max: 1,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'yarnExtFactor',
       label: 'YaRN extension factor',
       group: groupHardware,
@@ -324,7 +324,7 @@ class SettingSpec {
       min: -1,
       max: 1,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'yarnAttnFactor',
       label: 'YaRN attention factor',
       group: groupHardware,
@@ -332,7 +332,7 @@ class SettingSpec {
       min: 0,
       max: 8,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'yarnBetaFast',
       label: 'YaRN beta fast',
       group: groupHardware,
@@ -340,7 +340,7 @@ class SettingSpec {
       min: 0,
       max: 128,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'yarnBetaSlow',
       label: 'YaRN beta slow',
       group: groupHardware,
@@ -348,7 +348,7 @@ class SettingSpec {
       min: 0,
       max: 128,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'yarnOrigCtx',
       label: 'YaRN original context',
       group: groupHardware,
@@ -356,7 +356,7 @@ class SettingSpec {
       min: 0,
       max: InferenceSettings.maxContext,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'draftMaxTokens',
       label: 'Draft tokens',
       group: groupHardware,
@@ -364,7 +364,7 @@ class SettingSpec {
       min: 1,
       max: InferenceSettings.maxDraftTokens,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'draftGpuLayers',
       label: 'Draft model GPU layers (0 = CPU)',
       group: groupHardware,
@@ -372,7 +372,7 @@ class SettingSpec {
       min: 0,
       max: 999,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'draftMinP',
       label: 'Draft confidence floor',
       group: groupHardware,
@@ -380,7 +380,7 @@ class SettingSpec {
       min: 0,
       max: 1,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'promptStoreMb',
       label: 'Saved prompts RAM (MB, -1 = auto)',
       group: groupContext,
@@ -388,7 +388,7 @@ class SettingSpec {
       min: -1,
       max: 65536,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'imageMaxTokens',
       label: 'Photo token budget',
       group: groupContext,
@@ -396,13 +396,13 @@ class SettingSpec {
       min: 64,
       max: 16384,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'systemPrompt',
       label: 'Custom instructions',
       group: groupPrompt,
       kind: SettingKind.text,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'temperature',
       label: 'Temperature',
       group: groupGeneration,
@@ -410,7 +410,7 @@ class SettingSpec {
       min: 0,
       max: 2,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'topP',
       label: 'Top-P',
       group: groupGeneration,
@@ -418,7 +418,7 @@ class SettingSpec {
       min: 0,
       max: 1,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'minP',
       label: 'Min-P',
       group: groupGeneration,
@@ -426,7 +426,7 @@ class SettingSpec {
       min: 0,
       max: 1,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'topK',
       label: 'Top-K',
       group: groupGeneration,
@@ -434,7 +434,7 @@ class SettingSpec {
       min: 0,
       max: 200,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'typicalP',
       label: 'Typical-P',
       group: groupGeneration,
@@ -442,7 +442,7 @@ class SettingSpec {
       min: 0,
       max: 1,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'repetitionPenalty',
       label: 'Repetition penalty',
       group: groupGeneration,
@@ -450,7 +450,7 @@ class SettingSpec {
       min: 1,
       max: 2,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'presencePenalty',
       label: 'Presence penalty',
       group: groupGeneration,
@@ -458,7 +458,7 @@ class SettingSpec {
       min: -2,
       max: 2,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'frequencyPenalty',
       label: 'Frequency penalty',
       group: groupGeneration,
@@ -466,7 +466,7 @@ class SettingSpec {
       min: -2,
       max: 2,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'repeatLastN',
       label: 'Penalty window (tokens)',
       group: groupGeneration,
@@ -474,7 +474,7 @@ class SettingSpec {
       min: 0,
       max: 4096,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'maxTokens',
       label: 'Max tokens',
       group: groupGeneration,
@@ -482,7 +482,7 @@ class SettingSpec {
       min: InferenceSettings.minResponseTokens,
       max: InferenceSettings.maxResponseTokens,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'seed',
       label: 'Seed (0 = random)',
       group: groupGeneration,
@@ -490,19 +490,19 @@ class SettingSpec {
       min: 0,
       max: 0x7fffffff,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'stopSequences',
       label: 'Stop sequences',
       group: groupGeneration,
       kind: SettingKind.stringList,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'thinkingModeEnabled',
       label: 'Thinking mode',
       group: groupReasoning,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'thinkingBudgetTokens',
       label: 'Thinking budget (0 = unlimited)',
       group: groupReasoning,
@@ -510,20 +510,20 @@ class SettingSpec {
       min: 0,
       max: InferenceSettings.maxThinkingBudget,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'webMode',
       label: 'Web research',
       group: groupWeb,
       kind: SettingKind.choice,
       options: ['off', 'auto', 'always'],
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'researchLoop',
       label: 'Model-driven research',
       group: groupWeb,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'maxPagesRead',
       label: 'Pages to read',
       group: groupWeb,
@@ -531,7 +531,7 @@ class SettingSpec {
       min: 1,
       max: InferenceSettings.maxPagesReadLimit,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'evidencePassages',
       label: 'Passages given to the model',
       group: groupWeb,
@@ -539,69 +539,69 @@ class SettingSpec {
       min: InferenceSettings.minEvidencePassages,
       max: InferenceSettings.maxEvidencePassages,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'knowledgeCollection',
       label: 'Knowledge collection',
       group: groupWeb,
       kind: SettingKind.text,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'toolsEnabled',
       label: 'Tool calling',
       group: groupTools,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'toolChoice',
       label: 'Tool use',
       group: groupTools,
       kind: SettingKind.choice,
       options: ['auto', 'required'],
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'toolCalculator',
       label: 'Calculator',
       group: groupTools,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'toolWeb',
       label: 'Web tools',
       group: groupTools,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'toolDocuments',
       label: 'Document tools',
       group: groupTools,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'toolMemory',
       label: 'Memory recall',
       group: groupTools,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'toolActions',
       label: 'Phone actions',
       group: groupTools,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'toolHelper',
       label: 'Helper model',
       group: groupTools,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'helperModelId',
       label: 'Helper model id',
       group: groupTools,
       kind: SettingKind.text,
     ),
 
-    SettingSpec(
+    const SettingSpec(
       key: 'agentMaxTokens',
       label: 'Max answer tokens',
       group: groupAgents,
@@ -609,7 +609,7 @@ class SettingSpec {
       min: InferenceSettings.minResponseTokens,
       max: InferenceSettings.maxResponseTokens,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'agentTemperature',
       label: 'Temperature',
       group: groupAgents,
@@ -617,7 +617,7 @@ class SettingSpec {
       min: 0,
       max: 2,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'agentTopP',
       label: 'Top p (-1 = model)',
       group: groupAgents,
@@ -625,7 +625,7 @@ class SettingSpec {
       min: -1,
       max: 1,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'agentMinP',
       label: 'Min p (-1 = model)',
       group: groupAgents,
@@ -633,7 +633,7 @@ class SettingSpec {
       min: -1,
       max: 1,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'agentTopK',
       label: 'Top k (-1 = model)',
       group: groupAgents,
@@ -641,7 +641,7 @@ class SettingSpec {
       min: -1,
       max: 1000,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'agentRepeatPenalty',
       label: 'Repeat penalty (-1 = model)',
       group: groupAgents,
@@ -649,7 +649,7 @@ class SettingSpec {
       min: -1,
       max: 2,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'agentContextSize',
       label: 'Context size',
       group: groupAgents,
@@ -657,7 +657,7 @@ class SettingSpec {
       min: 512,
       max: 65536,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'agentMaxConcurrent',
       label: 'Max agents at once',
       group: groupAgents,
@@ -665,7 +665,7 @@ class SettingSpec {
       min: 1,
       max: 4,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'agentTimeoutSeconds',
       label: 'Agent time limit (seconds)',
       group: groupAgents,
@@ -674,13 +674,13 @@ class SettingSpec {
       max: 86400,
       hint: '0 = unlimited',
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'agentThinking',
       label: 'Thinking',
       group: groupAgents,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'agentToolRounds',
       label: 'Tool rounds',
       group: groupAgents,
@@ -688,20 +688,20 @@ class SettingSpec {
       min: 1,
       max: 8,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'agentWebAccess',
       label: 'Agent web access',
       group: groupAgents,
       kind: SettingKind.choice,
       options: ['askOnce', 'alwaysAllow', 'never'],
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'agentInstructions',
       label: 'Custom agent instructions',
       group: groupAgents,
       kind: SettingKind.text,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'agentInputBudget',
       label: 'Input budget',
       group: groupAgents,
@@ -709,7 +709,7 @@ class SettingSpec {
       min: 256,
       max: 65536,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'toolMaxRounds',
       label: 'Tool rounds per answer',
       group: groupTools,
@@ -717,26 +717,26 @@ class SettingSpec {
       min: 1,
       max: InferenceSettings.maxToolRounds,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'responseFormat',
       label: 'Response format',
       group: groupOutput,
       kind: SettingKind.choice,
       options: ['text', 'json', 'json_schema', 'gbnf'],
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'jsonSchema',
       label: 'JSON schema',
       group: groupOutput,
       kind: SettingKind.text,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'grammar',
       label: 'GBNF grammar',
       group: groupOutput,
       kind: SettingKind.text,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'contextSize',
       label: 'Context size',
       group: groupContext,
@@ -744,27 +744,27 @@ class SettingSpec {
       min: InferenceSettings.minContext,
       max: InferenceSettings.maxContext,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'promptCache',
       label: 'Keep conversation in context',
       group: groupContext,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'cpuVariant',
       label: 'CPU variant',
       group: groupHardware,
       kind: SettingKind.choice,
       options: ['auto', 'avx512', 'avx2', 'compat'],
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'backend',
       label: 'Backend',
       group: groupHardware,
       kind: SettingKind.choice,
       options: ['auto', 'cpu', 'opencl', 'vulkan', 'metal', 'cuda'],
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'nGpuLayers',
       label: 'GPU layers',
       group: groupHardware,
@@ -790,7 +790,7 @@ class SettingSpec {
       // Follow the real core count instead of a fixed 16-thread ceiling.
       max: CpuCores.desktop,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'vramReserveMb',
       label: 'VRAM reserve (MB)',
       group: groupHardware,
@@ -798,53 +798,53 @@ class SettingSpec {
       min: 0,
       max: 8192,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'flashAttention',
       label: 'Flash attention',
       group: groupHardware,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'kvCacheType',
       label: 'K cache type',
       group: groupHardware,
       kind: SettingKind.choice,
       options: ['fp16', 'q8_0', 'q4_0', 'f8_e4m3'],
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'vCacheType',
       label: 'V cache type (empty = same as K)',
       group: groupHardware,
       kind: SettingKind.choice,
       options: ['', 'fp16', 'q8_0', 'q4_0', 'f8_e4m3'],
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'ropeScaling',
       label: 'RoPE scaling',
       group: groupHardware,
       kind: SettingKind.choice,
       options: ['model', 'none', 'linear', 'yarn'],
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'chatTemplate',
       label: 'Prompt template',
       group: groupHardware,
       kind: SettingKind.text,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'speculationMode',
       label: 'Speculative decoding',
       group: groupHardware,
       kind: SettingKind.choice,
       options: ['auto', 'off', 'mtp', 'draft', 'dflash'],
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'mtp',
       label: 'Multi-token prediction (MTP)',
       group: groupHardware,
       kind: SettingKind.boolean,
     ),
-    SettingSpec(
+    const SettingSpec(
       key: 'draftModelId',
       label: 'Draft model (speculative decoding)',
       group: groupHardware,

@@ -335,10 +335,14 @@ void main() {
 
       // Simulate a remote call with its own confirmation callback
       var remotePrompted = false;
-      final remoteConfirmation = (String server, ToolCall call) async {
+      Future<McpConsent> remoteConfirmation(
+        String server,
+        ToolCall call,
+      ) async {
         remotePrompted = true;
         return McpConsent.once;
-      };
+      }
+
       final result = await registry.call(
         call,
         explain: (e) => mcpExplain(t, e),

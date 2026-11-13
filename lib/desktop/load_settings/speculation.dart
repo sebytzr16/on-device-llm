@@ -20,8 +20,10 @@ extension _SpeculationSection on _LoadSettingsDialogState {
   String _speculationMode(InferenceSettings s) {
     if (s.speculationMode != 'auto') return s.speculationMode;
     if (s.draftModelId == '$mtpHeadPrefix$mtpOff') return s.mtp ? 'mtp' : 'off';
-    if (s.draftModelId.isNotEmpty && !s.draftModelId.startsWith(mtpHeadPrefix))
+    if (s.draftModelId.isNotEmpty &&
+        !s.draftModelId.startsWith(mtpHeadPrefix)) {
       return 'draft';
+    }
     return s.mtp ||
             _autoHead != null ||
             s.draftModelId.startsWith(mtpHeadPrefix)
@@ -125,8 +127,9 @@ extension _SpeculationSection on _LoadSettingsDialogState {
                 ),
             ],
             onChanged: (value) {
-              if (value != null && value.isNotEmpty)
+              if (value != null && value.isNotEmpty) {
                 _set('draftModelId', value);
+              }
             },
           ),
           TextButton(

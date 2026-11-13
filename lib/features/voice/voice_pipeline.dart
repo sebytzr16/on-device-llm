@@ -696,8 +696,9 @@ class KokoroSpeaker {
       if (found < 0) {
         // Fallback: approximate with length + single space.
         searchStart += part.length;
-        if (searchStart < suffix.length && suffix[searchStart] == ' ')
+        if (searchStart < suffix.length && suffix[searchStart] == ' ') {
           searchStart++;
+        }
       } else {
         searchStart = found + part.length;
       }

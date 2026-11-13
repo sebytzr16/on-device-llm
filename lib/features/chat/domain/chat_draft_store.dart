@@ -58,8 +58,9 @@ class ChatDraftStore {
       if (file is! File) continue;
       var name = p.basename(file.path);
       for (final suffix in ['.enc-original', '.enc-pending', '.bak']) {
-        if (name.endsWith(suffix))
+        if (name.endsWith(suffix)) {
           name = name.substring(0, name.length - suffix.length);
+        }
       }
       if (!name.endsWith('.json')) continue;
       final key = _keyOf(name);

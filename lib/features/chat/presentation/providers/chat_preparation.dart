@@ -74,8 +74,9 @@ extension _ChatPreparation on ChatNotifier {
       );
       t.engine = _chatRef.read(diffusionGemmaEngineProvider);
     }
-    if (_chatState.temporary)
+    if (_chatState.temporary) {
       settings = settings.copyWith(memoryEnabled: false);
+    }
     if (t.localOnly && settings.usesRemote) {
       settings = settings.copyWith(remoteEnabled: false);
     }

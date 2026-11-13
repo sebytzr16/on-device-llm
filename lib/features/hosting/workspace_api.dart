@@ -316,7 +316,7 @@ class WorkspaceApi {
     try {
       final resolved = await directory;
       if (await resolved.exists()) await resolved.delete(recursive: true);
-      _imageDirectories.remove(jobId);
+      unawaited(_imageDirectories.remove(jobId));
     } on FileSystemException {
       // Keep failed cleanup for another attempt when the server stops.
     }

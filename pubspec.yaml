@@ -67,6 +67,7 @@ dev_dependencies:
   integration_test:
     sdk: flutter
   path_provider_platform_interface: 2.1.2
+  shared_preferences_platform_interface: 2.4.2
 
 hooks:
   user_defines:

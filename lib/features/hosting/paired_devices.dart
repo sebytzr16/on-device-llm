@@ -53,7 +53,7 @@ class PairedDevices {
 
   Future<T> _change<T>(Future<T> Function() action) {
     final next = _writes.catchError((_) {}).then((_) => action());
-    _writes = next.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _writes = next.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     return next;
   }
 

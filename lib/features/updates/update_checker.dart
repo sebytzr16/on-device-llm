@@ -51,9 +51,7 @@ class UpdateChecker {
   final Dio? _dio;
   final String? _currentVersion;
 
-  UpdateChecker({Dio? dio, String? currentVersion})
-    : _dio = dio,
-      _currentVersion = currentVersion;
+  UpdateChecker({this._dio, this._currentVersion});
 
   String get currentVersion => _currentVersion ?? BuildIdentity.version;
 
