@@ -1418,11 +1418,9 @@ void main() {
     expect(SearchSteps.parseQueries('', fallback: 'the question'), [
       'the question',
     ]);
-    expect(
-      SearchSteps.parseQueries('one\n' * 5, fallback: 'q'),
-      ['q'],
-      reason: 'single words are not queries',
-    );
+    expect(SearchSteps.parseQueries('one\n' * 5, fallback: 'q'), [
+      'q',
+    ], reason: 'single words are not queries');
   });
 
   test('groundingNotice flags refusals, missing and bogus citations', () {
