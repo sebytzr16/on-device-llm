@@ -1,3 +1,7 @@
+import '../../../optimize/optimize_page.dart';
+import '../../../../core/tips/tip_anchor.dart';
+import '../../../../core/tips/tips_store.dart';
+import '../../../optimize/optimized_models_provider.dart';
 import '../../../shortcuts/presentation/slash_command_composer.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -158,6 +162,37 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
       for (final s in ref.watch(promptShortcutsProvider)) s.localized(lang),
     ];
     final busy = widget.busy;
+    // First-chat tour (owner 2026-11-16), as on the desktop. Tools live
+    // under "+" on the phone, so the attach bubble covers them.
+    final tips = ref.watch(tipsProvider);
+    final optimized = ref.watch(optimizedModelsProvider).value;
+    final offerDue =
+        loaded != null &&
+        !settings.usesRemote &&
+        tips.shouldShow(TipIds.optimizeOffer) &&
+        (optimized == null || !optimized.contains(loaded.id));
+    final tourNext =
+        (loaded != null || settings.usesRemote) &&
+            !busy &&
+            !offerDue &&
+            !ref.watch(modelManagerProvider.select((m) => m.isLoadingModel))
+        ? ref.read(tipsProvider.notifier).nextIn(TipIds.chatTourMobile)
+        : null;
+    Widget tour(String id, String title, String body, Widget child) =>
+        TipAnchor(
+          id: id,
+          title: title,
+          body: body,
+          side: TipSide.above,
+          active: tourNext == id,
+          step: (
+            TipIds.chatTourMobile.indexOf(id) + 1,
+            TipIds.chatTourMobile.length,
+          ),
+          onSkipAll: () =>
+              ref.read(tipsProvider.notifier).dismissAll(TipIds.chatTourMobile),
+          child: child,
+        );
     final diffusion =
         widget.textOnly ||
         (!settings.usesRemote && loaded?.id == diffusionGemmaModelId);
@@ -178,33 +213,49 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
             Row(
               children: [
                 Expanded(
-                  child: _Pill(
-                    key: const Key('model-pill'),
-                    onTap: busy
-                        ? null
-                        : (from) => showModelPickerSheet(context, from: from),
-                    child: Builder(
-                      builder: (context) {
-                        final name = settings.usesRemote
-                            ? (settings.remoteModel.isEmpty
-                                  ? settings.remoteUri!.host
-                                  : settings.remoteModel)
-                            : loaded?.displayName ?? context.l10n.modelPill;
-                        return BlurSwitcher(
-                          child: Text(
-                            name,
-                            key: ValueKey(name),
-                            maxLines: 1,
-                            textAlign: TextAlign.center,
-                            overflow: TextOverflow.ellipsis,
-                            style: context.text.caption.copyWith(
-                              color: loaded == null && !settings.usesRemote
-                                  ? c.accent
-                                  : c.text,
+                  child: TipAnchor(
+                    id: TipIds.optimizeOffer,
+                    title: context.l10n.optimizeOfferTitle,
+                    body: context.l10n.optimizeOfferBody,
+                    side: TipSide.above,
+                    active: offerDue && optimized != null && !busy,
+                    actionLabel: context.l10n.optimizeOfferAction,
+                    dismissLabel: context.l10n.optimizeOfferLater,
+                    dismissOnTargetTap: false,
+                    onAction: () {
+                      final model = loaded;
+                      if (model != null) {
+                        OptimizePage.open(context, model, autoStart: true);
+                      }
+                    },
+                    child: _Pill(
+                      key: const Key('model-pill'),
+                      onTap: busy
+                          ? null
+                          : (from) => showModelPickerSheet(context, from: from),
+                      child: Builder(
+                        builder: (context) {
+                          final name = settings.usesRemote
+                              ? (settings.remoteModel.isEmpty
+                                    ? settings.remoteUri!.host
+                                    : settings.remoteModel)
+                              : loaded?.displayName ?? context.l10n.modelPill;
+                          return BlurSwitcher(
+                            child: Text(
+                              name,
+                              key: ValueKey(name),
+                              maxLines: 1,
+                              textAlign: TextAlign.center,
+                              overflow: TextOverflow.ellipsis,
+                              style: context.text.caption.copyWith(
+                                color: loaded == null && !settings.usesRemote
+                                    ? c.accent
+                                    : c.text,
+                              ),
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ),
@@ -241,85 +292,95 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                 ),
                 const SizedBox(width: AppSpace.sm),
                 Expanded(
-                  child: _Pill(
-                    key: const Key('think-pill'),
-                    selected: settings.thinkingModeEnabled,
-                    onTap: busy || diffusion
-                        ? null
-                        : (_) => _cycleThinking(settings),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.psychology_outlined,
-                          size: 15,
-                          color: settings.thinkingModeEnabled
-                              ? c.accent
-                              : c.textMuted,
-                        ),
-                        const SizedBox(width: AppSpace.xs),
-                        Flexible(
-                          child: BlurSwitcher(
-                            child: Text(
-                              settings.thinkingModeEnabled
-                                  ? thinkingLevelLabel(
-                                      settings.thinkingLevel,
-                                      context.l10n,
-                                    )
-                                  : context.l10n.think,
-                              key: ValueKey(settings.thinkingLevel),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: context.text.caption.copyWith(
-                                color: settings.thinkingModeEnabled
-                                    ? c.accent
-                                    : c.text,
+                  child: tour(
+                    TipIds.chatTourThink,
+                    context.l10n.tourThinkTitle,
+                    context.l10n.tourThinkBody,
+                    _Pill(
+                      key: const Key('think-pill'),
+                      selected: settings.thinkingModeEnabled,
+                      onTap: busy || diffusion
+                          ? null
+                          : (_) => _cycleThinking(settings),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.psychology_outlined,
+                            size: 15,
+                            color: settings.thinkingModeEnabled
+                                ? c.accent
+                                : c.textMuted,
+                          ),
+                          const SizedBox(width: AppSpace.xs),
+                          Flexible(
+                            child: BlurSwitcher(
+                              child: Text(
+                                settings.thinkingModeEnabled
+                                    ? thinkingLevelLabel(
+                                        settings.thinkingLevel,
+                                        context.l10n,
+                                      )
+                                    : context.l10n.think,
+                                key: ValueKey(settings.thinkingLevel),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: context.text.caption.copyWith(
+                                  color: settings.thinkingModeEnabled
+                                      ? c.accent
+                                      : c.text,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(width: AppSpace.sm),
                 Expanded(
-                  child: _Pill(
-                    key: const Key('web-pill'),
-                    onTap: busy || diffusion ? null : (_) => _cycleWeb(),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.public,
-                          size: 14,
-                          color: settings.webSearchEnabled
-                              ? c.info
-                              : c.textMuted,
-                        ),
-                        const SizedBox(width: AppSpace.xs),
-                        Flexible(
-                          child: BlurSwitcher(
-                            child: Text(
-                              switch (settings.webMode) {
-                                WebMode.off => context.l10n.webLocal,
-                                WebMode.auto => context.l10n.webAuto,
-                                WebMode.always => context.l10n.webAlways,
-                              },
-                              key: ValueKey(settings.webMode),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: context.text.caption.copyWith(
-                                color: settings.webSearchEnabled
-                                    ? c.info
-                                    : c.textMuted,
+                  child: tour(
+                    TipIds.chatTourWeb,
+                    context.l10n.tourWebTitle,
+                    context.l10n.tourWebBody,
+                    _Pill(
+                      key: const Key('web-pill'),
+                      onTap: busy || diffusion ? null : (_) => _cycleWeb(),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.public,
+                            size: 14,
+                            color: settings.webSearchEnabled
+                                ? c.info
+                                : c.textMuted,
+                          ),
+                          const SizedBox(width: AppSpace.xs),
+                          Flexible(
+                            child: BlurSwitcher(
+                              child: Text(
+                                switch (settings.webMode) {
+                                  WebMode.off => context.l10n.webLocal,
+                                  WebMode.auto => context.l10n.webAuto,
+                                  WebMode.always => context.l10n.webAlways,
+                                },
+                                key: ValueKey(settings.webMode),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: context.text.caption.copyWith(
+                                  color: settings.webSearchEnabled
+                                      ? c.info
+                                      : c.textMuted,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -400,39 +461,49 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
               children: [
                 Padding(
                   padding: const EdgeInsets.only(bottom: 2),
-                  child: Pressable(
-                    enabled: !busy && widget.onAttach != null,
-                    child: Builder(
-                      builder: (button) => IconButton(
-                        key: const Key('attach'),
-                        tooltip: context.l10n.attachTooltip,
-                        onPressed: busy || widget.onAttach == null
-                            ? null
-                            : () => widget.onAttach!(button),
-                        color: c.textMuted,
-                        icon: const Icon(Icons.add_circle_outline, size: 24),
+                  child: tour(
+                    TipIds.chatTourAttach,
+                    context.l10n.tourAttachTitle,
+                    context.l10n.tourAttachBodyMobile,
+                    Pressable(
+                      enabled: !busy && widget.onAttach != null,
+                      child: Builder(
+                        builder: (button) => IconButton(
+                          key: const Key('attach'),
+                          tooltip: context.l10n.attachTooltip,
+                          onPressed: busy || widget.onAttach == null
+                              ? null
+                              : () => widget.onAttach!(button),
+                          color: c.textMuted,
+                          icon: const Icon(Icons.add_circle_outline, size: 24),
+                        ),
                       ),
                     ),
                   ),
                 ),
                 Expanded(
-                  child: SlashCommandComposer(
-                    controller: widget.controller,
-                    onSubmit: widget.onSend,
-                    enabled: !busy && !widget.textOnly,
-                    child: TextField(
-                      key: const Key('message-input'),
+                  child: tour(
+                    TipIds.chatTourSlash,
+                    context.l10n.tourSlashTitle,
+                    context.l10n.tourSlashBody,
+                    SlashCommandComposer(
                       controller: widget.controller,
-                      focusNode: widget.focusNode,
-                      minLines: 1,
-                      maxLines: 6,
-                      textInputAction: TextInputAction.newline,
-                      style: context.text.body,
-                      decoration: InputDecoration(
-                        hintMaxLines: 1,
-                        hintText: voice.listening
-                            ? context.l10n.listening
-                            : context.l10n.messageHint,
+                      onSubmit: widget.onSend,
+                      enabled: !busy && !widget.textOnly,
+                      child: TextField(
+                        key: const Key('message-input'),
+                        controller: widget.controller,
+                        focusNode: widget.focusNode,
+                        minLines: 1,
+                        maxLines: 6,
+                        textInputAction: TextInputAction.newline,
+                        style: context.text.body,
+                        decoration: InputDecoration(
+                          hintMaxLines: 1,
+                          hintText: voice.listening
+                              ? context.l10n.listening
+                              : context.l10n.messageHint,
+                        ),
                       ),
                     ),
                   ),

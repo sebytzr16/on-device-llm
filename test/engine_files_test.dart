@@ -80,6 +80,24 @@ void main() {
     },
   );
 
+  test('missing optional image DLLs do not reject text bridges', () {
+    const bridge = 'ondevice_llm_compat.dll';
+    final files = manifest({
+      bridge: [1],
+      'ondevice_sd.dll': [1],
+      'ondevice_sd_cpu.dll': [1],
+      'ondevice_sd_compat.dll': [1],
+      'ggml-cpu.dll': [1],
+      'llama.dll': [1],
+    });
+    File('${dir.path}/$bridge').writeAsBytesSync([1]);
+    expect(files.checkVariant(bridge), isEmpty);
+    expect(
+      files.checkSizes().where((r) => r.status == EngineFileStatus.missing),
+      hasLength(5),
+    );
+  });
+
   test('companions stay with their CUDA runtime and bridge variant', () {
     expect(
       EngineFiles.companionOf('cudart64_13.dll', 'ondevice_llm_cuda.dll'),
@@ -103,7 +121,7 @@ void main() {
     );
     expect(
       EngineFiles.companionOf('ggml-base.dll', 'ondevice_llm.dll'),
-      isTrue,
+      isFalse,
     );
   });
 

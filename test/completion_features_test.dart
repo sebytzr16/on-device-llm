@@ -206,7 +206,7 @@ void main() {
         await store.pin(pinned, true);
         await store.add('The user has a cat named Milo');
         await container.read(chatProvider.notifier).send('Hello');
-        final system = engine.receivedMessages!.first['content'] as String;
+        final system = engine.receivedMessages!.last['content'] as String;
         expect(system, contains('dog named Buddy'));
         expect(system, isNot(contains('cat named Milo')));
       } finally {

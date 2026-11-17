@@ -18,10 +18,20 @@ import 'package:ondevice_llm/features/models/presentation/providers/model_manage
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:ondevice_llm/features/settings/presentation/providers/settings_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:ondevice_llm/core/storage/device_encryption.dart';
+import 'package:ondevice_llm/features/knowledge/knowledge_media.dart';
+
+import 'support/hosting_secure_storage.dart';
 
 import 'chat_test.dart' show TestEngine, TestModels, TestSettings;
 
 Uint8List bytes(String s) => Uint8List.fromList(utf8.encode(s));
+
+class _KnowledgePaths extends BackupPaths {
+  _KnowledgePaths(String path) : super(path, path);
+  @override
+  Future<String?> getTemporaryPath() async => support;
+}
 
 class KnowledgeSettings extends TestSettings {
   @override
@@ -35,9 +45,10 @@ void main() {
   late Directory files;
   late PathProviderPlatform previousPaths;
   setUp(() async {
+    SharedPreferences.setMockInitialValues({});
     files = await Directory.systemTemp.createTemp('knowledge-originals-');
     previousPaths = PathProviderPlatform.instance;
-    PathProviderPlatform.instance = BackupPaths(files.path, files.path);
+    PathProviderPlatform.instance = _KnowledgePaths(files.path);
     db = AppDatabase.forTesting(NativeDatabase.memory());
   });
   tearDown(() async {
@@ -45,6 +56,51 @@ void main() {
     PathProviderPlatform.instance = previousPaths;
     await files.delete(recursive: true);
   });
+
+  test(
+    'encrypted knowledge originals and WAVs remain readable for indexing',
+    () async {
+      final previous = DeviceEncryption.instance;
+      final prefs = await SharedPreferences.getInstance();
+      final encryption = DeviceEncryption(
+        storage: MemoryHostSecrets(),
+        preferences: () async => prefs,
+        directories: () async => [files],
+      );
+      DeviceEncryption.instance = encryption;
+      addTearDown(() => DeviceEncryption.instance = previous);
+      await encryption.setEnabled(true);
+      final store = KnowledgeStore(db, null, () async => files);
+      final wav = KnowledgeMedia.wavBytes(Uint8List(32000), 16000);
+      final doc = await store.import(
+        collection: 'Audio',
+        name: 'voice.wav',
+        bytes: wav,
+        audioSeconds: (_) async => 1,
+        transcribe: (_) async => 'Private voice transcript',
+      );
+      final original = (await store.original(doc))!;
+      expect(DeviceEncryption.isEncrypted(await original.readAsBytes()), true);
+      expect(await encryption.read(original), wav);
+      final derived = File('${files.path}/${doc.id}.audio.wav');
+      await encryption.write(derived, wav);
+      final chunk = await (db.select(
+        db.knowledgeChunks,
+      )..where((t) => t.docId.equals(doc.id))).getSingle();
+      final media = (await store.mediaFor(doc, chunk))!;
+      try {
+        expect(
+          KnowledgeMedia.wavPcm(await media.single.readAsBytes()),
+          isNotNull,
+        );
+        expect(DeviceEncryption.isEncrypted(await derived.readAsBytes()), true);
+      } finally {
+        for (final file in media) {
+          await file.delete();
+        }
+      }
+    },
+  );
 
   test(
     'imports split into passages and retrieval ranks the right document',

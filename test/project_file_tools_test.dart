@@ -209,6 +209,80 @@ void main() {
     expect((await result).output, 'The user rejected this change');
     expect(await f.readAsString(), 'before');
   });
+  test(
+    'failed publication preserves original, recovery mapping and Undo',
+    () async {
+      final file = File(p.join(root.path, 'a'));
+      await file.writeAsString('before');
+      tools = ProjectFileTools(
+        folder: root.path,
+        backupDirectory: () async => Directory(p.join(temp.path, 'backups')),
+        permitted: () => true,
+        approve: (change) async {
+          changes.add(change);
+          return true;
+        },
+        publish: (temporary, target) async {
+          expect(await temporary.readAsString(), 'after');
+          expect(await File(target).readAsString(), 'before');
+          throw const FileSystemException('rename failed');
+        },
+      );
+      final result = await tools.run(
+        call('write_file', {'path': 'a', 'content': 'after'}),
+      );
+      expect(result.ok, false);
+      expect(await file.readAsString(), 'before');
+      expect(changes.single.applied, false);
+      expect(changes.single.undo, isNotNull);
+      final recovery = await Directory(
+        p.join(temp.path, 'backups'),
+      ).list().toList();
+      final journal = recovery.whereType<File>().singleWhere(
+        (f) => f.path.endsWith('.json'),
+      );
+      final mapping = jsonDecode(await journal.readAsString()) as Map;
+      expect(mapping['target'], file.path);
+      expect(await File(mapping['backup'] as String).readAsString(), 'before');
+      expect(await root.list().length, 1);
+      await changes.single.undo!();
+      expect(changes.single.undone, true);
+    },
+  );
+
+  test('Undo waits for publication before restoring the backup', () async {
+    final file = File(p.join(root.path, 'a'));
+    await file.writeAsString('before');
+    final publishing = Completer<void>();
+    final proceed = Completer<void>();
+    tools = ProjectFileTools(
+      folder: root.path,
+      backupDirectory: () async => Directory(p.join(temp.path, 'backups')),
+      permitted: () => true,
+      approve: (change) async {
+        changes.add(change);
+        return true;
+      },
+      publish: (temporary, target) async {
+        if (!publishing.isCompleted) publishing.complete();
+        await proceed.future;
+        await temporary.rename(target);
+      },
+    );
+    final writing = tools.run(
+      call('write_file', {'path': 'a', 'content': 'after'}),
+    );
+    await publishing.future;
+    final undoing = changes.single.undo!();
+    await Future<void>.delayed(Duration.zero);
+    expect(changes.single.undone, false);
+    proceed.complete();
+    expect((await writing).ok, true);
+    await undoing;
+    expect(await file.readAsString(), 'before');
+    expect(changes.single.undone, true);
+  });
+
   test('rechecks changed files after approval', () async {
     final f = File(p.join(root.path, 'a'));
     await f.writeAsString('before');
@@ -235,7 +309,7 @@ void main() {
       final f = File(p.join(root.path, 'a'));
       await f.writeAsString('before');
       await tools.run(call('write_file', {'path': 'a', 'content': 'after'}));
-      expect(await Directory(p.join(temp.path, 'backups')).list().length, 1);
+      expect(await Directory(p.join(temp.path, 'backups')).list().length, 2);
       await f.writeAsString('manual');
       await expectLater(changes.last.undo!(), throwsStateError);
       await f.writeAsString('after');

@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ondevice_llm/core/l10n/l10n.dart';
 import 'package:ondevice_llm/data/storage/download_history.dart';
-import 'package:ondevice_llm/desktop/benchmark_receipt.dart';
+import 'package:ondevice_llm/features/optimize/benchmark_receipt.dart';
 import 'package:ondevice_llm/desktop/model_tune_section.dart';
 
 BenchmarkReceipt receipt(String model, String date) => BenchmarkReceipt({

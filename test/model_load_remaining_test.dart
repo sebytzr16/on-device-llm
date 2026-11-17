@@ -34,6 +34,33 @@ class _Models extends ModelManagerNotifier {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test(
+    'SD disposal drains an in-flight load during repeated cancellation',
+    () async {
+      final started = Completer<void>();
+      final pending = Completer<Object?>();
+      final engine = SdEngine(
+        invoke: (_, _) {
+          started.complete();
+          return pending.future;
+        },
+      );
+      final loading = engine.load(key: 'model');
+      await started.future;
+      final stopped = expectLater(loading, throwsA(isA<SdOperationStopped>()));
+      var disposed = false;
+      final disposing = engine.dispose().then((_) => disposed = true);
+      engine.cancel();
+      await Future<void>.delayed(Duration.zero);
+      expect(disposed, false);
+      pending.complete(123);
+      await stopped;
+      await disposing;
+      engine.cancel();
+      expect(engine.isLoaded, false);
+    },
+  );
+
+  test(
     'Stop during image or video load never marks the engine loaded',
     () async {
       final pending = Completer<Object?>();

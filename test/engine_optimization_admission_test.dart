@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/core/utils/memory_admission.dart';
-import 'package:ondevice_llm/desktop/model_tuner.dart';
-import 'package:ondevice_llm/desktop/pc_optimization.dart';
-import 'package:ondevice_llm/desktop/tune_benchmark_run.dart';
+import 'package:ondevice_llm/features/optimize/model_tuner.dart';
+import 'package:ondevice_llm/features/optimize/optimize_setups.dart';
+import 'package:ondevice_llm/features/optimize/tune_benchmark_run.dart';
 import 'package:ondevice_llm/features/image_gen/domain/entities/image_gen_model.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:ondevice_llm/inference/engine/sd_engine.dart';

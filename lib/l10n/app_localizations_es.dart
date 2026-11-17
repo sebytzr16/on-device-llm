@@ -5750,6 +5750,24 @@ class AppLocalizationsEs extends AppLocalizations {
       'Una nueva longitud de contexto recarga el modelo en el próximo mensaje.';
 
   @override
+  String get contextAutoLabel => 'Automático (recomendado)';
+
+  @override
+  String get contextAutoHint => 'Se ajusta a la memoria';
+
+  @override
+  String get samplingPerModelHint =>
+      'La temperatura, el top-K y el top-P son de cada modelo. Abre los ajustes del modelo activo.';
+
+  @override
+  String contextAutoLoaded(String size) {
+    return 'Se ajusta a la memoria · $size ahora';
+  }
+
+  @override
+  String get settingLabelContextAuto => 'Contexto automático';
+
+  @override
   String get desktopInspectorScopeModel => 'Modelo';
 
   @override
@@ -5887,6 +5905,15 @@ class AppLocalizationsEs extends AppLocalizations {
   String desktopLoadSettingsSpill(String gb) {
     return 'Supera la memoria libre de la tarjeta en $gb GB: Windows pasa el resto a memoria compartida y las respuestas se vuelven varias veces más lentas. Baja las capas de GPU o el contexto.';
   }
+
+  @override
+  String desktopLoadSettingsRamShort(String gb) {
+    return 'Supera la RAM libre en $gb GB: la carga puede rechazarse o el PC puede ir lento. Cierra otras aplicaciones, baja el contexto o pon más capas en la GPU.';
+  }
+
+  @override
+  String get desktopLoadSettingsWeightsPaging =>
+      'El archivo del modelo es mayor que la RAM libre: partes se volverán a leer del disco mientras responde, lo que es más lento.';
 
   @override
   String get desktopLoadSettingsExperts =>
@@ -9877,4 +9904,250 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get kvCacheFp8 => 'FP8';
+
+  @override
+  String get loadAnyway => 'Cargar de todos modos';
+
+  @override
+  String get loadAnywayWarning =>
+      'Según la estimación, este modelo puede no caber en la memoria libre. El dispositivo a menudo puede liberar más. ¿Cargarlo de todos modos?';
+
+  @override
+  String remoteProbeModels(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count modelos',
+      one: '$count modelo',
+    );
+    return 'Conectado · $_temp0';
+  }
+
+  @override
+  String remoteProbeHealth(String status) {
+    return 'Estado: $status';
+  }
+
+  @override
+  String get remoteProbeNoTools => 'No se anuncian herramientas del servidor';
+
+  @override
+  String remoteProbeTools(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count herramientas del servidor detectadas',
+      one: '$count herramienta del servidor detectada',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get remoteProbeNotAdvertised => 'No anunciado';
+
+  @override
+  String get remoteProbeUnknown => 'Desconocido';
+
+  @override
+  String get remoteProbeOk => 'Correcto';
+
+  @override
+  String get tipGotIt => 'Entendido';
+
+  @override
+  String get tipSkipAll => 'Omitir consejos';
+
+  @override
+  String tipStep(int n, int total) {
+    return '$n de $total';
+  }
+
+  @override
+  String get tipsShowAgain => 'Mostrar consejos de nuevo';
+
+  @override
+  String get tipsShowAgainHint =>
+      'Recupera las pequeñas burbujas que explican dónde están las cosas.';
+
+  @override
+  String get tipsShowAgainDone => 'Los consejos se mostrarán de nuevo.';
+
+  @override
+  String get firstRunGetModelTitle => 'Vamos a conseguirte un modelo';
+
+  @override
+  String get firstRunGetModelBody =>
+      'Los modelos se ejecutan aquí mismo en este dispositivo. Elige uno de la lista; el que mejor se adapta está marcado.';
+
+  @override
+  String get firstRunGetModelButton => 'Obtener un modelo';
+
+  @override
+  String get firstRunLoadTitle => 'Carga un modelo para empezar';
+
+  @override
+  String get firstRunLoadBody =>
+      'Tus modelos están en este dispositivo. Carga uno y pregunta lo que quieras.';
+
+  @override
+  String firstRunLoadButton(String name) {
+    return 'Cargar $name';
+  }
+
+  @override
+  String get firstRunOtherModels => 'Otros modelos';
+
+  @override
+  String get tipDiscoverTitle => 'Descubrir más modelos';
+
+  @override
+  String get tipDiscoverBody =>
+      'Busca miles de modelos en Hugging Face. La lista a continuación ya está seleccionada para este dispositivo.';
+
+  @override
+  String get bestFitBadge => 'Ideal para este dispositivo';
+
+  @override
+  String get tipBestFitTitle => 'Empieza aquí';
+
+  @override
+  String get tipBestFitBody =>
+      'Este cabe en tu memoria y responde mejor que los demás que caben. Pulsa Descargar.';
+
+  @override
+  String tipDownloadReadyTitle(String name) {
+    return '$name está listo';
+  }
+
+  @override
+  String get tipDownloadReadyBody => 'Cárgalo para empezar a chatear.';
+
+  @override
+  String get tipLoadAction => 'Cargar';
+
+  @override
+  String get optimizeOfferTitle => '¿Optimizar para este dispositivo?';
+
+  @override
+  String get optimizeOfferBody =>
+      'Unos minutos de pruebas encuentran la configuración más rápida que sigue dando las mismas respuestas. También puedes hacerlo más tarde en Configuración.';
+
+  @override
+  String get optimizeOfferAction => 'Optimizar';
+
+  @override
+  String get optimizeOfferLater => 'Más tarde';
+
+  @override
+  String get optimizeSettingsTitle => 'Optimizar para este dispositivo';
+
+  @override
+  String optimizeSettingsHint(String name) {
+    return 'Encuentra la configuración más rápida para $name.';
+  }
+
+  @override
+  String get optimizeSettingsNoModel =>
+      'Carga un modelo primero, luego optimízalo aquí.';
+
+  @override
+  String get optimizeSettingsDone => 'Optimizado';
+
+  @override
+  String get tourToolsTitle => 'Herramientas';
+
+  @override
+  String get tourToolsBody =>
+      'Elige lo que el modelo puede usar: archivos, calculadora, calendario y más. Los utiliza solo cuando una pregunta los necesita.';
+
+  @override
+  String get tourWebTitle => 'Investigación web';
+
+  @override
+  String get tourWebBody =>
+      'Local mantiene todo en este dispositivo. Automático busca en la web cuando una pregunta necesita datos recientes; Siempre busca cada vez.';
+
+  @override
+  String get tourThinkTitle => 'Pensar';
+
+  @override
+  String get tourThinkBody =>
+      'Permite que el modelo razone paso a paso antes de responder. Más lento, pero mejor para preguntas difíciles.';
+
+  @override
+  String get tourAttachTitle => 'Adjuntar';
+
+  @override
+  String get tourAttachBody =>
+      'Añade fotos, archivos PDF o documentos y pregunta sobre ellos. También puedes soltar archivos en la ventana.';
+
+  @override
+  String get tourAttachBodyMobile =>
+      'Añade fotos, archivos PDF o documentos y pregunta sobre ellos. Las herramientas y los objetivos también están aquí.';
+
+  @override
+  String get tourSlashTitle => 'Atajos';
+
+  @override
+  String get tourSlashBody =>
+      'Escribe / en el cuadro de mensaje para comandos rápidos y tus atajos guardados.';
+
+  @override
+  String get recommendedEmpty =>
+      'Todo lo recomendado para este dispositivo ya está aquí.';
+
+  @override
+  String recommendedShowRemoved(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Mostrar $count modelos quitados',
+      one: 'Mostrar 1 modelo quitado',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get desktopLoadSettingsRecalculating => 'Recalculando…';
+
+  @override
+  String desktopLoadSettingsWeightsInRam(String gb) {
+    return 'La RAM guarda $gb GB de los pesos (mapeados en memoria)';
+  }
+
+  @override
+  String desktopLoadSettingsExpertsInRam(String gb) {
+    return 'La RAM guarda $gb GB de pesos de los expertos (mapeados en memoria); el resto está en la GPU';
+  }
+
+  @override
+  String desktopLoadSettingsFromDisk(String gb) {
+    return '$gb GB más no caben en la RAM y se leen del disco al responder (más lento)';
+  }
+
+  @override
+  String desktopLoadSettingsKvCache(String gb) {
+    return 'Caché del contexto: $gb GB';
+  }
+
+  @override
+  String desktopLoadSettingsRamMapped(String gb) {
+    return 'Parte clara: $gb GB de pesos mapeados que Windows puede liberar si hace falta';
+  }
+
+  @override
+  String imageUnusedPartsFreed(String size) {
+    return 'Partes sin usar eliminadas: $size liberados.';
+  }
+
+  @override
+  String get imageNoUnusedParts =>
+      'Nada que eliminar: cada archivo pertenece a un modelo instalado o en descarga.';
+
+  @override
+  String get recommendedAllRemoved =>
+      'Las demás sugerencias para este dispositivo se quitaron de la lista.';
+
+  @override
+  String get uiModelCardHide => 'Ocultar';
 }

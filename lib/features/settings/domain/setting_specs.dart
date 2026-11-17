@@ -745,6 +745,12 @@ class SettingSpec {
       max: InferenceSettings.maxContext,
     ),
     const SettingSpec(
+      key: 'contextAuto',
+      label: 'Automatic context',
+      group: groupContext,
+      kind: SettingKind.boolean,
+    ),
+    const SettingSpec(
       key: 'promptCache',
       label: 'Keep conversation in context',
       group: groupContext,

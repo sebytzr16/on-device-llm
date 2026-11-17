@@ -5,6 +5,7 @@ import '../widgets/model_categories.dart';
 import 'dart:async';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:ondevice_llm/features/image_gen/image_gen_model_widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/design/app_design.dart';
 import '../../../../core/platform/device_info.dart';
@@ -24,6 +25,9 @@ import '../widgets/config_card_flow.dart';
 import '../widgets/model_card.dart';
 import '../widgets/model_tags.dart';
 import 'hf_search_page.dart';
+import '../providers/fresh_downloads_provider.dart';
+import '../../../../core/tips/tip_anchor.dart';
+import '../../../../core/tips/tips_store.dart';
 import 'model_readiness_page.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/island/status_island.dart';
@@ -223,8 +227,38 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
     required ModelManagerState state,
     required DeviceMemory? memory,
     required bool busy,
+    bool bestFit = false,
+    bool firstRun = false,
   }) {
     final manager = ref.read(modelManagerProvider.notifier);
+    final fresh =
+        model.isDownloaded &&
+        state.loadedModelId != model.id &&
+        ref.watch(freshDownloadsProvider).contains(model.id);
+    final tips = ref.watch(tipsProvider);
+    void load() => _attempt(context, () => manager.loadModel(model));
+    Widget Function(Widget)? wrap;
+    if (fresh) {
+      wrap = (button) => TipAnchor(
+        id: TipIds.downloadReady,
+        title: context.l10n.tipDownloadReadyTitle(model.displayName),
+        body: context.l10n.tipDownloadReadyBody,
+        side: TipSide.above,
+        active: !busy,
+        actionLabel: context.l10n.tipLoadAction,
+        onAction: load,
+        child: button,
+      );
+    } else if (bestFit && !model.isDownloaded) {
+      wrap = (button) => TipAnchor(
+        id: TipIds.modelsBestFit,
+        title: context.l10n.tipBestFitTitle,
+        body: context.l10n.tipBestFitBody,
+        side: TipSide.above,
+        active: firstRun && tips.seen.contains(TipIds.modelsDiscover),
+        child: button,
+      );
+    }
     final helperLoaded =
         ref.watch(helperLoadedModelsProvider).value?.contains(model.id) ??
         false;
@@ -242,7 +276,10 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
         preparing: state.preparing.contains(model.id),
         onDownload: () => _download(context, ref, model),
         onPause: () => manager.pauseDownload(model.id),
-        onLoad: () => _attempt(context, () => manager.loadModel(model)),
+        onLoad: load,
+        bestFit: bestFit,
+        fresh: fresh,
+        wrapMainAction: wrap,
         onUnload: () => _attempt(
           context,
           () => state.loadedModelId == model.id
@@ -306,6 +343,23 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
       fit: (m) => modelFit(memory, m),
       desktop: false,
     );
+    // Suggestions removed with the card's close button (all of them on the
+    // tester's phone, 2026-11-16): offer them back instead of an empty list.
+    final removed = hidden.isEmpty
+        ? 0
+        : availableLibraryModels(state.catalog, desktop: false).length -
+              availableLibraryModels(
+                state.catalog,
+                desktop: false,
+                hidden: hidden,
+              ).length;
+    // First-run guide: the top Recommended model is marked only when it
+    // really fits this phone.
+    final bestId =
+        available.isNotEmpty &&
+            modelFit(memory, available.first) == ModelFit.fits
+        ? available.first.id
+        : null;
     return Scaffold(
       appBar: AppBar(
         actions: [
@@ -405,18 +459,23 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          FilledButton.icon(
-                            key: const Key('hf-search'),
-                            onPressed: state.isImporting
-                                ? null
-                                : () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute<void>(
-                                      builder: (_) => const HfSearchPage(),
+                          TipAnchor(
+                            id: TipIds.modelsDiscover,
+                            title: context.l10n.tipDiscoverTitle,
+                            body: context.l10n.tipDiscoverBody,
+                            child: FilledButton.icon(
+                              key: const Key('hf-search'),
+                              onPressed: state.isImporting
+                                  ? null
+                                  : () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute<void>(
+                                        builder: (_) => const HfSearchPage(),
+                                      ),
                                     ),
-                                  ),
-                            icon: const Icon(Icons.search, size: 18),
-                            label: Text(context.l10n.searchHf),
+                              icon: const Icon(Icons.search, size: 18),
+                              label: Text(context.l10n.searchHf),
+                            ),
                           ),
                           const SizedBox(height: AppSpace.row),
                           Row(
@@ -468,7 +527,11 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                       const SizedBox(height: AppSpace.section),
                     ],
                   ),
-                  if (_category != null && _category != ModelCategory.llm)
+                  if (_category == ModelCategory.image)
+                    // Picture and video models as packs (download, resume,
+                    // delete), not loose files (owner 2026-11-16).
+                    const SliverToBoxAdapter(child: ImageGenLibraryCards())
+                  else if (_category != null && _category != ModelCategory.llm)
                     SliverToBoxAdapter(
                       child: ModelInventoryList(category: _category),
                     )
@@ -540,9 +603,37 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                                   bottom: AppSpace.md,
                                 ),
                                 child: Text(
-                                  context.l10n.everythingOnPhone,
+                                  // "Everything is on this phone" next to
+                                  // "Show 5 removed models" contradicted
+                                  // itself (visual check 2026-11-16).
+                                  removed > 0
+                                      ? context.l10n.recommendedAllRemoved
+                                      : context.l10n.everythingOnPhone,
                                   style: context.text.bodyMuted.copyWith(
                                     color: c.textFaint,
+                                  ),
+                                ),
+                              ),
+                            if (removed > 0)
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton.icon(
+                                  key: const ValueKey(
+                                    'recommended-show-removed',
+                                  ),
+                                  onPressed: () => ref
+                                      .read(
+                                        hiddenLibraryModelsProvider.notifier,
+                                      )
+                                      .restoreAll(),
+                                  icon: const Icon(
+                                    Icons.undo_rounded,
+                                    size: 16,
+                                  ),
+                                  label: Text(
+                                    context.l10n.recommendedShowRemoved(
+                                      removed,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -561,6 +652,8 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                               state: state,
                               memory: memory,
                               busy: busy,
+                              bestFit: m.id == bestId,
+                              firstRun: onDevice.isEmpty,
                             );
                           },
                         ),

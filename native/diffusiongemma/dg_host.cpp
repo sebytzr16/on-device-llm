@@ -164,17 +164,19 @@ int main(int argc, char ** argv) {
                 inputs.add_generation_prompt = true;
                 inputs.enable_thinking = false;
                 auto prefix = common_tokenize(vocab, common_chat_templates_apply(templates.get(), inputs).prompt.str(), true, true);
-                const int budget = std::clamp(request.value("maxTokens", 512), 1, (int) cp.n_ctx);
+                // Only complete canvases that fit after the prompt can be generated.
+                const int capacity = std::max(0, (int)cp.n_ctx - (int)prefix.size()) / canvas * canvas;
+                const int budget = std::min(std::max(1, request.value("maxTokens", 512)), capacity);
                 if (request.value("preview", false)) {
                     const int reserve = ((budget + canvas - 1) / canvas) * canvas;
                     { std::lock_guard<std::mutex> guard(mutex); active = false; }
                     emit({{"done", true}, {"promptTokens", prefix.size()}, {"contextSize", cp.n_ctx},
                           {"reservedTokens", reserve}, {"availableTokens", (int)cp.n_ctx - (int)prefix.size() - reserve},
-                          {"fits", prefix.size() + reserve <= cp.n_ctx}});
+                          {"fits", capacity > 0}});
                     continue;
                 }
-                if (prefix.size() + ((budget + canvas - 1) / canvas) * canvas > cp.n_ctx)
-                    throw std::runtime_error("Prompt plus rounded canvas budget exceeds context/ubatch; shorten history or maxTokens");
+                if (capacity == 0)
+                    throw std::runtime_error("Prompt leaves no room for a diffusion canvas; shorten history");
                 diffusion_eb_params eb;
                 eb.max_denoising_steps = params.diffusion.eb_max_steps > 0 ? params.diffusion.eb_max_steps : meta_i("diffusion.eb_max_steps", 48);
                 eb.t_min = meta_f("diffusion.eb_t_min", 0.4f);

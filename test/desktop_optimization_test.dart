@@ -7,12 +7,14 @@ import 'package:ondevice_llm/core/l10n/l10n.dart';
 import 'package:ondevice_llm/core/platform/desktop_host.dart';
 import 'package:ondevice_llm/core/providers/shared_providers.dart';
 import 'package:ondevice_llm/desktop/desktop_theme.dart';
-import 'package:ondevice_llm/desktop/model_speed_section.dart';
 import 'package:ondevice_llm/desktop/model_tune_section.dart';
-import 'package:ondevice_llm/desktop/model_tuner.dart';
-import 'package:ondevice_llm/desktop/pc_optimization.dart';
 import 'package:ondevice_llm/features/models/domain/entities/model_info.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
+import 'package:ondevice_llm/features/optimize/model_speed_engine_provider.dart';
+import 'package:ondevice_llm/features/optimize/model_tuner.dart';
+import 'package:ondevice_llm/features/optimize/optimize_controller.dart';
+import 'package:ondevice_llm/features/optimize/optimize_setups.dart';
+import 'package:ondevice_llm/features/optimize/optimized_models_provider.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:ondevice_llm/features/settings/presentation/providers/model_profiles_provider.dart';
 import 'package:ondevice_llm/features/settings/presentation/providers/settings_provider.dart';
@@ -52,6 +54,32 @@ class _Estimator extends LlamaEngine {
     List<({String path, double scale})> adapters = const [],
     String? draftModelPath,
   }) async => _estimate(settings);
+}
+
+/// The current settings (an old draft model) no longer fit this PC.
+class _UnfitEstimator extends _Estimator {
+  @override
+  Future<Map<String, dynamic>> estimate({
+    required String modelPath,
+    required InferenceSettings settings,
+    String? mmprojPath,
+    List<({String path, double scale})> adapters = const [],
+    String? draftModelPath,
+  }) async => {
+    ..._estimate(settings),
+    if (settings.draftModelId == 'old-draft') 'ramNeedMb': 64000,
+  };
+}
+
+class _FailEstimator extends _Estimator {
+  @override
+  Future<Map<String, dynamic>> estimate({
+    required String modelPath,
+    required InferenceSettings settings,
+    String? mmprojPath,
+    List<({String path, double scale})> adapters = const [],
+    String? draftModelPath,
+  }) async => throw StateError('Estimator failed');
 }
 
 class _Settings extends TestSettings {
@@ -317,6 +345,106 @@ void main() {
     expect(result.kvCacheType, KvCacheType.q8_0);
   });
 
+  test(
+    'Android controller uses the mobile sweep and records a kept run',
+    () async {
+      final c = ProviderContainer(
+        overrides: [
+          settingsProvider.overrideWith(_Settings.new),
+          modelManagerProvider.overrideWith(_Models.new),
+          llamaEstimatorProvider.overrideWithValue(_Estimator()),
+          modelSpeedEngineProvider.overrideWithValue(_Engine()),
+          optimizeMobileProvider.overrideWithValue(true),
+        ],
+      );
+      addTearDown(c.dispose);
+      final provider = optimizeControllerProvider(testModel.id);
+      final original = _stale.copyWith(backend: GpuBackend.cpu);
+      c.read(sessionBusyProvider.notifier).state = true;
+      await c.read(provider.notifier).start(testModel, original);
+      expect(c.read(provider).running, isFalse);
+      expect((c.read(modelManagerProvider.notifier) as _Models).loads, isEmpty);
+      c.read(sessionBusyProvider.notifier).state = false;
+      await c.read(provider.notifier).start(testModel, original);
+      expect(c.read(provider).failed, isFalse);
+      expect(c.read(provider).kept, isNotNull);
+      expect(await c.read(optimizedModelsProvider.future), {testModel.id});
+      final trials = (c.read(modelManagerProvider.notifier) as _Models).loads
+          .where((s) => s.draftModelId != original.draftModelId);
+      expect(trials, isNotEmpty);
+      expect(
+        trials.every(
+          (s) =>
+              s.nGpuLayers == 0 &&
+              s.draftModelId.isEmpty &&
+              s.nCpuMoe == -1 &&
+              s.batchSize <= 512,
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  for (final outcome in ['saved', 'kept', 'cancelled', 'failed']) {
+    test('controller transitions and persistence: $outcome', () async {
+      DesktopHost.active = true;
+      addTearDown(() => DesktopHost.active = false);
+      final engine = outcome == 'kept' ? _ChangingEngine() : _Engine();
+      if (outcome == 'cancelled') engine.gate = Completer<void>();
+      final c = ProviderContainer(
+        overrides: [
+          settingsProvider.overrideWith(_Settings.new),
+          modelManagerProvider.overrideWith(_Models.new),
+          llamaEstimatorProvider.overrideWithValue(
+            outcome == 'failed' ? _FailEstimator() : _Estimator(),
+          ),
+          modelSpeedEngineProvider.overrideWithValue(engine),
+          optimizeMobileProvider.overrideWithValue(false),
+        ],
+      );
+      addTearDown(c.dispose);
+      final provider = optimizeControllerProvider(testModel.id);
+      final states = <OptimizeState>[];
+      final subscription = c.listen(
+        provider,
+        (_, next) => states.add(next),
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      final controller = c.read(provider.notifier);
+      final run = controller.start(testModel, _stale);
+      expect(c.read(provider).running, isTrue);
+      expect(c.read(sessionBusyProvider), isTrue);
+      // A second start must not reset or duplicate an active run.
+      await controller.start(testModel, _stale);
+      if (outcome == 'cancelled') controller.cancel();
+      await run;
+      final result = c.read(provider);
+      expect(result.running, isFalse);
+      expect(result.progress, isNull);
+      expect(result.step, isNull);
+      expect(result.failed, outcome == 'failed');
+      expect(result.saved, outcome == 'saved');
+      expect(result.kept != null, outcome == 'kept');
+      expect(c.read(sessionBusyProvider), isFalse);
+      final loads = (c.read(modelManagerProvider.notifier) as _Models).loads;
+      expect(loads, isNotEmpty);
+      if (outcome != 'saved') expect(loads.last.toJson(), _stale.toJson());
+      expect(
+        await c.read(optimizedModelsProvider.future),
+        outcome == 'saved' || outcome == 'kept' ? {testModel.id} : isEmpty,
+      );
+      expect(states.first.running, isFalse);
+      expect(states.any((s) => s.running), isTrue);
+      expect(
+        states
+            .where((s) => s.progress != null)
+            .every((s) => s.progress! >= 0 && s.progress! <= 1),
+        isTrue,
+      );
+    });
+  }
+
   for (final cancel in [false, true]) {
     testWidgets(
       'Optimize button ${cancel ? 'cancels without saving' : 'measures and applies safe defaults'}',
@@ -438,6 +566,57 @@ void main() {
         find.byKey(const Key('desktop-optimize-kept-reason')),
       );
       expect(reason.data, AppLocalizationsEn().desktopOptimizeKeptOutput);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Optimize saves the safe setup when the current settings do not fit',
+    (tester) async {
+      DesktopHost.active = true;
+      addTearDown(() => DesktopHost.active = false);
+      final engine = _Engine();
+      final c = ProviderContainer(
+        overrides: [
+          settingsProvider.overrideWith(_Settings.new),
+          modelManagerProvider.overrideWith(_Models.new),
+          llamaEstimatorProvider.overrideWithValue(_UnfitEstimator()),
+          modelSpeedEngineProvider.overrideWithValue(engine),
+        ],
+      );
+      addTearDown(c.dispose);
+      final profiles = c.read(modelProfilesProvider.notifier);
+      await profiles.ready;
+      await profiles.set('test', {'temperature': 0.25, 'nGpuLayers': 3});
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: MaterialApp(
+            theme: DesktopTheme.of(AccentChoice.amber, dark: true),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: Scaffold(
+              body: ModelOptimizeSection(model: testModel, settings: _stale),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('desktop-optimize')));
+      await tester.pumpAndSettle();
+      expect(c.read(sessionBusyProvider), isFalse);
+      final model = profiles.of('test');
+      expect(model['temperature'], 0.25);
+      expect(model['kvCacheType'], 'fp16');
+      expect(model['draftModelId'], '');
+      expect(model['nGpuLayers'], greaterThan(3));
+      expect(
+        find.byKey(const Key('desktop-optimize-kept-reason')),
+        findsNothing,
+      );
+      final loaded =
+          (c.read(modelManagerProvider.notifier) as _Models).loads.last;
+      expect(loaded.draftModelId, '');
       expect(tester.takeException(), isNull);
     },
   );

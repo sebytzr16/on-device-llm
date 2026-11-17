@@ -109,7 +109,8 @@ void main() {
       expect(r.originOf('webMode'), SettingsLayer.idTurn);
       expect(r.effective.thinkingModeEnabled, isTrue);
       expect(r.originOf('topP'), SettingsLayer.idDefault);
-      expect(r.reloadKeys, ['contextSize']);
+      // A model length turns Auto off (owner 2026-11-16).
+      expect(r.reloadKeys, ['contextSize', 'contextAuto']);
       // The app-wide layer no longer sets sampling.
       expect(r.requested['temperature']!.map((e) => e.$1), [
         SettingsLayer.idModel,

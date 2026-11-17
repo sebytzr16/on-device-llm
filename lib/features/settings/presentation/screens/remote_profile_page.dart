@@ -10,6 +10,7 @@ import '../../../../core/utils/external_links.dart';
 import '../../../../inference/remote/remote_engine.dart';
 import '../../../../inference/remote/remote_provider.dart';
 import '../providers/settings_provider.dart';
+import '../remote_probe_summary.dart';
 import '../widgets/settings_widgets.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/design/app_dialog.dart';
@@ -240,7 +241,7 @@ class _RemoteProfilePageState extends ConsumerState<RemoteProfilePage> {
             ? provider.selfHosted
                   ? context.l10n.remoteConnectedServerNoModels
                   : context.l10n.remoteConnectedNoModels
-            : report.summary;
+            : remoteProbeSummary(context.l10n, report);
         if (_model.text.trim().isEmpty && models.isNotEmpty) {
           _model.text = models.first.id;
         }

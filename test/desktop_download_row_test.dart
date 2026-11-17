@@ -8,6 +8,7 @@ import 'package:ondevice_llm/data/storage/download_manager.dart';
 import 'package:ondevice_llm/desktop/desktop_theme.dart';
 import 'package:ondevice_llm/desktop/models_page.dart';
 import 'package:ondevice_llm/features/models/domain/entities/model_info.dart';
+import 'package:ondevice_llm/features/models/presentation/providers/hidden_library_models.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -118,5 +119,37 @@ void main() {
     expect(file.existsSync(), isTrue);
     // No part: nothing to do, no error.
     await DownloadManager.dropStalePart(file);
+  });
+
+  testWidgets('Recommended offers removed rows back', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'desktop_advanced': true,
+      'hidden_library_models_v1': '["big"]',
+    });
+    tester.view.physicalSize = const Size(1400, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final container = ProviderContainer(
+      overrides: [modelManagerProvider.overrideWith(_Models.new)],
+    );
+    addTearDown(container.dispose);
+    await container.read(desktopPreferencesProvider.notifier).ready;
+    container.read(hiddenLibraryModelsProvider);
+    await container.read(hiddenLibraryModelsProvider.notifier).ready;
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: DesktopTheme.of(AccentChoice.amber, dark: true),
+          home: const Scaffold(body: DesktopModelsPage()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('model-row-big')), findsNothing);
+    await tester.tap(find.text('Show 1 removed model'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('model-row-big')), findsOneWidget);
+    expect(find.text('Show 1 removed model'), findsNothing);
   });
 }

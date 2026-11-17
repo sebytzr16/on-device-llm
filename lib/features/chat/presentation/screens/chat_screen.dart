@@ -901,6 +901,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       onAskPhoto: () => _attach(source: 'camera'),
                       onAskFile: () => _attach(source: 'file'),
                       onResearchGoal: _openGoal,
+                      onGetModel: () =>
+                          Navigator.pushNamed(context, AppRoutes.models),
                     )
                   : Stack(
                       key: const ValueKey('conversation'),

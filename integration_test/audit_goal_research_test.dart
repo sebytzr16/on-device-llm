@@ -97,6 +97,7 @@ class _Engine extends LlamaEngine {
     String? mmprojPath,
     List<({String path, double scale})> adapters = const [],
     String? draftModelPath,
+    bool memoryGuard = true,
   }) async {
     final before = loadCount;
     final load = Stopwatch()..start();

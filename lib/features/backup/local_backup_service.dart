@@ -43,6 +43,8 @@ class LocalBackupService {
     'goal_history_v1',
     'goal_watches_v1',
     'model_sampling_variants_v1',
+    'tips_enabled_v1',
+    'tips_seen_v1',
     'onboarding_done_v1',
     'prompt_shortcuts_v1',
     'chat_model_pins_v1',
@@ -60,6 +62,8 @@ class LocalBackupService {
     'temporary_attachment_cleanup_v1': 'Temporary attachments are excluded.',
     'imageGenVerifiedHashes':
         'Local file-check cache: rebuilt by hashing files again.',
+    'optimized_models_v1':
+        'Optimize results are measured on this device; a restore elsewhere offers it again.',
     'desktop.modelsFolder': 'Device-local model paths.',
     'desktop.previousModelFolders': 'Device-local model paths.',
     'device_host_access_token': 'Secret; never included in a backup.',

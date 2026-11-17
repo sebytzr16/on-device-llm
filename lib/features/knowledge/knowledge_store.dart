@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:crypto/crypto.dart';
 
+import '../../core/storage/device_encryption.dart';
 import '../../data/local/database/app_database.dart';
 import '../../data/network/web_search/search_models.dart';
 import '../attachments/domain/document_text.dart';
@@ -271,7 +272,7 @@ class KnowledgeStore {
       savedOriginal = File(p.join(directory.path, '$id.original'));
       final staged = File('${savedOriginal.path}.part');
       try {
-        await staged.writeAsBytes(bytes, flush: true);
+        await DeviceEncryption.instance.write(staged, bytes);
         await staged.rename(savedOriginal.path);
       } catch (_) {
         if (await staged.exists()) await staged.delete();
@@ -438,8 +439,7 @@ class KnowledgeStore {
       }
       if (derived != null && wav != null) {
         await derived.parent.create(recursive: true);
-        await wav.copy('${derived.path}.part');
-        await File('${derived.path}.part').rename(derived.path);
+        await DeviceEncryption.instance.write(derived, await wav.readAsBytes());
       }
       return ExtractedDocument(buffer.toString(), 'Voice note');
     } finally {
@@ -465,19 +465,27 @@ class KnowledgeStore {
     if (file == null) return null;
     if (doc.mime.startsWith('image/')) {
       if (chunk.ordinal != 0) return null;
-      return [await KnowledgeMedia.imageForEmbedding(await file.readAsBytes())];
+      return [
+        await KnowledgeMedia.imageForEmbedding(
+          await DeviceEncryption.instance.read(file),
+        ),
+      ];
     }
     final derived = File(p.join(file.parent.path, '${doc.id}.audio.wav'));
     File wav;
     if (await derived.exists()) {
       wav = derived;
     } else {
-      final decoded = await KnowledgeMedia.decodeAudio(
+      final decoded = await DeviceEncryption.instance.withPlaintext(
         file,
-        cancelled: cancelled,
+        (clear) => KnowledgeMedia.decodeAudio(clear, cancelled: cancelled),
       );
       try {
-        await decoded.$1.rename(derived.path);
+        await DeviceEncryption.instance.write(
+          derived,
+          await decoded.$1.readAsBytes(),
+        );
+        await decoded.$1.delete();
       } catch (_) {
         if (await decoded.$1.exists()) await decoded.$1.delete();
         rethrow;
@@ -485,7 +493,10 @@ class KnowledgeStore {
       wav = derived;
     }
     // The bounded derived WAV is reused across segments and index runs.
-    final segment = await KnowledgeMedia.wavSegment(wav, chunk.ordinal);
+    final segment = await DeviceEncryption.instance.withPlaintext(
+      wav,
+      (clear) => KnowledgeMedia.wavSegment(clear, chunk.ordinal),
+    );
     return segment == null ? null : [segment];
   }
 

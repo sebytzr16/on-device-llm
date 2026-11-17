@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ondevice_llm/core/providers/shared_providers.dart';
 import 'package:ondevice_llm/core/theme/app_theme.dart';
 import 'package:ondevice_llm/features/models/domain/entities/model_info.dart';
@@ -52,6 +53,7 @@ Widget harness() => ProviderScope(
 );
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   testWidgets(
     'settings screen renders privacy card, model row and advanced rows',
     (tester) async {
@@ -80,7 +82,7 @@ void main() {
       ]) {
         expect(find.text(row), findsOneWidget);
       }
-      expect(find.text('4k ctx · auto batch · cache on'), findsOneWidget);
+      expect(find.text('auto ctx · auto batch · cache on'), findsOneWidget);
     },
   );
   testWidgets("Sampling opens the active model's own settings", (tester) async {

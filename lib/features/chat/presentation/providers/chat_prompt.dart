@@ -21,7 +21,11 @@ extension _ChatPrompt on ChatNotifier {
     // searches and its report (review #10, round 3).
     final researching = researchTurn || found.plan.mode == RetrievalMode.search;
     t.usedMemoryNotes = researching ? shared.researchNotes : shared.notes;
-    final system = StringBuffer('${shared.system}${t.usedMemoryNotes}');
+    // Recurrent caches need the whole system/tools block to stay identical.
+    final memory = settings.usesRemote ? '' : t.usedMemoryNotes.trim();
+    final system = StringBuffer(
+      '${shared.system}${settings.usesRemote ? t.usedMemoryNotes : ''}',
+    );
     // Models whose chat template understands enable_thinking (Qwen3.5,
     // Gemma 4) get the switch through the template; only older models need
     // the prompt-level nudge.
@@ -142,7 +146,11 @@ extension _ChatPrompt on ChatNotifier {
         ? TurnPrompts.clockLine()
         : null;
     final carried = asks
-        ? [if (note.isNotEmpty) note, ?clockLine].map((n) => '\n\n$n').join()
+        ? [
+            if (memory.isNotEmpty) memory,
+            if (note.isNotEmpty) note,
+            ?clockLine,
+          ].map((n) => '\n\n$n').join()
         : '';
     final fitSystem = '$system$carried';
     messages.first = {'role': 'system', 'content': fitSystem};
@@ -197,7 +205,7 @@ extension _ChatPrompt on ChatNotifier {
               retrieve: retrieve,
               engine: engine,
               prefill: () => engine.primePrompt(
-                system: fitSystem,
+                system: system.toString(),
                 fallbackTemplate: model.family.fallbackTemplate,
                 settings: settings,
                 tools: offered.native ? offered.tools : const [],
@@ -254,9 +262,9 @@ extension _ChatPrompt on ChatNotifier {
       };
     }
     // The inspector includes instructions carried with this question too.
-    t.contextInstructions = '${messages.first['content']}$notes';
+    t.contextInstructions = '${messages.first['content']}$memory$notes';
     t.stage('budgetMs');
-    _addTurnNotes(messages, note: note, clockLine: clockLine);
+    _addTurnNotes(messages, note: note, clockLine: clockLine, memory: memory);
     // Tool results number their sources after the evidence already in the
     // prompt, so every [n] means one source.
     t.runner?.seed(t.sources);
@@ -339,13 +347,19 @@ extension _ChatPrompt on ChatNotifier {
     List<Map<String, Object>> messages, {
     required String note,
     required String? clockLine,
+    String memory = '',
   }) {
     if (messages.last['role'] != 'user') return;
     final request = messages.last['content'];
     if (request is! String) return;
     messages.last = {
       ...messages.last,
-      'content': [?clockLine, request, if (note.isNotEmpty) note].join('\n\n'),
+      'content': [
+        if (memory.isNotEmpty) memory,
+        ?clockLine,
+        request,
+        if (note.isNotEmpty) note,
+      ].join('\n\n'),
     };
   }
 

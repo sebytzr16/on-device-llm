@@ -114,6 +114,7 @@ class _Engine extends LlamaEngine {
     String? mmprojPath,
     List<({String path, double scale})> adapters = const [],
     String? draftModelPath,
+    bool memoryGuard = true,
   }) async {
     loads++;
     settingsSeen.add(settings);

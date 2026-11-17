@@ -141,6 +141,162 @@ class ModelCategoryFilters extends StatelessWidget {
   }
 }
 
+/// A model file's name for people: the 16-hex-digit hash a hub download
+/// keeps in front, the extension and underscores go, the quant stays
+/// ("30463452c5fe143f-mtp-Qwen_Qwen3.6-35B-A3B-Q8_0.gguf" →
+/// "mtp-Qwen Qwen3.6-35B-A3B Q8_0").
+String friendlyModelFileName(String fileName) {
+  var name = fileName.split(RegExp(r'[\\/]')).last;
+  name = name.replaceFirst(RegExp(r'^[0-9a-fA-F]{16}-'), '');
+  name = name.replaceFirst(
+    RegExp(
+      r'\.(gguf|onnx|safetensors|pth|bin|tar\.bz2)$',
+      caseSensitive: false,
+    ),
+    '',
+  );
+  final quant = RegExp(
+    r'[-_.](I?Q\d\w*|F16|BF16|F32)$',
+    caseSensitive: false,
+  ).firstMatch(name);
+  final stem = quant == null ? name : name.substring(0, quant.start);
+  final pretty = stem.replaceAll('_', ' ').trim();
+  return quant == null ? pretty : '$pretty ${quant.group(1)!.toUpperCase()}';
+}
+
+/// The phone's card for a model file that is not a chat model (draft,
+/// embedding, projector, speech, picture): the chat model card's frame,
+/// title and small meta line, with its actions in one row underneath.
+class ModelFileCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+
+  /// Long text (full path, file list) shown on tap of the info icon.
+  final String? details;
+  final Widget? progress;
+  final List<Widget> actions;
+  const ModelFileCard({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    this.details,
+    this.progress,
+    this.actions = const [],
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Card(
+      shape: RoundedRectangleBorder(
+        borderRadius: AppDesign.radius(AppDesign.rLg),
+        side: BorderSide(color: c.hairline),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpace.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: context.text.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (details != null)
+                  Tooltip(
+                    message: details!,
+                    triggerMode: TooltipTriggerMode.tap,
+                    showDuration: const Duration(seconds: 6),
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: AppSpace.sm),
+                      child: Icon(
+                        Icons.info_outline,
+                        size: 18,
+                        color: c.textMuted,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppSpace.sm),
+            Text(subtitle, style: context.text.small),
+            if (progress != null) ...[
+              const SizedBox(height: AppSpace.md),
+              progress!,
+            ],
+            if (actions.isNotEmpty) ...[
+              const SizedBox(height: AppSpace.md),
+              Row(
+                children: [
+                  for (final (i, a) in actions.indexed) ...[
+                    if (i > 0) const SizedBox(width: AppSpace.sm),
+                    Expanded(child: a),
+                  ],
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A thin bar and "0.1 % · 16 MB / 12.49 GB", as on a chat download.
+class ModelFileProgress extends StatelessWidget {
+  final int received;
+  final int total;
+  final double? bytesPerSecond;
+  const ModelFileProgress({
+    super.key,
+    required this.received,
+    required this.total,
+    this.bytesPerSecond,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fraction = total <= 0 ? 0.0 : (received / total).clamp(0.0, 1.0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(
+          borderRadius: AppDesign.radius(AppDesign.rFull),
+          child: LinearProgressIndicator(value: fraction, minHeight: 4),
+        ),
+        const SizedBox(height: AppSpace.sm),
+        Text(
+          [
+            '${(fraction * 100).toStringAsFixed(1)} %',
+            '${bytesLabel(received)} / ${bytesLabel(total)}',
+            if (bytesPerSecond != null)
+              '${bytesLabel(bytesPerSecond!.round())}/s',
+          ].join(' · '),
+          style: context.text.monoStrong,
+        ),
+      ],
+    );
+  }
+}
+
+/// A model file's size on disk; 0 when it went away.
+final modelFileSizeProvider = FutureProvider.autoDispose.family<int, String>((
+  ref,
+  path,
+) async {
+  try {
+    return await File(path).length();
+  } on FileSystemException {
+    return 0;
+  }
+});
+
 final modelInventoryFilesProvider = FutureProvider.autoDispose<List<File>>((
   ref,
 ) async {
@@ -226,20 +382,27 @@ class _InventoryRow extends ConsumerWidget {
         : null;
     final kind = modelCategory(file.path, metadata: metadata);
     if (category != null && category != kind) return const SizedBox.shrink();
-    return ListTile(
-      leading: const Icon(Icons.insert_drive_file_outlined),
-      title: Text(file.uri.pathSegments.last),
-      subtitle: SelectableText(file.path),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(modelCategoryLabel(context.l10n, kind)),
-          const SizedBox(width: AppDesign.sm),
-          IconButton(
+    final size = ref.watch(modelFileSizeProvider(file.path)).asData?.value;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpace.md),
+      child: ModelFileCard(
+        title: friendlyModelFileName(file.path),
+        subtitle: [
+          if (metadata?.architecture != null) metadata!.architecture!,
+          if (size != null) bytesLabel(size),
+          // The chosen category already names the kind.
+          if (category == null) modelCategoryLabel(context.l10n, kind),
+        ].join(' · '),
+        details: file.path,
+        actions: [
+          OutlinedButton.icon(
             key: ValueKey('inventory-delete-${file.path}'),
-            tooltip: context.l10n.delete,
-            icon: const Icon(Icons.delete_outline),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: context.colors.textMuted,
+            ),
             onPressed: () => deleteModelFile(context, ref, file),
+            icon: const Icon(Icons.delete_outline, size: 18),
+            label: Text(context.l10n.delete, overflow: TextOverflow.ellipsis),
           ),
         ],
       ),

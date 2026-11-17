@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ondevice_llm/desktop/benchmark_receipt.dart';
-import 'package:ondevice_llm/desktop/pc_optimization.dart';
-import 'package:ondevice_llm/desktop/model_tuner.dart';
-import 'package:ondevice_llm/desktop/tune_benchmark_run.dart';
+import 'package:ondevice_llm/features/optimize/benchmark_receipt.dart';
+import 'package:ondevice_llm/features/optimize/optimize_setups.dart';
+import 'package:ondevice_llm/features/optimize/model_tuner.dart';
+import 'package:ondevice_llm/features/optimize/tune_benchmark_run.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

@@ -3101,6 +3101,18 @@
   "desktopInspectorMaxTokens": "Max answer tokens",
   "desktopInspectorContext": "Context length",
   "desktopInspectorContextHint": "A new context length reloads the model on the next message.",
+  "contextAutoLabel": "Auto (recommended)",
+  "contextAutoHint": "Fits into the memory",
+  "samplingPerModelHint": "Temperature, top-K and top-P belong to each model. Opens the active model's settings.",
+  "contextAutoLoaded": "Fits into the memory · {size} now",
+  "@contextAutoLoaded": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "settingLabelContextAuto": "Automatic context",
   "desktopInspectorScopeModel": "Model",
   "desktopInspectorScopeChat": "This chat",
   "desktopInspectorModelHint": "Saved with {model} and used in every chat with it. Switch to This chat for a one-off change.",
@@ -3192,6 +3204,15 @@
       }
     }
   },
+  "desktopLoadSettingsRamShort": "Over the free RAM by {gb} GB: the load may be refused, or the PC may slow down. Close other apps, lower the context, or put more layers on the GPU.",
+  "@desktopLoadSettingsRamShort": {
+    "placeholders": {
+      "gb": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopLoadSettingsWeightsPaging": "The model file is bigger than the free RAM: parts of it will be read from disk again while it answers, which is slower.",
   "desktopLoadSettingsExperts": "Expert weights stay in RAM so the rest fits on the GPU",
   "desktopLoadSettingsCapped": "The context will be cut to {tokens} tokens to fit in memory",
   "@desktopLoadSettingsCapped": {
@@ -4562,11 +4583,15 @@
   "helperModelChanged": "The chat model changed.",
   "helperDisposed": "The helper has been released.",
   "helperInferenceFailed": "Helper inference failed.",
-  "helperSharedResources": "Backend: {backend} \u00b7 GPU layers: {layers}",
+  "helperSharedResources": "Backend: {backend} · GPU layers: {layers}",
   "@helperSharedResources": {
     "placeholders": {
-      "backend": {"type": "String"},
-      "layers": {"type": "String"}
+      "backend": {
+        "type": "String"
+      },
+      "layers": {
+        "type": "String"
+      }
     }
   },
   "helperResources": "Peak RAM: {memory} MB · Backend: {backend} · GPU layers: {layers}",
@@ -4627,11 +4652,29 @@
   },
   "helperLoadedBadge": "Helper",
   "helperStreams": "Helper streams: {count}",
-  "@helperStreams": {"placeholders": {"count": {"type": "int"}}},
+  "@helperStreams": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "helperNumber": "Agent {n}",
-  "@helperNumber": {"placeholders": {"n": {"type": "int"}}},
+  "@helperNumber": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
   "helperCount": "{count, plural, =1{1 agent} other{{count} agents}}",
-  "@helperCount": {"placeholders": {"count": {"type": "int"}}},
+  "@helperCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "helperShowDetails": "Show helper details",
   "helperHideDetails": "Fold helpers",
   "agentsSection": "Agents",
@@ -5424,8 +5467,7 @@
   "downloadHistoryHint": "Removing history rows keeps downloaded model files. Active downloads are not cancelled.",
   "downloadRemoveHistoryConfirm": "Remove the download history row for {name}? The downloaded model file will be kept. This does not cancel a download.",
   "downloadClearFinishedConfirm": "Remove completed, failed and cancelled download history rows? Downloaded model files and active downloads will be kept.",
-  "historyRemoveError": "Could not save the history change. Please try again."
-,
+  "historyRemoveError": "Could not save the history change. Please try again.",
   "@benchmarkDeleteSelected": {
     "placeholders": {
       "count": {
@@ -5456,10 +5498,22 @@
   },
   "answerTokensInvalid": "Enter a positive whole number up to 1,048,576.",
   "answerTokensContextLimit": "The context window ({context} tokens) limits the actual answer. Prompt and thinking tokens also use this window. Your requested value is saved.",
-  "@answerTokensContextLimit": {"placeholders": {"context": {"type": "int"}}},
+  "@answerTokensContextLimit": {
+    "placeholders": {
+      "context": {
+        "type": "int"
+      }
+    }
+  },
   "answerTokensHint": "The longest answer the model may write. Drag up to 64,000, or tap Custom to type any value. The context window still limits how much fits.",
   "modelRestoreRemoved": "Restore removed ({count})",
-  "@modelRestoreRemoved": {"placeholders": {"count": {"type": "int"}}},
+  "@modelRestoreRemoved": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "desktopSpeculationMode": "Speculative decoding",
   "desktopDraftModel": "Draft model",
   "desktopDFlash": "DFlash (block diffusion)",
@@ -5499,17 +5553,71 @@
   "engineCheckUpdates": "Check for engine updates",
   "engineChecking": "Checking…",
   "engineUpToDate": "{name}: up to date",
-  "@engineUpToDate": {"placeholders": {"name": {"type": "String"}}},
+  "@engineUpToDate": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "engineNewerAvailable": "Newer {name} available: {latest} (bundled {bundled}) - it arrives with the next app update",
-  "@engineNewerAvailable": {"placeholders": {"name": {"type": "String"}, "latest": {"type": "String"}, "bundled": {"type": "String"}}},
+  "@engineNewerAvailable": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "latest": {
+        "type": "String"
+      },
+      "bundled": {
+        "type": "String"
+      }
+    }
+  },
   "engineUpdateUnknown": "{name}: could not compare versions",
-  "@engineUpdateUnknown": {"placeholders": {"name": {"type": "String"}}},
+  "@engineUpdateUnknown": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "engineUpdateOffline": "{name}: could not reach GitHub (offline?)",
-  "@engineUpdateOffline": {"placeholders": {"name": {"type": "String"}}},
+  "@engineUpdateOffline": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "engineDriverOk": "Driver {driver} supports CUDA {major} (needs {required} or newer)",
-  "@engineDriverOk": {"placeholders": {"driver": {"type": "String"}, "major": {"type": "String"}, "required": {"type": "String"}}},
+  "@engineDriverOk": {
+    "placeholders": {
+      "driver": {
+        "type": "String"
+      },
+      "major": {
+        "type": "String"
+      },
+      "required": {
+        "type": "String"
+      }
+    }
+  },
   "engineDriverTooOld": "Driver {driver} is older than the {required} that CUDA {major} needs",
-  "@engineDriverTooOld": {"placeholders": {"driver": {"type": "String"}, "major": {"type": "String"}, "required": {"type": "String"}}},
+  "@engineDriverTooOld": {
+    "placeholders": {
+      "driver": {
+        "type": "String"
+      },
+      "major": {
+        "type": "String"
+      },
+      "required": {
+        "type": "String"
+      }
+    }
+  },
   "engineCudaNote": "CUDA runtime updates come with app updates.",
   "desktopCompareDone": "Done",
   "desktopCompareFailed": "Failed",
@@ -5549,5 +5657,167 @@
   "kvFp8E4m3": "FP8 E4M3 (supported backends)",
   "nativeSetMoeCacheSizeMb": "MoE device cache (MiB, 0 = disabled)",
   "nativeSetMoeCacheCpuShare": "MoE cache misses computed on CPU (0–1)",
-  "kvCacheFp8": "FP8"
+  "kvCacheFp8": "FP8",
+  "loadAnyway": "Load anyway",
+  "loadAnywayWarning": "The estimate says this model may not fit in free memory. This device can often free more. Load it anyway?",
+  "remoteProbeModels": "Connected · {count, plural, one{{count} model} other{{count} models}}",
+  "remoteProbeHealth": "Health: {status}",
+  "remoteProbeNoTools": "No server tools advertised",
+  "remoteProbeTools": "{count, plural, one{{count} server tool detected} other{{count} server tools detected}}",
+  "remoteProbeNotAdvertised": "Not advertised",
+  "remoteProbeUnknown": "Unknown",
+  "remoteProbeOk": "OK",
+  "@remoteProbeModels": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@remoteProbeTools": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@remoteProbeHealth": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "tipGotIt": "Got it",
+  "tipSkipAll": "Skip tips",
+  "tipStep": "{n} of {total}",
+  "@tipStep": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "tipsShowAgain": "Show tips again",
+  "tipsShowAgainHint": "Bring back the small bubbles that explain where things are.",
+  "tipsShowAgainDone": "Tips will show again.",
+  "firstRunGetModelTitle": "Let's get you a model",
+  "firstRunGetModelBody": "Models run right here on this device. Pick one from the list; the one that fits best is marked.",
+  "firstRunGetModelButton": "Get a model",
+  "firstRunLoadTitle": "Load a model to start",
+  "firstRunLoadBody": "Your models are on this device. Load one and ask anything.",
+  "firstRunLoadButton": "Load {name}",
+  "@firstRunLoadButton": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "firstRunOtherModels": "Other models",
+  "tipDiscoverTitle": "Discover more models",
+  "tipDiscoverBody": "Search thousands of models on Hugging Face. The list below is already picked for this device.",
+  "bestFitBadge": "Best for this device",
+  "tipBestFitTitle": "Start here",
+  "tipBestFitBody": "This one fits your memory and answers best of the models that do. Tap Download.",
+  "tipDownloadReadyTitle": "{name} is ready",
+  "@tipDownloadReadyTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "tipDownloadReadyBody": "Load it to start chatting.",
+  "tipLoadAction": "Load",
+  "optimizeOfferTitle": "Optimize for this device?",
+  "optimizeOfferBody": "A few minutes of tests find the fastest settings that still give the same answers. You can also do it later in Settings.",
+  "optimizeOfferAction": "Optimize",
+  "optimizeOfferLater": "Later",
+  "optimizeSettingsTitle": "Optimize for this device",
+  "optimizeSettingsHint": "Finds the fastest settings for {name}.",
+  "@optimizeSettingsHint": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "optimizeSettingsNoModel": "Load a model first, then optimize it here.",
+  "optimizeSettingsDone": "Optimized",
+  "tourToolsTitle": "Tools",
+  "tourToolsBody": "Choose what the model may use: files, calculator, calendar and more. It reaches for them only when a question needs them.",
+  "tourWebTitle": "Web research",
+  "tourWebBody": "Local keeps everything on this device. Auto searches the web when a question needs fresh facts; Always searches every time.",
+  "tourThinkTitle": "Think",
+  "tourThinkBody": "Lets the model reason step by step before it answers. Slower, but better for hard questions.",
+  "tourAttachTitle": "Attach",
+  "tourAttachBody": "Add photos, PDFs or documents and ask about them. You can also drop files on the window.",
+  "tourAttachBodyMobile": "Add photos, PDFs or documents and ask about them. Tools and Goals are here too.",
+  "tourSlashTitle": "Shortcuts",
+  "tourSlashBody": "Type / in the message box for quick commands and your saved prompts.",
+  "recommendedEmpty": "Everything recommended for this device is already here.",
+  "recommendedShowRemoved": "{count, plural, =1{Show 1 removed model} other{Show {count} removed models}}",
+  "@recommendedShowRemoved": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "desktopLoadSettingsRecalculating": "Recalculating…",
+  "desktopLoadSettingsWeightsInRam": "RAM holds {gb} GB of the weights (memory-mapped)",
+  "@desktopLoadSettingsWeightsInRam": {
+    "placeholders": {
+      "gb": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopLoadSettingsExpertsInRam": "RAM holds {gb} GB of expert weights (memory-mapped); the rest is on the GPU",
+  "@desktopLoadSettingsExpertsInRam": {
+    "placeholders": {
+      "gb": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopLoadSettingsFromDisk": "{gb} GB more does not fit in RAM and is read from disk while answering (slower)",
+  "@desktopLoadSettingsFromDisk": {
+    "placeholders": {
+      "gb": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopLoadSettingsKvCache": "Context cache: {gb} GB",
+  "@desktopLoadSettingsKvCache": {
+    "placeholders": {
+      "gb": {
+        "type": "String"
+      }
+    }
+  },
+  "desktopLoadSettingsRamMapped": "Lighter part: {gb} GB of mapped weights Windows can free when needed",
+  "@desktopLoadSettingsRamMapped": {
+    "placeholders": {
+      "gb": {
+        "type": "String"
+      }
+    }
+  },
+  "imageUnusedPartsFreed": "Removed unused parts: {size} freed.",
+  "@imageUnusedPartsFreed": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "imageNoUnusedParts": "Nothing to remove: every file belongs to a model you have or are downloading.",
+  "recommendedAllRemoved": "The other suggestions for this device were removed from the list.",
+  "uiModelCardHide": "Hide"
 }

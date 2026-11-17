@@ -200,7 +200,8 @@ class LlamaBindings {
         .lookupFunction<Int32 Function(Uint32), int Function(int)>(
           'IsProcessorFeaturePresent',
         );
-    return present(40) != 0; // PF_AVX2_INSTRUCTIONS_AVAILABLE
+    // PF_AVX2_INSTRUCTIONS_AVAILABLE, then FMA/F16C/BMI2 too.
+    return present(40) != 0 && (_windowsIsa ?? 1) & 1 != 0;
   }
 
   static bool windowsHasAvx512() {
@@ -208,8 +209,23 @@ class LlamaBindings {
         .lookupFunction<Int32 Function(Uint32), int Function(int)>(
           'IsProcessorFeaturePresent',
         );
-    return present(41) != 0; // PF_AVX512F_INSTRUCTIONS_AVAILABLE
+    // PF_AVX512F_INSTRUCTIONS_AVAILABLE, then CD/BW/DQ/VL too.
+    return present(41) != 0 && (_windowsIsa ?? 2) & 2 != 0;
   }
+
+  /// od_cpu_isa from the SSE4.2 bridge (safe on any x86-64 CPU): Windows'
+  /// own flags cover AVX2 and AVX-512F only, while the bridges also use
+  /// FMA, F16C, BMI2 and AVX-512 CD/BW/DQ/VL (audit 2026-11-16 AUD-003).
+  /// Null when the bridge or its export is missing: the OS flags decide.
+  static final int? _windowsIsa = () {
+    try {
+      return DynamicLibrary.open(
+        'ondevice_llm_compat.dll',
+      ).lookupFunction<Int32 Function(), int Function()>('od_cpu_isa')();
+    } catch (_) {
+      return null;
+    }
+  }();
 
   static String? windowsCpuOf(String? library) => switch (library) {
     'ondevice_llm_avx512.dll' => 'avx512',

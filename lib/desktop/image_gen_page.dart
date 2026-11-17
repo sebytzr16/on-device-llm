@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import '../core/storage/device_encryption.dart';
 import 'dart:ui' as ui;
 
 import 'package:desktop_drop/desktop_drop.dart';
@@ -121,7 +122,9 @@ class ImageGenRequest {
 // Notifier
 // ---------------------------------------------------------------------------
 
-final desktopImageEngineProvider = Provider<SdEngine>((ref) => SdEngine());
+final desktopImageEngineProvider = Provider<SdEngine>(
+  (ref) => SdEngine(cpuVariant: () => ref.read(settingsProvider).cpuVariant),
+);
 
 class _ImageGenNotifier extends Notifier<_ImageGenState> {
   late SdEngine _engine;
@@ -436,10 +439,15 @@ class _ImageGenNotifier extends Notifier<_ImageGenState> {
       if (entry.data['kind'] == 'video') {
         // Our engine writes MJPG AVI. Read compressed frame chunks one at a
         // time, retaining only decoded preview frames, as generation does.
-        frames.addAll(await decodeHistoryVideo(store.media(entry)));
+        frames.addAll(
+          await DeviceEncryption.instance.withPlaintext(
+            store.media(entry),
+            decodeHistoryVideo,
+          ),
+        );
       } else {
         final codec = await ui.instantiateImageCodec(
-          await store.media(entry).readAsBytes(),
+          await DeviceEncryption.instance.read(store.media(entry)),
         );
         frames.add((await codec.getNextFrame()).image);
         codec.dispose();
@@ -506,7 +514,9 @@ class _ImageGenNotifier extends Notifier<_ImageGenState> {
     final path = saved?.toFilePath();
     if (path == null) return null;
     if (!p.equals(p.normalize(path), p.normalize(source.path))) {
-      await source.copy(path);
+      await File(
+        path,
+      ).writeAsBytes(await DeviceEncryption.instance.read(source), flush: true);
     }
     return path;
   }
@@ -689,6 +699,9 @@ class DesktopImageGenPage extends ConsumerStatefulWidget {
 }
 
 class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
+  /// Decrypted history thumbnails by path (entries are never rewritten in
+  /// place: a new creation gets a new id).
+  final _thumbnails = <String, Future<Uint8List>>{};
   late final _ImageGenNotifier _notifier;
   final _historyScroll = ScrollController();
 
@@ -928,13 +941,26 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
                   fit: StackFit.expand,
                   children: [
                     if (store != null)
-                      Image.file(
-                        store.thumbnail(item),
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => Icon(
-                          Icons.broken_image_outlined,
-                          color: c.textFaint,
+                      FutureBuilder<Uint8List>(
+                        // Cached: the page rebuilds on every progress step.
+                        future: _thumbnails.putIfAbsent(
+                          store.thumbnail(item).path,
+                          () => DeviceEncryption.instance.read(
+                            store.thumbnail(item),
+                          ),
                         ),
+                        builder: (context, snapshot) => snapshot.hasData
+                            ? Image.memory(
+                                snapshot.data!,
+                                fit: BoxFit.cover,
+                                gaplessPlayback: true,
+                              )
+                            : snapshot.hasError
+                            ? Icon(
+                                Icons.broken_image_outlined,
+                                color: c.textFaint,
+                              )
+                            : const SizedBox.shrink(),
                       ),
                     if (item.data['kind'] == 'video')
                       Align(
@@ -1253,7 +1279,7 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
-          width: 300,
+          width: 340,
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -1293,11 +1319,17 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
                     // The closed field shows the model alone; the open list
                     // adds a delete button to downloaded models (owner
                     // 2026-11-12).
+                    // The closed field shows the name alone; status and
+                    // size live in the card below (owner 2026-11-16).
                     selectedItemBuilder: (_) => [
                       for (final m in models)
-                        ImageGenModelOption(
-                          model: m,
-                          recommended: recommended.contains(m.id),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            m.displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                     ],
                     items: [
@@ -1324,6 +1356,7 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
                             if (m != null) _chooseModel(m);
                           },
                   ),
+                  const SizedBox(height: 6),
                   Align(
                     alignment: Alignment.centerLeft,
                     child: TextButton.icon(
@@ -1333,6 +1366,7 @@ class _DesktopImageGenPageState extends ConsumerState<DesktopImageGenPage> {
                       label: Text(context.l10n.imageAddModel),
                     ),
                   ),
+                  const SizedBox(height: 8),
                   _ModelFiles(model: model, state: download),
                   if (download.status == ImageGenModelStatus.ready) ...[
                     const SizedBox(height: 12),
@@ -1614,132 +1648,173 @@ class _ModelFiles extends ConsumerWidget {
       }
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(switch (model.id) {
-          'nomos2-hq-mosr' => context.l10n.imageBlurbSharp,
-          'realesrgan-x4plus' => context.l10n.imageBlurbClean,
-          'qwen-image-2.1-q8' => context.l10n.imageBlurbQwen,
-          'qwen-image-2.1-q4k' => context.l10n.imageBlurbQwenFast,
-          'wan-2.2-ti2v-5b-q4km' => context.l10n.imageBlurbWan,
-          'ltx-2.3-22b-distilled-q4km' => context.l10n.imageBlurbLtx,
-          _ => model.blurb,
-        }, style: caption),
-        const SizedBox(height: 4),
-        Text(
-          '${context.l10n.imageFileCount(model.files.length)}, '
-          '${_gb(model.sizeBytes)} · '
-          '${model.license}',
-          style: TextStyle(fontSize: 11, color: c.textFaint),
-        ),
-        if (state.missingFiles.isNotEmpty)
-          Text(
-            context.l10n.imageMissingFiles(state.missingFiles.join(', ')),
-            style: caption,
-          ),
-        const SizedBox(height: AppSpace.row),
-        switch (state.status) {
-          ImageGenModelStatus.ready =>
-            model.imported
-                ? const SizedBox.shrink()
-                : Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: remove,
-                      icon: const Icon(Icons.delete_outline, size: 16),
-                      label: Text(context.l10n.imageDeleteFiles),
-                    ),
-                  ),
-          ImageGenModelStatus.downloading => Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              LinearProgressIndicator(value: state.received / model.sizeBytes),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      context.l10n.imageDownloaded(
-                        _gb(state.received),
-                        _gb(model.sizeBytes),
-                      ),
-                      style: caption,
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () => downloads.pause(model),
-                    child: Text(context.l10n.imagePause),
-                  ),
-                ],
+    final t = context.l10n;
+    final ready = state.status == ImageGenModelStatus.ready;
+    final downloading = state.status == ImageGenModelStatus.downloading;
+    final partial = !ready && state.received > 0;
+    final fraction = (state.received / model.sizeBytes).clamp(0.0, 1.0);
+    final percent =
+        '${(fraction * 100).toStringAsFixed(fraction < 0.1 ? 1 : 0)} %';
+    Future<void> removeUnused() async {
+      try {
+        final freed = await downloads.removeUnusedParts();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                freed > 0
+                    ? t.imageUnusedPartsFreed(_gb(freed))
+                    : t.imageNoUnusedParts,
               ),
-            ],
-          ),
-          ImageGenModelStatus.missing => Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              DesktopFocusRing(
-                child: FilledButton.icon(
-                  onPressed: () => downloads.download(model),
-                  icon: const Icon(Icons.download_rounded, size: 16),
-                  label: Text(
-                    state.received > 0
-                        ? context.l10n.imageResumeDownload
-                        : context.l10n.imageDownload(_gb(model.sizeBytes)),
-                  ),
-                ),
-              ),
-              if (state.error != null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  state.error!,
-                  style: TextStyle(fontSize: 12, color: c.danger),
-                ),
-              ],
-            ],
-          ),
-        },
-        if (model.imported)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              key: Key('image-remove-imported-${model.id}'),
-              onPressed: remove,
-              icon: const Icon(Icons.remove_circle_outline, size: 16),
-              label: Text(context.l10n.imageRemoveModel),
             ),
+          );
+        }
+      } catch (_) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(t.desktopChatActionFailed)));
+        }
+      }
+    }
+
+    // One card for the chosen model: what it is, its size and licence,
+    // where the download stands, and its actions (owner 2026-11-16).
+    return Container(
+      key: const Key('image-model-card'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: AppDesign.radius(AppDesign.rMd),
+        border: Border.all(color: c.hairline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            model.displayName,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: context.text.body.copyWith(fontWeight: FontWeight.w600),
           ),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton(
-            key: const Key('image-remove-unused'),
-            style: TextButton.styleFrom(foregroundColor: c.textMuted),
-            onPressed: state.status == ImageGenModelStatus.downloading
-                ? null
-                : () async {
-                    try {
-                      await downloads.removeUnusedParts();
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(context.l10n.imageUnusedPartsRemoved),
-                          ),
-                        );
-                      }
-                    } catch (_) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(context.l10n.desktopChatActionFailed),
-                          ),
-                        );
-                      }
-                    }
-                  },
-            child: Text(context.l10n.imageRemoveUnusedParts),
+          const SizedBox(height: 4),
+          Text(switch (model.id) {
+            'nomos2-hq-mosr' => t.imageBlurbSharp,
+            'realesrgan-x4plus' => t.imageBlurbClean,
+            'qwen-image-2.1-q8' => t.imageBlurbQwen,
+            'qwen-image-2.1-q4k' => t.imageBlurbQwenFast,
+            'wan-2.2-ti2v-5b-q4km' => t.imageBlurbWan,
+            'ltx-2.3-22b-distilled-q4km' => t.imageBlurbLtx,
+            _ => model.blurb,
+          }, style: caption),
+          const SizedBox(height: 6),
+          Text(
+            [
+              _gb(model.sizeBytes),
+              t.imageFileCount(model.files.length),
+              model.license,
+            ].join(' · '),
+            style: TextStyle(fontSize: 11, color: c.textFaint),
           ),
-        ),
-      ],
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Icon(
+                ready
+                    ? Icons.check_circle_outline
+                    : downloading
+                    ? Icons.downloading_rounded
+                    : Icons.download_outlined,
+                size: 15,
+                color: ready ? c.accent : c.textMuted,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  ready
+                      ? t.imageModelReady
+                      : partial || downloading
+                      ? '${t.imageModelPartial} · $percent'
+                      : t.imageModelNotDownloaded,
+                  style: caption,
+                ),
+              ),
+              // The file list only on demand.
+              if (!ready && state.missingFiles.isNotEmpty)
+                Tooltip(
+                  key: const Key('image-missing-files'),
+                  message: t.imageMissingFiles(state.missingFiles.join('\n')),
+                  child: Icon(Icons.info_outline, size: 15, color: c.textMuted),
+                ),
+            ],
+          ),
+          if (partial || downloading) ...[
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: AppDesign.radius(AppDesign.rFull),
+              child: LinearProgressIndicator(value: fraction, minHeight: 4),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              t.imageDownloaded(_gb(state.received), _gb(model.sizeBytes)),
+              style: TextStyle(fontSize: 11, color: c.textFaint),
+            ),
+          ],
+          if (state.error != null) ...[
+            const SizedBox(height: 6),
+            Text(state.error!, style: TextStyle(fontSize: 12, color: c.danger)),
+          ],
+          const SizedBox(height: 12),
+          if (downloading)
+            OutlinedButton.icon(
+              onPressed: () => downloads.pause(model),
+              icon: const Icon(Icons.pause_rounded, size: 16),
+              label: Text(t.imagePause),
+            )
+          else if (!ready)
+            DesktopFocusRing(
+              child: FilledButton.icon(
+                onPressed: () => downloads.download(model),
+                icon: const Icon(Icons.download_rounded, size: 16),
+                label: Text(
+                  partial
+                      ? t.imageResumeDownload
+                      : t.imageDownload(_gb(model.sizeBytes)),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 4,
+            runSpacing: 0,
+            children: [
+              if (ready && !model.imported)
+                TextButton.icon(
+                  style: TextButton.styleFrom(foregroundColor: c.textMuted),
+                  onPressed: remove,
+                  icon: const Icon(Icons.delete_outline, size: 16),
+                  label: Text(t.imageDeleteFiles),
+                ),
+              if (model.imported)
+                TextButton.icon(
+                  key: Key('image-remove-imported-${model.id}'),
+                  style: TextButton.styleFrom(foregroundColor: c.textMuted),
+                  onPressed: remove,
+                  icon: const Icon(Icons.remove_circle_outline, size: 16),
+                  label: Text(t.imageRemoveModel),
+                ),
+              TextButton.icon(
+                key: const Key('image-remove-unused'),
+                style: TextButton.styleFrom(foregroundColor: c.textMuted),
+                onPressed: downloading ? null : removeUnused,
+                icon: const Icon(Icons.cleaning_services_outlined, size: 16),
+                label: Text(t.imageRemoveUnusedParts),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

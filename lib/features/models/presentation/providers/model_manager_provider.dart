@@ -54,6 +54,8 @@ String? contextCapNote(AppLocalizations t, Map<String, dynamic> metrics) {
   final size = (s['contextSize'] as num?)?.toInt() ?? 0;
   final asked = (s['contextRequested'] as num?)?.toInt() ?? 0;
   if (size <= 0 || size >= asked) return null;
+  // Auto picks the length that fits; that is not a shortened request.
+  if (s['contextAuto'] == true) return null;
   return switch (s['contextCap']) {
     'train' => t.contextCapTrain(tokenCount(size)),
     'memory' => t.contextCapMemory(tokenCount(size)),
@@ -757,12 +759,48 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         );
       }
       if (stopped) Error.throwWithStackTrace(const ModelLoadStopped(), st);
-      if (memory != null) Error.throwWithStackTrace(memory, st);
+      if (memory != null) {
+        _offerLoadAnyway(info, forChat: forChat, vision: vision);
+        Error.throwWithStackTrace(memory, st);
+      }
       rethrow;
     } finally {
       _loadStopped = false;
       _stopLoadProgress();
     }
+  }
+
+  /// Models the user chose to load past the free-memory estimate this
+  /// session (GitHub issue #5: phones report little free RAM while Android
+  /// can still reclaim plenty, so the estimate refused models that run).
+  final _loadAnyway = <String>{};
+
+  /// After a memory refusal: a warning with a "Load anyway" button that
+  /// retries [info] without the free-memory check.
+  void _offerLoadAnyway(
+    ModelInfo info, {
+    required bool forChat,
+    required bool vision,
+  }) {
+    if (_loadAnyway.contains(info.id) || !ref.mounted) return;
+    final t = stringsFor(ref.read(settingsProvider).localeCode);
+    ref
+        .read(islandProvider.notifier)
+        .toast(
+          t.loadAnywayWarning,
+          tone: IslandTone.warning,
+          icon: Icons.memory_rounded,
+          duration: const Duration(seconds: 12),
+          action: IslandAction(t.loadAnyway, () {
+            ref.read(islandProvider.notifier).dismissToast();
+            _loadAnyway.add(info.id);
+            unawaited(
+              loadModel(info, forChat: forChat, vision: vision).catchError(
+                (Object e) => _log.warning('Load anyway of ${info.id}', e),
+              ),
+            );
+          }),
+        );
   }
 
   bool _loadStopped = false;
@@ -816,6 +854,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       mmprojPath: plan.load.mmprojPath,
       adapters: plan.adapters,
       draftModelPath: plan.load.draftModelPath,
+      memoryGuard: !_loadAnyway.contains(info.id),
     );
     if (plan.ternaryCpu && plan.backend == 'vulkan' && !_ternaryCpuNoticed) {
       // Once: a send that reuses the loaded model never gets here, so this

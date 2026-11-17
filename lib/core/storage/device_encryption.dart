@@ -70,6 +70,7 @@ class DeviceEncryption {
     return [
       Directory(p.join(support.path, 'drafts')),
       Directory(p.join(support.path, 'document_embeddings')),
+      Directory(p.join(support.path, 'creations')),
       Directory(p.join(data.path, 'attachments')),
       Directory(p.join(data.path, 'made')),
     ];
@@ -239,6 +240,47 @@ class DeviceEncryption {
 
   Future<Uint8List> read(File file) =>
       _ordered(() async => _decode(await (await _source(file)).readAsBytes()));
+
+  /// Platform consumers need a plaintext path, never the stored envelope.
+  /// A file that is not encrypted is used in place; an encrypted one is
+  /// decrypted to a private temporary copy, deleted after [use] (or
+  /// [keepFor] later, for a share sheet whose target reads it afterwards).
+  Future<T> withPlaintext<T>(
+    File file,
+    Future<T> Function(File) use, {
+    Duration? keepFor,
+  }) async {
+    final head = <int>[];
+    try {
+      await for (final chunk in (await _source(file)).openRead(0, 8)) {
+        head.addAll(chunk);
+      }
+    } on FileSystemException {
+      return use(file);
+    }
+    if (!isEncrypted(head)) return use(file);
+    final bytes = await read(file);
+    final directory = await Directory.systemTemp.createTemp('ondevice-clear-');
+    Future<void> remove() async {
+      try {
+        await directory.delete(recursive: true);
+      } on FileSystemException {
+        // Still open elsewhere; the system temp cleanup removes it.
+      }
+    }
+
+    try {
+      final clear = File(p.join(directory.path, p.basename(file.path)));
+      await clear.writeAsBytes(bytes, flush: true);
+      return await use(clear);
+    } finally {
+      if (keepFor == null) {
+        await remove();
+      } else {
+        unawaited(Future<void>.delayed(keepFor, remove));
+      }
+    }
+  }
 
   /// Validate an existing envelope before replacing it, even when switched off.
   Future<void> write(File file, List<int> bytes) => _ordered(() async {

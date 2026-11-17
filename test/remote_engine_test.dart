@@ -1,3 +1,5 @@
+import 'package:ondevice_llm/core/l10n/l10n.dart';
+import 'package:ondevice_llm/features/settings/presentation/remote_probe_summary.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -291,7 +293,10 @@ void main() {
       expect(report.health, 'ok');
       expect(report.models.single.supports('vision'), true);
       expect(report.tools, ['search']);
-      expect(report.summary, contains('1 server tool detected'));
+      expect(
+        remoteProbeSummary(stringsFor('en'), report),
+        contains('1 server tool detected'),
+      );
     },
   );
 
@@ -601,7 +606,7 @@ void main() {
     // Hosted APIs are not probed for health or tools.
     final report = await engine.probe(hosted('gemini'));
     expect(report.health, 'n/a');
-    expect(report.summary, 'Connected · 1 model');
+    expect(remoteProbeSummary(stringsFor('en'), report), 'Connected · 1 model');
     expect(await engine.listModels(hosted('perplexity')), isEmpty);
   });
 

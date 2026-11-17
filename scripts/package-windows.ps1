@@ -220,6 +220,21 @@ try {
     }
   }
 
+  # Only ondevice_llm_avx512.dll and ggml's per-CPU ggml-cpu-<level>.dll
+  # plugins (chosen by CPU feature score at run time) may carry AVX-512 code
+  # (GitHub issue #4).
+  # -Include is ignored with -LiteralPath, which also checked NVIDIA's own
+  # CUDA libraries (they dispatch AVX-512 at run time); filter by name.
+  $portable = @(Get-ChildItem -LiteralPath $bundleDir -Recurse -File |
+    Where-Object { $_.Name -match '^(ondevice_.*\.dll|dg_host\.exe|ggml.*\.dll|llama.*\.dll)$' } |
+    Where-Object { $_.Name -ne 'ondevice_llm_avx512.dll' -and $_.Name -notmatch '^ggml-cpu-' } | ForEach-Object { $_.FullName })
+  if ($portable) { & (Join-Path $PSScriptRoot 'check-no-avx512.ps1') -Path $portable }
+  foreach ($required in @('ondevice_sd_cpu.dll', 'ondevice_sd_compat.dll')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $bundleDir $required))) {
+      throw "Bundle is missing $required (scripts/build-windows-sd.ps1 and -Compat)."
+    }
+  }
+
   if ($Vulkan -and -not (Test-Path -LiteralPath (Join-Path $bundleDir 'ondevice_llm_vulkan.dll'))) {
     throw 'Vulkan bundle is missing ondevice_llm_vulkan.dll.'
   }
@@ -230,6 +245,8 @@ try {
     $signFiles = @(
       (Join-Path $bundleDir 'ondevice_llm.exe'),
       (Join-Path $bundleDir 'ondevice_sd.dll'),
+      (Join-Path $bundleDir 'ondevice_sd_cpu.dll'),
+      (Join-Path $bundleDir 'ondevice_sd_compat.dll'),
       (Join-Path $bundleDir 'diffusiongemma/dg_host.exe')
     ) + @(Get-ChildItem -LiteralPath $bundleDir -Filter 'ondevice_llm*.dll' -File | ForEach-Object { $_.FullName })
     foreach ($file in $signFiles) {

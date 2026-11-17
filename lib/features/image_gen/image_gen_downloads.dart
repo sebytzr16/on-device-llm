@@ -211,7 +211,13 @@ class ImageGenDownloadsNotifier extends Notifier<ImageGenDownloadsState> {
   }) async {
     var received = 0, missingBytes = 0;
     final missing = <String>[];
+    // A file another installed model owns (the upscaler "Sharp" shares
+    // with Qwen-Image) is not this model's download: counting it showed
+    // "Partially downloaded 0.2 %" and a Delete that could remove nothing
+    // (owner 2026-11-16).
+    final held = await _heldByOthers(model);
     for (final f in model.files) {
+      if (held.contains(f.fileName)) continue;
       final file = await ModelStorage.modelFile(f.fileName);
       if (await _verified(file: file, f: f)) {
         received += f.sizeBytes;
@@ -233,6 +239,32 @@ class ImageGenDownloadsNotifier extends Notifier<ImageGenDownloadsState> {
       paused: paused,
       error: error,
     );
+  }
+
+  /// Files of [model] that another model with all its files in place uses.
+  Future<Set<String>> _heldByOthers(ImageGenModel model) async {
+    final own = model.files.map((f) => f.fileName).toSet();
+    final held = <String>{};
+    List<ImageGenModel> others;
+    try {
+      others = imageGenManagedModels(ref.read(imageGenImportsProvider));
+    } catch (_) {
+      return held;
+    }
+    for (final other in others) {
+      if (other.id == model.id) continue;
+      final shared = other.files
+          .map((f) => f.fileName)
+          .where(own.contains)
+          .toSet();
+      if (shared.isEmpty) continue;
+      try {
+        if (await _hasFiles(other)) held.addAll(shared);
+      } catch (_) {
+        // No storage (tests): nothing is held.
+      }
+    }
+    return held;
   }
 
   Future<void> _refresh({bool resumePending = false}) async {
@@ -401,15 +433,16 @@ class ImageGenDownloadsNotifier extends Notifier<ImageGenDownloadsState> {
 
   /// Removes orphaned catalog components, keeping installed models and every
   /// active download. File leases still protect loaded runtimes.
-  Future<void> _maintain(Future<void> Function() action) {
+  Future<T> _maintain<T>(Future<T> Function() action) {
     final operation = _maintenance.then((_) => action());
     _maintenance = operation.then((_) {}, onError: (Object _, StackTrace _) {});
     return operation;
   }
 
-  Future<void> removeUnusedParts() => _maintain(_removeUnusedParts);
+  /// Bytes freed; 0 when nothing was unused.
+  Future<int> removeUnusedParts() => _maintain(_removeUnusedParts);
 
-  Future<void> _removeUnusedParts() async {
+  Future<int> _removeUnusedParts() async {
     await ref.read(imageGenImportsProvider.notifier).ready;
     final catalog = imageGenManagedModels(ref.read(imageGenImportsProvider));
     final keep = <String>{};
@@ -426,6 +459,14 @@ class ImageGenDownloadsNotifier extends Notifier<ImageGenDownloadsState> {
     final paths = [
       for (final name in unused) (await ModelStorage.modelFile(name)).path,
     ];
+    var freed = 0;
+    for (final path in paths) {
+      for (final file in [File(path), File('$path.part')]) {
+        try {
+          if (await file.exists()) freed += await file.length();
+        } catch (_) {}
+      }
+    }
     final guard = ModelFileLeases.instance.beginMutation(paths);
     try {
       for (final name in unused) {
@@ -435,6 +476,8 @@ class ImageGenDownloadsNotifier extends Notifier<ImageGenDownloadsState> {
     } finally {
       guard.release();
     }
+    await _refresh();
+    return freed;
   }
 
   Future<void> delete(ImageGenModel model) => _maintain(() async {

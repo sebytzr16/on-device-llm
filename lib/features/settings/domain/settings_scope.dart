@@ -162,6 +162,20 @@ class SettingsResolver {
           origin[e.key] = layer.id;
           (requested[e.key] ??= []).add((layer.id, e.value));
         }
+        // A context length chosen in a layer saved before Auto existed (or
+        // set by a feature such as Goals) is kept: it turns Auto off. The
+        // device and model-card layers only suggest a length.
+        final hand = layer.id == SettingsLayer.idGlobal
+            ? global.explicitOverrides.contains('contextSize') &&
+                  !global.explicitOverrides.contains('contextAuto')
+            : layer.id != SettingsLayer.idDevice &&
+                  layer.id != SettingsLayer.idRecommended &&
+                  layer.values.containsKey('contextSize') &&
+                  !layer.values.containsKey('contextAuto');
+        if (hand && base.containsKey('contextAuto')) {
+          merged['contextAuto'] = false;
+          origin['contextAuto'] = layer.id;
+        }
       }
       return (merged, origin, requested);
     }

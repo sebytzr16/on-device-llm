@@ -6,6 +6,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'local_backup_service_test.dart' show BackupPaths;
 import 'package:ondevice_llm/data/local/database/app_database.dart';
@@ -73,6 +74,7 @@ void main() {
   late PathProviderPlatform previousPaths;
 
   setUp(() async {
+    SharedPreferences.setMockInitialValues({});
     files = await Directory.systemTemp.createTemp('audit-fixes-');
     previousPaths = PathProviderPlatform.instance;
     PathProviderPlatform.instance = BackupPaths(files.path, files.path);

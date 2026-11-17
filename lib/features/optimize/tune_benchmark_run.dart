@@ -3,9 +3,9 @@ import 'dart:math' as math;
 
 import 'package:path/path.dart' as p;
 
-import '../features/models/domain/entities/model_info.dart';
-import '../features/settings/domain/entities/inference_settings.dart';
-import '../inference/engine/text_engine.dart';
+import '../models/domain/entities/model_info.dart';
+import '../settings/domain/entities/inference_settings.dart';
+import '../../inference/engine/text_engine.dart';
 import 'benchmark_receipt.dart';
 import 'model_tuner.dart';
 

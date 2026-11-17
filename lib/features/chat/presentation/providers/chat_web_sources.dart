@@ -183,6 +183,7 @@ extension _ChatWebSources on ChatNotifier {
     InferenceSettings settings,
     String question, {
     String system = '',
+    List<ToolSpec> tools = const [],
     List<Map<String, Object>> history = const [],
   }) async {
     Future<String>? pending;
@@ -204,6 +205,8 @@ extension _ChatWebSources on ChatNotifier {
               },
             ],
             fallbackTemplate: model.family.fallbackTemplate,
+            tools: tools,
+            toolChoice: 'none',
             settings: settings.copyWith(
               maxTokens: 8,
               temperature: 0,

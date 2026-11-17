@@ -55,6 +55,8 @@ class ProjectFileTools {
   final Future<bool> Function(FileChange) approve;
   final bool Function() permitted;
   final void Function(FileChange)? changed;
+  // Tests can fail publication after staging, without modifying the original.
+  final Future<void> Function(File temporary, String target)? publish;
   Future<void> _pending = Future.value();
   ProjectFileTools({
     required this.folder,
@@ -62,6 +64,7 @@ class ProjectFileTools {
     required this.approve,
     required this.permitted,
     this.changed,
+    this.publish,
   });
 
   static final specs = <ToolSpec>[
@@ -345,6 +348,26 @@ class ProjectFileTools {
     return done.future;
   }
 
+  // A sibling rename publishes only a fully flushed file, including for Undo.
+  Future<void> _replace(
+    String target,
+    List<int> bytes,
+    Future<void> Function() validate,
+  ) async {
+    final temp = File('$target.${const Uuid().v4()}.tmp');
+    try {
+      await temp.writeAsBytes(bytes, flush: true);
+      await validate();
+      if (publish == null) {
+        await temp.rename(target);
+      } else {
+        await publish!(temp, target);
+      }
+    } finally {
+      if (await temp.exists()) await temp.delete();
+    }
+  }
+
   Future<String> _run(ToolCall call) async {
     _check();
     final a = call.args;
@@ -451,30 +474,54 @@ class ProjectFileTools {
     if (originalBytes != null) {
       await backup.writeAsBytes(originalBytes, flush: true);
     }
-    await Directory(p.dirname(target)).create(recursive: true);
-    if (await resolve(path, write: true) != target ||
-        await _snapshot(target) != before) {
-      throw StateError('Path or file changed.');
-    }
-    await File(target).writeAsString(after, flush: true);
-    change.applied = true;
+    // Keep the recovery mapping before touching the destination.
+    await File('${backup.path}.json').writeAsString(
+      jsonEncode({
+        'target': target,
+        'backup': originalBytes == null ? null : backup.path,
+        'created': before == null,
+      }),
+      flush: true,
+    );
+    final publication = Completer<void>();
     change.undo = () async {
+      // An Undo click during publication must wait for its final outcome.
+      await publication.future;
       if (change.undone) return;
+      final current = await _snapshot(target);
       if (await resolve(path, write: true, checkAccess: false) != target ||
-          await _snapshot(target) != after) {
+          (current != after && (change.applied || current != before))) {
         throw StateError('File has changed since this edit; undo refused.');
       }
-      if (before == null) {
-        await File(target).delete();
-      } else {
-        await File(
-          target,
-        ).writeAsBytes(await backup.readAsBytes(), flush: true);
+      if (current != before) {
+        if (before == null) {
+          await File(target).delete();
+        } else {
+          await _replace(target, await backup.readAsBytes(), () async {
+            if (await resolve(path, write: true, checkAccess: false) !=
+                    target ||
+                await _snapshot(target) != current) {
+              throw StateError('Path or file changed.');
+            }
+          });
+        }
       }
       change.undone = true;
       changed?.call(change);
     };
-    changed?.call(change);
+    try {
+      await Directory(p.dirname(target)).create(recursive: true);
+      await _replace(target, utf8.encode(after), () async {
+        if (await resolve(path, write: true) != target ||
+            await _snapshot(target) != before) {
+          throw StateError('Path or file changed.');
+        }
+      });
+      change.applied = true;
+    } finally {
+      publication.complete();
+      changed?.call(change);
+    }
     return 'Applied change to $path. The user can Undo it in chat.';
   }
 }

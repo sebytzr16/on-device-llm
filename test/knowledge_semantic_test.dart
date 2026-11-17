@@ -1,3 +1,4 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -82,6 +83,7 @@ void main() {
   late Directory files;
   late PathProviderPlatform previousPaths;
   setUp(() async {
+    SharedPreferences.setMockInitialValues({});
     files = await Directory.systemTemp.createTemp('knowledge-semantic-');
     previousPaths = PathProviderPlatform.instance;
     PathProviderPlatform.instance = BackupPaths(files.path, files.path);

@@ -112,6 +112,11 @@ endif()
 # Copy the native assets provided by the build.dart from all packages.
 set(DG_RUNTIME "${CMAKE_CURRENT_SOURCE_DIR}/../native/out/windows-x64/diffusiongemma")
 if(EXISTS "${DG_RUNTIME}/dg_host.exe")
+  # Re-copy fully: a stale host-tuned ggml-cpu.dll left in the bundle would
+  # crash AVX2-only CPUs (GitHub issue #4).
+  install(CODE "
+    file(REMOVE_RECURSE \"${INSTALL_BUNDLE_LIB_DIR}/diffusiongemma\")
+    " COMPONENT Runtime)
   install(DIRECTORY "${DG_RUNTIME}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
@@ -136,10 +141,14 @@ install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   COMPONENT Runtime)
 
 # Image generation bridge (optional — only if built)
-set(SD_DLL "${CMAKE_CURRENT_SOURCE_DIR}/../native/out/windows-x64/ondevice_sd.dll")
-if(EXISTS "${SD_DLL}")
-  install(FILES "${SD_DLL}" DESTINATION "${CMAKE_INSTALL_PREFIX}")
-endif()
+# ondevice_sd.dll is the CUDA build; _cpu (AVX2) and _compat (SSE4.2) serve
+# every other PC. Dart picks one at run time (GitHub issue #4).
+foreach(SD_NAME ondevice_sd ondevice_sd_cpu ondevice_sd_compat)
+  set(SD_DLL "${CMAKE_CURRENT_SOURCE_DIR}/../native/out/windows-x64/${SD_NAME}.dll")
+  if(EXISTS "${SD_DLL}")
+    install(FILES "${SD_DLL}" DESTINATION "${CMAKE_INSTALL_PREFIX}")
+  endif()
+endforeach()
 
 # Hash only after every DLL has been installed into the release bundle.
 install(CODE "

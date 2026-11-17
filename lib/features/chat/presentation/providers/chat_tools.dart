@@ -38,7 +38,7 @@ extension _ChatTools on ChatNotifier {
     // On the phone, neither does a message with nothing to look up or work
     // out: the descriptions cost about 700 tokens before the first word
     // (review 2026-09-28). A chat that had tools keeps them.
-    final chat = register ? _chatState.chatId : null;
+    final chat = _chatState.chatId;
     // Phone actions (alarms, calls, apps) have no Windows equivalent.
     final phoneActions =
         !DesktopHost.active &&
@@ -279,8 +279,19 @@ extension _ChatTools on ChatNotifier {
         );
       }
       // Evidence is already in the prompt: offering the web tools too
-      // invites a needless extra round (each one a full request).
-      if (sources.isNotEmpty && !researchTurn && !remoteBrain) {
+      // invites a needless extra round (each one a full request). A local
+      // cached model keeps them listed, so its system/tools prefix stays the
+      // one the warm-up and earlier turns read (a recurrent memory re-reads
+      // everything after the first difference), and is told instead.
+      if (sources.isNotEmpty &&
+          !researchTurn &&
+          !remoteBrain &&
+          !settings.usesRemote &&
+          settings.promptCache) {
+        turnNotes.write(
+          '\nThe sources below are already provided. Answer from them without calling search tools unless they do not answer the question.',
+        );
+      } else if (sources.isNotEmpty && !researchTurn && !remoteBrain) {
         tools = [
           for (final t in tools)
             if (!const {
@@ -292,8 +303,10 @@ extension _ChatTools on ChatNotifier {
               t,
         ];
       }
-      if (tools.isNotEmpty && chat != null) _toolChats.add(chat);
-      if (phoneActions && !remoteBrain && chat != null) _actionChats.add(chat);
+      if (register && tools.isNotEmpty && chat != null) _toolChats.add(chat);
+      if (register && phoneActions && !remoteBrain && chat != null) {
+        _actionChats.add(chat);
+      }
       nativeTools =
           tools.isNotEmpty &&
           (settings.usesRemote || engine.metrics['supportsTools'] == true);

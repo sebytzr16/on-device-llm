@@ -48,15 +48,6 @@ class RemoteServerReport {
     required this.health,
     required this.tools,
   });
-
-  String get summary {
-    final base =
-        'Connected · ${models.length} model${models.length == 1 ? '' : 's'}';
-    // Hosted APIs are not probed for health or server tools.
-    if (health == 'n/a') return base;
-    return '$base · health $health'
-        '${tools.isEmpty ? ' · no server tools advertised' : ' · ${tools.length} server tool${tools.length == 1 ? '' : 's'} detected'}';
-  }
 }
 
 /// Chat client for the connection the user selected in Settings > Remote:

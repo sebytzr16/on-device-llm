@@ -13,23 +13,26 @@ ModelInfo _m(String id, int gb) => ModelInfo(
 );
 
 void main() {
-  test('fitting models first, bigger fits before smaller, too large last', () {
-    final small = _m('small', 1);
-    final mid = _m('mid', 5);
-    final big = _m('big', 40);
-    final tight = _m('tight', 7);
-    ModelFit fit(ModelInfo m) => switch (m.id) {
-      'big' => ModelFit.tooLarge,
-      'tight' => ModelFit.tight,
-      _ => ModelFit.fits,
-    };
-    final ranked = rankRecommended(
-      [big, small, tight, mid],
-      fit: fit,
-      desktop: false,
-    );
-    expect(ranked.map((m) => m.id), ['mid', 'small', 'tight', 'big']);
-  });
+  test(
+    'fitting models first, bigger fits before smaller, too large left out',
+    () {
+      final small = _m('small', 1);
+      final mid = _m('mid', 5);
+      final big = _m('big', 40);
+      final tight = _m('tight', 7);
+      ModelFit fit(ModelInfo m) => switch (m.id) {
+        'big' => ModelFit.tooLarge,
+        'tight' => ModelFit.tight,
+        _ => ModelFit.fits,
+      };
+      final ranked = rankRecommended(
+        [big, small, tight, mid],
+        fit: fit,
+        desktop: false,
+      );
+      expect(ranked.map((m) => m.id), ['mid', 'small', 'tight']);
+    },
+  );
 
   test('unknown hardware keeps every model, ordered by size', () {
     final ranked = rankRecommended(

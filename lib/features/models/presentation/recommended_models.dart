@@ -6,7 +6,10 @@ import 'widgets/model_tags.dart';
 /// "Recommended" order for models that are not downloaded yet, ranked by the
 /// hardware this device reports (owner 2026-11-12).
 ///
-/// Models that fit come first, then tight fits, then unknown, then too large.
+/// Models that fit come first, then tight fits, then unknown. A model too
+/// large for this device is not recommended at all (a phone listed
+/// Qwen3.5 9B as "Too large for this device", 2026-11-16); search and
+/// Discover still find it.
 /// Within a group, curated picks come before other entries, and the larger
 /// model comes first: a bigger model that still fits answers better. The
 /// order works for any device; nothing is tuned to one machine.
@@ -25,7 +28,10 @@ List<ModelInfo> rankRecommended(
       catalogMeta[m.id]?.parameterCountB ??
       m.parameterCountB?.toDouble() ??
       m.sizeBytes / 1e9;
-  final indexed = models.indexed.toList();
+  final indexed = models
+      .where((m) => fit(m) != ModelFit.tooLarge)
+      .indexed
+      .toList();
   indexed.sort((a, b) {
     final (ia, ma) = a;
     final (ib, mb) = b;
@@ -38,4 +44,17 @@ List<ModelInfo> rankRecommended(
     return s != 0 ? s : ia.compareTo(ib);
   });
   return [for (final (_, m) in indexed) m];
+}
+
+/// The model to suggest first (first-run guide, owner 2026-11-16): the top
+/// of [rankRecommended] when it fits this device, otherwise none, so the
+/// guide never suggests a model that would not load well.
+ModelInfo? bestFitModel(
+  Iterable<ModelInfo> models, {
+  required ModelFit Function(ModelInfo) fit,
+  required bool desktop,
+}) {
+  final ranked = rankRecommended(models, fit: fit, desktop: desktop);
+  final top = ranked.firstOrNull;
+  return top != null && fit(top) == ModelFit.fits ? top : null;
 }

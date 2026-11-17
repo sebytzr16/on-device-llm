@@ -1,3 +1,4 @@
+import 'optimize_offer.dart';
 import '../features/models/presentation/widgets/download_center.dart';
 import '../core/platform/desktop_preferences.dart';
 import 'model_visibility.dart';
@@ -80,7 +81,7 @@ class DesktopTitleBar extends ConsumerWidget {
               const _CaptionButtons(),
             ],
           ),
-          const Align(child: ModelPickerChip()),
+          const Align(child: DesktopOptimizeOffer(child: ModelPickerChip())),
         ],
       ),
     );
@@ -171,7 +172,7 @@ class ModelPickerChip extends ConsumerWidget {
             ),
             onPressed: busy || models.isLoadingModel
                 ? null
-                : () => _load(context, ref, m),
+                : () => load(context, ref, m),
             child: Text(m.displayName),
           ),
         if (models.isLoadingModel)
@@ -294,7 +295,7 @@ class ModelPickerChip extends ConsumerWidget {
 
   static String _quant(ModelInfo m) => m.quantLabel;
 
-  static Future<void> _load(
+  static Future<void> load(
     BuildContext context,
     WidgetRef ref,
     ModelInfo m,

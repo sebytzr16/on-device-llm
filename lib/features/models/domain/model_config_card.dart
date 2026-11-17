@@ -94,7 +94,7 @@ class ModelConfigCard {
   /// Kept out as well: the context size decides how much memory a load
   /// takes, which belongs to the phone like the hardware group (a 32K card
   /// imported on a smaller phone could fail to load the model).
-  static const excludedKeys = {'contextSize'};
+  static const excludedKeys = {'contextSize', 'contextAuto'};
 
   final String name;
   final ModelRef model;

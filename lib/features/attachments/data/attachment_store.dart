@@ -65,7 +65,7 @@ class AttachmentStore {
     final id = const Uuid().v4();
     final dir = await directory();
     final file = File(p.join(dir.path, '$id.png'));
-    await file.writeAsBytes(png, flush: true);
+    await DeviceEncryption.instance.write(file, png);
     return Attachment(
       id: id,
       kind: AttachmentKind.image,

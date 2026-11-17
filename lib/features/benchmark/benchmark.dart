@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/device/thermal.dart';
-import '../../desktop/benchmark_receipt.dart';
+import '../optimize/benchmark_receipt.dart';
 import '../../core/providers/shared_providers.dart';
 import '../../inference/engine/text_engine.dart';
 import '../knowledge/knowledge_store.dart';

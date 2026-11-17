@@ -1,3 +1,4 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -23,10 +24,12 @@ HistoryEntry entry(int time, {String kind = 'picture'}) => HistoryEntry(
 );
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   group('creation history', () {
     late Directory root;
     late CreationHistoryStore store;
     setUp(() async {
+      SharedPreferences.setMockInitialValues({});
       root = await Directory.systemTemp.createTemp('creation-history-');
       store = CreationHistoryStore(root, cap: 2);
     });

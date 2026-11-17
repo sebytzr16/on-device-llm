@@ -20,6 +20,9 @@ class ChatEmptyState extends StatelessWidget {
 
   /// Opens Goals: multi-step research with a cited report.
   final VoidCallback? onResearchGoal;
+
+  /// Opens Models when there is no model yet (first-run guide).
+  final VoidCallback? onGetModel;
   const ChatEmptyState({
     super.key,
     required this.hasModel,
@@ -27,11 +30,15 @@ class ChatEmptyState extends StatelessWidget {
     this.onAskPhoto,
     this.onAskFile,
     this.onResearchGoal,
+    this.onGetModel,
   });
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    // First run (owner 2026-11-16): one clear way to a model, and nothing
+    // that needs a model competing with it.
+    final getModel = !hasModel && remoteHost == null && onGetModel != null;
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(
@@ -53,7 +60,12 @@ class ChatEmptyState extends StatelessWidget {
             SpringEntrance(
               delay: SpringEntrance.cascade(1, stepMs: 60),
               from: const Offset(0, 18),
-              child: Text(context.l10n.emptyTitle, style: context.text.display),
+              child: Text(
+                getModel
+                    ? context.l10n.firstRunGetModelTitle
+                    : context.l10n.emptyTitle,
+                style: context.text.display,
+              ),
             ),
             const SizedBox(height: AppSpace.md),
             SpringEntrance(
@@ -64,54 +76,82 @@ class ChatEmptyState extends StatelessWidget {
                     ? context.l10n.emptyRemote(remoteHost!)
                     : hasModel
                     ? context.l10n.emptyHasModel
+                    : getModel
+                    ? context.l10n.firstRunGetModelBody
                     : context.l10n.emptyNoModel,
                 style: context.text.bodyMuted,
               ),
             ),
             const SizedBox(height: AppSpace.section),
-            Wrap(
-              spacing: AppSpace.sm,
-              runSpacing: AppSpace.sm,
-              children: [
-                for (final (i, chip) in [
-                  // Goals first and marked with the accent: a different kind
-                  // of task (several searches and a cited report).
-                  if (onResearchGoal != null)
-                    Tooltip(
-                      message: context.l10n.emptyGoalHint,
-                      child: ActionChip(
-                        key: const Key('empty-goal'),
-                        avatar: Icon(
-                          Icons.flag_outlined,
-                          size: 16,
-                          color: c.accent,
-                        ),
-                        label: Text(context.l10n.emptyGoalTitle),
-                        side: BorderSide(color: c.accent),
-                        onPressed: onResearchGoal,
+            if (getModel)
+              SpringEntrance(
+                delay: SpringEntrance.cascade(3, stepMs: 60),
+                child: Pressable(
+                  child: FilledButton.icon(
+                    key: const Key('first-run-get-model'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: c.accent,
+                      foregroundColor: c.onAccent,
+                      minimumSize: const Size(0, AppDesign.actionHeight),
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: AppDesign.radius(AppDesign.rFull),
                       ),
+                      textStyle: context.text.title.copyWith(fontSize: 15),
                     ),
-                  if (onAskPhoto != null)
-                    ActionChip(
-                      key: const Key('ask-photo'),
-                      avatar: const Icon(Icons.photo_camera_outlined, size: 16),
-                      label: Text(context.l10n.askPhoto),
-                      onPressed: onAskPhoto,
-                    ),
-                  if (onAskFile != null)
-                    ActionChip(
-                      key: const Key('ask-file'),
-                      avatar: const Icon(Icons.attach_file, size: 16),
-                      label: Text(context.l10n.askFile),
-                      onPressed: onAskFile,
-                    ),
-                ].indexed)
-                  SpringEntrance(
-                    delay: SpringEntrance.cascade(3 + i, stepMs: 60),
-                    child: Pressable(child: chip),
+                    onPressed: onGetModel,
+                    icon: const Icon(Icons.download_rounded, size: 20),
+                    label: Text(context.l10n.firstRunGetModelButton),
                   ),
-              ],
-            ),
+                ),
+              )
+            else
+              Wrap(
+                spacing: AppSpace.sm,
+                runSpacing: AppSpace.sm,
+                children: [
+                  for (final (i, chip) in [
+                    // Goals first and marked with the accent: a different kind
+                    // of task (several searches and a cited report).
+                    if (onResearchGoal != null)
+                      Tooltip(
+                        message: context.l10n.emptyGoalHint,
+                        child: ActionChip(
+                          key: const Key('empty-goal'),
+                          avatar: Icon(
+                            Icons.flag_outlined,
+                            size: 16,
+                            color: c.accent,
+                          ),
+                          label: Text(context.l10n.emptyGoalTitle),
+                          side: BorderSide(color: c.accent),
+                          onPressed: onResearchGoal,
+                        ),
+                      ),
+                    if (onAskPhoto != null)
+                      ActionChip(
+                        key: const Key('ask-photo'),
+                        avatar: const Icon(
+                          Icons.photo_camera_outlined,
+                          size: 16,
+                        ),
+                        label: Text(context.l10n.askPhoto),
+                        onPressed: onAskPhoto,
+                      ),
+                    if (onAskFile != null)
+                      ActionChip(
+                        key: const Key('ask-file'),
+                        avatar: const Icon(Icons.attach_file, size: 16),
+                        label: Text(context.l10n.askFile),
+                        onPressed: onAskFile,
+                      ),
+                  ].indexed)
+                    SpringEntrance(
+                      delay: SpringEntrance.cascade(3 + i, stepMs: 60),
+                      child: Pressable(child: chip),
+                    ),
+                ],
+              ),
           ],
         ),
       ),

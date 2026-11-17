@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/design/app_dialog.dart';
 import '../../core/island/status_island.dart';
 import '../../core/l10n/l10n.dart';
+import '../../core/design/app_design.dart';
+import '../models/presentation/widgets/model_categories.dart';
 import '../models/presentation/widgets/model_tags.dart';
 import 'domain/entities/image_gen_model.dart';
 import 'image_gen_downloads.dart';
@@ -29,66 +31,58 @@ class ImageGenModelOption extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(imageGenDownloadsProvider).of(model);
     final ready = state.status == ImageGenModelStatus.ready;
+    final c = context.colors;
+    final status = ready
+        ? context.l10n.imageModelReady
+        : state.status == ImageGenModelStatus.downloading || state.received > 0
+        ? '${(100 * state.received / model.sizeBytes).clamp(0, 100).toStringAsFixed(state.received * 100 < model.sizeBytes ? 1 : 0)} %'
+        : context.l10n.imageDownload(
+            bytesLabel(
+              state.missingBytes > 0 ? state.missingBytes : model.sizeBytes,
+            ),
+          );
+    // Name alone on the first line so it never shares room with a chip;
+    // status and "Recommended" go underneath (owner 2026-11-16: the
+    // closed field was cut to "Qwen-Image ...").
     final column = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Flexible(
-              child: Text(
-                model.displayName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (recommended) ...[
-              const SizedBox(width: 6),
-              Icon(
-                Icons.star_rounded,
-                size: 14,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: 2),
-              Text(
-                context.l10n.recommended,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-            ],
-          ],
+        Text(
+          model.displayName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: context.text.body,
         ),
+        const SizedBox(height: 2),
         Row(
           children: [
             Icon(
               ready ? Icons.check_circle_outline : Icons.download_outlined,
-              size: 14,
+              size: 13,
+              color: c.textMuted,
             ),
             const SizedBox(width: 4),
             Flexible(
               child: Text(
-                ready
-                    ? context.l10n.imageModelReady
-                    : state.status == ImageGenModelStatus.downloading
-                    ? '${(100 * state.received / model.sizeBytes).clamp(0, 100).toStringAsFixed(0)}%'
-                    : context.l10n.imageDownload(
-                        bytesLabel(
-                          state.missingBytes > 0
-                              ? state.missingBytes
-                              : model.sizeBytes,
-                        ),
-                      ),
-                style: const TextStyle(fontSize: 12),
+                status,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: context.text.small,
               ),
             ),
+            if (recommended) ...[
+              const SizedBox(width: 8),
+              Icon(Icons.star_rounded, size: 13, color: c.accent),
+              const SizedBox(width: 2),
+              Text(
+                context.l10n.recommended,
+                maxLines: 1,
+                style: context.text.small.copyWith(color: c.accent),
+              ),
+            ],
           ],
         ),
-        if (state.status == ImageGenModelStatus.downloading)
-          LinearProgressIndicator(
-            value: (state.received / model.sizeBytes).clamp(0, 1),
-          ),
       ],
     );
     final delete = onDelete;
@@ -123,7 +117,22 @@ class ImageGenLibrary extends ConsumerWidget {
   }
 }
 
-/// Shared by the model library and download center, with resumable pack controls.
+/// The phone's Models screen, Image / Video category.
+class ImageGenLibraryCards extends ConsumerWidget {
+  const ImageGenLibraryCards({super.key});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final models = imageGenManagedModels(ref.watch(imageGenImportsProvider));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [for (final model in models) ImageGenDownloadRow(model: model)],
+    );
+  }
+}
+
+/// Shared by the phone's model library and the download center: the chat
+/// model card's frame, one meta line, a thin bar while part of the pack is
+/// here, and the file list behind the info icon (owner 2026-11-16).
 class ImageGenDownloadRow extends ConsumerWidget {
   final ImageGenModel model;
   const ImageGenDownloadRow({super.key, required this.model});
@@ -132,67 +141,87 @@ class ImageGenDownloadRow extends ConsumerWidget {
     final state = ref.watch(imageGenDownloadsProvider).of(model);
     final notifier = ref.read(imageGenDownloadsProvider.notifier);
     final t = context.l10n;
+    final c = context.colors;
     final downloading = state.status == ImageGenModelStatus.downloading;
     final ready = state.status == ImageGenModelStatus.ready;
-    final fraction = (state.received / model.sizeBytes).clamp(0.0, 1.0);
-    return ListTile(
+    final partial = !ready && (state.received > 0 || state.paused);
+    return Padding(
       key: ValueKey(model.downloadKey),
-      title: Text(model.displayName),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '${bytesLabel(model.sizeBytes)} \u00b7 ${ready
-                ? t.imageModelDownloaded
-                : state.received > 0
-                ? t.imageModelPartial
-                : t.imageModelNotDownloaded}',
-          ),
-          if (downloading || state.received > 0 && !ready) ...[
-            LinearProgressIndicator(value: fraction),
-            Text(
-              '${(fraction * 100).toStringAsFixed(1)}% \u00b7 ${bytesLabel(state.received)} / ${bytesLabel(model.sizeBytes)}'
-              '${state.bytesPerSecond == null ? '' : ' \u00b7 ${bytesLabel(state.bytesPerSecond!.round())}/s'}',
-            ),
-          ],
+      padding: const EdgeInsets.only(bottom: AppSpace.md),
+      child: ModelFileCard(
+        title: model.displayName,
+        subtitle: [
+          model.kind == ImageGenKind.video ? t.imageVideo : t.imagePicture,
+          bytesLabel(model.sizeBytes),
+          ready
+              ? t.imageModelDownloaded
+              : partial
+              ? t.imageModelPartial
+              : t.imageModelNotDownloaded,
+        ].join(' · '),
+        details: [
           if (!ready && state.missingFiles.isNotEmpty)
-            Text(t.imageMissingFiles(state.missingFiles.join(', '))),
-          if (state.error != null) Text(state.error!),
-        ],
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+            t.imageMissingFiles(state.missingFiles.join(', '))
+          else
+            model.files.map((f) => f.fileName).join('\n'),
+        ].join('\n'),
+        progress: !ready && (downloading || partial || state.error != null)
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (downloading || partial)
+                    ModelFileProgress(
+                      received: state.received,
+                      total: model.sizeBytes,
+                      bytesPerSecond: downloading ? state.bytesPerSecond : null,
+                    ),
+                  if (state.error != null) ...[
+                    const SizedBox(height: AppSpace.sm),
+                    Text(
+                      state.error!,
+                      style: context.text.small.copyWith(color: c.danger),
+                    ),
+                  ],
+                ],
+              )
+            : null,
+        actions: [
           if (!ready)
-            IconButton(
-              tooltip: downloading
-                  ? t.imagePause
-                  : state.received > 0 || state.paused
-                  ? t.imageResumeDownload
-                  : t.imageDownload(bytesLabel(model.sizeBytes)),
-              icon: Icon(
-                downloading
-                    ? Icons.pause
-                    : state.received > 0 || state.paused
-                    ? Icons.play_arrow
-                    : Icons.download_outlined,
-              ),
+            FilledButton.tonalIcon(
               onPressed: () => downloading
                   ? notifier.pause(model)
                   : notifier.download(model),
+              icon: Icon(
+                downloading
+                    ? Icons.pause
+                    : partial
+                    ? Icons.play_arrow
+                    : Icons.download_outlined,
+                size: 18,
+              ),
+              label: Text(
+                downloading
+                    ? t.imagePause
+                    : partial
+                    ? t.resume
+                    : t.download,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          if (downloading || state.received > 0 && !ready)
-            IconButton(
-              tooltip: t.cancel,
-              icon: const Icon(Icons.cancel_outlined),
+          if (downloading || partial)
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(foregroundColor: c.textMuted),
               onPressed: () => notifier.cancel(model),
+              icon: const Icon(Icons.cancel_outlined, size: 18),
+              label: Text(t.cancel, overflow: TextOverflow.ellipsis),
             ),
-          if (ready || state.received > 0 && !downloading)
-            IconButton(
+          if (ready || partial && !downloading)
+            OutlinedButton.icon(
               key: ValueKey('image-gen-delete-${model.id}'),
-              tooltip: t.delete,
-              icon: const Icon(Icons.delete_outline),
+              style: OutlinedButton.styleFrom(foregroundColor: c.textMuted),
               onPressed: () => deleteImageGenModel(context, ref, model),
+              icon: const Icon(Icons.delete_outline, size: 18),
+              label: Text(t.delete, overflow: TextOverflow.ellipsis),
             ),
         ],
       ),

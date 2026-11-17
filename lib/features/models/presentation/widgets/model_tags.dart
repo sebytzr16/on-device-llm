@@ -57,6 +57,10 @@ String wholePercentLabel(double fraction) => '${(fraction * 100).floor()}%';
 
 String bytesLabel(int bytes) => bytes >= 1073741824
     ? '${(bytes / 1073741824).toStringAsFixed(2)} GB'
+    // A 40 KB tokens.txt read "0 MB" on the Models page (visual check
+    // 2026-11-16).
+    : bytes > 0 && bytes < 524288
+    ? '< 1 MB'
     : '${(bytes / 1048576).toStringAsFixed(0)} MB';
 
 /// Time left at the current speed ("4m 12s"), or null when it can't be

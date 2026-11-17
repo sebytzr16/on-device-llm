@@ -8,6 +8,7 @@ import '../../../../core/platform/device_info.dart';
 import '../../../../data/storage/download_manager.dart';
 import '../../domain/entities/model_catalog.dart';
 import '../../domain/entities/model_info.dart';
+import 'best_fit_badge.dart';
 import 'model_tags.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../desktop/model_tune_section.dart';
@@ -43,6 +44,14 @@ class ModelCard extends ConsumerWidget {
 
   /// Drops a not-yet-downloaded, non-bundled entry from the library.
   final VoidCallback? onRemoveEntry;
+
+  /// First-run guide: the top Recommended model that fits this device
+  /// wears a badge and an accent Download; a model that just finished
+  /// downloading gets an accent Use model.
+  final bool bestFit, fresh;
+
+  /// Wraps the main Download / Use model button (a tip bubble anchor).
+  final Widget Function(Widget button)? wrapMainAction;
   const ModelCard({
     super.key,
     required this.model,
@@ -68,7 +77,18 @@ class ModelCard extends ConsumerWidget {
     this.onProfile,
     this.profileOverrides = 0,
     this.onRemoveEntry,
+    this.bestFit = false,
+    this.fresh = false,
+    this.wrapMainAction,
   });
+
+  Widget _wrap(Widget button) => wrapMainAction?.call(button) ?? button;
+
+  static ButtonStyle _accentStyle(BuildContext context) =>
+      FilledButton.styleFrom(
+        backgroundColor: context.colors.accent,
+        foregroundColor: context.colors.onAccent,
+      );
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -113,6 +133,10 @@ class ModelCard extends ConsumerWidget {
                     child: Text(model.displayName, style: context.text.title),
                   ),
                 ),
+                if (bestFit && !model.isDownloaded) ...[
+                  const SizedBox(width: AppSpace.sm),
+                  const BestFitBadge(),
+                ],
                 if (active || helperActive) ...[
                   const SizedBox(width: AppSpace.sm),
                   ModelTag(
@@ -210,18 +234,22 @@ class ModelCard extends ConsumerWidget {
                   // Tonal: in a list of downloads, the installed model's
                   // Use model stays the loudest button on the page.
                   Expanded(
-                    child: FilledButton.tonalIcon(
-                      style: appTonalButtonStyle(context),
-                      onPressed: onDownload,
-                      icon: Icon(
-                        interrupted ? Icons.refresh : Icons.download_outlined,
-                        size: 18,
-                      ),
-                      label: Text(
-                        interrupted
-                            ? context.l10n.resumeRetry
-                            : context.l10n.download,
-                        overflow: TextOverflow.ellipsis,
+                    child: _wrap(
+                      FilledButton.tonalIcon(
+                        style: bestFit
+                            ? _accentStyle(context)
+                            : appTonalButtonStyle(context),
+                        onPressed: onDownload,
+                        icon: Icon(
+                          interrupted ? Icons.refresh : Icons.download_outlined,
+                          size: 18,
+                        ),
+                        label: Text(
+                          interrupted
+                              ? context.l10n.resumeRetry
+                              : context.l10n.download,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
                   ),
@@ -229,17 +257,23 @@ class ModelCard extends ConsumerWidget {
                   // catalog rows are hidden (Restore brings them back).
                   if (onRemoveEntry != null) ...[
                     const SizedBox(width: AppSpace.sm),
+                    // "Remove from list" read "Remove fr..." on a phone
+                    // (visual check 2026-11-16): a short label, the full
+                    // one as the tooltip.
                     Expanded(
-                      child: OutlinedButton.icon(
-                        key: Key('remove-entry-${model.id}'),
-                        onPressed: busy ? null : onRemoveEntry,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: c.textMuted,
-                        ),
-                        icon: const Icon(Icons.playlist_remove, size: 18),
-                        label: Text(
-                          context.l10n.uiModelCardRemoveFromList,
-                          overflow: TextOverflow.ellipsis,
+                      child: Tooltip(
+                        message: context.l10n.uiModelCardRemoveFromList,
+                        child: OutlinedButton.icon(
+                          key: Key('remove-entry-${model.id}'),
+                          onPressed: busy ? null : onRemoveEntry,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: c.textMuted,
+                          ),
+                          icon: const Icon(Icons.playlist_remove, size: 18),
+                          label: Text(
+                            context.l10n.uiModelCardHide,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ),
                     ),
@@ -262,13 +296,17 @@ class ModelCard extends ConsumerWidget {
                               overflow: TextOverflow.ellipsis,
                             ),
                           )
-                        : FilledButton.tonalIcon(
-                            style: appTonalButtonStyle(context),
-                            onPressed: busy ? null : onLoad,
-                            icon: const Icon(Icons.play_arrow, size: 18),
-                            label: Text(
-                              context.l10n.useModel,
-                              overflow: TextOverflow.ellipsis,
+                        : _wrap(
+                            FilledButton.tonalIcon(
+                              style: fresh
+                                  ? _accentStyle(context)
+                                  : appTonalButtonStyle(context),
+                              onPressed: busy ? null : onLoad,
+                              icon: const Icon(Icons.play_arrow, size: 18),
+                              label: Text(
+                                context.l10n.useModel,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                           ),
                   ),

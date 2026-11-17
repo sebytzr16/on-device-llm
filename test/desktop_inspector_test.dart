@@ -1,3 +1,4 @@
+import 'package:ondevice_llm/desktop/load_settings_dialog.dart';
 import 'package:ondevice_llm/features/settings/presentation/widgets/answer_tokens_control.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:flutter/material.dart';
@@ -250,7 +251,7 @@ void main() {
   }
 
   testWidgets(
-    'context slider clamps inherited values and gestures respect both bounds',
+    'context slider steps like Model settings and keeps a 64K model at 64K',
     (tester) async {
       final container = await mountDesktopChat(
         tester,
@@ -258,18 +259,23 @@ void main() {
       );
       final control = slider(t.desktopInspectorContext);
       final track = find.descendant(of: control, matching: find.byType(Slider));
-      for (final (inherited, clamped) in [(512, 1024.0), (65536, 32768.0)]) {
+      // No GGUF here, so the ceiling is 128K: 2K, 4K ... 64K, 128K.
+      final steps = desktopContextSteps(desktopContextMax(0));
+      for (final (inherited, shown) in [(512, 2048), (65536, 65536)]) {
         container.read(chatOverridesProvider.notifier).state = {
           'contextSize': inherited,
         };
         await tester.pumpAndSettle();
         await tester.ensureVisible(control);
         await tester.pumpAndSettle();
-        expect(tester.widget<Slider>(track).value, clamped);
+        expect(
+          tester.widget<Slider>(track).value,
+          steps.indexOf(shown).toDouble(),
+        );
       }
       for (final (delta, expected, display) in [
-        (-1000.0, 1024, '1K'),
-        (1000.0, 32768, '32K'),
+        (-1000.0, 2048, '2K'),
+        (1000.0, 131072, '128K'),
       ]) {
         await tester.drag(track, Offset(delta, 0));
         await tester.pumpAndSettle();
@@ -277,7 +283,6 @@ void main() {
           container.read(modelProfilesProvider)['test']?['contextSize'],
           expected,
         );
-        expect(tester.widget<Slider>(track).value, expected);
         expect(
           find.descendant(of: control, matching: find.text(display)),
           findsOneWidget,
@@ -286,6 +291,36 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('context is Auto by default; off shows the slider and saves', (
+    tester,
+  ) async {
+    final container = await mountDesktopChat(
+      tester,
+      const DesktopInspectorPanel(),
+    );
+    final toggle = find.byKey(const Key('context-auto'));
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+    expect(tester.widget<Switch>(toggle).value, isTrue);
+    expect(find.text(t.contextAutoHint), findsOneWidget);
+    expect(slider(t.desktopInspectorContext), findsNothing);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(
+      container.read(modelProfilesProvider)['test']?['contextAuto'],
+      isFalse,
+    );
+    expect(slider(t.desktopInspectorContext), findsOneWidget);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(
+      container.read(modelProfilesProvider)['test']?['contextAuto'],
+      isTrue,
+    );
+    expect(slider(t.desktopInspectorContext), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'Ctrl+I opens and closes the shell inspector; close button closes slot',

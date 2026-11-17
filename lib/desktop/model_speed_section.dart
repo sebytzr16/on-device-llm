@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/design/app_design.dart';
 import '../core/l10n/l10n.dart';
@@ -7,15 +8,11 @@ import '../features/models/domain/entities/model_info.dart';
 import '../features/models/presentation/providers/model_manager_provider.dart';
 import '../features/settings/domain/entities/inference_settings.dart';
 import '../features/benchmark/benchmark.dart';
-import '../inference/engine/text_engine.dart';
+import '../features/optimize/model_speed_engine_provider.dart';
 import 'model_speed_results_provider.dart';
-import 'benchmark_receipt.dart';
+import '../features/optimize/benchmark_receipt.dart';
 import 'model_tune_section.dart';
-import 'tune_benchmark_run.dart';
-
-final modelSpeedEngineProvider = Provider<TextEngine>(
-  (ref) => ref.read(llamaEngineProvider),
-);
+import '../features/optimize/tune_benchmark_run.dart';
 
 class ModelSpeedSection extends ConsumerStatefulWidget {
   final ModelInfo model;
@@ -160,7 +157,11 @@ class _ModelSpeedSectionState extends ConsumerState<ModelSpeedSection> {
           ),
         if (result != null) ...[
           Text(
-            t.desktopBenchLast(result.timestamp.toLocal().toString()),
+            t.desktopBenchLast(
+              DateFormat.yMMMd(
+                Localizations.localeOf(context).toLanguageTag(),
+              ).add_jm().format(result.timestamp.toLocal()),
+            ),
             style: context.text.caption,
           ),
           Table(

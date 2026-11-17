@@ -8,9 +8,12 @@ import 'package:ondevice_llm/core/storage/device_encryption.dart';
 import 'package:ondevice_llm/core/storage/native_media_lease.dart';
 import 'package:ondevice_llm/features/chat/domain/chat_draft_store.dart';
 import 'package:ondevice_llm/features/knowledge/document_embedding_cache.dart';
+import 'package:ondevice_llm/desktop/history_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 
 import 'support/hosting_secure_storage.dart';
+import 'local_backup_service_test.dart' show BackupPaths;
 
 class UnreadableVault extends MemoryHostSecrets {
   @override
@@ -46,6 +49,85 @@ void main() {
     encryption = service();
   });
   tearDown(() => root.delete(recursive: true));
+
+  test(
+    'default migration includes creation media and prompt sidecars',
+    () async {
+      final previous = PathProviderPlatform.instance;
+      PathProviderPlatform.instance = BackupPaths(root.path, root.path);
+      addTearDown(() => PathProviderPlatform.instance = previous);
+      final creations = await Directory('${root.path}/creations').create();
+      final media = File('${creations.path}/picture.png');
+      final sidecar = File('${creations.path}/picture.json');
+      await media.writeAsBytes([1, 2, 3]);
+      await sidecar.writeAsString('{"prompt":"private"}');
+      final migration = DeviceEncryption(
+        storage: vault,
+        preferences: () async => prefs,
+      );
+      await migration.setEnabled(true);
+      expect(DeviceEncryption.isEncrypted(await media.readAsBytes()), true);
+      expect(DeviceEncryption.isEncrypted(await sidecar.readAsBytes()), true);
+      await migration.setEnabled(false);
+      expect(await media.readAsBytes(), [1, 2, 3]);
+      expect(await sidecar.readAsString(), '{"prompt":"private"}');
+    },
+  );
+
+  test(
+    'plaintext leases decrypt and clean up after consumer failure',
+    () async {
+      await encryption.setEnabled(true);
+      final file = File('${root.path}/original.wav');
+      await encryption.write(file, [1, 2, 3]);
+      late File clear;
+      await expectLater(
+        encryption.withPlaintext(file, (temporary) async {
+          clear = temporary;
+          expect(await clear.readAsBytes(), [1, 2, 3]);
+          throw StateError('consumer failed');
+        }),
+        throwsStateError,
+      );
+      expect(await clear.parent.exists(), false);
+      expect(DeviceEncryption.isEncrypted(await file.readAsBytes()), true);
+      expect(await encryption.read(file), [1, 2, 3]);
+    },
+  );
+
+  test(
+    'creation history encrypts media, thumbnails and prompt metadata',
+    () async {
+      final previous = DeviceEncryption.instance;
+      DeviceEncryption.instance = encryption;
+      addTearDown(() => DeviceEncryption.instance = previous);
+      await encryption.setEnabled(true);
+      final store = CreationHistoryStore(root);
+      final entry = HistoryEntry(
+        id: 'private',
+        data: {'kind': 'picture', 'prompt': 'private prompt'},
+      );
+      await store.save(
+        entry,
+        thumbnailPng: [4, 5],
+        writeMedia: (path) async {
+          await File(path).writeAsBytes([1, 2, 3]);
+        },
+      );
+      for (final file in [
+        store.media(entry),
+        store.thumbnail(entry),
+        File('${root.path}/private.json'),
+      ]) {
+        expect(DeviceEncryption.isEncrypted(await file.readAsBytes()), true);
+      }
+      expect(await encryption.read(store.media(entry)), [1, 2, 3]);
+      expect((await store.list()).single.data['prompt'], 'private prompt');
+      await encryption.setEnabled(false);
+      expect(await store.media(entry).readAsBytes(), [1, 2, 3]);
+      expect((await store.list()).single.data['prompt'], 'private prompt');
+    },
+  );
 
   testWidgets('an idle queue can be reused for real I/O outside fake async', (
     tester,

@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.6.0 - 2026-11-17
+
+### First run
+- Guided first run on PC and phone: one-time tips (with "Show tips again"), Get a model / Load the best fit from an empty chat, a best-fit badge in Discover, a Load + Optimize offer after a download, and a short tour of the chat tools
+- Optimize is also in Settings and on Android
+
+### Models
+- Recommended can never end up empty: removed suggestions come back with "Show N removed models"
+- Recommended leaves out models too large for this device (search and Discover still find them); the phone's "Remove from list" button is now a short "Hide"
+- Tiny files read "< 1 MB" instead of "0 MB"
+- Every model file (image/video, drafts, embeddings, projectors, speech, partial downloads) is shown as a model card on the phone and in the same row style as chat models on the PC, with readable names
+- A file that another installed model also uses (the shared upscaler) no longer shows a model as "partially downloaded", and Delete no longer looks like it does nothing
+- "Remove unused parts" says how much it freed, or that nothing was unused
+- Auto context is the recommended default; it fits the context into memory and can be turned off for a hand-set length
+- Model settings: Temperature and the other answer settings sit right under "Answers", above the speed test; the chat side panel offers the same context lengths (a 64K model no longer reads 32K)
+
+### Memory estimate
+- While a change is measured, the last plan stays on screen, dimmed, with "Recalculating…" (no more flicker to a wrong spill warning)
+- Mixture-of-experts models show where the weights go: expert weights held in RAM, the part read from disk, and the context cache, with a split RAM bar
+- Warns about a RAM shortage and weights paging from disk; the planner shrinks the context to 1024 like a real load
+
+### Create
+- Tidier model panel: one model card with its size, state and actions
+
+### Engine and fixes
+- Regenerate and questions right after loading a big model stop the warm-up within about a second, and the next question reuses the instructions it already read (memory notes now travel with the question on local models)
+- Issue #4: the image engine picks the CUDA/AVX2/SSE4.2 build at run time, so it runs on CPUs without AVX-512
+- Issue #5: Android credits memory-mapped weights, shrinks the context before refusing a load, and offers Load anyway
+- Android GPU (OpenCL) memory is counted as RAM
+- Sending or regenerating right after loading a big model no longer fails with "Load a model": the warm-up pass now gets time to stop instead of the model being dropped
+- Audit fixes: safe project-file writes with Undo, image generation cancel, encrypted history/media/knowledge, upload quotas, a profile load race, translated remote results
+
 ## 1.5.0 - 2026-11-13
 
 ### Voice

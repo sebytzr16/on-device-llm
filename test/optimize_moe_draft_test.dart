@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ondevice_llm/desktop/pc_optimization.dart';
+import 'package:ondevice_llm/features/optimize/optimize_setups.dart';
 import 'package:ondevice_llm/features/models/domain/entities/model_catalog.dart';
 import 'package:ondevice_llm/features/models/domain/entities/model_info.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';

@@ -27,6 +27,31 @@ abstract final class CpuCores {
     return physical ?? (count >= 8 ? count ~/ 2 : count);
   }
 
+  /// Android big cores, using the scheduler capacity (or maximum clock).
+  /// Uses the existing conservative thread default when sysfs is unavailable.
+  static int get androidBig {
+    final count = logical();
+    if (Platform.isAndroid) {
+      for (final suffix in ['cpu_capacity', 'cpufreq/cpuinfo_max_freq']) {
+        try {
+          final values = [
+            for (var i = 0; i < count; i++)
+              int.parse(
+                File(
+                  '/sys/devices/system/cpu/cpu$i/$suffix',
+                ).readAsStringSync().trim(),
+              ),
+          ];
+          final peak = values.reduce((a, b) => a > b ? a : b);
+          return values.where((v) => v >= peak * 0.7).length.clamp(1, count);
+        } catch (_) {
+          // Some Android builds hide scheduler information.
+        }
+      }
+    }
+    return count >= 8 ? 6 : (count ~/ 2).clamp(2, 8);
+  }
+
   /// The plain CPU bridge answers without starting a GPU runtime (the CUDA
   /// one would initialise CUDA just to count cores).
   static int? _fromBridge() {

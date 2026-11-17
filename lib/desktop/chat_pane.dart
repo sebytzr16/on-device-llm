@@ -1,5 +1,11 @@
+import '../core/tips/tip_anchor.dart';
+import '../core/tips/tips_store.dart';
+import '../features/optimize/optimized_models_provider.dart';
 import '../features/tools/file_approval.dart';
 import '../features/models/presentation/widgets/model_categories.dart';
+import '../features/models/presentation/recommended_models.dart';
+import '../features/models/presentation/widgets/model_capabilities.dart';
+import '../features/models/presentation/widgets/model_tags.dart';
 import '../features/shortcuts/presentation/slash_command_composer.dart';
 import '../features/shortcuts/presentation/chat_slash_actions.dart';
 import 'dart:async';
@@ -55,6 +61,7 @@ import 'chat_tools.dart';
 import 'inspector_panel.dart';
 import 'load_progress.dart';
 import 'model_preset_menu.dart';
+import 'desktop_app.dart';
 import 'title_bar.dart';
 
 /// Both send paths accept a configured Remote server (including its default
@@ -620,13 +627,36 @@ class _EmptyState extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final c = context.colors;
-    final hasModel = ref.watch(
-      modelManagerProvider.select((m) => m.loadedModelId != null),
-    );
-    final loading = ref.watch(
-      modelManagerProvider.select((m) => m.isLoadingModel),
-    );
+    final t = context.l10n;
+    final models = ref.watch(modelManagerProvider);
+    final remote = ref.watch(settingsProvider.select((s) => s.remoteEnabled));
+    final advanced = ref.watch(desktopPreferencesProvider).advanced;
+    final memory = ref.watch(modelDeviceMemoryProvider).value;
+    final local = models.catalog
+        .where(
+          (m) =>
+              m.isDownloaded &&
+              modelCategory(m.fileName) == ModelCategory.llm &&
+              desktopModelVisible(m, advanced: advanced),
+        )
+        .toList();
+    final loading = models.isLoadingModel;
+    // First run (owner 2026-11-16): no model at all leads to Models; models
+    // on disk but none loaded offer the best fit in one click.
+    final stage = loading || models.loadedModelId != null || remote
+        ? null
+        : local.isEmpty
+        ? _FirstRun.getModel
+        : _FirstRun.load;
+    final best = stage == _FirstRun.load
+        ? bestFitModel(local, fit: (m) => modelFit(memory, m), desktop: true) ??
+              local.first
+        : null;
+    final (title, hint) = switch (stage) {
+      _FirstRun.getModel => (t.firstRunGetModelTitle, t.firstRunGetModelBody),
+      _FirstRun.load => (t.firstRunLoadTitle, t.firstRunLoadBody),
+      null => (t.desktopEmptyTitle, t.desktopEmptyHint),
+    };
     return Center(
       child: SpringEntrance(
         child: ConstrainedBox(
@@ -634,28 +664,63 @@ class _EmptyState extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                context.l10n.desktopEmptyTitle,
-                textAlign: TextAlign.center,
-                style: context.text.display.copyWith(fontSize: 30),
+              BlurSwitcher(
+                child: Text(
+                  title,
+                  key: ValueKey(title),
+                  textAlign: TextAlign.center,
+                  style: context.text.display.copyWith(fontSize: 30),
+                ),
               ),
               const SizedBox(height: 10),
               Text(
-                context.l10n.desktopEmptyHint,
+                hint,
                 textAlign: TextAlign.center,
                 style: context.text.bodyMuted.copyWith(fontSize: 13.5),
               ),
               if (loading) ...[
                 const SizedBox(height: AppSpace.section),
                 const SizedBox(width: 360, child: ModelLoadProgress()),
-              ] else if (!hasModel) ...[
+              ] else if (stage == _FirstRun.getModel) ...[
                 const SizedBox(height: AppSpace.section),
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: c.hairline),
-                    borderRadius: AppDesign.radius(AppDesign.rFull),
+                Pressable(
+                  child: FilledButton.icon(
+                    key: const Key('first-run-get-model'),
+                    style: _firstRunButton(context),
+                    onPressed: () => ref
+                        .read(desktopSectionProvider.notifier)
+                        .show(DesktopSection.models),
+                    icon: const Icon(Icons.download_rounded, size: 18),
+                    label: Text(t.firstRunGetModelButton),
                   ),
-                  child: const ModelPickerChip(),
+                ),
+              ] else if (stage == _FirstRun.load && best != null) ...[
+                const SizedBox(height: AppSpace.section),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    Pressable(
+                      child: FilledButton.icon(
+                        key: const Key('first-run-load'),
+                        style: _firstRunButton(context),
+                        onPressed: () =>
+                            ModelPickerChip.load(context, ref, best),
+                        icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                        label: Text(t.firstRunLoadButton(best.displayName)),
+                      ),
+                    ),
+                    if (local.length > 1)
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: context.colors.hairline),
+                          borderRadius: AppDesign.radius(AppDesign.rFull),
+                        ),
+                        child: const ModelPickerChip(),
+                      ),
+                  ],
                 ),
               ],
             ],
@@ -664,7 +729,21 @@ class _EmptyState extends ConsumerWidget {
       ),
     );
   }
+
+  static ButtonStyle _firstRunButton(BuildContext context) =>
+      FilledButton.styleFrom(
+        backgroundColor: context.colors.accent,
+        foregroundColor: context.colors.onAccent,
+        minimumSize: const Size(0, 44),
+        padding: const EdgeInsets.symmetric(horizontal: 22),
+        shape: RoundedRectangleBorder(
+          borderRadius: AppDesign.radius(AppDesign.rFull),
+        ),
+        textStyle: context.text.title.copyWith(fontSize: 14),
+      );
 }
+
+enum _FirstRun { getModel, load }
 
 class _Notice extends StatelessWidget {
   final String text;
@@ -1052,6 +1131,34 @@ class _ComposerState extends ConsumerState<_Composer> {
             false;
     final presets = ref.watch(presetsProvider);
     final preset = presets.active;
+    // First-chat tour (owner 2026-11-16): one bubble at a time over the
+    // composer, in order, once a model can answer. It waits while the
+    // "Optimize for this device" offer for the loaded model is still due.
+    final tips = ref.watch(tipsProvider);
+    final optimized = ref.watch(optimizedModelsProvider).value;
+    final offerDue =
+        variantModelId != null &&
+        tips.shouldShow(TipIds.optimizeOffer) &&
+        (optimized == null || !optimized.contains(variantModelId));
+    final tourNext =
+        hasModel &&
+            !busy &&
+            !offerDue &&
+            !ref.watch(modelManagerProvider.select((m) => m.isLoadingModel))
+        ? ref.read(tipsProvider.notifier).nextIn(TipIds.chatTour)
+        : null;
+    Widget tour(String id, String title, String body, Widget child) =>
+        TipAnchor(
+          id: id,
+          title: title,
+          body: body,
+          side: TipSide.above,
+          active: tourNext == id,
+          step: (TipIds.chatTour.indexOf(id) + 1, TipIds.chatTour.length),
+          onSkipAll: () =>
+              ref.read(tipsProvider.notifier).dismissAll(TipIds.chatTour),
+          child: child,
+        );
     final voice = ref.watch(voiceProvider);
     final used = ref.watch(
       chatProvider.select(
@@ -1060,6 +1167,11 @@ class _ComposerState extends ConsumerState<_Composer> {
             ((s.metrics['tokens'] as num?) ?? 0),
       ),
     );
+    // The loaded context, which Auto and the memory guard choose.
+    final loaded = ref.watch(
+      chatProvider.select((s) => (s.metrics['contextSize'] as num?)?.toInt()),
+    );
+    final window = loaded != null && loaded > 0 ? loaded : settings.contextSize;
     return Focus(
       focusNode: widget.focus,
       skipTraversal: true,
@@ -1138,38 +1250,48 @@ class _ComposerState extends ConsumerState<_Composer> {
                               ),
                             ),
                     ),
-                    SlashCommandComposer(
-                      key: _slash,
-                      controller: _text,
-                      onSubmit: _send,
-                      enabled: !busy,
-                      child: TextField(
+                    tour(
+                      TipIds.chatTourSlash,
+                      l10n.tourSlashTitle,
+                      l10n.tourSlashBody,
+                      SlashCommandComposer(
+                        key: _slash,
                         controller: _text,
-                        focusNode: _field,
-                        minLines: 1,
-                        maxLines: 10,
-                        keyboardType: TextInputType.multiline,
-                        style: context.text.body,
-                        decoration: InputDecoration(
-                          hintText: voice.listening
-                              ? l10n.listening
-                              : l10n.messageHint,
-                          filled: false,
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 8,
+                        onSubmit: _send,
+                        enabled: !busy,
+                        child: TextField(
+                          controller: _text,
+                          focusNode: _field,
+                          minLines: 1,
+                          maxLines: 10,
+                          keyboardType: TextInputType.multiline,
+                          style: context.text.body,
+                          decoration: InputDecoration(
+                            hintText: voice.listening
+                                ? l10n.listening
+                                : l10n.messageHint,
+                            filled: false,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 8,
+                            ),
                           ),
                         ),
                       ),
                     ),
                     Row(
                       children: [
-                        _IconPill(
-                          icon: Icons.add_rounded,
-                          tooltip: l10n.desktopAttachTooltip,
-                          onTap: busy ? null : _attach,
+                        tour(
+                          TipIds.chatTourAttach,
+                          l10n.tourAttachTitle,
+                          l10n.tourAttachBody,
+                          _IconPill(
+                            icon: Icons.add_rounded,
+                            tooltip: l10n.desktopAttachTooltip,
+                            onTap: busy ? null : _attach,
+                          ),
                         ),
                         const SizedBox(width: 6),
                         Expanded(
@@ -1212,18 +1334,23 @@ class _ComposerState extends ConsumerState<_Composer> {
                                     modelId: variantModelId,
                                     pill: true,
                                   ),
-                                _Pill(
-                                  icon: Icons.psychology_outlined,
-                                  label: settings.thinkingModeEnabled
-                                      ? thinkingLevelLabel(
-                                          settings.thinkingLevel,
-                                          l10n,
-                                        )
-                                      : l10n.think,
-                                  on: settings.thinkingModeEnabled,
-                                  onTap: busy
-                                      ? null
-                                      : () => _cycleThinking(settings),
+                                tour(
+                                  TipIds.chatTourThink,
+                                  l10n.tourThinkTitle,
+                                  l10n.tourThinkBody,
+                                  _Pill(
+                                    icon: Icons.psychology_outlined,
+                                    label: settings.thinkingModeEnabled
+                                        ? thinkingLevelLabel(
+                                            settings.thinkingLevel,
+                                            l10n,
+                                          )
+                                        : l10n.think,
+                                    on: settings.thinkingModeEnabled,
+                                    onTap: busy
+                                        ? null
+                                        : () => _cycleThinking(settings),
+                                  ),
                                 ),
                                 if (visionModel != null)
                                   _Pill(
@@ -1245,35 +1372,45 @@ class _ComposerState extends ConsumerState<_Composer> {
                                                 visionOn ? false : null,
                                               ),
                                   ),
-                                _Pill(
-                                  icon: web == WebMode.off
-                                      ? Icons.public_off_rounded
-                                      : Icons.public_rounded,
-                                  label: switch (web) {
-                                    WebMode.off => l10n.webLocal,
-                                    WebMode.auto => l10n.webAuto,
-                                    WebMode.always => l10n.webAlways,
-                                  },
-                                  on: web != WebMode.off,
-                                  onTap: busy ? null : _cycleWeb,
+                                tour(
+                                  TipIds.chatTourWeb,
+                                  l10n.tourWebTitle,
+                                  l10n.tourWebBody,
+                                  _Pill(
+                                    icon: web == WebMode.off
+                                        ? Icons.public_off_rounded
+                                        : Icons.public_rounded,
+                                    label: switch (web) {
+                                      WebMode.off => l10n.webLocal,
+                                      WebMode.auto => l10n.webAuto,
+                                      WebMode.always => l10n.webAlways,
+                                    },
+                                    on: web != WebMode.off,
+                                    onTap: busy ? null : _cycleWeb,
+                                  ),
                                 ),
-                                MenuAnchor(
-                                  alignmentOffset: const Offset(0, 6),
-                                  menuChildren: const [
-                                    SizedBox(
-                                      width: 380,
-                                      child: ToolsQuickPanel(),
+                                tour(
+                                  TipIds.chatTourTools,
+                                  l10n.tourToolsTitle,
+                                  l10n.tourToolsBody,
+                                  MenuAnchor(
+                                    alignmentOffset: const Offset(0, 6),
+                                    menuChildren: const [
+                                      SizedBox(
+                                        width: 380,
+                                        child: ToolsQuickPanel(),
+                                      ),
+                                    ],
+                                    builder: (context, menu, _) => _Pill(
+                                      icon: Icons.build_outlined,
+                                      label: l10n.uiToolsQuickPanelToolUse,
+                                      on: settings.toolsEnabled,
+                                      onTap: busy
+                                          ? null
+                                          : () => menu.isOpen
+                                                ? menu.close()
+                                                : menu.open(),
                                     ),
-                                  ],
-                                  builder: (context, menu, _) => _Pill(
-                                    icon: Icons.build_outlined,
-                                    label: l10n.uiToolsQuickPanelToolUse,
-                                    on: settings.toolsEnabled,
-                                    onTap: busy
-                                        ? null
-                                        : () => menu.isOpen
-                                              ? menu.close()
-                                              : menu.open(),
                                   ),
                                 ),
                               ],
@@ -1357,22 +1494,15 @@ class _ComposerState extends ConsumerState<_Composer> {
                   // LM Studio's context meter: the last turn's share of n_ctx.
                   if (used > 0)
                     Tooltip(
-                      message: l10n.desktopContextUsed(
-                        used.round(),
-                        settings.contextSize,
-                      ),
+                      message: l10n.desktopContextUsed(used.round(), window),
                       child: SizedBox(
                         width: 64,
                         child: ClipRRect(
                           borderRadius: AppDesign.radius(AppDesign.rFull),
                           child: LinearProgressIndicator(
-                            value: (used / settings.contextSize)
-                                .clamp(0, 1)
-                                .toDouble(),
+                            value: (used / window).clamp(0, 1).toDouble(),
                             minHeight: 4,
-                            color: used / settings.contextSize > 0.85
-                                ? c.warning
-                                : c.accent,
+                            color: used / window > 0.85 ? c.warning : c.accent,
                             backgroundColor: c.hairline,
                           ),
                         ),

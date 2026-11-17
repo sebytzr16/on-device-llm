@@ -14,6 +14,7 @@ import '../features/attachments/domain/attachment.dart';
 import '../features/image_gen/domain/entities/image_gen_model.dart';
 import '../features/image_gen/image_gen_imports.dart';
 import '../features/image_gen/image_gen_downloads.dart';
+import '../features/settings/presentation/providers/settings_provider.dart';
 import '../inference/engine/sd_engine.dart';
 import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 import 'image_gen_page.dart';
@@ -255,7 +256,9 @@ final chatImageGeneratorProvider = Provider<ChatImageGenerator>(
 
 /// The chat's own image engine, so a job here and Create's idle release
 /// never touch the same worker.
-final chatImageEngineProvider = Provider<SdEngine>((ref) => SdEngine());
+final chatImageEngineProvider = Provider<SdEngine>(
+  (ref) => SdEngine(cpuVariant: () => ref.read(settingsProvider).cpuVariant),
+);
 
 /// The size an edit is drawn at: [srcWidth]x[srcHeight]'s shape holding about
 /// the pixel count of the model's own size ([modelWidth]x[modelHeight]),

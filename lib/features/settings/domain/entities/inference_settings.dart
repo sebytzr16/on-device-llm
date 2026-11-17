@@ -118,6 +118,33 @@ class InferenceSettings {
 
   /// Bounds shared by the sliders, the JSON reader and the bridge clamps.
   static const minContext = 512, maxContext = 1 << 20;
+
+  /// The context Auto asks for before the GPU fit and RAM admission shrink
+  /// it: the trained length up to a ceiling by total RAM. Mirrors
+  /// auto_context_ceiling in native/src/bridge.cpp; keep the two in step.
+  static int autoContext({
+    int? trained,
+    int? ramTotalMb,
+    required bool desktop,
+  }) {
+    final gb = (ramTotalMb ?? 0) ~/ 1024;
+    final ceiling = desktop
+        ? (gb >= 24
+              ? 32768
+              : gb >= 12
+              ? 16384
+              : 8192)
+        : (gb >= 14
+              ? 16384
+              : gb >= 9
+              ? 8192
+              : gb >= 5
+              ? 4096
+              : 2048);
+    final t = trained ?? 0;
+    return (t > 0 && t < ceiling ? t : ceiling).clamp(minContext, maxContext);
+  }
+
   static const maxBatch = 4096;
 
   /// Requested answer limits are persisted independently of runtime context.
@@ -264,6 +291,11 @@ class InferenceSettings {
   /// Keep the evaluated conversation in the context between turns so only new
   /// text is prefilled (roadmap PERF-02). Off re-evaluates every turn.
   final bool promptCache;
+
+  /// Auto context (owner 2026-11-16, the recommended choice): the engine
+  /// picks the longest context the model was trained for that fits in the
+  /// memory, up to a per-device ceiling. Off uses [contextSize] as set.
+  final bool contextAuto;
   final bool thinkingModeEnabled;
 
   /// Reasoning tokens allowed before the block is closed for the model;
@@ -589,6 +621,7 @@ class InferenceSettings {
     this.kvCacheType = KvCacheType.fp16,
     this.vCacheType,
     this.promptCache = true,
+    this.contextAuto = true,
     this.thinkingModeEnabled = false,
     this.thinkingBudgetTokens = 0,
     this.webMode = WebMode.off,
@@ -816,6 +849,7 @@ class InferenceSettings {
   static const loadTimeKeys = {
     'chatTemplate',
     'contextSize',
+    'contextAuto',
     'imageMaxTokens',
     'batchSize',
     'microBatchSize',
@@ -902,6 +936,7 @@ class InferenceSettings {
     KvCacheType? vCacheType,
     bool clearVCacheType = false,
     bool? promptCache,
+    bool? contextAuto,
     bool? thinkingModeEnabled,
     int? thinkingBudgetTokens,
     WebMode? webMode,
@@ -1047,6 +1082,7 @@ class InferenceSettings {
           if (kvCacheType != null) 'kvCacheType',
           if (vCacheType != null) 'vCacheType',
           if (promptCache != null) 'promptCache',
+          if (contextAuto != null || contextSize != null) 'contextAuto',
           if (thinkingModeEnabled != null) 'thinkingModeEnabled',
           if (thinkingBudgetTokens != null) 'thinkingBudgetTokens',
           if (webMode != null) 'webMode',
@@ -1185,6 +1221,9 @@ class InferenceSettings {
     kvCacheType: kvCacheType ?? this.kvCacheType,
     vCacheType: clearVCacheType ? null : vCacheType ?? this.vCacheType,
     promptCache: promptCache ?? this.promptCache,
+    // A context length set by hand turns Auto off.
+    contextAuto:
+        contextAuto ?? (contextSize != null ? false : this.contextAuto),
     thinkingModeEnabled: thinkingModeEnabled ?? this.thinkingModeEnabled,
     thinkingBudgetTokens: thinkingBudgetTokens ?? this.thinkingBudgetTokens,
     webMode: webMode ?? this.webMode,
@@ -1347,6 +1386,7 @@ class InferenceSettings {
     'kvCacheType': kvCacheType.name,
     'vCacheType': vCacheType?.name ?? '',
     'promptCache': promptCache,
+    'contextAuto': contextAuto,
     'thinkingModeEnabled': thinkingModeEnabled,
     'thinkingBudgetTokens': thinkingBudgetTokens,
     'webMode': webMode.name,
@@ -1597,6 +1637,7 @@ class InferenceSettings {
       kvCacheType: named(KvCacheType.values, 'kvCacheType') ?? KvCacheType.fp16,
       vCacheType: named(KvCacheType.values, 'vCacheType'),
       promptCache: boolean('promptCache', true),
+      contextAuto: boolean('contextAuto', true),
       thinkingModeEnabled: boolean('thinkingModeEnabled', false),
       thinkingBudgetTokens: integer(
         'thinkingBudgetTokens',

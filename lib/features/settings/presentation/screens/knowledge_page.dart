@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/storage/device_encryption.dart';
 import '../../../../core/design/app_design.dart';
 import '../../../../data/local/database/app_database.dart';
 import '../../../attachments/data/attachment_store.dart';
@@ -542,17 +543,27 @@ class _KnowledgePageState extends ConsumerState<KnowledgePage> {
                                             if (file == null) {
                                               throw StateError(missing);
                                             }
-                                            await SharePlus.instance.share(
-                                              ShareParams(
-                                                files: [
-                                                  XFile(
-                                                    file.path,
-                                                    name: d.name,
-                                                    mimeType: d.mime,
+                                            await DeviceEncryption.instance
+                                                .withPlaintext(
+                                                  file,
+                                                  (clear) =>
+                                                      SharePlus.instance.share(
+                                                        ShareParams(
+                                                          files: [
+                                                            XFile(
+                                                              clear.path,
+                                                              name: d.name,
+                                                              mimeType: d.mime,
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                  // The receiving app reads
+                                                  // the copy after the sheet.
+                                                  keepFor: const Duration(
+                                                    minutes: 10,
                                                   ),
-                                                ],
-                                              ),
-                                            );
+                                                );
                                           } catch (e) {
                                             if (dialog.mounted) {
                                               showIslandToast(

@@ -15,6 +15,11 @@ OD_API int32_t od_gpu_device_count(void);
 // (physical cores), at least 1. Load settings with effectiveThreads or
 // effectiveBatchThreads <= 0 use this count.
 OD_API int32_t od_cpu_cores(void);
+/* x86-64 instruction sets the CPU and OS fully support, as bits: 1 = every
+   extension the AVX2 bridges are built with (AVX, AVX2, FMA, F16C, BMI2,
+   OS-saved YMM state), 2 = the AVX-512 set of /arch:AVX512 (F, CD, BW, DQ,
+   VL, OS-saved ZMM state). 0 elsewhere. Call it from the SSE4.2 bridge. */
+OD_API int32_t od_cpu_isa(void);
 // options: JSON, e.g. {"cacheDir": "/data/user/0/<pkg>/cache", "owner": 3}.
 // Backends that compile kernels (OpenCL) persist them under cacheDir; empty
 // disables the cache. owner tags the runtime with the window that made it.

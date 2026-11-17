@@ -5688,6 +5688,24 @@ class AppLocalizationsEn extends AppLocalizations {
       'A new context length reloads the model on the next message.';
 
   @override
+  String get contextAutoLabel => 'Auto (recommended)';
+
+  @override
+  String get contextAutoHint => 'Fits into the memory';
+
+  @override
+  String get samplingPerModelHint =>
+      'Temperature, top-K and top-P belong to each model. Opens the active model\'s settings.';
+
+  @override
+  String contextAutoLoaded(String size) {
+    return 'Fits into the memory · $size now';
+  }
+
+  @override
+  String get settingLabelContextAuto => 'Automatic context';
+
+  @override
   String get desktopInspectorScopeModel => 'Model';
 
   @override
@@ -5825,6 +5843,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String desktopLoadSettingsSpill(String gb) {
     return 'Over the card\'s free memory by $gb GB: Windows moves the rest into shared memory and answers get several times slower. Lower the GPU layers or the context.';
   }
+
+  @override
+  String desktopLoadSettingsRamShort(String gb) {
+    return 'Over the free RAM by $gb GB: the load may be refused, or the PC may slow down. Close other apps, lower the context, or put more layers on the GPU.';
+  }
+
+  @override
+  String get desktopLoadSettingsWeightsPaging =>
+      'The model file is bigger than the free RAM: parts of it will be read from disk again while it answers, which is slower.';
 
   @override
   String get desktopLoadSettingsExperts =>
@@ -9762,4 +9789,250 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get kvCacheFp8 => 'FP8';
+
+  @override
+  String get loadAnyway => 'Load anyway';
+
+  @override
+  String get loadAnywayWarning =>
+      'The estimate says this model may not fit in free memory. This device can often free more. Load it anyway?';
+
+  @override
+  String remoteProbeModels(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count models',
+      one: '$count model',
+    );
+    return 'Connected · $_temp0';
+  }
+
+  @override
+  String remoteProbeHealth(String status) {
+    return 'Health: $status';
+  }
+
+  @override
+  String get remoteProbeNoTools => 'No server tools advertised';
+
+  @override
+  String remoteProbeTools(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count server tools detected',
+      one: '$count server tool detected',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get remoteProbeNotAdvertised => 'Not advertised';
+
+  @override
+  String get remoteProbeUnknown => 'Unknown';
+
+  @override
+  String get remoteProbeOk => 'OK';
+
+  @override
+  String get tipGotIt => 'Got it';
+
+  @override
+  String get tipSkipAll => 'Skip tips';
+
+  @override
+  String tipStep(int n, int total) {
+    return '$n of $total';
+  }
+
+  @override
+  String get tipsShowAgain => 'Show tips again';
+
+  @override
+  String get tipsShowAgainHint =>
+      'Bring back the small bubbles that explain where things are.';
+
+  @override
+  String get tipsShowAgainDone => 'Tips will show again.';
+
+  @override
+  String get firstRunGetModelTitle => 'Let\'s get you a model';
+
+  @override
+  String get firstRunGetModelBody =>
+      'Models run right here on this device. Pick one from the list; the one that fits best is marked.';
+
+  @override
+  String get firstRunGetModelButton => 'Get a model';
+
+  @override
+  String get firstRunLoadTitle => 'Load a model to start';
+
+  @override
+  String get firstRunLoadBody =>
+      'Your models are on this device. Load one and ask anything.';
+
+  @override
+  String firstRunLoadButton(String name) {
+    return 'Load $name';
+  }
+
+  @override
+  String get firstRunOtherModels => 'Other models';
+
+  @override
+  String get tipDiscoverTitle => 'Discover more models';
+
+  @override
+  String get tipDiscoverBody =>
+      'Search thousands of models on Hugging Face. The list below is already picked for this device.';
+
+  @override
+  String get bestFitBadge => 'Best for this device';
+
+  @override
+  String get tipBestFitTitle => 'Start here';
+
+  @override
+  String get tipBestFitBody =>
+      'This one fits your memory and answers best of the models that do. Tap Download.';
+
+  @override
+  String tipDownloadReadyTitle(String name) {
+    return '$name is ready';
+  }
+
+  @override
+  String get tipDownloadReadyBody => 'Load it to start chatting.';
+
+  @override
+  String get tipLoadAction => 'Load';
+
+  @override
+  String get optimizeOfferTitle => 'Optimize for this device?';
+
+  @override
+  String get optimizeOfferBody =>
+      'A few minutes of tests find the fastest settings that still give the same answers. You can also do it later in Settings.';
+
+  @override
+  String get optimizeOfferAction => 'Optimize';
+
+  @override
+  String get optimizeOfferLater => 'Later';
+
+  @override
+  String get optimizeSettingsTitle => 'Optimize for this device';
+
+  @override
+  String optimizeSettingsHint(String name) {
+    return 'Finds the fastest settings for $name.';
+  }
+
+  @override
+  String get optimizeSettingsNoModel =>
+      'Load a model first, then optimize it here.';
+
+  @override
+  String get optimizeSettingsDone => 'Optimized';
+
+  @override
+  String get tourToolsTitle => 'Tools';
+
+  @override
+  String get tourToolsBody =>
+      'Choose what the model may use: files, calculator, calendar and more. It reaches for them only when a question needs them.';
+
+  @override
+  String get tourWebTitle => 'Web research';
+
+  @override
+  String get tourWebBody =>
+      'Local keeps everything on this device. Auto searches the web when a question needs fresh facts; Always searches every time.';
+
+  @override
+  String get tourThinkTitle => 'Think';
+
+  @override
+  String get tourThinkBody =>
+      'Lets the model reason step by step before it answers. Slower, but better for hard questions.';
+
+  @override
+  String get tourAttachTitle => 'Attach';
+
+  @override
+  String get tourAttachBody =>
+      'Add photos, PDFs or documents and ask about them. You can also drop files on the window.';
+
+  @override
+  String get tourAttachBodyMobile =>
+      'Add photos, PDFs or documents and ask about them. Tools and Goals are here too.';
+
+  @override
+  String get tourSlashTitle => 'Shortcuts';
+
+  @override
+  String get tourSlashBody =>
+      'Type / in the message box for quick commands and your saved prompts.';
+
+  @override
+  String get recommendedEmpty =>
+      'Everything recommended for this device is already here.';
+
+  @override
+  String recommendedShowRemoved(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Show $count removed models',
+      one: 'Show 1 removed model',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get desktopLoadSettingsRecalculating => 'Recalculating…';
+
+  @override
+  String desktopLoadSettingsWeightsInRam(String gb) {
+    return 'RAM holds $gb GB of the weights (memory-mapped)';
+  }
+
+  @override
+  String desktopLoadSettingsExpertsInRam(String gb) {
+    return 'RAM holds $gb GB of expert weights (memory-mapped); the rest is on the GPU';
+  }
+
+  @override
+  String desktopLoadSettingsFromDisk(String gb) {
+    return '$gb GB more does not fit in RAM and is read from disk while answering (slower)';
+  }
+
+  @override
+  String desktopLoadSettingsKvCache(String gb) {
+    return 'Context cache: $gb GB';
+  }
+
+  @override
+  String desktopLoadSettingsRamMapped(String gb) {
+    return 'Lighter part: $gb GB of mapped weights Windows can free when needed';
+  }
+
+  @override
+  String imageUnusedPartsFreed(String size) {
+    return 'Removed unused parts: $size freed.';
+  }
+
+  @override
+  String get imageNoUnusedParts =>
+      'Nothing to remove: every file belongs to a model you have or are downloading.';
+
+  @override
+  String get recommendedAllRemoved =>
+      'The other suggestions for this device were removed from the list.';
+
+  @override
+  String get uiModelCardHide => 'Hide';
 }

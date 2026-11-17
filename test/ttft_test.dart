@@ -8,7 +8,7 @@ import 'package:ondevice_llm/core/l10n/l10n.dart';
 import 'package:ondevice_llm/core/platform/cpu_cores.dart';
 import 'package:ondevice_llm/core/platform/desktop_host.dart';
 import 'package:ondevice_llm/desktop/model_speed_results_provider.dart';
-import 'package:ondevice_llm/desktop/tune_benchmark_run.dart';
+import 'package:ondevice_llm/features/optimize/tune_benchmark_run.dart';
 import 'package:ondevice_llm/features/chat/domain/entities/turn_run.dart';
 import 'package:ondevice_llm/features/chat/presentation/widgets/run_timing_rows.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';

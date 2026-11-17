@@ -1,3 +1,4 @@
+import '../features/optimize/optimize_settings_row.dart';
 import '../features/settings/presentation/widgets/answer_tokens_control.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +14,7 @@ import '../features/settings/presentation/screens/advanced_pages_2.dart';
 import '../features/settings/presentation/screens/advanced_pages.dart';
 import '../features/settings/presentation/screens/knowledge_page.dart';
 import '../features/settings/presentation/screens/memory_page.dart';
+import '../features/settings/presentation/screens/model_profile_page.dart';
 import '../features/settings/presentation/screens/remote_server_page.dart';
 import '../features/settings/presentation/screens/settings_screen.dart';
 import '../features/settings/presentation/widgets/settings_widgets.dart';
@@ -284,6 +286,8 @@ class _GeneralSettings extends ConsumerWidget {
         children: [
           SettingsGroup(
             children: [
+              // First-run guide: "optimize my model for my laptop".
+              const OptimizeSettingsRow(),
               SettingsRow(
                 key: const Key('language-row'),
                 leading: const Icon(Icons.translate),
@@ -330,15 +334,14 @@ class _GeneralSettings extends ConsumerWidget {
                 contextWindow: s.contextSize,
                 onChanged: (v) => set(s.copyWith(maxTokens: v)),
               ),
-              SettingSlider(
-                label: l10n.temperature,
-                hint: l10n.uiAdvancedPagesRandomnessLowerIsMoreFocusedHigher,
-                value: s.temperature,
-                min: 0,
-                max: 2,
-                divisions: 40,
-                display: s.temperature.toStringAsFixed(2),
-                onChanged: (v) => set(s.copyWith(temperature: v)),
+              // Sampling is per model (owner 2026-11-01): an app-wide
+              // temperature here was ignored, so this opens the model's own.
+              SettingsTile(
+                key: const Key('desktop-sampling-per-model'),
+                leading: const Icon(Icons.tune),
+                title: Text(l10n.sampling),
+                subtitle: Text(l10n.samplingPerModelHint),
+                onTap: () => openActiveModelProfile(context, ref),
               ),
               SettingSlider(
                 key: const Key('desktopDeep-global-vramReserveMb'),

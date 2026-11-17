@@ -2,12 +2,54 @@ import 'dart:ffi';
 import 'dart:io';
 import 'package:ffi/ffi.dart';
 
-/// FFI bindings for ondevice_sd.dll (stable-diffusion.cpp bridge).
-/// The DLL is built by scripts/build-windows-sd.ps1 and staged at
-/// native/out/windows-x64/ondevice_sd.dll.
+import 'llama_bindings.dart';
+
+/// FFI bindings for the stable-diffusion.cpp bridge, built by
+/// scripts/build-windows-sd.ps1 into native/out/windows-x64/ in up to three
+/// variants (GitHub issue #4: a host-tuned build ran AVX-512 on AVX2 CPUs):
+/// - ondevice_sd.dll: NVIDIA CUDA, AVX2 CPU code (needs nvcuda.dll);
+/// - ondevice_sd_cpu.dll: CPU only, AVX2/FMA/F16C;
+/// - ondevice_sd_compat.dll: CPU only, SSE4.2 (no AVX).
 class SdBindings {
   static const _sdDllName = 'ondevice_sd.dll';
+  static const cpuDllName = 'ondevice_sd_cpu.dll';
+  static const compatDllName = 'ondevice_sd_compat.dll';
+  static const allDllNames = [_sdDllName, cpuDllName, compatDllName];
   static const supportedVersion = 4;
+
+  /// The DLL this instance opened.
+  late final String library;
+
+  /// The variants to try in order. [cpuVariant] is the desktop CPU setting
+  /// ('auto', 'avx512', 'avx2', 'compat'): 'compat' forces the SSE4.2 build.
+  /// The CUDA build needs AVX2 and the NVIDIA driver; every AVX build needs
+  /// AVX2 reported by Windows.
+  static List<String> candidates({
+    String cpuVariant = 'auto',
+    bool Function()? hasAvx2,
+    bool Function(String)? exists,
+    Map<String, String>? environment,
+  }) {
+    final has = exists ?? _exists;
+    final env = environment ?? Platform.environment;
+    final root = env['SystemRoot'] ?? r'C:\Windows';
+    final override = env['ODLLM_WINDOWS_BACKEND']?.trim().toLowerCase();
+    final compatOnly = cpuVariant == 'compat' || override == 'compat';
+    final avx2 = !compatOnly && (hasAvx2 ?? LlamaBindings.windowsHasAvx2)();
+    final cpuOnly = override == 'cpu' || override == 'vulkan';
+    final nvidia = has('$root\\System32\\nvcuda.dll');
+    return [
+      if (avx2 && !cpuOnly && nvidia) _sdDllName,
+      if (avx2) cpuDllName,
+      compatDllName,
+    ].where(has).toList();
+  }
+
+  static bool _exists(String name) =>
+      File(name).existsSync() || File('$_exeDir$name').existsSync();
+
+  static String get _exeDir =>
+      Platform.resolvedExecutable.replaceFirst(RegExp(r'[^\\/]+$'), '');
 
   late final Pointer<Void> Function(Pointer<Utf8>) create;
   late final void Function(Pointer<Void>) destroy;
@@ -76,11 +118,33 @@ class SdBindings {
 
   late final void Function(Pointer<Void>) resetCancel;
 
-  SdBindings() {
+  /// Opens [only] when given (the worker's choice, so another isolate uses
+  /// the same DLL), else the first of [candidates] that loads.
+  SdBindings({String cpuVariant = 'auto', String? only}) {
     if (!Platform.isWindows) {
       throw UnsupportedError('SdBindings is Windows-only for now.');
     }
-    final lib = DynamicLibrary.open(_sdDllName);
+    final names = only != null ? [only] : candidates(cpuVariant: cpuVariant);
+    if (names.isEmpty) {
+      throw StateError(
+        'No image engine for this PC: none of ${allDllNames.join(', ')} '
+        'is installed',
+      );
+    }
+    DynamicLibrary? opened;
+    final failures = <String>[];
+    for (final name in names) {
+      try {
+        opened = DynamicLibrary.open(name);
+        library = name;
+        break;
+      } catch (e) {
+        // ondevice_sd.dll fails here when the CUDA runtime is missing.
+        failures.add('$name: $e');
+      }
+    }
+    if (opened == null) throw StateError(failures.join('; '));
+    final lib = opened;
     final version = lib.lookupFunction<Int32 Function(), int Function()>(
       'od_sd_version',
     );
@@ -246,13 +310,14 @@ class SdBindings {
         >('od_sd_cancel');
   }
 
+  /// Widget tests set this to show the Create page without the DLL.
+  static bool? debugAvailable;
+
   /// Returns true if the sd DLL is present beside the executable.
   static bool isAvailable() {
+    if (debugAvailable != null) return debugAvailable!;
     if (!Platform.isWindows) return false;
-    return File(_sdDllName).existsSync() ||
-        File(
-          '${Platform.resolvedExecutable.replaceFirst(RegExp(r'[^\\/]+$'), '')}$_sdDllName',
-        ).existsSync();
+    return candidates().isNotEmpty;
   }
 }
 

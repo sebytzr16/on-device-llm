@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:ondevice_llm/features/optimize/model_speed_engine_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,7 +10,6 @@ import 'package:ondevice_llm/data/storage/gguf_metadata.dart';
 import 'package:ondevice_llm/desktop/desktop_theme.dart';
 import 'package:ondevice_llm/desktop/load_settings/analytical_estimate.dart';
 import 'package:ondevice_llm/desktop/load_settings_dialog.dart';
-import 'package:ondevice_llm/desktop/model_speed_section.dart';
 import 'package:ondevice_llm/features/models/domain/entities/model_info.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
@@ -123,6 +123,7 @@ void main() {
         metadata: metadata,
         weightsBytes: 0,
         settings: const InferenceSettings(
+          contextAuto: false,
           contextSize: 4096,
           nGpuLayers: 16,
           kvCacheType: KvCacheType.q8_0,
@@ -168,6 +169,7 @@ void main() {
       weightsBytes: 5 * 1024 * 1024 * 1024,
     );
     const settings = InferenceSettings(
+      contextAuto: false,
       contextSize: 32768,
       nGpuLayers: 999,
       kvCacheType: KvCacheType.q8_0,

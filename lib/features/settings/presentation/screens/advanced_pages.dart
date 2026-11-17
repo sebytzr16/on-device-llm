@@ -64,21 +64,34 @@ class ContextBatchPage extends ConsumerWidget {
     final trained =
         ref.watch(chatProvider.select((x) => x.metrics['contextTrain']))
             as num?;
-    final beyond = trained != null && trained > 0 && s.contextSize > trained;
+    final beyond =
+        !s.contextAuto &&
+        trained != null &&
+        trained > 0 &&
+        s.contextSize > trained;
     return _AdvancedScaffold(
       title: context.l10n.uiAdvancedPagesContextBatch,
       children: [
         SettingsGroup(
           children: [
+            // 0 stands for Auto (owner 2026-11-16): the recommended choice.
             SettingChoice<int>(
+              key: const Key('context-size-choice'),
               label: context.l10n.uiAdvancedPagesContextSize,
-              hint: (context.isDesktop
-                  ? context.l10n.uiAdvancedPagesTokensTheModelCanSeeAtPc
-                  : context.l10n.uiAdvancedPagesTokensTheModelCanSeeAt),
-              value: s.contextSize,
-              options: contextPresets,
-              labelOf: tokenCount,
-              onChanged: (v) => n.update(s.copyWith(contextSize: v)),
+              hint: s.contextAuto
+                  ? context.l10n.contextAutoHint
+                  : (context.isDesktop
+                        ? context.l10n.uiAdvancedPagesTokensTheModelCanSeeAtPc
+                        : context.l10n.uiAdvancedPagesTokensTheModelCanSeeAt),
+              value: s.contextAuto ? 0 : s.contextSize,
+              options: [0, ...contextPresets],
+              labelOf: (v) =>
+                  v == 0 ? context.l10n.contextAutoLabel : tokenCount(v),
+              onChanged: (v) => n.update(
+                v == 0
+                    ? s.copyWith(contextAuto: true)
+                    : s.copyWith(contextSize: v),
+              ),
               onCustom: () async {
                 final v = await askInteger(
                   context,

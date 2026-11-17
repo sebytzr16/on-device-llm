@@ -69,6 +69,12 @@ class ModelProfilesNotifier
 
   /// Replaces the profile of [modelId]; an empty map removes it.
   Future<void> set(String modelId, Map<String, dynamic> overrides) async {
+    await ready;
+    if (!_alive) return;
+    await _set(modelId, overrides);
+  }
+
+  Future<void> _set(String modelId, Map<String, dynamic> overrides) async {
     final clean = SettingsResolver.sanitize(overrides);
     final next = Map<String, Map<String, dynamic>>.from(state);
     if (clean.isEmpty) {
@@ -89,10 +95,14 @@ class ModelProfilesNotifier
     await _writes;
   }
 
-  Future<void> setKey(String modelId, String key, Object? value) => set(
-    modelId,
-    {...of(modelId), key: value}..removeWhere((k, v) => v == null),
-  );
+  Future<void> setKey(String modelId, String key, Object? value) async {
+    await ready;
+    if (!_alive) return;
+    await _set(
+      modelId,
+      {...of(modelId), key: value}..removeWhere((k, v) => v == null),
+    );
+  }
 
   Future<void> clear(String modelId) => set(modelId, const {});
 }

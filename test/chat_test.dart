@@ -518,6 +518,7 @@ class TestEngine extends LlamaEngine {
     String? mmprojPath,
     List<({String path, double scale})> adapters = const [],
     String? draftModelPath,
+    bool memoryGuard = true,
   }) async {
     loadedWith = settings;
   }
@@ -1417,9 +1418,11 @@ void main() {
     expect(SearchSteps.parseQueries('', fallback: 'the question'), [
       'the question',
     ]);
-    expect(SearchSteps.parseQueries('one\n' * 5, fallback: 'q'), [
-      'q',
-    ], reason: 'single words are not queries');
+    expect(
+      SearchSteps.parseQueries('one\n' * 5, fallback: 'q'),
+      ['q'],
+      reason: 'single words are not queries',
+    );
   });
 
   test('groundingNotice flags refusals, missing and bogus citations', () {
@@ -1877,7 +1880,7 @@ void main() {
       'My working schedule includes night shifts. What about my sleep?',
     );
     expect(
-      engine.receivedMessages!.first['content'],
+      engine.receivedMessages!.last['content'],
       contains('- The user is a night-shift nurse in Lisbon'),
     );
     expect(
@@ -2752,17 +2755,47 @@ void main() {
         )['content'],
         contains('Research before answering'),
       );
-      expect(research, isNot(contains('Flutter tablet')));
-      expect(research, contains('The user lives in Montreal'));
-      expect(research, contains('The user prefers concise answers'));
+      expect(
+        (engine.receivedMessages!.lastWhere(
+              (m) => m['role'] == 'user',
+            )['content']
+            as String),
+        isNot(contains('Flutter tablet')),
+      );
+      expect(
+        (engine.receivedMessages!.lastWhere(
+              (m) => m['role'] == 'user',
+            )['content']
+            as String),
+        contains('The user lives in Montreal'),
+      );
+      expect(
+        (engine.receivedMessages!.lastWhere(
+              (m) => m['role'] == 'user',
+            )['content']
+            as String),
+        contains('The user prefers concise answers'),
+      );
       // An ordinary turn, in a new chat, still gets the note that shares
       // its words.
       n.newChat();
       expect(await n.send('Is my Flutter tablet too old?'), isTrue);
       final ordinary = engine.receivedMessages!.first['content'] as String;
       expect(ordinary, isNot(contains('Research before answering')));
-      expect(ordinary, contains('The user owns an old Flutter tablet'));
-      expect(ordinary, contains('The user lives in Montreal'));
+      expect(
+        (engine.receivedMessages!.lastWhere(
+              (m) => m['role'] == 'user',
+            )['content']
+            as String),
+        contains('The user owns an old Flutter tablet'),
+      );
+      expect(
+        (engine.receivedMessages!.lastWhere(
+              (m) => m['role'] == 'user',
+            )['content']
+            as String),
+        contains('The user lives in Montreal'),
+      );
     },
   );
 

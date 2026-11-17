@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import '../core/storage/device_encryption.dart';
 
 import 'package:drift/drift.dart' show QueryRow;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -64,7 +65,8 @@ class CreationHistoryStore {
       if (file is! File || !file.path.endsWith('.json')) continue;
       try {
         final entry = HistoryEntry.fromJson(
-          jsonDecode(await file.readAsString()) as Map<String, dynamic>,
+          jsonDecode(utf8.decode(await DeviceEncryption.instance.read(file)))
+              as Map<String, dynamic>,
         );
         // Sidecars cannot redirect access outside the private directory.
         if (!RegExp(r'^[a-zA-Z0-9-]+$').hasMatch(entry.id)) continue;
@@ -91,15 +93,24 @@ class CreationHistoryStore {
     required List<int> thumbnailPng,
   }) => _serial(() async {
     await directory.create(recursive: true);
+    final scratch = await Directory.systemTemp.createTemp('creation-save-');
     try {
-      await writeMedia(media(entry).path);
-      await thumbnail(entry).writeAsBytes(thumbnailPng, flush: true);
-      final temporary = File('${_sidecar(entry).path}.tmp');
-      await temporary.writeAsString(jsonEncode(entry.toJson()), flush: true);
-      await temporary.rename(_sidecar(entry).path);
-    } catch (_) {
-      await _delete(entry);
-      rethrow;
+      final temporary = File(
+        p.join(scratch.path, p.basename(media(entry).path)),
+      );
+      await writeMedia(temporary.path);
+      await DeviceEncryption.instance.write(
+        media(entry),
+        await temporary.readAsBytes(),
+      );
+      await DeviceEncryption.instance.write(thumbnail(entry), thumbnailPng);
+      await DeviceEncryption.instance.write(
+        _sidecar(entry),
+        utf8.encode(jsonEncode(entry.toJson())),
+      );
+    } finally {
+      // Failed encryption must preserve any recoverable persistent originals.
+      await scratch.delete(recursive: true);
     }
     final entries = await _list();
     for (final old in entries.skip(cap)) {

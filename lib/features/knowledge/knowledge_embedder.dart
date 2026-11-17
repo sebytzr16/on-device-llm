@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logging/logging.dart';
 
 import '../../core/providers/shared_providers.dart';
 import '../../core/utils/priority_work_queue.dart';
@@ -68,6 +69,8 @@ class LlamaEmbedder implements TextEmbedder {
   final _queue = PriorityWorkQueue();
   Timer? _idle;
   bool _disposed = false;
+  DateTime? _retryAfter;
+  int? _failedRevision;
 
   Future<T> _background<T>(
     Future<T> Function() action,
@@ -106,17 +109,32 @@ class LlamaEmbedder implements TextEmbedder {
   /// media and kept until the idle release.
   Future<bool> _ready({bool media = false}) async {
     if (engine.isLoaded && (!media || engine.embedsMedia)) return true;
+    if (_failedRevision == LlamaEngine.memoryRevision &&
+        _retryAfter != null &&
+        DateTime.now().isBefore(_retryAfter!)) {
+      return false;
+    }
     if (!await available()) return false;
     final projector = model.projector;
     if (media && (projector == null || !await mediaAvailable())) return false;
-    final file = await ModelStorage.modelFile(model.fileName);
-    await engine.loadEmbedder(
-      modelPath: file.path,
-      mmprojPath: media
-          ? (await ModelStorage.modelFile(projector!.fileName)).path
-          : null,
-      placement: placement?.call(),
-    );
+    try {
+      final file = await ModelStorage.modelFile(model.fileName);
+      await engine.loadEmbedder(
+        modelPath: file.path,
+        mmprojPath: media
+            ? (await ModelStorage.modelFile(projector!.fileName)).path
+            : null,
+        placement: placement?.call(),
+      );
+      _retryAfter = null;
+    } catch (error) {
+      _failedRevision = LlamaEngine.memoryRevision;
+      _retryAfter = DateTime.now().add(const Duration(minutes: 2));
+      Logger('knowledge.embedder').info(
+        'Embedding unavailable; using lexical ranking for two minutes or until chat memory changes: $error',
+      );
+      return false;
+    }
     return true;
   }
 

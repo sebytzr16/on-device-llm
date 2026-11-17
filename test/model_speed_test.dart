@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:ondevice_llm/features/optimize/model_speed_engine_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,8 +10,8 @@ import 'package:ondevice_llm/desktop/model_speed_results_provider.dart';
 import 'package:ondevice_llm/desktop/model_speed_run.dart';
 import 'package:ondevice_llm/desktop/model_speed_section.dart';
 import 'package:ondevice_llm/desktop/model_tune_section.dart';
-import 'package:ondevice_llm/desktop/benchmark_receipt.dart';
-import 'package:ondevice_llm/desktop/tune_benchmark_run.dart';
+import 'package:ondevice_llm/features/optimize/benchmark_receipt.dart';
+import 'package:ondevice_llm/features/optimize/tune_benchmark_run.dart';
 import 'package:ondevice_llm/features/benchmark/benchmark.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';

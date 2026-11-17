@@ -1,6 +1,8 @@
-import '../features/models/domain/entities/model_info.dart';
-import '../features/models/presentation/providers/model_manager_provider.dart';
-import '../features/settings/domain/entities/inference_settings.dart';
+import 'dart:io';
+import '../../core/platform/cpu_cores.dart';
+import '../models/domain/entities/model_info.dart';
+import '../models/presentation/providers/model_manager_provider.dart';
+import '../settings/domain/entities/inference_settings.dart';
 import 'model_tuner.dart';
 import 'tune_benchmark_run.dart';
 
@@ -42,34 +44,69 @@ Map<String, List<Object>> modelTuneCandidates(InferenceSettings s) => {
 /// whose experts do not all fit on the card ([moeExpertPlacements]).
 List<InferenceSettings> pcOptimizationSetups(
   InferenceSettings best, {
+  bool? mobile,
+  int? bigCoreCount,
   bool mtpHead = false,
   String userDraft = '',
   String userSpeculationMode = 'auto',
   List<int> cpuMoe = const [],
-}) => [
-  best,
-  if (userDraft.isNotEmpty && !userDraft.startsWith(mtpHeadPrefix))
-    best.copyWith(
-      draftModelId: userDraft,
-      speculationMode: userSpeculationMode,
-    ),
-  for (final n in cpuMoe) best.copyWith(nCpuMoe: n),
-  if (mtpHead) ...[
-    best.copyWith(
-      speculationMode: 'off',
-      draftModelId: '$mtpHeadPrefix$mtpOff',
-    ),
-    best.copyWith(draftMaxTokens: 3),
-  ],
-  if (best.effectiveMicroBatchSize <= 1024 && best.batchSize != 1024)
-    best.copyWith(batchSize: 1024),
-  if (best.effectiveMicroBatchSize != 256 && best.batchSize >= 256)
-    best.copyWith(microBatchSize: 256),
-  if (best.effectiveBatchThreads != best.effectiveThreads)
-    best.copyWith(batchThreads: best.effectiveThreads),
-  if (best.effectiveThreads != 4) best.copyWith(cpuThreads: 4),
-  best.copyWith(flashAttention: false),
-];
+}) {
+  if (mobile ?? Platform.isAndroid) {
+    final big = bigCoreCount ?? CpuCores.androidBig;
+    // Never carry external drafts or expert placement into a phone sweep.
+    final safe = best.copyWith(
+      draftModelId: '',
+      speculationMode: mtpHead ? 'auto' : 'off',
+      mtp: false,
+      nCpuMoe: -1,
+      expertsUsed: -1,
+    );
+    return [
+      safe,
+      if (safe.effectiveThreads != 4) safe.copyWith(cpuThreads: 4),
+      if (big != 4 && big != safe.effectiveThreads)
+        safe.copyWith(cpuThreads: big),
+      safe.copyWith(flashAttention: false),
+      for (final size in [256, 512])
+        if (safe.batchSize != size)
+          safe.copyWith(
+            batchSize: size,
+            microBatchSize: safe.effectiveMicroBatchSize.clamp(32, size),
+          ),
+      if (safe.backend == GpuBackend.opencl && safe.nGpuLayers > 0)
+        safe.copyWith(nGpuLayers: 0),
+      if (mtpHead)
+        safe.copyWith(
+          speculationMode: 'off',
+          draftModelId: '$mtpHeadPrefix$mtpOff',
+        ),
+    ];
+  }
+  return [
+    best,
+    if (userDraft.isNotEmpty && !userDraft.startsWith(mtpHeadPrefix))
+      best.copyWith(
+        draftModelId: userDraft,
+        speculationMode: userSpeculationMode,
+      ),
+    for (final n in cpuMoe) best.copyWith(nCpuMoe: n),
+    if (mtpHead) ...[
+      best.copyWith(
+        speculationMode: 'off',
+        draftModelId: '$mtpHeadPrefix$mtpOff',
+      ),
+      best.copyWith(draftMaxTokens: 3),
+    ],
+    if (best.effectiveMicroBatchSize <= 1024 && best.batchSize != 1024)
+      best.copyWith(batchSize: 1024),
+    if (best.effectiveMicroBatchSize != 256 && best.batchSize >= 256)
+      best.copyWith(microBatchSize: 256),
+    if (best.effectiveBatchThreads != best.effectiveThreads)
+      best.copyWith(batchThreads: best.effectiveThreads),
+    if (best.effectiveThreads != 4) best.copyWith(cpuThreads: 4),
+    best.copyWith(flashAttention: false),
+  ];
+}
 
 /// Why Optimize kept the user's current settings instead of saving a setup.
 enum OptimizeKeepReason { slower, outputChanged, baselineUnavailable, noisy }
@@ -135,6 +172,12 @@ pickOptimizeWinner({
 double optimizeRate(TuneMeasurement m) =>
     m.workloadRate > 0 ? m.workloadRate : m.tokensPerSecond;
 
+/// Verification ran past its time budget (slow models): the run keeps what
+/// is proven instead of reporting an error.
+class OptimizeBudgetExhausted implements Exception {
+  const OptimizeBudgetExhausted();
+}
+
 /// Treat a complete setup as one A/B candidate, retaining the tuner's A/A,
 /// paired repeats and original-output gate. Screening never authorizes a save.
 class OptimizeRunner implements TuneRunner {
@@ -166,7 +209,7 @@ class OptimizeRunner implements TuneRunner {
   @override
   Future<TuneMeasurement> measure(TuneSettings s) async {
     if (elapsed.elapsed > const Duration(minutes: 15)) {
-      throw StateError('Optimization verification budget exhausted');
+      throw const OptimizeBudgetExhausted();
     }
     if (runner.cancelled) return const TuneMeasurement(0, '');
     final index = s['setup'] as int;
@@ -198,6 +241,7 @@ class OptimizeRunner implements TuneRunner {
 
 /// Only the explicit Optimize action chooses a new GPU layer count.
 Future<InferenceSettings> pcOptimizationDefaults({
+  bool? mobile,
   required InferenceSettings current,
   required InferenceSettings defaults,
   required Future<Map<String, dynamic>> Function(InferenceSettings) estimate,
@@ -217,6 +261,14 @@ Future<InferenceSettings> pcOptimizationDefaults({
         .difference(pcOptimizationKeys)
         .toList(),
   });
+  final phone = mobile ?? Platform.isAndroid;
+  if (phone) {
+    // Android Auto loads the CPU bridge; preserve an explicit OpenCL choice.
+    json['backend'] = current.backend.name;
+    json['nCpuMoe'] = -1;
+    json['expertsUsed'] = -1;
+    json['nGpuLayers'] = current.backend == GpuBackend.opencl ? 999 : 0;
+  }
   var settings = InferenceSettings.fromJson(json);
   final info = await estimate(settings);
   final layers = (info['layers'] as num?)?.toInt();
@@ -230,7 +282,8 @@ Future<InferenceSettings> pcOptimizationDefaults({
   // the vision projector (projectorDevice auto) or MoE experts to RAM, which
   // beats any partial layer count: Gemma 4 26B A4B decodes at 18-20 tok/s
   // that way, like LM Studio.
-  if (settings.backend != GpuBackend.cpu) {
+  if (settings.backend != GpuBackend.cpu &&
+      (!phone || settings.backend == GpuBackend.opencl)) {
     for (final kv in [KvCacheType.fp16, KvCacheType.q8_0]) {
       final all = settings.copyWith(kvCacheType: kv, nGpuLayers: 999);
       final fit = await estimate(all);
@@ -240,7 +293,12 @@ Future<InferenceSettings> pcOptimizationDefaults({
     }
   }
   for (final kv in [KvCacheType.fp16, KvCacheType.q8_0]) {
-    var low = 0, high = settings.backend == GpuBackend.cpu ? 0 : layers;
+    var low = 0,
+        high =
+            settings.backend == GpuBackend.cpu ||
+                (phone && settings.backend != GpuBackend.opencl)
+            ? 0
+            : layers;
     settings = settings.copyWith(kvCacheType: kv);
     while (low < high) {
       final middle = (low + high + 1) ~/ 2;

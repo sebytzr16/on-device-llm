@@ -39,6 +39,7 @@
 #endif
 #include <windows.h>
 #include <psapi.h>
+#include <intrin.h>
 #ifdef ODLLM_CUDA_PTX
 #include <cuda_runtime_api.h>
 #endif
@@ -130,6 +131,9 @@ struct Runtime {
     // Buffers common_fit_params writes and the model params point into.
     std::vector<float> split;
     std::vector<llama_model_tensor_buft_override> overrides;
+    // The loaded model's placement (devices, split, overrides point into
+    // this Runtime), so helper planning measures the same layout.
+    llama_model_params model_params = llama_model_default_params();
     std::vector<llama_model_kv_override> kv_overrides;
     std::string estimate;
     int batch = 256, cursor = 0, generated = 0, maximum = 0, trimmed = 0, pending = -1;
@@ -145,7 +149,12 @@ struct Runtime {
     // context memory right now. A new prompt that shares a prefix with it is
     // evaluated from the first differing token only.
     std::vector<llama_token> cached;
-    int reused = 0;
+    int reused = 0, prefix_match = 0;
+    double prefill_slice_ms = 0, prefill_token_ms = 0;
+    int prefill_slice_tokens = 128;
+    // A warm-up reads only the instructions every question starts with and
+    // stops there: a hybrid memory cannot drop a tail it read past them.
+    bool prime_only = false;
     // Partial-state checkpoints for memories that cannot drop a tail
     // (recurrent/hybrid such as Qwen3.5, sliding-window such as Gemma):
     // restoring one rolls the sequence back to `pos` tokens.
@@ -592,6 +601,30 @@ int32_t od_cpu_cores() {
     // the matrix work down.
     try { return std::max<int32_t>(1, common_cpu_get_num_math()); } catch (...) { return 1; }
 }
+int32_t od_cpu_isa() {
+    // Audit 2026-11-16 AUD-003: Windows' AVX2 flag says nothing of FMA,
+    // F16C or BMI2, and its AVX-512F flag nothing of BW/DQ/VL; a VM can hide
+    // one of them. The loader asks this from the SSE4.2 bridge.
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+    int r[4];
+    __cpuid(r, 0);
+    if (r[0] < 7) return 0;
+    __cpuid(r, 1);
+    const unsigned c1 = (unsigned)r[2];
+    const bool osxsave = c1 & (1u << 27), avx = c1 & (1u << 28), fma = c1 & (1u << 12), f16c = c1 & (1u << 29);
+    if (!osxsave || !avx) return 0;
+    const unsigned long long xcr0 = _xgetbv(0);
+    __cpuidex(r, 7, 0);
+    const unsigned b7 = (unsigned)r[1];
+    int32_t bits = 0;
+    if ((xcr0 & 0x6) == 0x6 && fma && f16c && (b7 & (1u << 5)) && (b7 & (1u << 8))) bits |= 1;
+    const unsigned avx512 = (1u << 16) | (1u << 17) | (1u << 28) | (1u << 30) | (1u << 31);  // F DQ CD BW VL
+    if ((bits & 1) && (xcr0 & 0xE6) == 0xE6 && (b7 & avx512) == avx512) bits |= 2;
+    return bits;
+#else
+    return 0;
+#endif
+}
 void od_destroy(void * h) { delete static_cast<Runtime *>(h); }
 int32_t od_release_owner(int64_t owner) {
     if (owner == 0) return 0;
@@ -678,7 +711,7 @@ const char * od_info(void * h) {
         {"firstTokenFromBeginMs", r->generated > 0 ? r->begin_ms + r->first_ms : 0},
         {"trimmedMessages", r->trimmed}, {"contextSize", r->ctx ? llama_n_ctx(r->ctx) : 0},
         {"contextTrain", r->model ? llama_model_n_ctx_train(r->model) : 0},
-        {"cachedPromptTokens", r->reused}, {"storedPromptTokens", r->store_restored},
+        {"cachedPromptTokens", r->reused}, {"prefixMatch", r->prefix_match}, {"checkpoints", r->checkpoints.size()}, {"storedPromptTokens", r->store_restored},
         {"storedPrompts", r->store.size()}, {"backendSampling", r->backend_sampled}, {"thinkingTokens", r->think_tokens},
         {"contextUsed", r->prompt_positions + r->generated - r->shifted_positions}, {"peakRssMb", peak_rss_mb()},
         {"supportsVision", r->mctx && mtmd_support_vision(r->mctx)}, {"visionError", r->vision_error},
@@ -928,9 +961,11 @@ static SystemMemory system_memory() {
     return m;
 }
 // A card with its own memory (CUDA, Vulkan on a discrete GPU). Phone and
-// Apple GPUs share the RAM, so what they take counts against the RAM.
+// Apple GPUs share the RAM, so what they take counts against the RAM. The
+// OpenCL backend reports Adreno/Mali as GPU, not IGPU, so Android never
+// counts as a separate memory (audit 2026-11-16 AUD-004).
 static bool own_memory(ggml_backend_dev_t dev) {
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(__ANDROID__)
     (void)dev; return false;
 #else
     return dev && ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_GPU;
@@ -955,8 +990,11 @@ static int64_t measure(const char * path, const llama_model_params & mp, const l
     // One entry per device in devs, then the host.
     for (size_t i = 0; i < data.size(); ++i) {
         const int64_t b = (int64_t)(data[i].model + data[i].context + data[i].compute);
-        if (i < devs.size() && own_memory(devs[i])) card += b; else { bytes += b; weights += (int64_t)data[i].model; }
+        if (i < devs.size() && own_memory(devs[i])) card += b; else bytes += b;
     }
+    // Only the host entry's weights stay file-backed (mmap); weights a
+    // shared-memory GPU holds are copies, so they get no paging credit.
+    if (data.size() > devs.size()) weights = (int64_t)data.back().model;
     if (host_weights) *host_weights = weights;
     if (mp.load_mtp) {
         auto mc = cp;
@@ -986,6 +1024,19 @@ static int64_t measure_draft(Runtime * r, const char * target, const llama_model
     if (!ctx) throw std::runtime_error("OD_DFLASH_METADATA");
     dc.ctx_other = ctx.get();
     return measure(draft.c_str(), dp, dc, nullptr, vram);
+}
+// Auto context (owner 2026-11-16): the longest context the model was
+// trained for, up to a ceiling by total RAM so a 256K-trained model does
+// not reserve gigabytes of cache for a chat; the GPU fit and the RAM
+// admission then shrink it to what fits. The phone ladder is the one the
+// app used for its default (2K/4K/8K by RAM).
+static uint32_t auto_context_ceiling() {
+    const int64_t gb = system_memory().total >> 30;
+#if defined(_WIN32)
+    return gb >= 24 ? 32768 : gb >= 12 ? 16384 : 8192;
+#else
+    return gb >= 14 ? 16384 : gb >= 9 ? 8192 : gb >= 5 ? 4096 : 2048;
+#endif
 }
 // Memory admission (report 2026-09-28): the saved context was used as
 // is, so a 64K context on Qwen3 1.7B asked for ~7 GiB of cache and Android
@@ -1065,6 +1116,18 @@ static json admit(Runtime * r, const char * path, const json & s, const llama_mo
         // apps Android closes on demand, yet a foreground app can count on
         // about 40% of the RAM (Gemma 4 E2B at 5.4 GB RSS never died).
         budget = std::max(available - std::max<int64_t>(1ll << 30, ram.total / 6), ram.total * 2 / 5 - ram.own);
+        // Memory-mapped weights are file-backed page cache on Android too:
+        // the kernel drops and re-reads them under pressure instead of the
+        // low-memory killer counting them like the cache and buffers.
+        // Charging them in full refused models that run (GitHub issue #5,
+        // the same rule as Windows above). Only weights under 3/4 of the
+        // RAM are credited, so a model too large for the phone is still
+        // refused rather than re-reading storage on every token.
+        if (s.value("useMmap", true) && !s.value("useMlock", false) && weights < ram.total * 3 / 4) {
+            budget += weights;
+            out["memoryPagedMb"] = weights >> 20;
+            if (weights > available) out["memoryWarning"] = "weightsExceedFreeRam";
+        }
 #endif
         out["memoryAvailableMb"] = available >> 20;
         out["memoryBudgetMb"] = budget >> 20;
@@ -1072,8 +1135,14 @@ static json admit(Runtime * r, const char * path, const json & s, const llama_mo
             // Model memory is fixed and the cache grows with the context, so
             // two measurements give the context that fits; it is then
             // confirmed, because compute buffers do not grow exactly linearly.
-            const uint32_t low = std::min(n, std::max<uint32_t>(1024, std::min<uint32_t>(n / 2, 4096)));
-            const int64_t need_low = low < n ? need_at(low) : need;
+            uint32_t low = std::min(n, std::max<uint32_t>(1024, std::min<uint32_t>(n / 2, 4096)));
+            int64_t need_low = low < n ? need_at(low) : need;
+            // Shrink the context to 1024 before refusing (issue #5); the
+            // planner too, so the estimate shows the context a load gets.
+            if (need_low > budget && low > 1024) {
+                low = 1024;
+                need_low = need_at(low);
+            }
             if (need_low > budget && r->planning) {
                 cp.n_ctx = low;
                 out["contextCap"] = "memory";
@@ -1159,8 +1228,12 @@ static json fit_gpu(Runtime * r, const char * path, const json & s, llama_model_
     mc.ctx_type = LLAMA_CONTEXT_TYPE_MTP;
     mc.n_rs_seq = 0;
     common_fit_extra_model extra{{path}, &mp, &mc, true};
+    // Auto context lets the fit trade context (down to 8K) for layers on
+    // the card before it moves layers to the CPU; a length set by hand is
+    // kept.
+    const uint32_t ctx_min = s.value("contextAuto", false) ? std::min<uint32_t>(cp.n_ctx, 8192) : cp.n_ctx;
     const auto status = common_fit_params({path}, &mp, &cp, r->split.data(), r->overrides.data(), margins.data(),
-                                          cp.n_ctx, mp.load_mtp ? &extra : nullptr, GGML_LOG_LEVEL_ERROR);
+                                          ctx_min, mp.load_mtp ? &extra : nullptr, GGML_LOG_LEVEL_ERROR);
     if (status == COMMON_PARAMS_FIT_STATUS_ERROR) {
         // Unreadable here: the real load reports why.
         mp.n_gpu_layers = 999; mp.tensor_buft_overrides = nullptr; mp.tensor_split = nullptr;
@@ -1434,17 +1507,25 @@ static json load_with(Runtime * r, const char * path, const json & config, const
         bool projector_gpu = !mmproj.empty() && projector_choice != "cpu";
         json admission = json::object();
         if (!r->embedding) {
-            const uint32_t context_requested = cp.n_ctx;
             std::string context_cap;
+            const bool stretched = rope == "linear" || rope == "yarn";
+            const bool context_auto = s.value("contextAuto", false) && !stretched;
+            uint32_t train = 0;
+            if (context_auto || (s.value("memoryGuard", true) && !stretched)) {
+                try { measure(path, mp, cp, &train); } catch (const std::exception &) { train = 0; }
+            }
+            if (context_auto) {
+                // Unknown trained length: the ceiling, which admission caps.
+                const uint32_t ceiling = auto_context_ceiling();
+                cp.n_ctx = train > 0 ? std::min(train, ceiling) : ceiling;
+                cp.n_ctx = std::max<uint32_t>(cp.n_ctx, 512);
+            }
+            const uint32_t context_requested = cp.n_ctx;
             // Use the same trained length and scaling exceptions as admit(),
             // before either GPU fit budgets the target's cache.
-            if (s.value("memoryGuard", true) && rope != "linear" && rope != "yarn") {
-                uint32_t train = 0;
-                try { measure(path, mp, cp, &train); } catch (const std::exception &) { train = 0; }
-                if (train > 0 && cp.n_ctx > train) {
-                    cp.n_ctx = train;
-                    context_cap = "train";
-                }
+            if (s.value("memoryGuard", true) && !stretched && train > 0 && cp.n_ctx > train) {
+                cp.n_ctx = train;
+                context_cap = "train";
             }
             const auto requested_mp = mp;
             // One retry after RAM admission, starting from the user's layer
@@ -1499,6 +1580,19 @@ static json load_with(Runtime * r, const char * path, const json & config, const
             }
             admission["contextRequested"] = context_requested;
             admission["contextCap"] = context_cap;
+            // Auto shrinks by design: no "context was shortened" note.
+            admission["contextAuto"] = context_auto;
+        } else {
+            // Embedders and rerankers pass the GPU fit and RAM admission too
+            // (audit 2026-11-16 AUD-005). Their context is one passage and
+            // the batch equals it, so neither may shrink it: they run on
+            // copies and only the layer placement and a refusal apply.
+            auto fit_cp = cp;
+            admission = fit_gpu(r, path, s, mp, fit_cp, projector_gpu ? file_bytes(mmproj) : 0);
+            const bool on_card = mp.n_gpu_layers > 0 && own_memory(r->devices.empty() ? nullptr : r->devices[mp.split_mode == LLAMA_SPLIT_MODE_NONE ? mp.main_gpu : 0]);
+            auto admit_cp = cp;
+            admission.update(admit(r, path, s, mp, admit_cp, "", dp, projector_gpu && on_card ? "" : mmproj, 0));
+            admission.erase("contextCap");
         }
         // Without layers on a GPU the projector runs on the CPU too.
         projector_gpu = projector_gpu && mp.n_gpu_layers > 0;
@@ -1545,6 +1639,9 @@ static json load_with(Runtime * r, const char * path, const json & config, const
             int64_t paged = 0;
 #if defined(_WIN32)
             if (use_mmap && !use_mlock) paged = host_weights;
+#elif defined(__ANDROID__)
+            // Same cap as admit() on Android (GitHub issue #5).
+            if (use_mmap && !use_mlock && host_weights < system_memory().total * 3 / 4) paged = host_weights;
 #endif
             admission["ramPagedMb"] = paged >> 20;
             admission["ramNeedMb"] = std::max<int64_t>(0, ram - paged) >> 20;
@@ -1561,6 +1658,9 @@ static json load_with(Runtime * r, const char * path, const json & config, const
         mp.progress_callback_user_data = &loading;
         last_native_error.clear();
         r->model = llama_model_load_from_file(path, mp);
+        r->model_params = mp;
+        r->model_params.progress_callback = nullptr;
+        r->model_params.progress_callback_user_data = nullptr;
         if (!r->model) {
             // llama.cpp's own words, e.g. "unknown model architecture: 'x'".
             const std::string why = last_native_error;
@@ -2405,6 +2505,7 @@ static void reuse_media_prefix(Runtime * r, bool enabled) {
     if (keep >= r->media_flat.size()) keep = r->media_flat.size() - 1;
     if (const auto * m = media_at(r->media_meta_next, keep); m && m->idx != keep) keep = m->idx;
     llama_pos keep_pos = media_pos_of(r->media_meta_next, keep);
+    r->prefix_match = keep;
     bool ok = keep > 0;
     if (ok) {
         ok = llama_memory_seq_rm(mem, 0, keep_pos, -1);
@@ -2628,6 +2729,7 @@ static void reuse_prefix(Runtime * r, bool enabled) {
             }
         }
     }
+    r->prefix_match = keep;
     bool ok = keep > 0;
     if (ok) {
         // Plain KV caches drop a tail; recurrent/hybrid memories refuse unless a
@@ -2635,8 +2737,9 @@ static void reuse_prefix(Runtime * r, bool enabled) {
         // n_swa tokens before the cut (window_holds).
         ok = llama_memory_seq_rm(mem, 0, keep, -1);
         if (ok && r->n_swa > 0 && !r->swa_full) ok = window_holds(mem, r->n_swa, keep);
-        // The MTP driver has no snapshot of its own to roll back with.
-        if (!ok && !r->mtp) {
+        // The target rolls back to a checkpoint; the MTP head's own plain KV
+        // drops the same tail below.
+        if (!ok) {
             const int pos = restore_checkpoint(r, keep);
             ok = pos > 0; if (ok) keep = pos;
         }
@@ -2936,6 +3039,9 @@ int32_t od_begin(void * h, const char * request) {
         if (!r->ctx) throw std::runtime_error("No model loaded.");
         if (r->embedding) throw std::runtime_error("This is an embedding model; it cannot chat.");
         auto req = json::parse(request); auto s = req.at("settings"); auto messages = req.at("messages");
+        r->prefill_slice_ms = req.value("prefillSliceMs", 0.0);
+        r->prefill_token_ms = 0; r->prefill_slice_tokens = 128; r->prefix_match = 0;
+        r->prime_only = false;
         r->reset(); r->error.clear(); r->trimmed = 0; r->generated = 0; r->first_ms = 0;
         r->held.clear(); r->flush_only = false; r->finish.clear(); r->stops.clear();
         r->tools_active = false; r->generated_text.clear(); r->tool_calls = json::array(); r->tool_format.clear(); r->tool_content.clear();
@@ -3025,6 +3131,18 @@ int32_t od_begin(void * h, const char * request) {
                     : "Message plus response budget exceeds context. Shorten the message or reduce max tokens.");
             }
         }
+        // A warm-up stops where its empty question starts. The text before it
+        // may tokenize differently at its end, so only the tokens it shares
+        // with the real prompt count. A question that extends exactly this
+        // sequence reuses it on any memory; reading past it left a recurrent
+        // memory nothing to keep (Qwen 3.6 35B, 2026-11-17: match 1711 of the
+        // warm-up's 1720 tokens, cached 0).
+        const std::string prime_prefix = req.value("primePrefix", "");
+        if (!prime_prefix.empty() && images.empty()) {
+            const auto head = tokenize(vocab, prime_prefix);
+            const int n = shared_prefix(head, r->prompt, (int)r->prompt.size() - 1);
+            if (n >= 2) { r->prompt.resize(n); prompt_count = n; r->prime_only = true; }
+        }
         // Rendered prompt size in KV positions, not flat tokens: tokenization
         // returns the media position count for a photo turn (audit E26).
         r->prompt_positions = prompt_count;
@@ -3071,10 +3189,11 @@ int32_t od_begin(void * h, const char * request) {
             reuse_prefix(r, s.value("promptCache", true));
         }
         r->checkpoint_at.clear();
-        // reuse_prefix cannot restore these partial snapshots with an active
-        // MTP driver (its hidden-state carryover is not in the snapshot).
-        // Avoid copying unusable recurrent/SWA state before the first token.
-        if (r->needs_checkpoints && !r->mtp && images.empty()) {
+        // With MTP too: drafts are verified by the target, so a head row the
+        // restored snapshot lacks only costs acceptance for a token, while no
+        // checkpoint made a hybrid model re-read the whole prompt on every
+        // Regenerate (Qwen 3.6 35B, 2026-11-17).
+        if (r->needs_checkpoints && !r->prime_only && images.empty()) {
             // Where the next turn will still match this one. Tokenization may
             // merge across a boundary, so only the part that is a prefix of the
             // real prompt counts.
@@ -3411,10 +3530,19 @@ int32_t od_step(void * h, uint8_t * output, int32_t capacity, int32_t * length) 
         }
         if (r->cursor < (int)r->prompt.size()) {
             AddElapsed timed{r->prefill_ms};
-            int n = std::min(r->batch, (int)r->prompt.size() - r->cursor);
+            const auto slice_started = Clock::now();
+            const int slice = r->prefill_slice_ms > 0 ? std::min(r->batch, r->prefill_slice_tokens) : r->batch;
+            int n = std::min(slice, (int)r->prompt.size() - r->cursor);
             for (const int at : r->checkpoint_at) if (at > r->cursor && at < r->cursor + n) { n = at - r->cursor; break; }
             auto batch = llama_batch_get_one(r->prompt.data() + r->cursor, n);
-            if (decode_target(r, batch) != 0) { r->forget(); throw std::runtime_error("Prompt evaluation failed. Try a smaller context/model."); }
+            // Finish a prime slice before observing Stop, preserving its cache.
+            if (r->prefill_slice_ms > 0) llama_set_abort_callback(r->ctx, nullptr, nullptr);
+            const int decoded = decode_target(r, batch);
+            if (r->prefill_slice_ms > 0) {
+                llama_synchronize(r->ctx);
+                llama_set_abort_callback(r->ctx, cancelled_callback, r->cancelled.get());
+            }
+            if (decoded != 0) { r->forget(); throw std::runtime_error("Prompt evaluation failed. Try a smaller context/model."); }
             r->cursor += n;
             r->cached.assign(r->prompt.begin(), r->prompt.begin() + r->cursor);
             if (r->mtp && r->cursor == (int)r->prompt.size()) common_speculative_begin(r->mtp.get(), 0, r->prompt);
@@ -3424,9 +3552,20 @@ int32_t od_step(void * h, uint8_t * output, int32_t capacity, int32_t * length) 
             }
             // GPU decodes return before they finish: the last chunk waits so
             // prompt reading is not under-counted.
-            if (r->cursor == (int)r->prompt.size()) llama_synchronize(r->ctx);
+            if (r->prefill_slice_ms > 0 || r->cursor == (int)r->prompt.size()) llama_synchronize(r->ctx);
+            if (r->prefill_slice_ms > 0) {
+                // Synchronize each slice so cancellation waits for bounded GPU work.
+                const double elapsed = std::chrono::duration<double, std::milli>(Clock::now() - slice_started).count();
+                r->prefill_token_ms = elapsed / n;
+                const double next = r->prefill_slice_ms / std::max(0.001, r->prefill_token_ms);
+                // Not below 128: with experts on the CPU a slice costs a
+                // fixed weight pass, and 16-token slices read 54 tok/s where
+                // whole batches read 197 (RTX 3070 laptop, 2026-11-17).
+                r->prefill_slice_tokens = (int)std::max(128.0, std::min((double)r->batch, next));
+            }
             return 0;
         }
+        if (r->prime_only) { r->finish = "length"; r->done = true; return 2; }
         auto end = [&](const char * why) {
             r->finish = why; finish_tools(r);
             if (r->held.empty() && r->parsed_output.empty()) { r->done = true; return 2; }

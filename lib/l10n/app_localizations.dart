@@ -9620,6 +9620,36 @@ abstract class AppLocalizations {
   /// **'A new context length reloads the model on the next message.'**
   String get desktopInspectorContextHint;
 
+  /// No description provided for @contextAutoLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto (recommended)'**
+  String get contextAutoLabel;
+
+  /// No description provided for @contextAutoHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Fits into the memory'**
+  String get contextAutoHint;
+
+  /// No description provided for @samplingPerModelHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Temperature, top-K and top-P belong to each model. Opens the active model\'s settings.'**
+  String get samplingPerModelHint;
+
+  /// No description provided for @contextAutoLoaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Fits into the memory · {size} now'**
+  String contextAutoLoaded(String size);
+
+  /// No description provided for @settingLabelContextAuto.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic context'**
+  String get settingLabelContextAuto;
+
   /// No description provided for @desktopInspectorScopeModel.
   ///
   /// In en, this message translates to:
@@ -9859,6 +9889,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Over the card\'s free memory by {gb} GB: Windows moves the rest into shared memory and answers get several times slower. Lower the GPU layers or the context.'**
   String desktopLoadSettingsSpill(String gb);
+
+  /// No description provided for @desktopLoadSettingsRamShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Over the free RAM by {gb} GB: the load may be refused, or the PC may slow down. Close other apps, lower the context, or put more layers on the GPU.'**
+  String desktopLoadSettingsRamShort(String gb);
+
+  /// No description provided for @desktopLoadSettingsWeightsPaging.
+  ///
+  /// In en, this message translates to:
+  /// **'The model file is bigger than the free RAM: parts of it will be read from disk again while it answers, which is slower.'**
+  String get desktopLoadSettingsWeightsPaging;
 
   /// No description provided for @desktopLoadSettingsExperts.
   ///
@@ -16410,6 +16452,372 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'FP8'**
   String get kvCacheFp8;
+
+  /// No description provided for @loadAnyway.
+  ///
+  /// In en, this message translates to:
+  /// **'Load anyway'**
+  String get loadAnyway;
+
+  /// No description provided for @loadAnywayWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'The estimate says this model may not fit in free memory. This device can often free more. Load it anyway?'**
+  String get loadAnywayWarning;
+
+  /// No description provided for @remoteProbeModels.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected · {count, plural, one{{count} model} other{{count} models}}'**
+  String remoteProbeModels(int count);
+
+  /// No description provided for @remoteProbeHealth.
+  ///
+  /// In en, this message translates to:
+  /// **'Health: {status}'**
+  String remoteProbeHealth(String status);
+
+  /// No description provided for @remoteProbeNoTools.
+  ///
+  /// In en, this message translates to:
+  /// **'No server tools advertised'**
+  String get remoteProbeNoTools;
+
+  /// No description provided for @remoteProbeTools.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{{count} server tool detected} other{{count} server tools detected}}'**
+  String remoteProbeTools(int count);
+
+  /// No description provided for @remoteProbeNotAdvertised.
+  ///
+  /// In en, this message translates to:
+  /// **'Not advertised'**
+  String get remoteProbeNotAdvertised;
+
+  /// No description provided for @remoteProbeUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get remoteProbeUnknown;
+
+  /// No description provided for @remoteProbeOk.
+  ///
+  /// In en, this message translates to:
+  /// **'OK'**
+  String get remoteProbeOk;
+
+  /// No description provided for @tipGotIt.
+  ///
+  /// In en, this message translates to:
+  /// **'Got it'**
+  String get tipGotIt;
+
+  /// No description provided for @tipSkipAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip tips'**
+  String get tipSkipAll;
+
+  /// No description provided for @tipStep.
+  ///
+  /// In en, this message translates to:
+  /// **'{n} of {total}'**
+  String tipStep(int n, int total);
+
+  /// No description provided for @tipsShowAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Show tips again'**
+  String get tipsShowAgain;
+
+  /// No description provided for @tipsShowAgainHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Bring back the small bubbles that explain where things are.'**
+  String get tipsShowAgainHint;
+
+  /// No description provided for @tipsShowAgainDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Tips will show again.'**
+  String get tipsShowAgainDone;
+
+  /// No description provided for @firstRunGetModelTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Let\'s get you a model'**
+  String get firstRunGetModelTitle;
+
+  /// No description provided for @firstRunGetModelBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Models run right here on this device. Pick one from the list; the one that fits best is marked.'**
+  String get firstRunGetModelBody;
+
+  /// No description provided for @firstRunGetModelButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Get a model'**
+  String get firstRunGetModelButton;
+
+  /// No description provided for @firstRunLoadTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Load a model to start'**
+  String get firstRunLoadTitle;
+
+  /// No description provided for @firstRunLoadBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Your models are on this device. Load one and ask anything.'**
+  String get firstRunLoadBody;
+
+  /// No description provided for @firstRunLoadButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Load {name}'**
+  String firstRunLoadButton(String name);
+
+  /// No description provided for @firstRunOtherModels.
+  ///
+  /// In en, this message translates to:
+  /// **'Other models'**
+  String get firstRunOtherModels;
+
+  /// No description provided for @tipDiscoverTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Discover more models'**
+  String get tipDiscoverTitle;
+
+  /// No description provided for @tipDiscoverBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Search thousands of models on Hugging Face. The list below is already picked for this device.'**
+  String get tipDiscoverBody;
+
+  /// No description provided for @bestFitBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Best for this device'**
+  String get bestFitBadge;
+
+  /// No description provided for @tipBestFitTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Start here'**
+  String get tipBestFitTitle;
+
+  /// No description provided for @tipBestFitBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This one fits your memory and answers best of the models that do. Tap Download.'**
+  String get tipBestFitBody;
+
+  /// No description provided for @tipDownloadReadyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} is ready'**
+  String tipDownloadReadyTitle(String name);
+
+  /// No description provided for @tipDownloadReadyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Load it to start chatting.'**
+  String get tipDownloadReadyBody;
+
+  /// No description provided for @tipLoadAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Load'**
+  String get tipLoadAction;
+
+  /// No description provided for @optimizeOfferTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Optimize for this device?'**
+  String get optimizeOfferTitle;
+
+  /// No description provided for @optimizeOfferBody.
+  ///
+  /// In en, this message translates to:
+  /// **'A few minutes of tests find the fastest settings that still give the same answers. You can also do it later in Settings.'**
+  String get optimizeOfferBody;
+
+  /// No description provided for @optimizeOfferAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Optimize'**
+  String get optimizeOfferAction;
+
+  /// No description provided for @optimizeOfferLater.
+  ///
+  /// In en, this message translates to:
+  /// **'Later'**
+  String get optimizeOfferLater;
+
+  /// No description provided for @optimizeSettingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Optimize for this device'**
+  String get optimizeSettingsTitle;
+
+  /// No description provided for @optimizeSettingsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Finds the fastest settings for {name}.'**
+  String optimizeSettingsHint(String name);
+
+  /// No description provided for @optimizeSettingsNoModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Load a model first, then optimize it here.'**
+  String get optimizeSettingsNoModel;
+
+  /// No description provided for @optimizeSettingsDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Optimized'**
+  String get optimizeSettingsDone;
+
+  /// No description provided for @tourToolsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Tools'**
+  String get tourToolsTitle;
+
+  /// No description provided for @tourToolsBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose what the model may use: files, calculator, calendar and more. It reaches for them only when a question needs them.'**
+  String get tourToolsBody;
+
+  /// No description provided for @tourWebTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Web research'**
+  String get tourWebTitle;
+
+  /// No description provided for @tourWebBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Local keeps everything on this device. Auto searches the web when a question needs fresh facts; Always searches every time.'**
+  String get tourWebBody;
+
+  /// No description provided for @tourThinkTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Think'**
+  String get tourThinkTitle;
+
+  /// No description provided for @tourThinkBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Lets the model reason step by step before it answers. Slower, but better for hard questions.'**
+  String get tourThinkBody;
+
+  /// No description provided for @tourAttachTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Attach'**
+  String get tourAttachTitle;
+
+  /// No description provided for @tourAttachBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Add photos, PDFs or documents and ask about them. You can also drop files on the window.'**
+  String get tourAttachBody;
+
+  /// No description provided for @tourAttachBodyMobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Add photos, PDFs or documents and ask about them. Tools and Goals are here too.'**
+  String get tourAttachBodyMobile;
+
+  /// No description provided for @tourSlashTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Shortcuts'**
+  String get tourSlashTitle;
+
+  /// No description provided for @tourSlashBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Type / in the message box for quick commands and your saved prompts.'**
+  String get tourSlashBody;
+
+  /// No description provided for @recommendedEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Everything recommended for this device is already here.'**
+  String get recommendedEmpty;
+
+  /// No description provided for @recommendedShowRemoved.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Show 1 removed model} other{Show {count} removed models}}'**
+  String recommendedShowRemoved(int count);
+
+  /// No description provided for @desktopLoadSettingsRecalculating.
+  ///
+  /// In en, this message translates to:
+  /// **'Recalculating…'**
+  String get desktopLoadSettingsRecalculating;
+
+  /// No description provided for @desktopLoadSettingsWeightsInRam.
+  ///
+  /// In en, this message translates to:
+  /// **'RAM holds {gb} GB of the weights (memory-mapped)'**
+  String desktopLoadSettingsWeightsInRam(String gb);
+
+  /// No description provided for @desktopLoadSettingsExpertsInRam.
+  ///
+  /// In en, this message translates to:
+  /// **'RAM holds {gb} GB of expert weights (memory-mapped); the rest is on the GPU'**
+  String desktopLoadSettingsExpertsInRam(String gb);
+
+  /// No description provided for @desktopLoadSettingsFromDisk.
+  ///
+  /// In en, this message translates to:
+  /// **'{gb} GB more does not fit in RAM and is read from disk while answering (slower)'**
+  String desktopLoadSettingsFromDisk(String gb);
+
+  /// No description provided for @desktopLoadSettingsKvCache.
+  ///
+  /// In en, this message translates to:
+  /// **'Context cache: {gb} GB'**
+  String desktopLoadSettingsKvCache(String gb);
+
+  /// No description provided for @desktopLoadSettingsRamMapped.
+  ///
+  /// In en, this message translates to:
+  /// **'Lighter part: {gb} GB of mapped weights Windows can free when needed'**
+  String desktopLoadSettingsRamMapped(String gb);
+
+  /// No description provided for @imageUnusedPartsFreed.
+  ///
+  /// In en, this message translates to:
+  /// **'Removed unused parts: {size} freed.'**
+  String imageUnusedPartsFreed(String size);
+
+  /// No description provided for @imageNoUnusedParts.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing to remove: every file belongs to a model you have or are downloading.'**
+  String get imageNoUnusedParts;
+
+  /// No description provided for @recommendedAllRemoved.
+  ///
+  /// In en, this message translates to:
+  /// **'The other suggestions for this device were removed from the list.'**
+  String get recommendedAllRemoved;
+
+  /// No description provided for @uiModelCardHide.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide'**
+  String get uiModelCardHide;
 }
 
 class _AppLocalizationsDelegate

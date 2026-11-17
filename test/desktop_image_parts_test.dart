@@ -128,4 +128,42 @@ void main() {
       }
     },
   );
+
+  test(
+    'a file only an installed upscaler owns is not a partial download (owner 2026-11-16)',
+    () async {
+      final root = await Directory.systemTemp.createTemp('image-held-');
+      final previous = PathProviderPlatform.instance;
+      final desktop = DesktopHost.active;
+      DesktopHost.active = false;
+      PathProviderPlatform.instance = BackupPaths(root.path, root.path);
+      SharedPreferences.setMockInitialValues({});
+      final container = ProviderContainer();
+      try {
+        // "Sharp" is installed; its file is Qwen-Image's upscaler too.
+        await (await ModelStorage.modelFile(
+          upscalerComponent.fileName,
+        )).writeAsString('upscaler');
+        final downloads = container.read(imageGenDownloadsProvider.notifier);
+        await downloads.refresh();
+        final qwen = imageGenCatalog.firstWhere((m) => m.id.startsWith('qwen'));
+        final state = container.read(imageGenDownloadsProvider).of(qwen);
+        expect(state.received, 0);
+        expect(state.missingFiles, isNot(contains(upscalerComponent.fileName)));
+        // Nothing unused: the cleanup says so instead of doing nothing.
+        expect(await downloads.removeUnusedParts(), 0);
+        expect(await ModelStorage.exists(upscalerComponent.fileName), isTrue);
+        // An orphaned VAE is freed and counted.
+        final vae = qwen.file(ImageGenRole.vae)!.fileName;
+        await (await ModelStorage.modelFile(vae)).writeAsString('orphan');
+        expect(await downloads.removeUnusedParts(), greaterThan(0));
+        expect(await ModelStorage.exists(vae), isFalse);
+      } finally {
+        container.dispose();
+        PathProviderPlatform.instance = previous;
+        DesktopHost.active = desktop;
+        await root.delete(recursive: true);
+      }
+    },
+  );
 }

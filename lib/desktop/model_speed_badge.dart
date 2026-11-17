@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/design/app_design.dart';
 import '../core/l10n/l10n.dart';
@@ -21,7 +22,9 @@ class ModelSpeedBadge extends ConsumerWidget {
     }
     return Tooltip(
       message: context.l10n.desktopBenchLast(
-        results.first.timestamp.toLocal().toString(),
+        DateFormat.yMMMd(
+          Localizations.localeOf(context).toLanguageTag(),
+        ).add_jm().format(results.first.timestamp.toLocal()),
       ),
       child: Text(
         context.l10n.desktopBenchRate(

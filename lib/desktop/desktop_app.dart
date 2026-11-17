@@ -1,3 +1,4 @@
+import '../features/models/presentation/providers/fresh_downloads_provider.dart';
 import 'dart:async';
 import '../features/settings/presentation/widgets/device_encryption_setting.dart';
 import 'dart:convert';
@@ -67,6 +68,9 @@ class DesktopApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Kept alive from the start so a download that ends on another page
+    // still offers Load on the Models page.
+    ref.listen(freshDownloadsProvider, (_, _) {});
     final localeCode = ref.watch(settingsProvider.select((s) => s.localeCode));
     appLanguageCode = localeCode;
     final themeChoice = ref.watch(

@@ -75,17 +75,20 @@ class EngineFiles {
   static EngineFiles besideExecutable() =>
       EngineFiles.read(p.dirname(Platform.resolvedExecutable));
 
-  // CUDA runtimes belong only to their bridge; other DLLs are shared.
+  // Text bridges statically link llama/ggml; optional engines are independent.
   static bool companionOf(String name, String bridge) {
     final n = name.toLowerCase();
-    if (n.startsWith('ondevice_llm')) return n == bridge;
+    final b = bridge.toLowerCase();
+    if (n == b) return true;
+    if (n.startsWith('ondevice_')) return false;
     if (n.startsWith('cudart') || n.startsWith('cublas')) {
-      return bridge.contains('_cuda') &&
-          (bridge.contains('_cuda12') == n.endsWith('_12.dll'));
+      return b.contains('_cuda') &&
+          (b.contains('_cuda12') == n.endsWith('_12.dll'));
     }
-    if (n.startsWith('ggml-cuda')) return bridge.contains('_cuda');
-    if (n.startsWith('ggml-vulkan')) return bridge.contains('_vulkan');
-    return true;
+    if (n == 'vulkan-1.dll') return b.contains('_vulkan');
+    return n.startsWith('vcomp') ||
+        n.startsWith('vcruntime') ||
+        n.startsWith('msvcp');
   }
 
   List<EngineFileResult> checkSizes({String? bridge}) {

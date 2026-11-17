@@ -68,6 +68,7 @@ class _Engine extends TestEngine {
     String? mmprojPath,
     List<({String path, double scale})> adapters = const [],
     String? draftModelPath,
+    bool memoryGuard = true,
   }) async {
     if (loaded &&
         loadedWith != null &&
@@ -215,6 +216,31 @@ void main() {
     },
   );
 
+  test(
+    'Auto tool policy primes the same factual tool list without registering',
+    () async {
+      await container
+          .read(settingsProvider.notifier)
+          .update(
+            container
+                .read(settingsProvider)
+                .copyWith(toolChoice: ToolChoice.auto),
+          );
+      await load();
+      final prime = engine.requests.single;
+      expect(prime.tools, isNotEmpty);
+      await container
+          .read(chatProvider.notifier)
+          .send('What is the capital of France?');
+      final real = engine.requests.firstWhere((r) => r.settings.maxTokens != 1);
+      expect(prime.messages.first, real.messages.first);
+      expect(
+        prime.tools.map((t) => t.toJson()).toList(),
+        real.tools.map((t) => t.toJson()).toList(),
+      );
+    },
+  );
+
   test('a real turn cancels priming and proceeds', () async {
     engine.primeGate = Completer<void>();
     await load();
@@ -267,12 +293,29 @@ void main() {
       prime.messages.first['content'],
       contains('Keep explanations brief.'),
     );
-    expect(prime.messages.first['content'], contains('I prefer metric units.'));
+    expect(
+      prime.messages.first['content'],
+      isNot(contains('I prefer metric units.')),
+    );
     await container
         .read(chatProvider.notifier)
         .send('Explain why the sky is blue.', learn: false);
     final real = engine.requests.firstWhere((r) => r.settings.maxTokens != 1);
     expect(prime.messages.first, real.messages.first);
+    expect(
+      real.messages.first['content'],
+      isNot(contains('I prefer metric units.')),
+    );
+    expect(
+      real.messages.last['content'],
+      startsWith('Background notes about the user'),
+    );
+    expect(real.messages.last['content'], contains('I prefer metric units.'));
+    final saved = await db.select(db.messages).get();
+    expect(
+      saved.where((m) => m.role == 'user').single.content,
+      'Explain why the sky is blue.',
+    );
     expect(
       prime.tools.map((t) => t.toJson()).toList(),
       real.tools.map((t) => t.toJson()).toList(),

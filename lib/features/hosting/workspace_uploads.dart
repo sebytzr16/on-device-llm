@@ -19,6 +19,12 @@ class WorkspaceUploads {
   int _bytes = 0;
   int _reserved = 0;
 
+  final Future<Directory> Function() _createDirectory;
+  WorkspaceUploads({Future<Directory> Function()? createDirectory})
+    : _createDirectory =
+          createDirectory ??
+          (() => Directory.systemTemp.createTemp('ondevice-workspace-'));
+
   WorkspaceUpload? operator [](String id) => _files[id];
 
   /// Retain before accepted work can wait on another job or model.
@@ -56,24 +62,23 @@ class WorkspaceUploads {
         'The server upload cache is full. Restart hosting after active jobs finish.',
       );
     }
-    _bytes += size;
-    _reserved++;
     final id = const Uuid().v4();
     final name = p.basename(request.uri.queryParameters['name'] ?? 'file');
     if (name.isEmpty || name.length > 240) {
-      _bytes -= size;
-      _reserved--;
       throw const FormatException(
         'The upload file name must contain 1 to 240 characters.',
       );
     }
-    final directory = await Directory.systemTemp.createTemp(
-      'ondevice-workspace-',
-    );
-    final file = File(p.join(directory.path, '$id${p.extension(name)}'));
-    var received = 0;
-    final sink = file.openWrite();
+    _bytes += size;
+    _reserved++;
+    Directory? directory;
+    IOSink? sink;
+    var retained = false;
     try {
+      directory = await _createDirectory();
+      final file = File(p.join(directory.path, '$id${p.extension(name)}'));
+      var received = 0;
+      sink = file.openWrite();
       await for (final chunk in request.timeout(const Duration(seconds: 60))) {
         received += chunk.length;
         if (received > size) {
@@ -82,20 +87,27 @@ class WorkspaceUploads {
         sink.add(chunk);
       }
       await sink.close();
+      sink = null;
       if (received != size) {
         throw const FormatException('Upload was incomplete.');
       }
       final upload = WorkspaceUpload(id, name, file);
       _files[id] = upload;
+      retained = true;
       return upload;
-    } catch (_) {
-      await sink.close();
-      if (await file.exists()) await file.delete();
-      await directory.delete();
-      _bytes -= size;
-      rethrow;
     } finally {
+      // Accounting must recover even when setup or cleanup fails.
       _reserved--;
+      if (!retained) {
+        _bytes -= size;
+        try {
+          await sink?.close();
+        } finally {
+          if (directory != null && await directory.exists()) {
+            await directory.delete(recursive: true);
+          }
+        }
+      }
     }
   }
 

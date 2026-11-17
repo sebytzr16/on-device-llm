@@ -75,6 +75,7 @@ extension SettingSpecLabels on SettingSpec {
           'grammar' => t.settingLabelGrammar,
           'chatTemplate' => t.desktopPromptTemplate,
           'contextSize' => t.settingLabelContextSize,
+          'contextAuto' => t.settingLabelContextAuto,
           'promptCache' => t.settingLabelPromptCache,
           'backend' => t.settingLabelBackend,
           'nGpuLayers' => t.settingLabelNGpuLayers,

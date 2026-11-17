@@ -32,50 +32,65 @@ class ModelProfilePage extends ConsumerWidget {
       recommendations: ref.watch(modelRecommendationsProvider),
       model: model,
     ).effective;
-    return OverridesPage(
-      title: context.l10n.modelProfileTitle(model.displayName),
-      scopeLabel: context.l10n.modelProfileScope,
-      overrides: profiles[model.id] ?? const {},
-      inherited: inherited,
-      onChanged: (o) =>
-          ref.read(modelProfilesProvider.notifier).set(model.id, o),
-      actions: [
-        PopupMenuButton<String>(
-          key: const Key('config-menu'),
-          tooltip: context.l10n.uiModelsScreenShareOrImportAConfiguration,
-          icon: const Icon(Icons.ios_share),
-          onSelected: (v) => switch (v) {
-            'share' => shareConfigCard(context, ref, model),
-            'copy' => copyConfigCard(context, ref, model),
-            'paste' => importConfigCard(
-              context,
-              ref,
-              fromFile: false,
-              into: model,
-            ),
-            _ => importConfigCard(context, ref, fromFile: true, into: model),
-          },
-          itemBuilder: (_) => [
-            PopupMenuItem(
-              value: 'share',
-              child: Text(context.l10n.uiModelsScreenShareConfiguration),
-            ),
-            PopupMenuItem(
-              value: 'copy',
-              child: Text(context.l10n.uiModelsScreenCopyAsText),
-            ),
-            const PopupMenuDivider(),
-            PopupMenuItem(
-              value: 'paste',
-              child: Text(context.l10n.uiModelsScreenImportFromClipboard),
-            ),
-            PopupMenuItem(
-              value: 'file',
-              child: Text(context.l10n.uiModelsScreenImportFromAFile),
+    return FutureBuilder<void>(
+      future: ref.watch(modelProfilesProvider.notifier).ready,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        return OverridesPage(
+          title: context.l10n.modelProfileTitle(model.displayName),
+          scopeLabel: context.l10n.modelProfileScope,
+          overrides: profiles[model.id] ?? const {},
+          inherited: inherited,
+          onChanged: (o) =>
+              ref.read(modelProfilesProvider.notifier).set(model.id, o),
+          actions: [
+            PopupMenuButton<String>(
+              key: const Key('config-menu'),
+              tooltip: context.l10n.uiModelsScreenShareOrImportAConfiguration,
+              icon: const Icon(Icons.ios_share),
+              onSelected: (v) => switch (v) {
+                'share' => shareConfigCard(context, ref, model),
+                'copy' => copyConfigCard(context, ref, model),
+                'paste' => importConfigCard(
+                  context,
+                  ref,
+                  fromFile: false,
+                  into: model,
+                ),
+                _ => importConfigCard(
+                  context,
+                  ref,
+                  fromFile: true,
+                  into: model,
+                ),
+              },
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  value: 'share',
+                  child: Text(context.l10n.uiModelsScreenShareConfiguration),
+                ),
+                PopupMenuItem(
+                  value: 'copy',
+                  child: Text(context.l10n.uiModelsScreenCopyAsText),
+                ),
+                const PopupMenuDivider(),
+                PopupMenuItem(
+                  value: 'paste',
+                  child: Text(context.l10n.uiModelsScreenImportFromClipboard),
+                ),
+                PopupMenuItem(
+                  value: 'file',
+                  child: Text(context.l10n.uiModelsScreenImportFromAFile),
+                ),
+              ],
             ),
           ],
-        ),
-      ],
+        );
+      },
     );
   }
 }

@@ -62,7 +62,7 @@ extension _ChatPrime on ChatNotifier {
       if (settings.usesRemote || !settings.promptCache) return;
       _primedLoad = load;
       // No question-specific instructions, history or tool registrations.
-      const neutral = 'Explain how a rainbow forms.';
+      const neutral = 'What is the capital of France?';
       final shared = await _baseSystem(
         neutral,
         settings: settings,
@@ -70,7 +70,7 @@ extension _ChatPrime on ChatNotifier {
         spoken: false,
       );
       if (!eligible()) return;
-      final system = StringBuffer('${shared.system}${shared.notes}');
+      final system = StringBuffer(shared.system);
       _primeThinking(system, settings, engine);
       final offered = _offerTools(
         neutral,

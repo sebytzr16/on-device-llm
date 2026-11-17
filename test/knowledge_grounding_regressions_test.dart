@@ -1,3 +1,4 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:drift/native.dart';
@@ -16,6 +17,7 @@ void main() {
   const paths = MethodChannel('plugins.flutter.io/path_provider');
   late Directory files;
   setUp(() async {
+    SharedPreferences.setMockInitialValues({});
     files = await Directory.systemTemp.createTemp('knowledge-grounding-');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(paths, (_) async => files.path);

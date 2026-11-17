@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ondevice_llm/data/local/database/app_database.dart';
 import 'package:ondevice_llm/data/network/web_search/search_models.dart';
 import 'package:ondevice_llm/features/knowledge/knowledge_embedder.dart';
@@ -54,6 +55,8 @@ EvidenceChunk chunk(int source, int ordinal, String text) =>
     EvidenceChunk(sourceIndex: source, ordinal: ordinal, text: text);
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   group('SemanticRerank', () {
     test('meaning promotes a passage that answers in other words', () async {
       // Reciprocal rank fusion lifts a passage the words ranked just below

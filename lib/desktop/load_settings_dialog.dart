@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:crypto/crypto.dart';
@@ -36,6 +37,7 @@ import '../features/settings/presentation/providers/settings_provider.dart';
 import '../inference/engine/diffusiongemma_engine.dart';
 import '../inference/engine/llama_engine.dart';
 import 'inspector_panel.dart';
+import 'context_auto_row.dart';
 import 'load_settings/analytical_estimate.dart';
 import 'model_speed_section.dart';
 import 'model_tune_section.dart';
@@ -50,11 +52,14 @@ part 'load_settings/estimate.dart';
 /// how it answers (temperature and the other sampling settings). The
 /// memory estimate uses GGUF metadata immediately; optional native
 /// measurements refine it in the background.
-Future<void> showDesktopLoadSettings(BuildContext context, ModelInfo model) =>
-    showAppDialog<void>(
-      context: context,
-      builder: (_) => _LoadSettingsDialog(model: model),
-    );
+Future<void> showDesktopLoadSettings(
+  BuildContext context,
+  ModelInfo model, {
+  bool autoOptimize = false,
+}) => showAppDialog<void>(
+  context: context,
+  builder: (_) => _LoadSettingsDialog(model: model, autoOptimize: autoOptimize),
+);
 
 /// The keys this dialog owns in a model profile.
 const _loadKeys = {
@@ -73,6 +78,7 @@ const _loadKeys = {
   'expertsUsed',
 
   'contextSize',
+  'contextAuto',
   'imageMaxTokens',
   'flashAttention',
   'mtp',
@@ -134,7 +140,10 @@ final _ownKeys = {
 
 class _LoadSettingsDialog extends ConsumerStatefulWidget {
   final ModelInfo model;
-  const _LoadSettingsDialog({required this.model});
+
+  /// Starts Optimize on open (the first-run offer and Settings entry).
+  final bool autoOptimize;
+  const _LoadSettingsDialog({required this.model, this.autoOptimize = false});
 
   @override
   ConsumerState<_LoadSettingsDialog> createState() =>
@@ -150,6 +159,10 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
   Map<String, dynamic>? _estimate;
   String? _estimateError;
   bool _measuring = false;
+
+  /// The shown plan is the last measured one while a new one is measured
+  /// (owner 2026-11-16: the unfitted interim estimate flashed red).
+  bool _stale = false;
   GgufMetadata? _metadata;
 
   /// The draft/DFlash model's header, file size and path, for the estimate.
@@ -267,9 +280,18 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
     }
     _generation++;
     _measuredKey = null;
-    _update(() => _estimate = _analytical());
+    // Keep the last fitted plan, dimmed, until the new one lands: the
+    // instant estimate cannot apply the bridge's fit or expert offload.
+    final measured = _estimate != null && _estimate!['analytical'] != true;
+    _update(() {
+      if (measured) {
+        _stale = true;
+      } else {
+        _estimate = _analytical();
+      }
+    });
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 350), _measure);
+    _debounce = Timer(const Duration(milliseconds: 150), _measure);
   }
 
   /// Whether this model's engine fixes [key]: shown, dimmed and inert so the
@@ -336,9 +358,7 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
     final gpuAuto = s.nGpuLayers >= layers;
     // DiffusionGemma's host fixes most of a load profile (audit E23).
     final dg = m.id == diffusionGemmaModelId;
-    final maxContext = _trained > 0
-        ? _trained.clamp(4096, InferenceSettings.maxContext)
-        : 131072;
+    final maxContext = desktopContextMax(_trained);
     final busy =
         ref.watch(sessionBusyProvider) ||
         ref.watch(modelManagerProvider.select((s) => s.isLoadingModel));
@@ -397,6 +417,7 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
                         children: [
                           ModelOptimizeSection(
                             key: const ValueKey('load-optimize'),
+                            autoStart: widget.autoOptimize,
                             model: m,
                             settings: s,
                             onTuned: (profile) {
@@ -506,22 +527,32 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
                               ),
                             ),
                           const SizedBox(height: 10),
-                          DesktopSlider(
+                          ContextAutoRow(
                             label: t.desktopLoadSettingsContext,
-                            value: _contextStep(
-                              s.contextSize,
-                              maxContext,
-                            ).toDouble(),
-                            min: 0,
-                            max: _contextSteps(maxContext).length - 1.0,
-                            divisions: _contextSteps(maxContext).length - 1,
-                            format: (v) =>
-                                _tokens(_contextSteps(maxContext)[v.round()]),
-                            onChanged: (v) => _set(
-                              'contextSize',
-                              _contextSteps(maxContext)[v.round()],
-                            ),
+                            auto: s.contextAuto,
+                            loaded: (_estimate?['contextSize'] as num?)
+                                ?.toInt(),
+                            onChanged: (v) => _set('contextAuto', v),
                           ),
+                          if (!s.contextAuto)
+                            DesktopSlider(
+                              label: t.desktopLoadSettingsContext,
+                              value: desktopContextStep(
+                                s.contextSize,
+                                maxContext,
+                              ).toDouble(),
+                              min: 0,
+                              max: desktopContextSteps(maxContext).length - 1.0,
+                              divisions:
+                                  desktopContextSteps(maxContext).length - 1,
+                              format: (v) => _tokens(
+                                desktopContextSteps(maxContext)[v.round()],
+                              ),
+                              onChanged: (v) => _set(
+                                'contextSize',
+                                desktopContextSteps(maxContext)[v.round()],
+                              ),
+                            ),
                           if (_trained > 0)
                             Text(
                               t.desktopLoadSettingsTrained(_tokens(_trained)),
@@ -652,12 +683,6 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
                               color: c.textMuted,
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          ModelSpeedSection(
-                            key: const ValueKey('load-speed'),
-                            model: m,
-                            settings: s,
-                          ),
                           const SizedBox(height: 16),
                           DesktopSamplingFields(
                             settings: answer.effective,
@@ -666,6 +691,17 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
                             onChanged: (next) =>
                                 _setSampling(answer.effective, next),
                           ),
+                          // Below the sliders: Optimize adds a benchmark
+                          // receipt per setup tried, and that history pushed
+                          // Temperature far from its Answers heading
+                          // (visual check 2026-11-17).
+                          const SizedBox(height: 12),
+                          ModelSpeedSection(
+                            key: const ValueKey('load-speed'),
+                            model: m,
+                            settings: s,
+                          ),
+                          const SizedBox(height: 16),
                           _advancedGroup(t.desktopDeepLoad, 'load', const [
                             'vramReserveMb',
                             'useMmap',
@@ -781,6 +817,8 @@ class _LoadSettingsDialogState extends ConsumerState<_LoadSettingsDialog> {
                         estimate: _estimate,
                         error: _estimateError,
                         measuring: _measuring,
+                        stale: _stale,
+                        kvMb: _kvMb(),
                         requestedContext: s.contextSize,
                       ),
                     ),
@@ -847,13 +885,19 @@ int _batchStep(int batch) {
 }
 
 /// Powers of two from 2K up to [max], plus [max] itself.
-List<int> _contextSteps(int max) => [
+/// The longest context the sliders offer: the model's trained length, or
+/// 128K when the file does not say.
+int desktopContextMax(int trained) =>
+    trained > 0 ? trained.clamp(4096, InferenceSettings.maxContext) : 131072;
+
+/// Context lengths the sliders step through: powers of two up to [max].
+List<int> desktopContextSteps(int max) => [
   for (var n = 2048; n < max; n *= 2) n,
   max,
 ];
 
-int _contextStep(int context, int max) {
-  final steps = _contextSteps(max);
+int desktopContextStep(int context, int max) {
+  final steps = desktopContextSteps(max);
   var best = 0;
   for (var i = 0; i < steps.length; i++) {
     if ((steps[i] - context).abs() < (steps[best] - context).abs()) best = i;

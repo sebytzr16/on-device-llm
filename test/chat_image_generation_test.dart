@@ -15,6 +15,9 @@ import 'package:ondevice_llm/features/image_gen/domain/entities/image_gen_model.
 import 'package:ondevice_llm/inference/engine/sd_engine.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:ondevice_llm/core/storage/device_encryption.dart';
+
+import 'support/hosting_secure_storage.dart';
 
 class _Paths extends PathProviderPlatform {
   _Paths(this.root);
@@ -181,4 +184,25 @@ void main() {
       await AttachmentStore.delete(attachment);
     }
   });
+
+  test(
+    'generated pictures follow the enabled device encryption policy',
+    () async {
+      final previous = DeviceEncryption.instance;
+      final prefs = await SharedPreferences.getInstance();
+      final encryption = DeviceEncryption(
+        storage: MemoryHostSecrets(),
+        preferences: () async => prefs,
+        directories: () async => [],
+      );
+      DeviceEncryption.instance = encryption;
+      addTearDown(() => DeviceEncryption.instance = previous);
+      await encryption.setEnabled(true);
+      final png = Uint8List.fromList([1, 2, 3]);
+      final attachment = await AttachmentStore.saveGenerated(png);
+      final file = File(attachment.path);
+      expect(DeviceEncryption.isEncrypted(await file.readAsBytes()), true);
+      expect(await encryption.read(file), png);
+    },
+  );
 }

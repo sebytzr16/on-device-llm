@@ -295,6 +295,7 @@ class LlamaEngine implements TextEngine {
   Future<void> _metadataTail = Future.value();
   Completer<void>? _priming;
   bool _primeIssuing = false, _primeCancelled = false;
+  String? _primePrefix;
 
   /// Background prefill gives up ownership before any foreground operation.
   void cancelPriming() {
@@ -362,6 +363,8 @@ class LlamaEngine implements TextEngine {
       }
       if (user == null || _primeCancelled) return;
       _primeIssuing = true;
+      // The bridge reads only this shared part, so a question extends it.
+      _primePrefix = prefix;
       late Stream<String> output;
       try {
         output = generate(
@@ -373,6 +376,7 @@ class LlamaEngine implements TextEngine {
         );
       } finally {
         _primeIssuing = false;
+        _primePrefix = null;
       }
       await output.drain<void>();
     } finally {
@@ -535,6 +539,9 @@ class LlamaEngine implements TextEngine {
   /// Loads completed so far. [loadModel] returns early when the same model
   /// and settings are already loaded; a change here means a fresh load.
   int get loadCount => _loads;
+
+  /// Chat residency changes allow failed embedders to retry sooner.
+  static int memoryRevision = 0;
 
   /// Background priming is available to foreground callers, which preempt it.
   bool get isPriming => _priming != null;
@@ -706,6 +713,7 @@ class LlamaEngine implements TextEngine {
             'Generated ${metrics['tokens']} tokens at '
             '${(metrics['tokensPerSecond'] as num?)?.toStringAsFixed(1)} tok/s '
             '(prompt ${metrics['promptTokens']}, cached ${metrics['cachedPromptTokens']}, '
+            'match ${metrics['prefixMatch']}, checkpoints ${metrics['checkpoints']}, '
             'first token ${metrics['firstTokenMs']} ms, stop ${metrics['stopReason']})',
           );
           unawaited(_output?.close());
@@ -789,6 +797,7 @@ class LlamaEngine implements TextEngine {
     String? mmprojPath,
     List<({String path, double scale})> adapters = const [],
     String? draftModelPath,
+    bool memoryGuard = true,
   }) async {
     // A header read (probe, adapter info) finishes on its own: wait for it
     // rather than refusing the load.
@@ -819,7 +828,18 @@ class LlamaEngine implements TextEngine {
     );
     final clock = Stopwatch()..start();
     try {
-      await _load(modelPath, config);
+      // "Load anyway" (GitHub issue #5) skips the bridge's free-memory
+      // refusal. It is left out of [_loadSettings] so the next send, which
+      // asks without it, finds the model already loaded.
+      await _load(
+        modelPath,
+        memoryGuard
+            ? config
+            : jsonEncode({
+                ...jsonDecode(config) as Map<String, Object?>,
+                'memoryGuard': false,
+              }),
+      );
     } catch (error, stack) {
       _log.warning(
         'Loading $name failed after ${clock.elapsedMilliseconds} ms',
@@ -835,6 +855,7 @@ class LlamaEngine implements TextEngine {
     );
     _loadedPath = modelPath;
     _loadSettings = config;
+    memoryRevision++;
   }
 
   /// Set by the model manager for the load it runs: true once the user
@@ -867,6 +888,7 @@ class LlamaEngine implements TextEngine {
         'speculationFallback':
             'Selected draft model is missing. Using normal decoding.',
       'contextSize': settings.contextSize,
+      'contextAuto': settings.contextAuto,
       'imageMaxTokens': settings.imageMaxTokens,
       'backend': settings.backend.name,
       'cpuVariant': settings.cpuVariant,
@@ -987,7 +1009,12 @@ class LlamaEngine implements TextEngine {
     try {
       await _load(modelPath, config);
     } on ModelLoadException catch (error, stack) {
-      if (!gpu || error is ModelLoadStopped) rethrow;
+      if (!gpu ||
+          error is ModelLoadStopped ||
+          // RAM admission applies to CPU placement too.
+          error.message.contains('Not enough free memory')) {
+        rethrow;
+      }
       // The card or its driver can reject an embedding model; the vectors
       // stay available on the CPU (audit E22).
       _log.warning('Embedding load failed; retrying on the CPU', error, stack);
@@ -1307,6 +1334,8 @@ class LlamaEngine implements TextEngine {
         'assistantPrefix': assistantPrefix,
         'tools': [for (final t in tools) t.toJson()],
         'toolChoice': toolChoice,
+        if (_primeIssuing) 'prefillSliceMs': 400,
+        if (_primeIssuing && _primePrefix != null) 'primePrefix': _primePrefix,
       }),
     });
     _armTokenWatchdog();
@@ -1351,6 +1380,9 @@ class LlamaEngine implements TextEngine {
       );
     }
     _releaseFiles();
+    if (isLoaded && (jsonDecode(_loadSettings!) as Map)['embedding'] != true) {
+      memoryRevision++;
+    }
     _loadedPath = null;
     _loadSettings = null;
   }
@@ -1362,7 +1394,16 @@ class LlamaEngine implements TextEngine {
     _cancelNative();
     _commands?.send({'type': 'cancel'});
     _tokenWatchdog?.cancel();
-    if (_busy) _stopWatchdog ??= Timer(stopTimeout, _retireGeneration);
+    // Priming is a prefill that may not stop between batches for seconds on
+    // a big model right after its load; retiring it after [stopTimeout]
+    // dropped the model under the next turn ("Load a model" on Regenerate
+    // after loading Qwen 3.6 35B, 2026-11-17). Only a real stall retires it.
+    if (_busy) {
+      _stopWatchdog ??= Timer(
+        _priming != null ? tokenTimeout : stopTimeout,
+        _retireGeneration,
+      );
+    }
   }
 
   void _cancelNative() {

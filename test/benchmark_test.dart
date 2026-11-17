@@ -1,7 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ondevice_llm/desktop/benchmark_receipt.dart';
+import 'package:ondevice_llm/features/optimize/benchmark_receipt.dart';
 import 'package:ondevice_llm/core/constants/app_constants.dart';
 import 'package:ondevice_llm/core/providers/shared_providers.dart';
 import 'package:ondevice_llm/data/local/database/app_database.dart';

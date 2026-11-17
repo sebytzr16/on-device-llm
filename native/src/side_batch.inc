@@ -3,7 +3,7 @@
 struct SideSequence {
     Runtime formatting{0, false};
     std::vector<llama_token> prompt;
-    int position = 0, generated = 0, maximum = 512;
+    int position = 0, prompt_cursor = 0, generated = 0, maximum = 512;
     // The chat path's reasoning budget: the answer keeps [maximum] and the
     // reasoning is counted separately, so a helper still answers within its
     // budget (audit E08).
@@ -159,7 +159,9 @@ void * od_side_open(void * h, const char * options) {
         side->prefill_chunk = std::clamp(s.value("prefill_chunk", 512), 32, 512);
         side->params = cp;
         side->devices = r->devices;
-        side->model_params = llama_model_default_params();
+        // The loaded model's own placement: main GPU, split and CPU-expert
+        // overrides (audit 2026-11-16 AUD-012).
+        side->model_params = r->model_params;
         side->model_params.devices = side->devices.data();
         side->model_params.n_gpu_layers = side->gpu_layers;
         side->model_path = r->model_path;
@@ -188,16 +190,17 @@ int32_t od_side_submit(void * h, int32_t id, const char * request) {
         if (seq.active) throw std::runtime_error("Helper sequence is busy");
         const auto req = json::parse(request), settings = req.at("settings");
         seq.formatting.reset();
-        const int thinking = settings.value("thinkingModeEnabled", false) ? std::clamp(settings.value("thinkingBudgetTokens", 512), 0, 512) : 0;
+        const bool thinking = settings.value("thinkingModeEnabled", false);
+        const int think_reserve = thinking ? std::clamp(settings.value("thinkingBudgetTokens", 512), 0, 512) : 0;
         // The answer keeps its own allowance; the reasoning gets a separate
         // budget below, as in the chat path (audit E08).
         seq.maximum = answer_limit(settings, side.context, 512);
-        const int reserve = std::min(response_reserve(settings, side.context, 512) + thinking, side.context - 1);
+        const int reserve = std::min(response_reserve(settings, side.context, 512) + think_reserve, side.context - 1);
         const auto prompt = tokenize(llama_model_get_vocab(side.model), render(&seq.formatting, req.at("messages"), req.value("fallbackTemplate", ""), settings.value("thinkingModeEnabled", false), true));
         if (prompt.empty() || prompt.size() + reserve > size_t(side.context)) throw std::runtime_error("Helper prompt exceeds context");
         seq.maximum = std::min(seq.maximum, side.context - (int)prompt.size());
         seq.total_cap = std::max(1, side.context - (int)prompt.size() - 1);
-        seq.reasoning = 0; seq.think_tokens = 0; seq.in_think = false; seq.tail.clear(); seq.think_budget = 0;
+        seq.reasoning = 0; seq.think_tokens = 0; seq.in_think = seq.formatting.forced_open; seq.tail.clear(); seq.think_budget = 0;
         if (thinking) {
             // The reasoning ends at its budget, or where only the answer's room
             // is left: an unlimited budget still leaves the answer its reserve.
@@ -206,16 +209,16 @@ int32_t od_side_submit(void * h, int32_t id, const char * request) {
             seq.think_budget = budget > 0 ? std::min(budget, left) : left;
         }
         // Allocate capacity for the full possible output, even when admission
-        // reserves less room. The generation limit must not shrink with it.
+        // reserves less room. Include room for the reasoning handoff too.
         if (side.adaptive && (id >= side.allocated_sequences ||
-            side_required_context(side, prompt.size(), seq.maximum + seq.think_budget) > side.allocated_context) && side_has_running_kv(side))
+            side_required_context(side, prompt.size(), seq.maximum + seq.think_budget + (seq.think_budget > 0 ? 64 : 0)) > side.allocated_context) && side_has_running_kv(side))
             // Dart keeps this request queued and retries after running work drains.
             return 1;
         seq.prompt = prompt;
         if (side.ctx && id < side.allocated_sequences && !llama_memory_seq_rm(llama_get_memory(side.ctx), id, -1, -1)) throw std::runtime_error("Cannot reset helper sequence");
         build_sampler(&seq.formatting, settings, "", false, {}, {}, "", false);
         for (auto token : seq.prompt) llama_sampler_accept(seq.formatting.sampler, token);
-        seq.position = seq.generated = 0; seq.next = LLAMA_TOKEN_NULL;
+        seq.position = seq.prompt_cursor = seq.generated = 0; seq.next = LLAMA_TOKEN_NULL;
         seq.prefill_ms = 0; seq.first = {}; seq.held.clear(); seq.stops.clear();
         for (const auto & stop : settings.value("stopSequences", json::array())) if (stop.is_string() && !stop.get<std::string>().empty()) seq.stops.push_back(stop.get<std::string>());
         seq.started = Clock::now(); seq.active = true;
@@ -238,7 +241,7 @@ const char * od_side_step(void * h) {
             for (size_t id = 0; id < side.sequences.size(); ++id) {
                 const auto & seq = *side.sequences[id];
                 if (!seq.active) continue;
-                needed = std::max(needed, side_required_context(side, seq.prompt.size(), seq.maximum + seq.think_budget));
+                needed = std::max(needed, side_required_context(side, seq.prompt.size(), seq.maximum + seq.think_budget + (seq.think_budget > 0 ? 64 : 0)));
                 count = int(id) + 1;
             }
             if (count && !side_has_running_kv(side) &&
@@ -266,14 +269,14 @@ const char * od_side_step(void * h) {
             // A not-yet-decoded sequence can wait across steps. Never put it
             // in the batch until an idle-boundary allocation can accommodate it.
             if (seq.position == 0 && (int(id) >= side.allocated_sequences ||
-                side_required_context(side, seq.prompt.size(), seq.maximum + seq.think_budget) > side.allocated_context)) continue;
-            const int remaining = int(seq.prompt.size()) - seq.position;
+                side_required_context(side, seq.prompt.size(), seq.maximum + seq.think_budget + (seq.think_budget > 0 ? 64 : 0)) > side.allocated_context)) continue;
+            const int remaining = int(seq.prompt.size()) - seq.prompt_cursor;
             const int count = remaining > 0 ? std::min(prefill_chunk, remaining) : 1;
             for (int i = 0; i < count; ++i) {
                 const int row = batch.n_tokens++;
-                batch.token[row] = remaining > 0 ? seq.prompt[seq.position] : seq.next;
+                batch.token[row] = remaining > 0 ? seq.prompt[seq.prompt_cursor++] : seq.next;
                 batch.pos[row] = seq.position++; batch.n_seq_id[row] = 1; batch.seq_id[row][0] = (llama_seq_id)id;
-                batch.logits[row] = seq.position >= int(seq.prompt.size());
+                batch.logits[row] = seq.prompt_cursor >= int(seq.prompt.size());
                 if (batch.logits[row]) outputs[id] = row;
             }
         }
@@ -327,9 +330,8 @@ const char * od_side_step(void * h) {
                     if (seq.position + 1 + (int)tokens.size() >= side.context) {
                         seq.active = false; text += seq.held; seq.held.clear();
                     } else {
-                        // The token sampled this step is decoded first, then the
-                        // hand-off: both ride the prompt path so their positions
-                        // stay exact in the shared batch.
+                        // The prefill cursor is independent of generated KV positions.
+                        // Decode the pending token before the closing instruction.
                         if (seq.next != LLAMA_TOKEN_NULL) { seq.prompt.push_back(seq.next); seq.next = LLAMA_TOKEN_NULL; }
                         for (const auto t : tokens) {
                             seq.prompt.push_back(t);

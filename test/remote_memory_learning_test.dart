@@ -533,6 +533,11 @@ void main() {
             .send('How many eggs do I buy in 3 weeks? Use the calculator.');
         final first = jsonEncode(engine.prompts.first);
         expect(first, contains('12 eggs'), reason: 'the note was shared once');
+        expect(engine.prompts.first.first['content'], contains('12 eggs'));
+        expect(
+          engine.prompts.first.last['content'],
+          isNot(contains('12 eggs')),
+        );
         expect(engine.prompts, hasLength(1));
       },
     );

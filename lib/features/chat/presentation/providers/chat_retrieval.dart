@@ -204,12 +204,36 @@ extension _ChatRetrieval on ChatNotifier {
         t.budget == null &&
         !_cancelled) {
       _chatState = _chatState.copyWith(notice: _t.noticeCheckingSearch);
+      final judgeSystem = StringBuffer(
+        '${shared.system}${settings.usesRemote ? shared.notes : ''}',
+      );
+      List<ToolSpec> judgeTools = const [];
+      if (!settings.usesRemote) {
+        _primeThinking(judgeSystem, settings, engine);
+        final offered = _offerTools(
+          input,
+          settings: settings,
+          engine: engine,
+          system: judgeSystem,
+          turnNotes: StringBuffer(),
+          sources: const [],
+          researchTurn: false,
+          userTools: t.userTools,
+          continuing: false,
+          register: false,
+          primeOnly: true,
+        );
+        if (offered.native) judgeTools = offered.tools;
+      }
       if (await _needsWeb(
         engine,
         model,
         settings,
-        input,
-        system: '${shared.system}${shared.notes}',
+        settings.usesRemote || shared.notes.isEmpty
+            ? input
+            : '${shared.notes.trim()}\n\n$input',
+        system: judgeSystem.toString(),
+        tools: judgeTools,
         // Rendered exactly as the answering turn will render them, so the
         // two prompts share their prefix.
         history: [

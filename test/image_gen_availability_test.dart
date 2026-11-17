@@ -159,12 +159,11 @@ void main() {
         expect(find.text(model.displayName), findsOneWidget);
       }
       expect(find.text('Ready'), findsOneWidget);
-      expect(find.text('50%'), findsOneWidget);
+      expect(find.text('50 %'), findsOneWidget);
       expect(
         find.textContaining('Download '),
         findsNWidgets(imageGenCatalog.length + 1 - 2),
       );
-      expect(find.byType(LinearProgressIndicator), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -199,13 +198,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(first.displayName), findsOneWidget);
       expect(find.text(second.displayName), findsOneWidget);
-      expect(find.textContaining('50.0%'), findsOneWidget);
+      expect(find.textContaining('50.0 %'), findsOneWidget);
       expect(find.textContaining('1 MB/s'), findsOneWidget);
-      await tester.tap(find.byTooltip('Pause'));
+      await tester.tap(find.text('Pause'));
       expect(downloads.pausedId, first.id);
-      await tester.tap(find.byTooltip('Resume download'));
+      await tester.tap(find.text('Resume'));
       expect(downloads.resumed, second.id);
-      await tester.tap(find.byTooltip('Cancel').first);
+      await tester.tap(find.text('Cancel').first);
       expect(downloads.cancelled, first.id);
       expect(tester.takeException(), isNull);
     },

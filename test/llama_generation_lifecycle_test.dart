@@ -5,6 +5,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ondevice_llm/core/errors/exceptions.dart';
+import 'package:ondevice_llm/core/platform/desktop_host.dart';
 import 'package:ondevice_llm/data/storage/model_file_leases.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:ondevice_llm/inference/engine/llama_engine.dart';
@@ -16,6 +18,7 @@ void _fakeWorker(List<Object?> args, bool cooperate) {
   final commands = ReceivePort();
   events.send(commands.sendPort);
   int? request;
+  String? first;
   Timer? pulse;
   commands.listen((dynamic value) {
     final m = value as Map;
@@ -23,11 +26,35 @@ void _fakeWorker(List<Object?> args, bool cooperate) {
         events.send({'type': type, 'requestId': m['requestId'], ...data});
     switch (m['type']) {
       case 'load':
+        if (m['path'] == 'memory-refused.gguf') {
+          final config = jsonDecode(m['settings'] as String) as Map;
+          send('error', {
+            'message': config['backend'] == 'cpu'
+                ? 'Unexpected CPU retry'
+                : 'Not enough free memory for this model: 0 MB is free.',
+          });
+          break;
+        }
         send('loaded', {'metrics': <String, Object?>{}});
       case 'generate':
         request = m['requestId'] as int;
         final config = jsonDecode(m['request'] as String) as Map;
+        if ((config['settings'] as Map)['maxTokens'] == 1 &&
+            (config['prefillSliceMs'] != 400 ||
+                config['primePrefix'] is! String)) {
+          send('error', {
+            'message': 'Prime must request bounded prefill slices',
+          });
+          break;
+        }
+        if ((config['settings'] as Map)['maxTokens'] != 1 &&
+            (config.containsKey('prefillSliceMs') ||
+                config.containsKey('primePrefix'))) {
+          send('error', {'message': 'Ordinary turns must keep normal batches'});
+          break;
+        }
         final messages = config['messages'] as List;
+        first = (messages.first as Map)['content'] as String?;
         if ((messages.first as Map)['content'] == 'blocked') {
           sleep(const Duration(milliseconds: 300));
         }
@@ -62,14 +89,29 @@ void _fakeWorker(List<Object?> args, bool cooperate) {
             });
           });
         }
+      case 'preview':
+        final config = jsonDecode(m['request'] as String) as Map;
+        final messages = (config['messages'] as List).cast<Map>();
+        send('preview', {
+          'result': {
+            'formattedPrompt':
+                '<s>${messages.first['content']}</s><u>${messages.last['content']}</u>',
+          },
+        });
       case 'cancel':
         if (cooperate) {
           pulse?.cancel();
-          events.send({
+          void done() => events.send({
             'type': 'done',
             'requestId': request,
             'metrics': <String, Object?>{},
           });
+          // A prefill batch that finishes well after the Stop timeout.
+          if (first == 'slow stop') {
+            Timer(const Duration(milliseconds: 200), done);
+          } else {
+            done();
+          }
         }
       case 'unload':
         send('unloaded');
@@ -236,6 +278,54 @@ void main() {
       await sub.cancel();
     },
   );
+
+  test(
+    'a turn that stops slow priming keeps the model loaded and answers',
+    () async {
+      final e = await engine(
+        cooperative: true,
+        tokenTimeout: const Duration(seconds: 2),
+      );
+      final prime = e.primePrompt(
+        system: 'slow stop',
+        fallbackTemplate: 'chatml',
+        settings: const InferenceSettings(),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(e.isPriming, isTrue);
+      final first = Completer<String>();
+      final sub = _generate(e, 'pulse').listen((t) {
+        if (!first.isCompleted) first.complete(t);
+      });
+      expect(await first.future.timeout(const Duration(seconds: 1)), 'x');
+      await prime;
+      expect(e.isLoaded, isTrue);
+      e.cancel();
+      await sub.cancel();
+    },
+  );
+
+  test('RAM admission refuses embedding without a CPU retry', () async {
+    DesktopHost.active = true;
+    addTearDown(() => DesktopHost.active = false);
+    final e = await engine(cooperative: true);
+    await expectLater(
+      e.loadEmbedder(
+        modelPath: 'memory-refused.gguf',
+        placement: const InferenceSettings(
+          backend: GpuBackend.vulkan,
+          nGpuLayers: 999,
+        ),
+      ),
+      throwsA(
+        isA<ModelLoadException>().having(
+          (e) => e.message,
+          'reason',
+          contains('Not enough free memory'),
+        ),
+      ),
+    );
+  });
 
   test('missing explicit draft produces normal decoding config before FFI', () {
     for (final mode in ['draft', 'dflash']) {

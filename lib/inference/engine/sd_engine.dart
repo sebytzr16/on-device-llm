@@ -54,8 +54,15 @@ class SdOperationStopped implements Exception {
 /// atomic flag from here while the worker is busy.
 class SdEngine {
   /// The injected transport lets tests hold a load at each async boundary.
-  SdEngine({this.invoke});
+  SdEngine({this.invoke, this.cpuVariant});
   final Future<Object?> Function(String, List<Object?>)? invoke;
+
+  /// The desktop CPU setting, read when the worker starts ('compat' picks
+  /// the SSE4.2 image engine).
+  final String Function()? cpuVariant;
+
+  /// The variant DLL the worker opened; the cancel path opens the same one.
+  String? _library;
   int _epoch = 0;
   final _fileLeases = <ModelFileLease>[];
   Isolate? _isolate;
@@ -86,6 +93,7 @@ class SdEngine {
       }
       if (message is List && message.firstOrNull == 'context') {
         _ctx = message[1] as int;
+        _library = message[2] as String;
         return;
       }
       // A String is the worker failing to open the DLL; null is its exit
@@ -102,11 +110,10 @@ class SdEngine {
       ok ? c.complete(payload) : c.completeError(StateError(payload as String));
     });
     _replies = replies;
-    _isolate = await Isolate.spawn(
-      _main,
+    _isolate = await Isolate.spawn(_main, (
       replies.sendPort,
-      onExit: replies.sendPort,
-    );
+      cpuVariant?.call() ?? 'auto',
+    ), onExit: replies.sendPort);
     _worker = await ready.future;
   }
 
@@ -119,6 +126,9 @@ class SdEngine {
     _worker = null;
     _ctx = 0;
     _loadedKey = null;
+    // The next worker may open another variant (CPU setting changed).
+    _library = null;
+    _cancelBindings = null;
     final error = StateError(reason);
     for (final c in _pending.values) {
       c.completeError(error);
@@ -151,9 +161,9 @@ class SdEngine {
       await _start();
       if (epoch != _epoch) throw const SdOperationStopped();
       if (_ctx != 0) {
-        (_cancelBindings ??= SdBindings()).resetCancel(
-          Pointer<Void>.fromAddress(_ctx),
-        );
+        (_cancelBindings ??= SdBindings(
+          only: _library,
+        )).resetCancel(Pointer<Void>.fromAddress(_ctx));
       }
       final id = _nextId++;
       final c = Completer<Object?>();
@@ -298,13 +308,17 @@ class SdEngine {
   void cancel() {
     _epoch++;
     if (_ctx == 0 || invoke != null) return;
-    (_cancelBindings ??= SdBindings()).cancel(Pointer<Void>.fromAddress(_ctx));
+    (_cancelBindings ??= SdBindings(
+      only: _library,
+    )).cancel(Pointer<Void>.fromAddress(_ctx));
   }
 
   /// Frees the model and stops the worker. Call [cancel] first if busy.
   Future<void> dispose() async {
     cancel();
     await _tail;
+    // Cancellation must lose access before the worker frees the context.
+    _ctx = 0;
     if (_worker != null) {
       try {
         await _call('destroy', const []);
@@ -322,6 +336,9 @@ class SdEngine {
     _worker = null;
     _ctx = 0;
     _loadedKey = null;
+    // The next worker may open another variant (CPU setting changed).
+    _library = null;
+    _cancelBindings = null;
     for (final lease in _fileLeases) {
       lease.release();
     }
@@ -333,12 +350,13 @@ class SdEngine {
 // Worker isolate
 // ---------------------------------------------------------------------------
 
-void _main(SendPort replies) {
+void _main((SendPort, String) start) {
+  final (replies, cpuVariant) = start;
   // Opened before reporting ready: an old or incomplete DLL (wrong bridge
   // version, missing CUDA runtime) must fail the call, not hang it.
   final SdBindings b;
   try {
-    b = SdBindings();
+    b = SdBindings(cpuVariant: cpuVariant);
   } catch (e) {
     replies.send('Could not open the image engine: $e');
     return;
@@ -352,7 +370,7 @@ void _main(SendPort replies) {
     requests.close();
     return;
   }
-  replies.send(['context', ctx.address]);
+  replies.send(['context', ctx.address, b.library]);
   replies.send(requests.sendPort);
 
   String lastError(String fallback) {

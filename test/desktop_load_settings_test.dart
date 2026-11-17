@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:ondevice_llm/core/l10n/l10n.dart';
 import 'package:ondevice_llm/core/platform/desktop_host.dart';
 import 'package:ondevice_llm/core/providers/shared_providers.dart';
 import 'package:ondevice_llm/desktop/desktop_theme.dart';
+import 'package:ondevice_llm/desktop/context_auto_row.dart';
 import 'package:ondevice_llm/desktop/load_settings_dialog.dart';
 import 'package:ondevice_llm/desktop/inspector_panel.dart';
 import 'package:ondevice_llm/features/adapters/adapter_store.dart';
@@ -104,6 +106,37 @@ class _DraftEstimates extends _Engine {
   }
 }
 
+/// A fitted plan first; later plans wait for [next] so the test sees the
+/// panel between a change and the new measurement.
+class _SlowFit extends _Engine {
+  int calls = 0;
+  Completer<void>? next;
+
+  @override
+  Future<Map<String, dynamic>> estimate({
+    required String modelPath,
+    required InferenceSettings settings,
+    String? mmprojPath,
+    List<({String path, double scale})> adapters = const [],
+    String? draftModelPath,
+  }) async {
+    if (calls++ > 0) await (next = Completer<void>()).future;
+    return {
+      'layers': 25,
+      'gpuLayers': 25,
+      'contextTrain': 4096,
+      'vramNeedMb': 5000,
+      'vramFreeMb': 6000,
+      'vramTotalMb': 8192,
+      'ramNeedMb': 100,
+      'ramPagedMb': 16384,
+      'ramAvailableMb': 14000,
+      'ramTotalMb': 16000,
+      'gpuExpertsOnCpu': true,
+    };
+  }
+}
+
 /// The card as it reads with the loaded model's 6 GB still on it.
 class _FullCard extends _Engine {
   @override
@@ -127,6 +160,28 @@ class _FullCard extends _Engine {
           'ramAvailableMb': 12000,
           'ramTotalMb': 32000,
         };
+}
+
+/// RAM too small for the model: over the bridge's budget, weights bigger
+/// than the free RAM.
+class _ShortRam extends _Engine {
+  @override
+  Future<Map<String, dynamic>> estimate({
+    required String modelPath,
+    required InferenceSettings settings,
+    String? mmprojPath,
+    List<({String path, double scale})> adapters = const [],
+    String? draftModelPath,
+  }) async => {
+    'layers': 24,
+    'gpuLayers': 0,
+    'contextTrain': 4096,
+    'ramNeedMb': 9000,
+    'ramBudgetMb': 6952,
+    'ramAvailableMb': 8000,
+    'ramTotalMb': 16000,
+    'memoryWarning': 'weightsExceedFreeRam',
+  };
 }
 
 class _LoadedModels extends TestModels {
@@ -155,7 +210,7 @@ class _RunningModels extends TestModels {
     modelId: same ? 'test' : 'other',
     modelPath: same ? 'test.gguf' : 'other.gguf',
     adapters: const [],
-    settings: const InferenceSettings(contextSize: 32768),
+    settings: const InferenceSettings(contextSize: 32768, contextAuto: false),
     mmprojPath: null,
     draftModelPath: null,
   );
@@ -327,7 +382,7 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
       expect(
-        find.text(AppLocalizationsEn().desktopLoadSettingsPaged('2.0')),
+        find.text(AppLocalizationsEn().desktopLoadSettingsWeightsInRam('2.0')),
         findsOneWidget,
       );
       // 1.1 GB free + the 6 GB the loaded model frees covers 6.8 GB.
@@ -341,6 +396,47 @@ void main() {
       );
     });
   }
+  testWidgets('RAM shortage and paging weights are warned about', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(1400, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final c = ProviderContainer(
+      overrides: [
+        settingsProvider.overrideWith(TestSettings.new),
+        modelManagerProvider.overrideWith(TestModels.new),
+        llamaEngineProvider.overrideWithValue(_Engine()),
+        llamaEstimatorProvider.overrideWithValue(_ShortRam()),
+      ],
+    );
+    addTearDown(c.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: c,
+        child: MaterialApp(
+          theme: DesktopTheme.of(AccentChoice.amber, dark: true),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showDesktopLoadSettings(context, testModel),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    final t = AppLocalizationsEn();
+    // 9000 MB needed against a 6952 MB budget: 2.0 GB short.
+    expect(find.text(t.desktopLoadSettingsRamShort('2.0')), findsOneWidget);
+    expect(find.text(t.desktopLoadSettingsWeightsPaging), findsOneWidget);
+  });
   for (final scenario in [
     'same',
     'other',
@@ -919,4 +1015,66 @@ void main() {
     expect(estimator.draftTokens, hasLength(2));
     expect(estimator.draftTokens.last, 3);
   });
+
+  testWidgets(
+    'a change keeps the fitted plan dimmed until the new one lands (owner 2026-11-16)',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      tester.view.physicalSize = const Size(1400, 1100);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final estimator = _SlowFit();
+      final container = ProviderContainer(
+        overrides: [
+          settingsProvider.overrideWith(TestSettings.new),
+          modelManagerProvider.overrideWith(TestModels.new),
+          llamaEngineProvider.overrideWithValue(estimator),
+          llamaEstimatorProvider.overrideWithValue(estimator),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: DesktopTheme.of(AccentChoice.amber, dark: true),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => TextButton(
+                  onPressed: () => showDesktopLoadSettings(context, testModel),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      final t = AppLocalizationsEn();
+      expect(find.text(t.desktopLoadSettingsFitsGpu), findsOneWidget);
+      // 14.0 free - 0.1 needed: 13.9 GB of the 16 GB experts stay in RAM,
+      // 2.1 GB is read from disk.
+      expect(
+        find.text(t.desktopLoadSettingsExpertsInRam('13.6')),
+        findsOneWidget,
+      );
+      expect(find.text(t.desktopLoadSettingsFromDisk('2.4')), findsOneWidget);
+      final row = tester.widget<ContextAutoRow>(find.byType(ContextAutoRow));
+      row.onChanged(!row.auto);
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 60));
+        // Never the unfitted instant estimate: no spill, no red.
+        expect(find.textContaining('Over the card'), findsNothing);
+        expect(find.text(t.desktopLoadSettingsFitsGpu), findsOneWidget);
+      }
+      expect(find.byKey(const Key('estimate-recalculating')), findsOneWidget);
+      estimator.next!.complete();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('estimate-recalculating')), findsNothing);
+      expect(find.text(t.desktopLoadSettingsFitsGpu), findsOneWidget);
+    },
+  );
 }

@@ -2001,6 +2001,11 @@
   "desktopInspectorMaxTokens": "Tokens máximos de respuesta",
   "desktopInspectorContext": "Longitud del contexto",
   "desktopInspectorContextHint": "Una nueva longitud de contexto recarga el modelo en el próximo mensaje.",
+  "contextAutoLabel": "Automático (recomendado)",
+  "contextAutoHint": "Se ajusta a la memoria",
+  "samplingPerModelHint": "La temperatura, el top-K y el top-P son de cada modelo. Abre los ajustes del modelo activo.",
+  "contextAutoLoaded": "Se ajusta a la memoria · {size} ahora",
+  "settingLabelContextAuto": "Contexto automático",
   "desktopInspectorScopeModel": "Modelo",
   "desktopInspectorScopeChat": "Esta conversación",
   "desktopInspectorModelHint": "Se guarda con {model} y se usa en cada conversación con él. Cambia a Esta conversación para un cambio puntual.",
@@ -2041,6 +2046,8 @@
   "desktopLoadSettingsFitsGpu": "Cabe entero en la GPU",
   "desktopLoadSettingsPartial": "En parte en la GPU: las demás capas se ejecutan en la CPU, que es más lenta",
   "desktopLoadSettingsSpill": "Supera la memoria libre de la tarjeta en {gb} GB: Windows pasa el resto a memoria compartida y las respuestas se vuelven varias veces más lentas. Baja las capas de GPU o el contexto.",
+  "desktopLoadSettingsRamShort": "Supera la RAM libre en {gb} GB: la carga puede rechazarse o el PC puede ir lento. Cierra otras aplicaciones, baja el contexto o pon más capas en la GPU.",
+  "desktopLoadSettingsWeightsPaging": "El archivo del modelo es mayor que la RAM libre: partes se volverán a leer del disco mientras responde, lo que es más lento.",
   "desktopLoadSettingsExperts": "Los pesos de los expertos se quedan en la RAM para que el resto quepa en la GPU",
   "desktopLoadSettingsCapped": "El contexto se reducirá a {tokens} tokens para caber en la memoria",
   "desktopLoadSettingsMeasuring": "Midiendo…",
@@ -3740,5 +3747,87 @@
   "kvFp8E4m3": "FP8 E4M3 (motores compatibles)",
   "nativeSetMoeCacheSizeMb": "Caché MoE en GPU (MiB, 0 = desactivada)",
   "nativeSetMoeCacheCpuShare": "Fracción de fallos de caché MoE calculada en CPU (0–1)",
-  "kvCacheFp8": "FP8"
+  "kvCacheFp8": "FP8",
+  "loadAnyway": "Cargar de todos modos",
+  "loadAnywayWarning": "Según la estimación, este modelo puede no caber en la memoria libre. El dispositivo a menudo puede liberar más. ¿Cargarlo de todos modos?",
+  "remoteProbeModels": "Conectado · {count, plural, one{{count} modelo} other{{count} modelos}}",
+  "remoteProbeHealth": "Estado: {status}",
+  "remoteProbeNoTools": "No se anuncian herramientas del servidor",
+  "remoteProbeTools": "{count, plural, one{{count} herramienta del servidor detectada} other{{count} herramientas del servidor detectadas}}",
+  "remoteProbeNotAdvertised": "No anunciado",
+  "remoteProbeUnknown": "Desconocido",
+  "remoteProbeOk": "Correcto",
+  "@remoteProbeModels": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@remoteProbeTools": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@remoteProbeHealth": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "tipGotIt": "Entendido",
+  "tipSkipAll": "Omitir consejos",
+  "tipStep": "{n} de {total}",
+  "tipsShowAgain": "Mostrar consejos de nuevo",
+  "tipsShowAgainHint": "Recupera las pequeñas burbujas que explican dónde están las cosas.",
+  "tipsShowAgainDone": "Los consejos se mostrarán de nuevo.",
+  "firstRunGetModelTitle": "Vamos a conseguirte un modelo",
+  "firstRunGetModelBody": "Los modelos se ejecutan aquí mismo en este dispositivo. Elige uno de la lista; el que mejor se adapta está marcado.",
+  "firstRunGetModelButton": "Obtener un modelo",
+  "firstRunLoadTitle": "Carga un modelo para empezar",
+  "firstRunLoadBody": "Tus modelos están en este dispositivo. Carga uno y pregunta lo que quieras.",
+  "firstRunLoadButton": "Cargar {name}",
+  "firstRunOtherModels": "Otros modelos",
+  "tipDiscoverTitle": "Descubrir más modelos",
+  "tipDiscoverBody": "Busca miles de modelos en Hugging Face. La lista a continuación ya está seleccionada para este dispositivo.",
+  "bestFitBadge": "Ideal para este dispositivo",
+  "tipBestFitTitle": "Empieza aquí",
+  "tipBestFitBody": "Este cabe en tu memoria y responde mejor que los demás que caben. Pulsa Descargar.",
+  "tipDownloadReadyTitle": "{name} está listo",
+  "tipDownloadReadyBody": "Cárgalo para empezar a chatear.",
+  "tipLoadAction": "Cargar",
+  "optimizeOfferTitle": "¿Optimizar para este dispositivo?",
+  "optimizeOfferBody": "Unos minutos de pruebas encuentran la configuración más rápida que sigue dando las mismas respuestas. También puedes hacerlo más tarde en Configuración.",
+  "optimizeOfferAction": "Optimizar",
+  "optimizeOfferLater": "Más tarde",
+  "optimizeSettingsTitle": "Optimizar para este dispositivo",
+  "optimizeSettingsHint": "Encuentra la configuración más rápida para {name}.",
+  "optimizeSettingsNoModel": "Carga un modelo primero, luego optimízalo aquí.",
+  "optimizeSettingsDone": "Optimizado",
+  "tourToolsTitle": "Herramientas",
+  "tourToolsBody": "Elige lo que el modelo puede usar: archivos, calculadora, calendario y más. Los utiliza solo cuando una pregunta los necesita.",
+  "tourWebTitle": "Investigación web",
+  "tourWebBody": "Local mantiene todo en este dispositivo. Automático busca en la web cuando una pregunta necesita datos recientes; Siempre busca cada vez.",
+  "tourThinkTitle": "Pensar",
+  "tourThinkBody": "Permite que el modelo razone paso a paso antes de responder. Más lento, pero mejor para preguntas difíciles.",
+  "tourAttachTitle": "Adjuntar",
+  "tourAttachBody": "Añade fotos, archivos PDF o documentos y pregunta sobre ellos. También puedes soltar archivos en la ventana.",
+  "tourAttachBodyMobile": "Añade fotos, archivos PDF o documentos y pregunta sobre ellos. Las herramientas y los objetivos también están aquí.",
+  "tourSlashTitle": "Atajos",
+  "tourSlashBody": "Escribe / en el cuadro de mensaje para comandos rápidos y tus atajos guardados.",
+  "recommendedEmpty": "Todo lo recomendado para este dispositivo ya está aquí.",
+  "recommendedShowRemoved": "{count, plural, =1{Mostrar 1 modelo quitado} other{Mostrar {count} modelos quitados}}",
+  "desktopLoadSettingsRecalculating": "Recalculando…",
+  "desktopLoadSettingsWeightsInRam": "La RAM guarda {gb} GB de los pesos (mapeados en memoria)",
+  "desktopLoadSettingsExpertsInRam": "La RAM guarda {gb} GB de pesos de los expertos (mapeados en memoria); el resto está en la GPU",
+  "desktopLoadSettingsFromDisk": "{gb} GB más no caben en la RAM y se leen del disco al responder (más lento)",
+  "desktopLoadSettingsKvCache": "Caché del contexto: {gb} GB",
+  "desktopLoadSettingsRamMapped": "Parte clara: {gb} GB de pesos mapeados que Windows puede liberar si hace falta",
+  "imageUnusedPartsFreed": "Partes sin usar eliminadas: {size} liberados.",
+  "imageNoUnusedParts": "Nada que eliminar: cada archivo pertenece a un modelo instalado o en descarga.",
+  "recommendedAllRemoved": "Las demás sugerencias para este dispositivo se quitaron de la lista.",
+  "uiModelCardHide": "Ocultar"
 }

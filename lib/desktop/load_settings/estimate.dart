@@ -34,6 +34,17 @@ extension _EstimateSection on _LoadSettingsDialogState {
     draftBytes: _draft?.$2 ?? 0,
   );
 
+  /// The KV cache at the length the plan settled on.
+  num _kvMb() {
+    final e = _estimate;
+    if (e == null) return 0;
+    if (e['kvCacheMb'] is num) return e['kvCacheMb'] as num;
+    final settings = _resolved();
+    final ctx = (e['contextSize'] as num?)?.toInt() ?? settings.contextSize;
+    return kvCacheBytes(_metadata, settings.copyWith(contextSize: ctx)) /
+        (1024 * 1024);
+  }
+
   Future<void> _readMetadata() async {
     if (m.localPath == null) return;
     try {
@@ -43,7 +54,7 @@ extension _EstimateSection on _LoadSettingsDialogState {
         _metadata = metadata;
         _layers = metadata.blockCount ?? _layers;
         _trained = metadata.contextLength ?? _trained;
-        if (_measuredKey == null) _estimate = _analytical();
+        if (_measuredKey == null && !_stale) _estimate = _analytical();
       });
     } catch (_) {
       // Catalog weights remain available for missing or non-GGUF files.
@@ -59,16 +70,29 @@ extension _EstimateSection on _LoadSettingsDialogState {
       if (!mounted || _draft?.$3 != path) return;
       _update(() {
         _draft = (metadata, bytes, path);
-        if (_measuredKey == null) _estimate = _analytical();
+        if (_measuredKey == null && !_stale) _estimate = _analytical();
       });
     } catch (_) {
       // A missing or unreadable draft leaves the target-only estimate.
     }
   }
 
+  /// No measurement will come: show the instant estimate instead of a
+  /// plan for other settings.
+  void _dropStale() {
+    if (!_stale || !mounted) return;
+    _update(() {
+      _stale = false;
+      _estimate = _analytical();
+    });
+  }
+
   Future<void> _measure() async {
     final path = m.localPath;
-    if (path == null || ref.read(sessionBusyProvider)) return;
+    if (path == null || ref.read(sessionBusyProvider)) {
+      _dropStale();
+      return;
+    }
     final generation = ++_generation;
     final settings = _resolved();
     final models = ref.read(modelManagerProvider);
@@ -105,11 +129,15 @@ extension _EstimateSection on _LoadSettingsDialogState {
         _estimate = cached;
         _estimateError = null;
         _measuring = false;
+        _stale = false;
       });
       return;
     }
     // Refinement never gates controls or hides the analytical answer.
-    if (ref.read(sessionBusyProvider)) return;
+    if (ref.read(sessionBusyProvider)) {
+      _dropStale();
+      return;
+    }
     try {
       final result = await _creditLoaded(
         key,
@@ -128,6 +156,7 @@ extension _EstimateSection on _LoadSettingsDialogState {
       _measuredKey = key;
       _update(() {
         _estimate = result;
+        _stale = false;
         _estimateError = null;
         _layers = (result['layers'] as num?)?.toInt() ?? _layers;
         _trained = (result['contextTrain'] as num?)?.toInt() ?? _trained;
@@ -135,8 +164,14 @@ extension _EstimateSection on _LoadSettingsDialogState {
     } catch (e, stack) {
       Logger('load_settings').warning('Memory measurement failed', e, stack);
       if (!mounted || generation != _generation) return;
+      // Keep the analytical answer when there is one; otherwise say why
+      // there is no estimate instead of "Measuring…" forever.
       _update(() {
-        _estimateError = null;
+        if (_stale) {
+          _stale = false;
+          _estimate = _analytical();
+        }
+        _estimateError = _estimate == null ? _plain(e) : null;
       });
     } finally {
       if (mounted && generation == _generation) {
@@ -275,11 +310,19 @@ class _EstimatePanel extends StatelessWidget {
   final Map<String, dynamic>? estimate;
   final String? error;
   final bool measuring;
+
+  /// The plan shown is for the previous settings; a new one is on its way.
+  final bool stale;
   final int requestedContext;
+
+  /// The context (KV) cache at the planned length, in MiB.
+  final num kvMb;
   const _EstimatePanel({
+    this.kvMb = 0,
     required this.estimate,
     required this.error,
     required this.measuring,
+    this.stale = false,
     required this.requestedContext,
   });
 
@@ -296,8 +339,15 @@ class _EstimatePanel extends StatelessWidget {
       final provisional = e['analytical'] == true;
       final needMb = (e['vramNeedMb'] as num?) ?? 0;
       final freeMb = e['vramFreeMb'] as num?;
-      // A full card reads 0 MB free, which still spills.
-      final spills = onCard && gpu > 0 && freeMb != null && needMb > freeMb;
+      // A full card reads 0 MB free, which still spills. The instant
+      // estimate puts every layer on the card before the bridge's fit, so
+      // only a measured plan can say it spills.
+      final spills =
+          !provisional &&
+          onCard &&
+          gpu > 0 &&
+          freeMb != null &&
+          needMb > freeMb;
       final uncertain =
           e['modelLoaded'] == true && e['loadedAdmission'] != true;
       final creditedFits =
@@ -355,19 +405,74 @@ class _EstimatePanel extends StatelessWidget {
           c.textMuted,
         ));
       }
-      if (e['gpuExpertsOnCpu'] == true) {
+      // Where the weights go (owner 2026-11-16: "RAM 0.1 of 13.9 GB" next
+      // to "+16.0 GB paged from disk" said nothing). Memory-mapped host
+      // weights stay in free RAM; what does not fit is read from disk.
+      final experts = e['gpuExpertsOnCpu'] == true;
+      final paged = (e['ramPagedMb'] as num?) ?? 0;
+      final ramFree0 = e['ramAvailableMb'] as num?;
+      final ramNeed0 = (e['ramNeedMb'] as num?) ?? 0;
+      final resident = ramFree0 == null
+          ? paged
+          : (ramFree0 - ramNeed0).clamp(0, paged);
+      final fromDisk = paged - resident;
+      if (paged > 0 && resident >= 52) {
+        notes.add((
+          experts ? Icons.hub_outlined : Icons.memory_rounded,
+          experts
+              ? t.desktopLoadSettingsExpertsInRam(_gb(resident))
+              : t.desktopLoadSettingsWeightsInRam(_gb(resident)),
+          c.textMuted,
+        ));
+      } else if (experts) {
         notes.add((
           Icons.hub_outlined,
           t.desktopLoadSettingsExperts,
           c.textMuted,
         ));
       }
-      final paged = (e['ramPagedMb'] as num?) ?? 0;
-      if (paged > 0) {
+      if (fromDisk >= 103) {
         notes.add((
           Icons.storage_rounded,
-          t.desktopLoadSettingsPaged((paged / 1024).toStringAsFixed(1)),
+          t.desktopLoadSettingsFromDisk(_gb(fromDisk)),
+          c.warning,
+        ));
+      }
+      if (kvMb >= 52) {
+        notes.add((
+          Icons.view_stream_outlined,
+          t.desktopLoadSettingsKvCache(_gb(kvMb)),
           c.textMuted,
+        ));
+      }
+      // RAM the load would leave short: the same budget the bridge admits
+      // against (free RAM minus a reserve for the desktop), so the panel
+      // warns before a load is refused or the PC starts paging.
+      final ramNeed = (e['ramNeedMb'] as num?) ?? 0;
+      final ramFree = e['ramAvailableMb'] as num?;
+      final ramBudget =
+          (e['ramBudgetMb'] as num?) ??
+          (ramFree == null
+              ? null
+              : ramFree -
+                    math.max(1024, ((e['ramTotalMb'] as num?) ?? ramFree) / 8));
+      if (!provisional &&
+          ramBudget != null &&
+          ramNeed > ramBudget &&
+          !(uncertain && creditedFits)) {
+        notes.add((
+          Icons.warning_amber_rounded,
+          t.desktopLoadSettingsRamShort(
+            (math.max(ramNeed - ramBudget, 103) / 1024).toStringAsFixed(1),
+          ),
+          c.danger,
+        ));
+      }
+      if (e['memoryWarning'] == 'weightsExceedFreeRam') {
+        notes.add((
+          Icons.storage_rounded,
+          t.desktopLoadSettingsWeightsPaging,
+          c.warning,
         ));
       }
       final context0 = (e['contextSize'] as num?)?.toInt() ?? requestedContext;
@@ -398,7 +503,16 @@ class _EstimatePanel extends StatelessWidget {
                   style: context.text.label,
                 ),
               ),
-              if (measuring)
+              if (stale)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Text(
+                    t.desktopLoadSettingsRecalculating,
+                    key: const Key('estimate-recalculating'),
+                    style: context.text.caption.copyWith(color: c.textMuted),
+                  ),
+                ),
+              if (measuring || stale)
                 const SizedBox.square(
                   dimension: 14,
                   child: CircularProgressIndicator(strokeWidth: 2),
@@ -406,62 +520,71 @@ class _EstimatePanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          BlurSwitcher(
-            child: Column(
-              key: ValueKey((e == null, error)),
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (e == null && error != null)
-                  Text(
-                    t.desktopLoadSettingsNoEstimate(error!),
-                    style: context.text.small.copyWith(color: c.danger),
-                  )
-                else if (e == null)
-                  Text(
-                    t.desktopLoadSettingsMeasuring,
-                    style: context.text.small.copyWith(color: c.textMuted),
-                  )
-                else ...[
-                  if (e['vramTotalMb'] != null ||
-                      ((e['vramNeedMb'] as num?) ?? 0) > 0)
-                    _Meter(
-                      label: t.desktopLoadSettingsVram,
-                      detail:
-                          (e['devices'] as List?)
-                              ?.cast<Map>()
-                              .where((d) => d['type'] == 'gpu')
-                              .map((d) => '${d['description']}')
-                              .firstOrNull ??
-                          '',
-                      need: (e['vramNeedMb'] as num?) ?? 0,
-                      free: (e['vramFreeMb'] as num?) ?? 0,
-                    ),
-                  _Meter(
-                    label: t.desktopLoadSettingsRam,
-                    detail: '',
-                    need: (e['ramNeedMb'] as num?) ?? 0,
-                    free: (e['ramAvailableMb'] as num?) ?? 0,
-                  ),
-                  const SizedBox(height: 4),
-                  for (final (icon, text, color) in notes)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(icon, size: 15, color: color),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              text,
-                              style: context.text.small.copyWith(color: color),
-                            ),
-                          ),
-                        ],
+          AnimatedOpacity(
+            opacity: stale ? 0.45 : 1,
+            duration: const Duration(milliseconds: 150),
+            child: BlurSwitcher(
+              child: Column(
+                key: ValueKey((e == null, error)),
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (e == null && error != null)
+                    Text(
+                      t.desktopLoadSettingsNoEstimate(error!),
+                      style: context.text.small.copyWith(color: c.danger),
+                    )
+                  else if (e == null)
+                    Text(
+                      t.desktopLoadSettingsMeasuring,
+                      style: context.text.small.copyWith(color: c.textMuted),
+                    )
+                  else ...[
+                    if (e['vramTotalMb'] != null ||
+                        ((e['vramNeedMb'] as num?) ?? 0) > 0)
+                      _Meter(
+                        label: t.desktopLoadSettingsVram,
+                        detail:
+                            (e['devices'] as List?)
+                                ?.cast<Map>()
+                                .where((d) => d['type'] == 'gpu')
+                                .map((d) => '${d['description']}')
+                                .firstOrNull ??
+                            '',
+                        need: (e['vramNeedMb'] as num?) ?? 0,
+                        free: (e['vramFreeMb'] as num?) ?? 0,
                       ),
+                    _Meter(
+                      label: t.desktopLoadSettingsRam,
+                      detail: _mappedMb(e) >= 52
+                          ? t.desktopLoadSettingsRamMapped(_gb(_mappedMb(e)))
+                          : '',
+                      need: (e['ramNeedMb'] as num?) ?? 0,
+                      mapped: _mappedMb(e),
+                      free: (e['ramAvailableMb'] as num?) ?? 0,
                     ),
+                    const SizedBox(height: 4),
+                    for (final (icon, text, color) in notes)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(icon, size: 15, color: color),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                text,
+                                style: context.text.small.copyWith(
+                                  color: color,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ],
@@ -470,13 +593,26 @@ class _EstimatePanel extends StatelessWidget {
   }
 }
 
+/// Memory-mapped weights that stay in free RAM next to what the load
+/// needs; Windows can drop them under pressure and read them back.
+num _mappedMb(Map<String, dynamic> e) {
+  final paged = (e['ramPagedMb'] as num?) ?? 0;
+  final free = e['ramAvailableMb'] as num?;
+  if (free == null) return 0;
+  return (free - ((e['ramNeedMb'] as num?) ?? 0)).clamp(0, paged);
+}
+
 class _Meter extends StatelessWidget {
   final String label, detail;
   final num need, free;
+
+  /// Memory-mapped weights shown as a lighter segment after [need].
+  final num mapped;
   const _Meter({
     required this.label,
     required this.detail,
     required this.need,
+    this.mapped = 0,
     required this.free,
   });
 
@@ -484,6 +620,9 @@ class _Meter extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     final share = free <= 0 ? 1.0 : (need / free).clamp(0.0, 1.0).toDouble();
+    final mappedShare = free <= 0
+        ? 0.0
+        : ((need + mapped) / free).clamp(0.0, 1.0).toDouble();
     final over = free > 0 && need > free;
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -498,10 +637,10 @@ class _Meter extends StatelessWidget {
                 child: Text(
                   free > 0
                       ? context.l10n.desktopLoadSettingsUsage(
-                          _gb(need),
+                          _gb(need + mapped),
                           _gb(free),
                         )
-                      : '${_gb(need)} GB',
+                      : '${_gb(need + mapped)} GB',
                   textAlign: TextAlign.end,
                   style: context.text.mono.copyWith(
                     fontSize: 12,
@@ -512,17 +651,36 @@ class _Meter extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          TweenAnimationBuilder<double>(
-            tween: Tween(end: share),
-            duration: const Duration(milliseconds: 350),
-            curve: Curves.easeOutCubic,
-            builder: (context, v, _) => LinearProgressIndicator(
-              value: v,
-              minHeight: 6,
-              borderRadius: AppDesign.radius(3),
-              color: over ? c.danger : c.accent,
-              backgroundColor: c.text.fade(0.08),
-            ),
+          Stack(
+            children: [
+              if (mapped > 0)
+                TweenAnimationBuilder<double>(
+                  tween: Tween(end: mappedShare),
+                  duration: const Duration(milliseconds: 350),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, v, _) => LinearProgressIndicator(
+                    value: v,
+                    minHeight: 6,
+                    borderRadius: AppDesign.radius(3),
+                    color: c.accent.fade(0.35),
+                    backgroundColor: c.text.fade(0.08),
+                  ),
+                ),
+              TweenAnimationBuilder<double>(
+                tween: Tween(end: share),
+                duration: const Duration(milliseconds: 350),
+                curve: Curves.easeOutCubic,
+                builder: (context, v, _) => LinearProgressIndicator(
+                  value: v,
+                  minHeight: 6,
+                  borderRadius: AppDesign.radius(3),
+                  color: over ? c.danger : c.accent,
+                  backgroundColor: mapped > 0
+                      ? Colors.transparent
+                      : c.text.fade(0.08),
+                ),
+              ),
+            ],
           ),
           if (detail.isNotEmpty) ...[
             const SizedBox(height: 4),

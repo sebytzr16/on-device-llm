@@ -142,7 +142,7 @@ class FileChangesPanel extends ConsumerWidget {
                           ),
                         ],
                       ),
-                    if (e.change.applied && !e.change.undone)
+                    if (e.change.undo != null && !e.change.undone)
                       TextButton(
                         onPressed: () async {
                           try {

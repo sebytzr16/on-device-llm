@@ -1,3 +1,4 @@
+import 'features/models/presentation/providers/fresh_downloads_provider.dart';
 import 'package:flutter/material.dart';
 import 'features/settings/presentation/widgets/device_encryption_setting.dart';
 import 'package:flutter/services.dart';
@@ -63,6 +64,9 @@ class OnDeviceLlmApp extends ConsumerWidget {
     // Started with the app so an interrupted voice download resumes; listen
     // (not watch) so download progress does not rebuild the app.
     ref.listen(voiceModelsProvider, (_, _) {});
+    // Kept alive from the start so a download that ends on another page
+    // still offers Load on the Models page.
+    ref.listen(freshDownloadsProvider, (_, _) {});
     final localeCode = ref.watch(settingsProvider.select((s) => s.localeCode));
     appLanguageCode = localeCode;
     final themeChoice = ref.watch(

@@ -12,6 +12,8 @@ import '../features/settings/domain/settings_scope.dart';
 import '../features/settings/presentation/providers/effective_settings_provider.dart';
 import '../features/settings/presentation/providers/model_profiles_provider.dart';
 import '../features/tools/presentation/tools_quick_panel.dart';
+import '../data/storage/gguf_metadata.dart';
+import 'context_auto_row.dart';
 import 'desktop_theme.dart';
 import 'load_settings_dialog.dart';
 import 'model_preset_menu.dart';
@@ -98,7 +100,9 @@ class _DesktopInspectorPanelState extends ConsumerState<DesktopInspectorPanel> {
     final profiles = ref.read(modelProfilesProvider.notifier);
     profiles.set(modelId, {
       for (final e in profiles.of(modelId).entries)
-        if (!desktopSamplingKeys.contains(e.key) && e.key != 'contextSize')
+        if (!desktopSamplingKeys.contains(e.key) &&
+            e.key != 'contextSize' &&
+            e.key != 'contextAuto')
           e.key: e.value,
     });
   }
@@ -141,7 +145,9 @@ class _DesktopInspectorPanelState extends ConsumerState<DesktopInspectorPanel> {
                   ?.keys
                   .any(
                     (k) =>
-                        desktopSamplingKeys.contains(k) || k == 'contextSize',
+                        desktopSamplingKeys.contains(k) ||
+                        k == 'contextSize' ||
+                        k == 'contextAuto',
                   ) ??
               false;
     return Container(
@@ -271,17 +277,46 @@ class _DesktopInspectorPanelState extends ConsumerState<DesktopInspectorPanel> {
           ),
           const SizedBox(height: 18),
           DesktopSamplingFields(settings: s, source: source, onChanged: set),
-          DesktopSlider(
+          ContextAutoRow(
             label: t.desktopInspectorContext,
-            source: source('contextSize'),
-            value: s.contextSize.toDouble(),
-            min: 1024,
-            max: 32768,
-            divisions: 31,
-            format: (v) => '${(v / 1024).round()}K',
-            onChanged: (v) =>
-                set(s.copyWith(contextSize: (v / 1024).round() * 1024)),
+            auto: s.contextAuto,
+            loaded: ref.watch(
+              chatProvider.select(
+                (x) => (x.metrics['contextSize'] as num?)?.toInt(),
+              ),
+            ),
+            onChanged: (v) => set(s.copyWith(contextAuto: v)),
           ),
+          // Same steps and ceiling as Model settings: this slider stopped
+          // at 32K and showed a 64K model as 32K (visual check 2026-11-17).
+          if (!s.contextAuto)
+            Builder(
+              builder: (context) {
+                final path = model?.localPath;
+                final trained = path == null
+                    ? 0
+                    : GgufMetadata.cached(path)?.contextLength ?? 0;
+                final steps = desktopContextSteps(
+                  desktopContextMax(trained) > s.contextSize
+                      ? desktopContextMax(trained)
+                      : s.contextSize,
+                );
+                return DesktopSlider(
+                  label: t.desktopInspectorContext,
+                  source: source('contextSize'),
+                  value: desktopContextStep(
+                    s.contextSize,
+                    steps.last,
+                  ).toDouble(),
+                  min: 0,
+                  max: steps.length - 1.0,
+                  divisions: steps.length - 1,
+                  format: (v) => '${(steps[v.round()] / 1024).round()}K',
+                  onChanged: (v) =>
+                      set(s.copyWith(contextSize: steps[v.round()])),
+                );
+              },
+            ),
           Text(
             t.desktopInspectorContextHint,
             style: context.text.caption.copyWith(color: c.textFaint),

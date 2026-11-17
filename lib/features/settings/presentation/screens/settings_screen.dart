@@ -1,3 +1,5 @@
+import '../../../optimize/optimize_controller.dart';
+import '../../../optimize/optimize_settings_row.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -35,6 +37,7 @@ import '../../../backup/backup_page.dart';
 import '../../../voice/voice_settings.dart';
 import '../../../../core/motion/motion.dart';
 import '../../../../core/island/status_island.dart';
+import '../../../../core/tips/show_tips_again_row.dart';
 import '../../../../core/design/app_dialog.dart';
 import '../../../../core/platform/form_factor.dart';
 
@@ -118,6 +121,9 @@ class SettingsScreen extends ConsumerWidget {
                 label: context.l10n.sectionAssistant,
                 icon: Icons.auto_awesome_outlined,
                 children: [
+                  // The desktop has it at the top of General.
+                  if (ref.watch(optimizeMobileProvider))
+                    const OptimizeSettingsRow(),
                   SettingsRow(
                     key: const Key('thinking-row'),
                     leading: const Icon(Icons.lightbulb_outline),
@@ -428,7 +434,9 @@ class SettingsScreen extends ConsumerWidget {
                     mono: true,
                     title: context.l10n.contextAndBatch,
                     summary: context.l10n.settingsContextBatchSummary(
-                      tokenCount(s.contextSize),
+                      s.contextAuto
+                          ? context.l10n.webAuto
+                          : tokenCount(s.contextSize),
                       s.batchSize == 0
                           ? context.l10n.webAuto
                           : '${s.batchSize}',
@@ -620,6 +628,7 @@ class SettingsScreen extends ConsumerWidget {
                       applicationVersion: 'v$_appVersion',
                     ),
                   ),
+                  const ShowTipsAgainRow(),
                   const UpdateCheckTile(),
                   // The whole screen keeps reset in its menu; a desktop page
                   // has no menu, so it is the last About row.

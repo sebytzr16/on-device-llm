@@ -52,6 +52,7 @@ void main() {
 
     test('bytes and whole percent', () {
       expect(bytesLabel(1048576 * 512), '512 MB');
+      expect(bytesLabel(40000), '< 1 MB');
       expect(bytesLabel(1073741824 * 3 ~/ 2), '1.50 GB');
       expect(wholePercentLabel(0.479), '47%');
     });

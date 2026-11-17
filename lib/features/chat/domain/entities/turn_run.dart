@@ -39,6 +39,7 @@ class TurnRun {
   /// reasoning — never the remote API key.
   static const _settingKeys = {
     'contextSize',
+    'contextAuto',
     'batchSize',
     'microBatchSize',
     'nGpuLayers',
