@@ -346,6 +346,7 @@ Future<void> _editQuestion(
     confirmLabel: context.l10n.askAgain,
     maxLines: 8,
     selectAll: false,
+    enterSubmits: true,
   );
   if (text != null && text.trim().isNotEmpty) onEdit(text);
 }

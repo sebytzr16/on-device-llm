@@ -18,8 +18,28 @@ Features	: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid
 CPU implementer	: 0x51
 ''';
 
+const _x86Avx2 = '''
+processor	: 0
+vendor_id	: GenuineIntel
+cpu family	: 6
+model		: 85
+flags		: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc sse4_1 sse4_2 x2apic popcnt tsc_deadline_timer aes xsave avx fma f16c rdrand hypervisor lahf_lm abm 3dnowprefetch fsgsbase bmi1 hle avx2 smep bmi2 erms invpcid rtm mpx avx512f
+processor	: 1
+vendor_id	: GenuineIntel
+flags		: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc sse4_1 sse4_2 x2apic popcnt tsc_deadline_timer aes xsave avx fma f16c rdrand hypervisor lahf_lm abm 3dnowprefetch fsgsbase bmi1 hle avx2 smep bmi2 erms invpcid rtm mpx avx512f
+''';
+
+const _x86Nehalem = '''
+processor	: 0
+vendor_id	: GenuineIntel
+flags		: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx rdtscp lm constant_tsc nonstop_tsc sse4_2 popcnt
+processor	: 1
+vendor_id	: GenuineIntel
+flags		: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx rdtscp lm constant_tsc nonstop_tsc sse4_2 popcnt
+''';
+
 void main() {
-  test('fast variant only when every core lists i8mm', () {
+  test('fast arm64 variant only when every core lists i8mm', () {
     expect(LlamaBindings.cpuHasI8mm(cpuinfo: _s25), isTrue);
     expect(LlamaBindings.cpuHasI8mm(cpuinfo: _sd865), isFalse);
     // A mixed cluster (one core without i8mm) must not load the fast library.
@@ -32,26 +52,60 @@ void main() {
     expect(LlamaBindings.cpuHasI8mm(cpuinfo: ''), isFalse);
   });
 
+  test('fast x86_64 variant only when every core lists avx2', () {
+    expect(LlamaBindings.cpuHasAvx2(cpuinfo: _x86Avx2), isTrue);
+    expect(LlamaBindings.cpuHasAvx2(cpuinfo: _x86Nehalem), isFalse);
+    // A VM that exposes avx2 on one core only must not load the fast library.
+    expect(LlamaBindings.cpuHasAvx2(cpuinfo: _x86Avx2 + _x86Nehalem), isFalse);
+    expect(LlamaBindings.cpuHasAvx2(cpuinfo: ''), isFalse);
+    // The fast build also uses FMA, F16C and BMI2 (audit 2026-11-18).
+    expect(
+      LlamaBindings.cpuHasAvx2(cpuinfo: _x86Avx2.replaceAll(' fma ', ' ')),
+      isFalse,
+    );
+  });
+
+  test('an arm64 CPU never satisfies the x86_64 check and vice versa', () {
+    expect(LlamaBindings.cpuHasAvx2(cpuinfo: _s25), isFalse);
+    expect(LlamaBindings.cpuHasI8mm(cpuinfo: _x86Avx2), isFalse);
+  });
+
   test('fast CPU kernels remain available without the OpenCL variant', () {
     expect(LlamaBindings.androidVariants, [
       'libondevice_llm_opencl.so',
+      'libondevice_llm_cpu_avx2.so',
       'libondevice_llm_cpu_i8mm.so',
       'libondevice_llm.so',
     ]);
     final cpuOnly = LlamaBindings.androidVariants.where(
       (name) => !name.contains('opencl'),
     );
-    expect(cpuOnly.first, 'libondevice_llm_cpu_i8mm.so');
+    expect(cpuOnly.first, 'libondevice_llm_cpu_avx2.so');
+    expect(cpuOnly.elementAt(1), 'libondevice_llm_cpu_i8mm.so');
+    expect(cpuOnly.last, 'libondevice_llm.so');
   });
 
   test('both optimized libraries are skipped on older or mixed CPUs', () {
     for (final cpuinfo in [_sd865, _s25 + _sd865, '']) {
       final eligible = LlamaBindings.androidVariants.where(
         (name) =>
-            !LlamaBindings.variantNeedsI8mm(name) ||
-            LlamaBindings.cpuHasI8mm(cpuinfo: cpuinfo),
+            (!LlamaBindings.variantNeedsI8mm(name) ||
+                LlamaBindings.cpuHasI8mm(cpuinfo: cpuinfo)) &&
+            (!LlamaBindings.variantNeedsAvx2(name) ||
+                LlamaBindings.cpuHasAvx2(cpuinfo: cpuinfo)),
       );
       expect(eligible, ['libondevice_llm.so']);
     }
+  });
+
+  test('x86_64 gets the AVX2 bridge and skips the arm64-only ones', () {
+    final eligible = LlamaBindings.androidVariants.where(
+      (name) =>
+          (!LlamaBindings.variantNeedsI8mm(name) ||
+              LlamaBindings.cpuHasI8mm(cpuinfo: _x86Avx2)) &&
+          (!LlamaBindings.variantNeedsAvx2(name) ||
+              LlamaBindings.cpuHasAvx2(cpuinfo: _x86Avx2)),
+    );
+    expect(eligible, ['libondevice_llm_cpu_avx2.so', 'libondevice_llm.so']);
   });
 }

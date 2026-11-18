@@ -49,3 +49,18 @@ apply_standard_settings(voice_wav_probe)
 
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
+
+# The Dart binding list is the single source of truth for the native smoke probe.
+set(BRIDGE_BINDINGS "${CMAKE_CURRENT_SOURCE_DIR}/../../lib/inference/ffi/llama_bindings.dart")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${BRIDGE_BINDINGS}")
+file(READ "${BRIDGE_BINDINGS}" BRIDGE_DART)
+string(REGEX MATCH "kBridgeExports = \\[[^]]*\\]" BRIDGE_EXPORT_BLOCK "${BRIDGE_DART}")
+string(REGEX MATCHALL "'od_[a-z_]+'" BRIDGE_EXPORTS "${BRIDGE_EXPORT_BLOCK}")
+if(NOT BRIDGE_EXPORTS)
+  message(FATAL_ERROR "No bridge smoke exports found")
+endif()
+string(REPLACE "'" "\"" BRIDGE_EXPORTS "${BRIDGE_EXPORTS}")
+string(REPLACE ";" ",\n" BRIDGE_EXPORTS "${BRIDGE_EXPORTS}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/bridge_smoke_exports.h"
+  "// Generated from kBridgeExports in llama_bindings.dart.\nstatic constexpr const char* kBridgeSmokeExports[] = {\n${BRIDGE_EXPORTS}\n};\n")
+target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")

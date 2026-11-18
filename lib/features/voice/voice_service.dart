@@ -74,7 +74,6 @@ class VoiceNotifier extends Notifier<VoiceState> {
   double _rate = 0.5;
   KokoroSpeaker? _kokoro;
   WhisperListener? _whisper;
-  Timer? _whisperIdle;
 
   /// Ends the Whisper dictation with everything heard (set while it runs).
   void Function()? _whisperDone;
@@ -121,7 +120,6 @@ class VoiceNotifier extends Notifier<VoiceState> {
     );
     ref.onDispose(() {
       _alive = false;
-      _whisperIdle?.cancel();
       _whisper?.dispose();
       unawaited(_kokoro?.stop());
       unawaited(_offline?.dispose());
@@ -226,6 +224,8 @@ class VoiceNotifier extends Notifier<VoiceState> {
     return _explain(code);
   }
 
+  Future<void>? _listenStarting;
+
   /// Starts dictation; [onText] receives the running transcript, [onFinal]
   /// the last words when the session ends.
   Future<void> listen({
@@ -236,109 +236,144 @@ class VoiceNotifier extends Notifier<VoiceState> {
   }) async {
     if (state.listening) return stop();
     final epoch = ++_listenEpoch;
-    if (_naturalListening()) {
-      try {
-        if (await _listenWhisper(onText, onFinal)) return;
-      } on PlatformException catch (e) {
-        if (e.code == 'microphone_denied') {
-          state = state.copyWith(
-            listening: false,
-            error: stringsFor(
-              ref.read(settingsProvider).localeCode,
-            ).desktopVoiceMicPrivacy,
-          );
-          return;
-        }
-        rethrow;
-      }
-    }
-    if (!_alive || epoch != _listenEpoch) return;
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      _usingOffline = true;
-      _offline ??= OfflineDictation();
-      state = state.copyWith(
-        listening: true,
-        available: true,
-        partial: '',
-        clearError: true,
-      );
-      try {
-        await _offline!.listen(
-          localeId: localeId,
-          onResult: (text, isFinal) {
-            if (!_alive || epoch != _listenEpoch) return;
-            state = state.copyWith(partial: text, listening: !isFinal);
-            onText(text);
-            if (isFinal) onFinal?.call(text);
-          },
-          onError: (code) {
-            if (!_alive || epoch != _listenEpoch) return;
+    final previousStart = _listenStarting;
+    final starting = Completer<void>();
+    _listenStarting = starting.future;
+    // The button must be able to stop permission/model/microphone startup too.
+    state = state.copyWith(listening: true, partial: '', clearError: true);
+    final revision = ++_dictationRevision;
+    try {
+      // A new session must not open its mic before a stopped, pending start
+      // has finished closing. Otherwise that old cleanup stops the new mic.
+      await previousStart;
+      if (!_alive || epoch != _listenEpoch) return;
+      final textCallback = onText;
+      final finalCallback = onFinal;
+      onText = (text) {
+        if (_alive && revision == _dictationRevision) textCallback(text);
+      };
+      onFinal = (text) {
+        if (_alive && revision == _dictationRevision) finalCallback?.call(text);
+      };
+      if (_naturalListening()) {
+        try {
+          if (await _listenWhisper(onText, onFinal, epoch)) return;
+          if (!_alive || epoch != _listenEpoch) return;
+        } on PlatformException catch (e) {
+          if (e.code == 'microphone_denied') {
             state = state.copyWith(
               listening: false,
-              error: code == 'cancelled' ? null : _explain(code),
-              clearError: code == 'cancelled',
+              error: stringsFor(
+                ref.read(settingsProvider).localeCode,
+              ).desktopVoiceMicPrivacy,
             );
-          },
-        );
-      } on PlatformException catch (e) {
-        if (_alive && epoch == _listenEpoch) {
-          state = state.copyWith(
-            listening: false,
-            error: e.code == 'cancelled' ? null : _explain(e.code),
-            clearError: e.code == 'cancelled',
-          );
-        }
-      } on MissingPluginException {
-        if (_alive && epoch == _listenEpoch) {
-          state = state.copyWith(
-            listening: false,
-            error: _explain('offline_unavailable'),
-          );
+            return;
+          }
+          rethrow;
         }
       }
-      return;
-    }
-    if (!_alive || epoch != _listenEpoch) return;
-    _usingOffline = false;
-    if (DesktopHost.active && await VoiceAudioChannel.micPrivacyDenied()) {
-      state = state.copyWith(
-        listening: false,
-        error: stringsFor(
-          ref.read(settingsProvider).localeCode,
-        ).desktopVoiceMicPrivacy,
-      );
-      return;
-    }
-    if (!await _initStt() || !_alive || epoch != _listenEpoch) return;
-    state = state.copyWith(listening: true, partial: '', clearError: true);
-    try {
-      await _stt!.listen(
-        onResult: (r) {
-          if (!_alive || epoch != _listenEpoch) return;
-          state = state.copyWith(partial: r.recognizedWords);
-          onText(r.recognizedWords);
-          if (r.finalResult) {
-            onFinal?.call(r.recognizedWords);
-            state = state.copyWith(listening: false);
+      if (!_alive || epoch != _listenEpoch) return;
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+        _usingOffline = true;
+        _offline ??= OfflineDictation();
+        state = state.copyWith(
+          listening: true,
+          available: true,
+          partial: '',
+          clearError: true,
+        );
+        try {
+          await _offline!.listen(
+            localeId: localeId,
+            onResult: (text, isFinal) {
+              if (!_alive || epoch != _listenEpoch) return;
+              state = state.copyWith(partial: text, listening: !isFinal);
+              onText(text);
+              if (isFinal) onFinal?.call(text);
+            },
+            onError: (code) {
+              if (!_alive || epoch != _listenEpoch) return;
+              state = state.copyWith(
+                listening: false,
+                error: code == 'cancelled' ? null : _explain(code),
+                clearError: code == 'cancelled',
+              );
+            },
+          );
+          if (!_alive || epoch != _listenEpoch) await _offline!.stop();
+        } on PlatformException catch (e) {
+          if (_alive && epoch == _listenEpoch) {
+            state = state.copyWith(
+              listening: false,
+              error: e.code == 'cancelled' ? null : _explain(e.code),
+              clearError: e.code == 'cancelled',
+            );
           }
-        },
-        listenOptions: SpeechListenOptions(
-          onDevice: true,
-          partialResults: true,
-          cancelOnError: true,
-          listenFor: const Duration(seconds: 60),
-          pauseFor: const Duration(seconds: 4),
-          localeId: localeId,
-        ),
-      );
-    } catch (e) {
-      if (_alive && epoch == _listenEpoch) {
-        final t = stringsFor(ref.read(settingsProvider).localeCode);
+        } on MissingPluginException {
+          if (_alive && epoch == _listenEpoch) {
+            state = state.copyWith(
+              listening: false,
+              error: _explain('offline_unavailable'),
+            );
+          }
+        }
+        return;
+      }
+      if (!_alive || epoch != _listenEpoch) return;
+      _usingOffline = false;
+      if (DesktopHost.active && await VoiceAudioChannel.micPrivacyDenied()) {
         state = state.copyWith(
           listening: false,
-          error: t.voiceDictationFailed(e),
+          error: stringsFor(
+            ref.read(settingsProvider).localeCode,
+          ).desktopVoiceMicPrivacy,
         );
+        return;
       }
+      final ready = await _initStt();
+      if (!_alive || epoch != _listenEpoch) return;
+      if (!ready) {
+        state = state.copyWith(listening: false);
+        return;
+      }
+      state = state.copyWith(listening: true, partial: '', clearError: true);
+      try {
+        await _stt!.listen(
+          onResult: (r) {
+            if (!_alive || epoch != _listenEpoch) return;
+            state = state.copyWith(partial: r.recognizedWords);
+            onText(r.recognizedWords);
+            if (r.finalResult) {
+              onFinal?.call(r.recognizedWords);
+              state = state.copyWith(listening: false);
+            }
+          },
+          listenOptions: SpeechListenOptions(
+            onDevice: true,
+            partialResults: true,
+            cancelOnError: true,
+            listenFor: const Duration(seconds: 60),
+            pauseFor: const Duration(seconds: 3),
+            localeId: localeId,
+          ),
+        );
+        if (!_alive || epoch != _listenEpoch) await _stt!.stop();
+      } catch (e) {
+        if (_alive && epoch == _listenEpoch) {
+          final t = stringsFor(ref.read(settingsProvider).localeCode);
+          state = state.copyWith(
+            listening: false,
+            error: t.voiceDictationFailed(e),
+          );
+        }
+      }
+    } catch (_) {
+      if (_alive && epoch == _listenEpoch) {
+        state = state.copyWith(listening: false);
+      }
+      rethrow;
+    } finally {
+      starting.complete();
     }
   }
 
@@ -370,54 +405,44 @@ class VoiceNotifier extends Notifier<VoiceState> {
     );
   }
 
-  /// Dictation through Whisper: captions while speaking, each sentence
-  /// added when the user pauses, and listening goes on across pauses until
-  /// the user stops (or 20 s of silence). One pause used to end it, so a
-  /// long prompt kept only its first sentences. False when the microphone
-  /// could not start.
+  /// Dictation ends after 2.5 seconds of silence (3 before any speech).
   Future<bool> _listenWhisper(
     ValueChanged<String> onText,
     ValueChanged<String>? onFinal,
+    int epoch,
   ) async {
+    final revision = _dictationRevision;
     final voice = ref.read(sherpaVoiceProvider);
     _whisper?.dispose();
-    var heard = false;
     final said = <String>[];
     String withSaid(String text) =>
         [...said, if (text.isNotEmpty) text].join(' ');
-    void idle(Duration after) {
-      _whisperIdle?.cancel();
-      _whisperIdle = Timer(after, () {
-        if (_alive && state.listening) unawaited(stop());
-      });
-    }
-
     late final WhisperListener listener;
     listener = _whisper = WhisperListener(
       voice: voice,
       language: voiceLanguage(ref.read(settingsProvider).localeCode),
       endSilence: 1.0,
       captionAll: true,
-      onSpeechStart: () {
-        heard = true;
-        _whisperIdle?.cancel();
+      silenceTimeout: const Duration(milliseconds: 2500),
+      initialSilenceTimeout: const Duration(seconds: 6),
+      onSilenceTimeout: () {
+        if (_alive && epoch == _listenEpoch) unawaited(stop());
       },
       onPartial: (text) {
-        if (!_alive) return;
+        if (!_alive || revision != _dictationRevision) return;
         final all = withSaid(text);
         state = state.copyWith(partial: all);
         onText(all);
       },
       onFinal: (text) {
-        if (!_alive) return;
+        if (!_alive || revision != _dictationRevision) return;
         said.add(text);
         final all = withSaid('');
         state = state.copyWith(partial: all);
         onText(all);
-        if (identical(_whisper, listener)) idle(const Duration(seconds: 20));
       },
       onError: (e) {
-        if (!_alive) return;
+        if (!_alive || revision != _dictationRevision) return;
         final t = stringsFor(ref.read(settingsProvider).localeCode);
         state = state.copyWith(
           listening: false,
@@ -437,33 +462,24 @@ class VoiceNotifier extends Notifier<VoiceState> {
       clearError: true,
     );
     if (!await listener.start()) {
-      _whisper = null;
+      if (identical(_whisper, listener)) {
+        _whisper = null;
+        _whisperDone = null;
+        if (_alive) state = state.copyWith(listening: false);
+      }
       listener.dispose();
-      if (_alive) state = state.copyWith(listening: false);
-      return false;
+      return epoch != _listenEpoch;
     }
-    if (!_alive || !identical(_whisper, listener)) {
+    if (!_alive || epoch != _listenEpoch || !identical(_whisper, listener)) {
       await listener.stop();
       return true;
     }
-    // Nothing said within 8 s ends the session like the system recognizer.
-    _whisperIdle?.cancel();
-    _whisperIdle = Timer(const Duration(seconds: 8), () {
-      if (!heard && _alive && state.listening) {
-        unawaited(_stopWhisper());
-        state = state.copyWith(
-          listening: false,
-          error: _explain('error_speech_timeout'),
-        );
-      }
-    });
     return true;
   }
 
   /// Stops the Whisper dictation; the sentence being said is still
   /// transcribed and kept.
   Future<void> _stopWhisper() async {
-    _whisperIdle?.cancel();
     final w = _whisper;
     final done = _whisperDone;
     _whisper = null;
@@ -474,11 +490,17 @@ class VoiceNotifier extends Notifier<VoiceState> {
     if (_alive) done?.call();
   }
 
+  int _dictationRevision = 0;
+
+  /// Discards pending captions, including Whisper's transcription after stop.
+  /// A normal microphone stop still keeps the final sentence.
+  void discardDictation() => _dictationRevision++;
+
   Future<void> stop() async {
-    _listenEpoch++;
+    final epoch = ++_listenEpoch;
+    if (_alive) state = state.copyWith(listening: false);
     if (_whisper != null) {
       await _stopWhisper();
-      if (_alive) state = state.copyWith(listening: false);
       return;
     }
     try {
@@ -488,11 +510,13 @@ class VoiceNotifier extends Notifier<VoiceState> {
         await _stt?.stop();
       }
     } on PlatformException catch (e) {
-      if (_alive) {
+      if (_alive && epoch == _listenEpoch) {
         state = state.copyWith(error: 'Could not stop dictation: ${e.message}');
       }
     } finally {
-      if (_alive) state = state.copyWith(listening: false);
+      if (_alive && epoch == _listenEpoch) {
+        state = state.copyWith(listening: false);
+      }
     }
   }
 

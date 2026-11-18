@@ -37,7 +37,8 @@ void main() {
       if (path.endsWith('\\$compat')) return compatExists;
       return drivers.any((driver) => path == 'Z:\\Windows\\System32\\$driver');
     },
-    open: (name) {
+    open: (path) {
+      final name = path.split(RegExp(r'[\\/]')).last;
       opened.add(name);
       if (failures.contains(name)) throw StateError('missing DLL/dependency');
       return name;
@@ -46,7 +47,71 @@ void main() {
       if (queryFails) throw StateError('missing query');
       return devices;
     },
-  ).name;
+  ).name.split(RegExp(r'[\\/]')).last;
+
+  test(
+    'bundled fallback uses its absolute path with a same-name pack mapped',
+    () {
+      const app = r'C:\Program Files\OnDevice';
+      const pack = r'C:\engines\new';
+      final mapped = <String, String>{cpu: 'pack module'};
+      final opened = <String>[];
+      String load(String path) {
+        opened.add(path);
+        return mapped.putIfAbsent(path, () => 'bundled module');
+      }
+
+      final selected = LlamaBindings.openWindowsLibrary<String>(
+        skipped: [],
+        preferred: 'cpu',
+        cpuVariant: 'avx2',
+        executableDirectory: app,
+        hasAvx2: () => true,
+        hasAvx512: () => false,
+        environment: const {},
+        fileExists: (_) => false,
+        open: load,
+        gpuDeviceCount: (_) => 0,
+      );
+      expect(selected.name, '$app\\$cpu');
+      expect(selected.handle, 'bundled module');
+      expect(opened, ['$app\\$cpu']);
+      for (final bridge in [
+        compat,
+        cuda,
+        cuda12,
+        vulkan,
+        'ondevice_llm_avx512.dll',
+        'ondevice_sd.dll',
+        'ondevice_sd_cpu.dll',
+        'ondevice_sd_compat.dll',
+      ]) {
+        expect(
+          LlamaBindings.windowsBridgePath(bridge, executableDirectory: app),
+          '$app\\$bridge',
+        );
+      }
+      // Explicit reopen in the engine isolate and the ISA probe share this helper.
+      expect(
+        LlamaBindings.windowsBridgePath(cpu, executableDirectory: app),
+        selected.name,
+      );
+      expect(
+        LlamaBindings.windowsBridgePath(
+          selected.name,
+          executableDirectory: app,
+        ),
+        selected.name,
+      );
+      expect(
+        LlamaBindings.windowsBridgePath(
+          '$pack\\$cpu',
+          executableDirectory: app,
+        ),
+        '$pack\\$cpu',
+      );
+    },
+  );
 
   setUp(() {
     skipped = [];

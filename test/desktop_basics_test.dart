@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'package:flutter/gestures.dart';
+import 'package:drift/native.dart';
+import 'package:ondevice_llm/data/local/database/app_database.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -77,6 +80,113 @@ void main() {
       handler.dispose();
     },
   );
+
+  testWidgets('Ctrl+K focuses search after sidebar rename', (tester) async {
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('window_manager'),
+      (call) async => call.method == 'isMaximized' ? false : null,
+    );
+    messenger.setMockMethodCallHandler(
+      DesktopLaunchArguments.channel,
+      (_) async => <String>[],
+    );
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final date = DateTime.utc(2026);
+    await db.upsertChat(
+      ChatsCompanion.insert(
+        id: 'rename',
+        title: 'Original',
+        createdAt: date,
+        updatedAt: date,
+      ),
+    );
+    await db.upsertChat(
+      ChatsCompanion.insert(
+        id: 'newer',
+        title: 'Newer',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+    );
+    await mountDesktopChat(
+      tester,
+      const DesktopShell(),
+      shell: true,
+      database: db,
+    );
+    await tester.tap(
+      find.text('Original').last,
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+    final menuFocus = Focus.of(tester.element(find.text('Rename')));
+    menuFocus.requestFocus();
+    await tester.pumpAndSettle();
+    expect(menuFocus.hasFocus, isTrue);
+    final shortcutScope = tester.widget<DesktopShortcutScope>(
+      find.byType(DesktopShortcutScope),
+    );
+    shortcutScope.restoreFocus!();
+    await tester.pumpAndSettle();
+    expect(menuFocus.hasFocus, isTrue);
+    await tester.tap(find.text('Rename'));
+    await tester.pumpAndSettle();
+    final dialog = find.byType(AlertDialog);
+    expect(dialog, findsOneWidget);
+    final dialogField = tester.widget<TextField>(
+      find.descendant(of: dialog, matching: find.byType(TextField)),
+    );
+    expect(dialogField.focusNode!.hasFocus, isTrue);
+    shortcutScope.restoreFocus!();
+    await tester.pumpAndSettle();
+    expect(dialogField.focusNode!.hasFocus, isTrue);
+    await tester.enterText(
+      find.descendant(of: dialog, matching: find.byType(TextField)),
+      'Renamed',
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.runAsync(() async {
+      await db.watchAllChats().firstWhere(
+        (rows) => rows.any((row) => row.title == 'Renamed'),
+      );
+    });
+    await tester.pumpAndSettle();
+    expect((await db.getChat('rename'))!.title, 'Renamed');
+    await tester.pumpAndSettle();
+    expect(find.text('Renamed'), findsOneWidget);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    final sidebar = tester.widget<DesktopSidebar>(find.byType(DesktopSidebar));
+    expect(sidebar.searchFocus.hasFocus, isTrue);
+    shortcutScope.restoreFocus!();
+    await tester.pumpAndSettle();
+    expect(sidebar.searchFocus.hasFocus, isTrue);
+
+    final rowFocus = Focus.of(tester.element(find.text('Renamed')));
+    rowFocus.requestFocus();
+    await tester.pumpAndSettle();
+    shortcutScope.restoreFocus!();
+    await tester.pumpAndSettle();
+    expect(rowFocus.hasPrimaryFocus, isTrue);
+
+    // Cancellation uses the same shell recovery, without a transient row focus.
+    await tester.tap(find.text('Renamed'), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rename'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect((await db.getChat('rename'))!.title, 'Renamed');
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(sidebar.searchFocus.hasFocus, isTrue);
+  });
 
   testWidgets('Ctrl+/ dialog lists every actual shell binding', (tester) async {
     messenger.setMockMethodCallHandler(

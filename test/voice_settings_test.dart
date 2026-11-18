@@ -216,7 +216,11 @@ void main() {
       expect(container.read(settingsProvider).supertonicSid, 4);
       await tester.ensureVisible(find.byKey(const Key('voice-remove')));
       await tester.tap(find.byKey(const Key('voice-remove')));
-      await tester.pump();
+      await tester.pumpAndSettle();
+      // Removing ~290 MB of voice asks first.
+      expect(packs.removed, isEmpty);
+      await tester.tap(find.byKey(const Key('voice-remove-confirm')));
+      await tester.pumpAndSettle();
       expect(packs.removed, [VoiceModels.listening, VoiceModels.supertonic]);
       expect(
         container.read(voiceModelsProvider).canSpeakWith('kokoro'),

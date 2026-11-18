@@ -269,10 +269,26 @@ class RetrievalPlan {
     final expression = input
         .trim()
         .replaceFirst(
-          RegExp(r'^(?:what is|calculate)\s+', caseSensitive: false),
+          RegExp(
+            r"^(?:what is|what's|whats|calculate|compute)\s+",
+            caseSensitive: false,
+          ),
           '',
         )
-        .replaceFirst(RegExp(r'\?\s*$'), '')
+        .replaceFirst(RegExp(r'[?=]\s*$'), '')
+        // "17 times 23", "10 divided by 4": the words for the operators.
+        .replaceAllMapped(
+          RegExp(
+            r'(?<=\d)\s*\b(times|x|multiplied by|plus|minus|divided by|over)\b\s*(?=[\d(])',
+            caseSensitive: false,
+          ),
+          (m) => switch (m[1]!.toLowerCase()) {
+            'plus' => '+',
+            'minus' => '-',
+            'divided by' || 'over' => '/',
+            _ => '*',
+          },
+        )
         .trim();
     final tokens = RegExp(
       r'\d+(?:\.\d+)?|[()+*/×÷^%−-]',
@@ -338,7 +354,7 @@ class RetrievalPlan {
   // "tell me" are how knowledge questions are asked too, so they are not
   // here: those still go to the judge.
   static final _localVerb = RegExp(
-    r'^(please |can you |could you |pls )?(write|rewrite|draft|compose|translate|paraphrase|proofread|fix|debug|refactor|improve|shorten|expand|simplify|correct|format|convert|brainstorm|outline|rephrase|reword|edit|review|proof-?read|[ée]cris|r[ée][ée]cris|r[ée]dige|traduis|traduire|corrige|reformule|escribe|reescribe|redacta|traduce|traducir|reformula|revisa|mejora|acorta)(?![\p{L}\p{N}])',
+    r'^(please |can you |could you |pls )?(say|write|rewrite|draft|compose|translate|paraphrase|proofread|fix|debug|refactor|improve|shorten|expand|simplify|correct|format|convert|brainstorm|outline|rephrase|reword|edit|review|proof-?read|[ée]cris|r[ée][ée]cris|r[ée]dige|traduis|traduire|corrige|reformule|escribe|reescribe|redacta|traduce|traducir|reformula|revisa|mejora|acorta)(?![\p{L}\p{N}])',
     caseSensitive: false,
     unicode: true,
   );

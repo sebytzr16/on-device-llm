@@ -3464,6 +3464,10 @@
   "mcpAlways": "Always allow this tool",
   "mcpDeny": "Deny",
   "mcpConfigError": "Invalid MCP configuration. Use mcpServers with a unique name and either a command, args array and env object, or a URL.",
+  "mcpNameTakenError": "A server with this name already exists. Pick another name.",
+  "mcpArgsError": "Arguments must be a JSON array of strings, for example [\"--port\", \"8080\"], or [] for none.",
+  "mcpEnvError": "Environment must be a JSON object whose values are strings, or empty brackets for none.",
+  "mcpCommandError": "The command must be the full path to an existing .exe file. npx, uvx, shells and names found on PATH are not started.",
   "mcpLoopbackError": "MCP HTTP only accepts http://127.0.0.1 or http://localhost. Other hosts are blocked by the offline rule.",
   "mcpProtocolError": "The MCP server returned an invalid response or a protocol error.",
   "mcpClosedError": "The MCP server stopped. Restart it to restore its tools.",
@@ -3777,6 +3781,9 @@
   "nativeSetOverflowStop": "Stop at context limit",
   "tuneCancel": "Cancel tuning",
   "tuneError": "Measurement or local save failed. Check the model and try again.",
+  "optimizeMeasurementError": "Could not measure this model. Check the model and try again.",
+  "optimizeSaveError": "Could not save Optimize data on this device. Try again.",
+  "optimizeReloadError": "Could not reload the model after Optimize. Try loading it again.",
   "tuneReceipt": "Benchmark receipt · {date}",
   "tuneExport": "Export receipt to JSON",
   "tuneExported": "Receipt saved.",
@@ -4732,6 +4739,7 @@
   "workspaceServer": "server",
   "workspaceApprovalTitle": "Server tool approval",
   "remotePairTrustNote": "Pair only on a network you trust.",
+  "runGenerationSpeed": "Generation speed",
   "runSpeed": "speed",
   "runPromptTokens": "prompt tokens",
   "runCachedTokens": "cached",
@@ -5819,5 +5827,82 @@
   },
   "imageNoUnusedParts": "Nothing to remove: every file belongs to a model you have or are downloading.",
   "recommendedAllRemoved": "The other suggestions for this device were removed from the list.",
-  "uiModelCardHide": "Hide"
+  "uiModelCardHide": "Hide",
+  "confirmRemoveDownloadTitle": "Remove the download?",
+  "confirmRemoveDownloadHint": "This deletes the downloaded files from this device. You can download them again later.",
+  "confirmRemoveZimTitle": "Remove offline Wikipedia?",
+  "confirmRemoveZimHint": "This deletes the archive from this device. To use it again, you will need to import the file again.",
+  "confirmDeleteCollectionTitle": "Delete this collection?",
+  "confirmDeleteCollectionHint": "Its files and their index are removed from this device. This can't be undone.",
+  "confirmDeleteGoalTitle": "Delete this report?",
+  "confirmCannotUndo": "This can't be undone.",
+  "confirmDeleteDocumentTitle": "Delete this document?",
+  "islandRestoringModel": "Loading your last model: {model}",
+  "@islandRestoringModel": {"placeholders": {"model": {"type": "String"}}},
+  "engineUpdateTitle": "Engine updates",
+  "engineUpdateBuiltIn": "Engine: built in ({tag})",
+  "@engineUpdateBuiltIn": {
+    "placeholders": {
+      "tag": {
+        "type": "String"
+      }
+    }
+  },
+  "engineUpdatePack": "Engine: downloaded update {tag}",
+  "@engineUpdatePack": {
+    "placeholders": {
+      "tag": {
+        "type": "String"
+      }
+    }
+  },
+  "engineUpdateAuto": "Install engine updates automatically",
+  "engineUpdateAutoHint": "Checks this app's GitHub releases once a day. Updates are signed, checked before install and apply on the next model load.",
+  "engineUpdateCheckNow": "Check for engine updates",
+  "engineUpdateChecking": "Checking…",
+  "engineUpdateUpToDate": "The engine is up to date.",
+  "engineUpdateAvailable": "{tag} is available ({size} MB).",
+  "@engineUpdateAvailable": {
+    "placeholders": {
+      "tag": {
+        "type": "String"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "engineUpdateInstall": "Install",
+  "engineUpdateDownloading": "Downloading {tag}: {percent}%",
+  "@engineUpdateDownloading": {
+    "placeholders": {
+      "tag": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "engineUpdateReady": "Engine update ready, applies on next load",
+  "engineUpdateFailed": "Engine update failed: {message}",
+  "@engineUpdateFailed": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "engineUpdateLastCheck": "Last checked {time}",
+  "@engineUpdateLastCheck": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "engineUpdateUseBuiltIn": "Use the built-in engine",
+  "engineUpdateRemove": "Remove downloaded engines",
+  "engineUpdateReverted": "The downloaded engine failed to load twice, so the built-in engine is in use again.",
+  "engineUpdateNoGitHub": "GitHub could not be reached."
 }

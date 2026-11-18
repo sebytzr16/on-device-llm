@@ -365,6 +365,14 @@ class _ChatRow extends ConsumerStatefulWidget {
 
 class _ChatRowState extends ConsumerState<_ChatRow> {
   final _menu = MenuController();
+  final _rowFocus = FocusNode();
+
+  @override
+  void dispose() {
+    _rowFocus.dispose();
+    super.dispose();
+  }
+
   bool _hover = false, _focused = false;
 
   String get _title => widget.chat.title.trim().isEmpty
@@ -380,16 +388,25 @@ class _ChatRowState extends ConsumerState<_ChatRow> {
 
   Future<void> _rename() async {
     final l10n = context.l10n;
+    final restoreFocus = context
+        .getInheritedWidgetOfExactType<DesktopShortcutScope>()
+        ?.restoreFocus;
     final title = await promptText(
       context,
       title: l10n.rename,
       initial: widget.chat.title,
       confirmLabel: l10n.rename,
     );
-    if (title == null || title.trim().isEmpty) return;
-    await ref
-        .read(appDatabaseProvider)
-        .renameChat(widget.chat.id, title.trim());
+    try {
+      if (!mounted || title == null || title.trim().isEmpty) return;
+      await ref
+          .read(appDatabaseProvider)
+          .renameChat(widget.chat.id, title.trim());
+    } finally {
+      // The DB stream can move/dispose this row. Restore through the shell,
+      // whose callback remains valid even when this State has disappeared.
+      restoreFocus?.call();
+    }
   }
 
   Future<void> _delete() async {
@@ -478,6 +495,7 @@ class _ChatRowState extends ConsumerState<_ChatRow> {
           child: GestureDetector(
             onSecondaryTapDown: (d) => _menu.open(position: d.localPosition),
             child: Focus(
+              focusNode: _rowFocus,
               skipTraversal: true,
               onFocusChange: (value) => setState(() => _focused = value),
               child: Builder(

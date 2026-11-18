@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 import '../../../../core/errors/exceptions.dart';
+import '../../data/last_model_store.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/platform/desktop_host.dart';
@@ -606,6 +607,24 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     void Function()? onLoadStart,
     bool vision = false,
   }) async {
+    _selectionRevision++;
+    return _loadModel(
+      info,
+      forChat: forChat,
+      settings: settings,
+      onLoadStart: onLoadStart,
+      vision: vision,
+    );
+  }
+
+  Future<void> _loadModel(
+    ModelInfo info, {
+    bool forChat = false,
+    InferenceSettings? settings,
+    void Function()? onLoadStart,
+    bool vision = false,
+    bool background = false,
+  }) async {
     if (state.isLoadingModel || (ref.read(sessionBusyProvider) && !forChat)) {
       throw StateError(
         stringsFor(ref.read(settingsProvider).localeCode).modelStopSwitch,
@@ -732,6 +751,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
           clearLoadingModel: true,
           clearLoadProgress: true,
         );
+        unawaited(LastModelStore.remember(info.id));
         if (engine.loadCount != loads) {
           _noteContextCap(engine.metrics);
           if (DesktopHost.active) {
@@ -755,18 +775,113 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
           clearLoadingModel: true,
           clearLoadProgress: true,
           clearLoaded: true,
-          error: stopped ? null : '${memory ?? e}',
+          error: stopped || background ? null : '${memory ?? e}',
         );
       }
       if (stopped) Error.throwWithStackTrace(const ModelLoadStopped(), st);
       if (memory != null) {
-        _offerLoadAnyway(info, forChat: forChat, vision: vision);
+        if (!background) {
+          _offerLoadAnyway(info, forChat: forChat, vision: vision);
+        }
         Error.throwWithStackTrace(memory, st);
       }
       rethrow;
     } finally {
       _loadStopped = false;
       _stopLoadProgress();
+    }
+  }
+
+  bool _restoredLastModel = false;
+  int _selectionRevision = 0;
+
+  /// Loads the model that was loaded last time, once per app run, so the
+  /// first message does not wait for it. It does nothing when a model is
+  /// already loaded or loading, the chat answers through a remote server,
+  /// or that model is no longer downloaded. Failures stay quiet: the next
+  /// send loads (and reports) as before.
+  Future<void> restoreLastModel() async {
+    if (_restoredLastModel) return;
+    _restoredLastModel = true;
+    final revision = _selectionRevision;
+    bool canRestore() =>
+        _alive &&
+        ref.mounted &&
+        revision == _selectionRevision &&
+        !ref.read(settingsProvider).remoteEnabled &&
+        state.loadedModelId == null &&
+        state.loadingModelId == null &&
+        !state.isLoadingModel &&
+        !ref.read(sessionBusyProvider) &&
+        !ref.read(chatProvider).isGenerating;
+    // A remote switch away and back still supersedes startup restoration.
+    final remoteChanges = ref.listen(
+      settingsProvider.select((s) => (s.remoteEnabled, s.remoteProfileId)),
+      (_, _) => _selectionRevision++,
+    );
+    try {
+      await Future.wait([
+        ready,
+        ref.read(settingsProvider.notifier).ready,
+        ref.read(modelProfilesProvider.notifier).ready,
+        ref.read(presetsProvider.notifier).ready,
+      ]);
+      final id = await LastModelStore.read();
+      if (id == null || !canRestore()) return;
+      final row = await ref.read(appDatabaseProvider).getModel(id);
+      if (row == null || !_alive) return;
+      final info = _fromRow(row);
+      if (!info.isDownloaded || info.localPath == null) return;
+      if (info.id == diffusionGemmaModelId) return;
+      if (!canRestore()) return;
+      await LastModelStore.forget();
+      if (!canRestore()) return;
+      await _loadWithIsland(info);
+    } catch (e) {
+      _log.info('Last model was not restored', e);
+    } finally {
+      remoteChanges.close();
+    }
+  }
+
+  /// The startup load says so in the status island: it spins, then fills
+  /// with the load's progress, and flashes "Model ready" when done.
+  Future<void> _loadWithIsland(ModelInfo info) async {
+    final island = ref.read(islandProvider.notifier);
+    final t = stringsFor(ref.read(settingsProvider).localeCode);
+    IslandMessage message(double? progress) => IslandMessage(
+      t.islandRestoringModel(info.displayName),
+      tone: IslandTone.busy,
+      progress: progress,
+    );
+    // Only this load's own pill is cleared or replaced: a chat turn or
+    // search may take the island over meanwhile.
+    var shown = message(null);
+    island.activity(shown);
+    final ticker = Timer.periodic(const Duration(milliseconds: 150), (_) {
+      if (!_alive || !state.isLoadingModel) return;
+      if (ref.read(islandProvider).activity != shown) return;
+      final next = message(state.loadProgress);
+      if (next == shown) return;
+      shown = next;
+      island.activity(shown);
+    });
+    var loaded = false;
+    try {
+      await _loadModel(info, background: true);
+      loaded = state.loadedModelId == info.id;
+    } finally {
+      ticker.cancel();
+      if (_alive && ref.read(islandProvider).activity == shown) {
+        island.activity(null);
+        if (loaded) {
+          island.toast(
+            t.islandModelReady,
+            tone: IslandTone.done,
+            duration: const Duration(milliseconds: 1400),
+          );
+        }
+      }
     }
   }
 
@@ -1176,14 +1291,81 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     }
   }
 
+  /// Compare temporarily owns the VRAM. The returned restoration is invalidated
+  /// by any later explicit load/eject, even if that operation leaves chat empty.
+  Future<Future<void> Function()?> suspendChatForCompare() async {
+    final id = state.loadedModelId;
+    final selection = _selectionRevision;
+    var model = state.catalog.where((m) => m.id == id).firstOrNull;
+    if (model == null && id != null) {
+      final row = await ref.read(appDatabaseProvider).getModel(id);
+      if (row != null) model = _fromRow(row);
+    }
+    if (!_alive || !ref.mounted || selection != _selectionRevision) return null;
+    // Do not discard an unknown model. Compare's busy check prevents allocating
+    // its runtimes while chat still owns memory.
+    if (model == null || !model.isDownloaded || model.localPath == null) {
+      return null;
+    }
+    final modelId = model.id;
+    final vision = loadedConfig?.mmprojPath != null;
+    final unloading = unloadModel();
+    final revision = _selectionRevision;
+    await unloading;
+    if (state.loadedModelId != null || ref.read(llamaEngineProvider).isLoaded) {
+      return null;
+    }
+    return () async {
+      if (!_alive ||
+          !ref.mounted ||
+          revision != _selectionRevision ||
+          state.loadedModelId != null ||
+          state.isLoadingModel ||
+          ref.read(llamaEngineProvider).isLoaded ||
+          ref.read(settingsProvider).remoteEnabled ||
+          ref.read(sessionBusyProvider)) {
+        return;
+      }
+      var current = state.catalog.where((m) => m.id == modelId).firstOrNull;
+      if (current == null) {
+        final row = await ref.read(appDatabaseProvider).getModel(modelId);
+        if (row != null) current = _fromRow(row);
+        if (!_alive ||
+            !ref.mounted ||
+            revision != _selectionRevision ||
+            state.loadedModelId != null ||
+            state.isLoadingModel ||
+            ref.read(llamaEngineProvider).isLoaded ||
+            ref.read(settingsProvider).remoteEnabled ||
+            ref.read(sessionBusyProvider)) {
+          return;
+        }
+      }
+      if (current == null ||
+          !current.isDownloaded ||
+          current.localPath == null) {
+        return;
+      }
+      try {
+        await loadModel(current, vision: vision);
+      } catch (e) {
+        _log.info('Chat model was not restored after Compare', e);
+      }
+    };
+  }
+
   /// Releases the model's memory without leaving the chat. The next message
   /// loads it again.
   /// [ownsBusy]: the caller set the session busy itself (a tuning run) and
   /// unloads between its own loads.
   Future<void>? _unloading;
 
-  Future<void> unloadModel({bool ownsBusy = false}) => _unloading ??=
-      _unloadModel(ownsBusy: ownsBusy).whenComplete(() => _unloading = null);
+  Future<void> unloadModel({bool ownsBusy = false}) {
+    _selectionRevision++;
+    return _unloading ??= _unloadModel(
+      ownsBusy: ownsBusy,
+    ).whenComplete(() => _unloading = null);
+  }
 
   Future<void> _unloadModel({required bool ownsBusy}) async {
     try {

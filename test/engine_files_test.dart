@@ -74,8 +74,13 @@ void main() {
               ]
             : const [],
       );
-      expect(selected.name, 'ondevice_llm_cuda12.dll');
-      expect(opened, ['ondevice_llm_cuda12.dll']);
+      expect(
+        selected.name,
+        LlamaBindings.windowsBridgePath('ondevice_llm_cuda12.dll'),
+      );
+      expect(opened, [
+        LlamaBindings.windowsBridgePath('ondevice_llm_cuda12.dll'),
+      ]);
       expect(skipped.single, contains('cudart64_13.dll (missing)'));
     },
   );

@@ -177,10 +177,13 @@ class _SettingsSearchPageState extends ConsumerState<SettingsSearchPage> {
       openActiveModelProfile(context, ref);
       return;
     }
+    // Every group opens its own page; only the prompt opens the editor
+    // (Agents and max tokens used to fall through to custom instructions).
     final page = switch (spec.group) {
+      _ when spec.key == 'maxTokens' => const AnswerTokensPage(),
       SettingSpec.groupReasoning ||
       SettingSpec.groupWeb => const ReasoningSearchPage(),
-      SettingSpec.groupTools => const ToolsPage(),
+      SettingSpec.groupTools || SettingSpec.groupAgents => const ToolsPage(),
       SettingSpec.groupOutput => const StructuredOutputPage(),
       SettingSpec.groupContext => const ContextBatchPage(),
       SettingSpec.groupHardware => const HardwarePage(),
@@ -190,6 +193,7 @@ class _SettingsSearchPageState extends ConsumerState<SettingsSearchPage> {
       _open(page);
       return;
     }
+    if (spec.group != SettingSpec.groupPrompt) return;
     final s = ref.read(settingsProvider);
     final value = await promptText(
       context,

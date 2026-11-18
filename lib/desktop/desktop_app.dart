@@ -1,4 +1,5 @@
 import '../features/models/presentation/providers/fresh_downloads_provider.dart';
+import '../features/models/presentation/providers/model_manager_provider.dart';
 import 'dart:async';
 import '../features/settings/presentation/widgets/device_encryption_setting.dart';
 import 'dart:convert';
@@ -23,6 +24,7 @@ import 'launch_arguments.dart';
 import 'keyboard_shortcuts.dart';
 import 'chat_tools.dart';
 import 'desktop_theme.dart';
+import 'engine_updater/engine_update_controller.dart';
 import 'inspector_panel.dart';
 import 'models_page.dart';
 import 'compare_page.dart';
@@ -71,6 +73,13 @@ class DesktopApp extends ConsumerWidget {
     // Kept alive from the start so a download that ends on another page
     // still offers Load on the Models page.
     ref.listen(freshDownloadsProvider, (_, _) {});
+    ref.listen(engineUpdateProvider.select((v) => v.phase), (before, now) {
+      if (now == EngineUpdatePhase.ready && before != now) {
+        ref
+            .read(islandProvider.notifier)
+            .toast(appStrings.engineUpdateReady, icon: Icons.memory_outlined);
+      }
+    });
     final localeCode = ref.watch(settingsProvider.select((s) => s.localeCode));
     appLanguageCode = localeCode;
     final themeChoice = ref.watch(
@@ -144,6 +153,14 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   @override
   void initState() {
     super.initState();
+    // Load the model used last time while the user reads or types.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(ref.read(modelManagerProvider.notifier).restoreLastModel());
+        // Daily engine check; a new pack installs itself for the next load.
+        unawaited(ref.read(engineUpdateProvider.notifier).start());
+      }
+    });
     _mcp = ref.read(mcpRegistryProvider);
     _mcp.confirm = (server, call) {
       if (!mounted) return Future.value(McpConsent.deny);
@@ -164,18 +181,37 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     FocusManager.instance.addListener(_keepShortcutsLive);
   }
 
-  /// When the focused widget leaves the screen (the composer after Ctrl+M,
-  /// a closed menu), focus falls back to the route above the shell and key
-  /// events no longer pass the shortcuts. Take it back; dialogs and menus
-  /// have their own scopes and keep theirs.
-  void _keepShortcutsLive() {
-    final primary = FocusManager.instance.primaryFocus;
-    if (primary == null || !_shellFocus.ancestors.contains(primary)) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && FocusManager.instance.primaryFocus == primary) {
-        _shellFocus.requestFocus();
+  /// Rows can disappear after a database emission, leaving focus in an overlay
+  /// outside the shell. Recover after layout, once route/menu restoration ends.
+  void _keepShortcutsLive({bool recoverClosedMenu = false}) {
+    bool needsFocus() {
+      final primary = FocusManager.instance.primaryFocus;
+      if (ModalRoute.of(context)?.isCurrent != true) return false;
+      final focusContext = primary?.context;
+      final menu = focusContext == null
+          ? null
+          : MenuController.maybeOf(focusContext);
+      if (menu?.isOpen == true) return false;
+      // A closed anchor can also contain ordinary fields and rows. Their
+      // shell ancestry takes precedence over stale overlay recovery.
+      if (primary == _shellFocus ||
+          (primary != null && primary.ancestors.contains(_shellFocus))) {
+        return false;
       }
+      if (focusContext != null &&
+          (focusContext.widget is EditableText ||
+              focusContext.findAncestorWidgetOfExactType<EditableText>() !=
+                  null)) {
+        return false;
+      }
+      return true;
+    }
+
+    if (!mounted || (!recoverClosedMenu && !needsFocus())) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && needsFocus()) _shellFocus.requestFocus();
     });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   @override
@@ -310,6 +346,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _searchFocus.requestFocus();
     });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   @override
@@ -336,6 +373,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
         autofocus: true,
         child: DesktopShortcutScope(
           shortcuts: _shortcuts,
+          restoreFocus: () => _keepShortcutsLive(recoverClosedMenu: true),
           child: Scaffold(
             backgroundColor: c.ink,
             body: Column(

@@ -354,10 +354,14 @@ class _EstimatePanel extends StatelessWidget {
           ((e['ramNeedMb'] as num?) ?? 0) <=
               ((e['ramAvailableMb'] as num?) ?? 0) &&
           needMb <= (freeMb ?? 0);
+      // The bridge fit layers around the model that is still loaded, so a
+      // short count here says nothing about the real load (audit 2026-11-18:
+      // the loaded Gemma read "7 of 43" while running fully on the card).
+      final heldBack = uncertain && creditedFits && gpu < layers;
       if (provisional && !onCard) {
         // Capacity is unknown until a hardware probe returns.
-      } else if (uncertain && creditedFits && gpu == 0) {
-        // The occupied card may have forced this plan onto the CPU.
+      } else if (heldBack) {
+        // The occupied card may have forced this plan off the GPU.
       } else if (!onCard || gpu == 0) {
         notes.add((
           Icons.memory_rounded,
@@ -391,7 +395,7 @@ class _EstimatePanel extends StatelessWidget {
           c.danger,
         ));
       }
-      if (onCard && gpu > 0) {
+      if (onCard && gpu > 0 && !heldBack) {
         notes.add((
           Icons.layers_outlined,
           t.desktopLoadSettingsGpuLayers(gpu, layers),

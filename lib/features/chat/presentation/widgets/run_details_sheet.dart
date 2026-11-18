@@ -45,7 +45,7 @@ class _RunDetailsSheet extends StatelessWidget {
         ),
       if (cpuFallback != null) (t.avx512Fallback, cpuFallback),
       if (m['tokensPerSecond'] is num)
-        (t.runSpeed, '${fmt(m['tokensPerSecond'])} tok/s'),
+        (t.runGenerationSpeed, '${fmt(m['tokensPerSecond'])} tok/s'),
       if (m['firstTokenMs'] is num)
         (
           t.uiMetricsSheetFirstToken,

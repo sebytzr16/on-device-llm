@@ -85,10 +85,17 @@ class _ModelOptimizeSectionState extends ConsumerState<ModelOptimizeSection> {
       }
     });
     final optimize = ref.watch(provider);
-    final failed = optimize.failed, rates = optimize.rates;
+    final rates = optimize.rates;
     final step = optimize.step, progress = optimize.progress;
     final changes = optimize.changes, kept = optimize.kept;
     final t = context.l10n;
+    final mobile = ref.watch(optimizeMobileProvider);
+    final error = switch (optimize.failure) {
+      OptimizeFailure.measurement => t.optimizeMeasurementError,
+      OptimizeFailure.save => t.optimizeSaveError,
+      OptimizeFailure.reload => t.optimizeReloadError,
+      null => null,
+    };
     final busy =
         ref.watch(sessionBusyProvider) ||
         ref.watch(modelManagerProvider).isLoadingModel;
@@ -96,7 +103,9 @@ class _ModelOptimizeSectionState extends ConsumerState<ModelOptimizeSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          t.desktopOptimizeHint,
+          mobile
+              ? t.optimizeSettingsHint(widget.model.displayName)
+              : t.desktopOptimizeHint,
           style: context.text.caption.copyWith(color: context.colors.textMuted),
         ),
         if (optimize.running) ...[
@@ -131,15 +140,11 @@ class _ModelOptimizeSectionState extends ConsumerState<ModelOptimizeSection> {
             key: const Key('desktop-optimize'),
             onPressed: busy || widget.model.localPath == null ? null : _start,
             icon: const Icon(Icons.auto_fix_high_rounded),
-            label: Text(
-              ref.watch(optimizeMobileProvider)
-                  ? t.optimizeSettingsTitle
-                  : t.desktopOptimize,
-            ),
+            label: Text(mobile ? t.optimizeSettingsTitle : t.desktopOptimize),
           ),
-        if (failed)
+        if (error != null)
           Text(
-            t.tuneError,
+            error,
             style: context.text.small.copyWith(color: context.colors.danger),
           ),
         if (rates != null)
@@ -300,7 +305,7 @@ class _BenchmarkReceiptSectionState
             leading: Checkbox(
               value: _selected.contains(receipt),
               semanticLabel: t.benchmarkSelectReceipt(
-                receipt.json['timestamp'] as String,
+                _receiptWhen(context, receipt.json['timestamp']),
               ),
               onChanged: (selected) => setState(() {
                 if (selected == true) {
@@ -311,7 +316,7 @@ class _BenchmarkReceiptSectionState
               }),
             ),
             title: Text(
-              t.tuneReceipt(receipt.json['timestamp'] as String),
+              t.tuneReceipt(_receiptWhen(context, receipt.json['timestamp'])),
               style: context.text.small,
             ),
             subtitle: Text(
@@ -416,4 +421,15 @@ class _BenchmarkReceiptSectionState
       ],
     );
   }
+}
+
+/// A receipt's UTC ISO timestamp as the user's local date and time; anything
+/// unparsable is shown as stored.
+String _receiptWhen(BuildContext context, Object? stamp) {
+  final raw = stamp?.toString() ?? '';
+  final time = DateTime.tryParse(raw)?.toLocal();
+  if (time == null) return raw;
+  final m = MaterialLocalizations.of(context);
+  return '${m.formatShortDate(time)} '
+      '${m.formatTimeOfDay(TimeOfDay.fromDateTime(time))}';
 }

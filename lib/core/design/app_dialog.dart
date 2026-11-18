@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../l10n/l10n.dart';
 import '../motion/motion.dart';
@@ -94,6 +95,7 @@ Future<String?> promptText(
   TextInputType? keyboardType,
   Key? fieldKey,
   Key? confirmKey,
+  bool enterSubmits = false,
 }) {
   AppHaptics.tick();
   return showAppDialog<String>(
@@ -115,6 +117,7 @@ Future<String?> promptText(
       keyboardType: keyboardType,
       fieldKey: fieldKey,
       confirmKey: confirmKey,
+      enterSubmits: enterSubmits,
     ),
   );
 }
@@ -126,6 +129,10 @@ class _PromptDialog extends StatefulWidget {
   final int minLines, maxLines;
   final int? maxLength;
   final bool allowEmpty, selectAll;
+
+  /// Multi-line fields: Enter confirms and Shift+Enter adds a line, like the
+  /// chat composer.
+  final bool enterSubmits;
   final String? Function(String text)? validate;
   final TextInputType? keyboardType;
   final Key? fieldKey, confirmKey;
@@ -146,6 +153,7 @@ class _PromptDialog extends StatefulWidget {
     required this.keyboardType,
     required this.fieldKey,
     required this.confirmKey,
+    required this.enterSubmits,
   });
 
   @override
@@ -160,7 +168,23 @@ class _PromptDialogState extends State<_PromptDialog> {
       extentOffset: widget.initial.length,
     );
 
+  late final _focus = FocusNode(onKeyEvent: _onKey);
+
   bool get _ready => widget.allowEmpty || _controller.text.trim().isNotEmpty;
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent e) {
+    if (!widget.enterSubmits || e is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+    final enter =
+        e.logicalKey == LogicalKeyboardKey.enter ||
+        e.logicalKey == LogicalKeyboardKey.numpadEnter;
+    if (!enter || HardwareKeyboard.instance.isShiftPressed) {
+      return KeyEventResult.ignored;
+    }
+    _submit();
+    return KeyEventResult.handled;
+  }
 
   void _submit() {
     if (!_ready) return;
@@ -176,6 +200,7 @@ class _PromptDialogState extends State<_PromptDialog> {
   @override
   void dispose() {
     _controller.dispose();
+    _focus.dispose();
     super.dispose();
   }
 
@@ -196,6 +221,7 @@ class _PromptDialogState extends State<_PromptDialog> {
             TextField(
               key: widget.fieldKey,
               controller: _controller,
+              focusNode: _focus,
               autofocus: true,
               minLines: widget.minLines,
               maxLines: widget.maxLines,

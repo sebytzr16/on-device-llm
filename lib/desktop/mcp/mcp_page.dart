@@ -1,4 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:path/path.dart' as p;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -343,17 +346,35 @@ class _AddServerState extends State<_AddServer> {
     try {
       final name = _name.text.trim();
       if (widget.existing.servers.containsKey(name)) {
-        throw const McpException(McpProblem.config);
+        throw const McpException(McpProblem.config, 'name');
       }
+      // The same launch rule the client applies on enable, checked here so a
+      // server that can never start is not saved (audit 2026-11-18).
+      final command = _command.text.trim();
+      final exe = p.basenameWithoutExtension(command).toLowerCase();
+      if (!p.isAbsolute(command) ||
+          !File(command).existsSync() ||
+          McpServerConfig.blockedLaunchers.contains(exe) ||
+          (Platform.isWindows && !command.toLowerCase().endsWith('.exe'))) {
+        throw const McpException(McpProblem.config, 'command');
+      }
+      Object? decode(TextEditingController c, String field) {
+        try {
+          return jsonDecode(
+            c.text.trim().isEmpty ? (field == 'args' ? '[]' : '{}') : c.text,
+          );
+        } on FormatException {
+          throw McpException(McpProblem.config, field);
+        }
+      }
+
+      final args = decode(_args, 'args');
+      final env = decode(_env, 'env');
       final json = const JsonEncoder.withIndent('  ').convert({
         'mcpServers': {
           for (final server in widget.existing.servers.values)
             server.config.name: server.config.toJson(),
-          name: {
-            'command': _command.text.trim(),
-            'args': jsonDecode(_args.text),
-            'env': jsonDecode(_env.text),
-          },
+          name: {'command': command, 'args': args, 'env': env},
         },
       });
       McpServerConfig.parse(json);

@@ -30,6 +30,7 @@ void main() {
           {'stage': 'reading', 'elapsedMs': 50},
           {'stage': 'writing', 'elapsedMs': 700},
         ],
+        'tokensPerSecond': 25,
         'beginMs': 20,
         'prefillMs': 500,
         'checkpointMs': 30,
@@ -66,6 +67,8 @@ void main() {
     ]) {
       expect(find.text(label), findsOneWidget);
     }
+    expect(find.text('Generation speed'), findsOneWidget);
+    expect(find.text('25 tok/s'), findsOneWidget);
     expect(find.text('500 ms · 400.0 tok/s'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Warm-up'),

@@ -10,7 +10,7 @@ mixin _ChatBranches on _ChatBase {
     if (id == null || state.isGenerating || ref.read(sessionBusyProvider)) {
       return null;
     }
-    state = state.copyWith(isGenerating: true);
+    state = state.copyWith(isGenerating: true, housekeeping: true);
     try {
       final db = _database;
       final deletion = await MessageDeletion.delete(
@@ -29,7 +29,9 @@ mixin _ChatBranches on _ChatBase {
       }
       return deletion;
     } finally {
-      if (_alive) state = state.copyWith(isGenerating: false);
+      if (_alive) {
+        state = state.copyWith(isGenerating: false, housekeeping: false);
+      }
     }
   }
 
@@ -55,7 +57,7 @@ mixin _ChatBranches on _ChatBase {
   Future<bool> undoDelete(MessageDeletion deletion) async {
     if (state.isGenerating || ref.read(sessionBusyProvider)) return false;
     final db = _database;
-    state = state.copyWith(isGenerating: true);
+    state = state.copyWith(isGenerating: true, housekeeping: true);
     try {
       final ok = await deletion.undo(db);
       if (ok && _alive && state.chatId == deletion.chatId) {
@@ -67,7 +69,9 @@ mixin _ChatBranches on _ChatBase {
       }
       return ok;
     } finally {
-      if (_alive) state = state.copyWith(isGenerating: false);
+      if (_alive) {
+        state = state.copyWith(isGenerating: false, housekeeping: false);
+      }
     }
   }
 
@@ -91,7 +95,11 @@ mixin _ChatBranches on _ChatBase {
     final db = _database;
     // Block navigation and competing engine work before the first await.
     _navigation++;
-    state = state.copyWith(isGenerating: true, clearError: true);
+    state = state.copyWith(
+      isGenerating: true,
+      housekeeping: true,
+      clearError: true,
+    );
     ref.read(sessionBusyProvider.notifier).state = true;
     try {
       await db.transaction(() async {
@@ -116,7 +124,7 @@ mixin _ChatBranches on _ChatBase {
       return false;
     } finally {
       if (_alive) {
-        state = state.copyWith(isGenerating: false);
+        state = state.copyWith(isGenerating: false, housekeeping: false);
         ref.read(sessionBusyProvider.notifier).state = false;
       }
     }
@@ -191,7 +199,7 @@ mixin _ChatBranches on _ChatBase {
     final next = [...kept, ...restored];
     final db = _database;
     // Two passes avoid collisions with the unique (chat, sequence) index.
-    state = state.copyWith(isGenerating: true);
+    state = state.copyWith(isGenerating: true, housekeeping: true);
     try {
       await db.transaction(() async {
         final rows = await db.getMessages(state.chatId!);
@@ -215,7 +223,7 @@ mixin _ChatBranches on _ChatBase {
       });
       state = state.copyWith(messages: next);
     } finally {
-      state = state.copyWith(isGenerating: false);
+      state = state.copyWith(isGenerating: false, housekeeping: false);
     }
     return true;
   }

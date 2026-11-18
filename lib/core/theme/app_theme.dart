@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -52,6 +53,8 @@ class AppTheme {
   static SystemUiOverlayStyle overlayFor(AppColors c) => SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: c.isDark ? Brightness.light : Brightness.dark,
+    // iOS reads this one (the brightness of the content under the bar).
+    statusBarBrightness: c.isDark ? Brightness.dark : Brightness.light,
     systemNavigationBarColor: c.ink,
     systemNavigationBarIconBrightness: c.isDark
         ? Brightness.light
@@ -119,11 +122,13 @@ class AppTheme {
       canvasColor: c.ink,
       splashFactory: InkSparkle.splashFactory,
       extensions: [c],
-      // Pages slide in on a calm spring over a page that sinks back.
+      // Pages slide in on a calm spring over a page that sinks back. iOS keeps
+      // the native transition: it carries the edge swipe-back gesture, which
+      // the spring transition has no equivalent for.
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
           TargetPlatform.android: SpringPageTransitionsBuilder(),
-          TargetPlatform.iOS: SpringPageTransitionsBuilder(),
+          TargetPlatform.iOS: MotionCupertinoPageTransitionsBuilder(),
         },
       ),
       appBarTheme: AppBarTheme(
@@ -312,6 +317,37 @@ class AppTheme {
         ),
         textStyle: AppText.bodyMuted.copyWith(fontSize: 12, color: c.text),
       ),
+    );
+  }
+}
+
+/// Keep Cupertino's back gesture detector even when route motion is disabled.
+class MotionCupertinoPageTransitionsBuilder extends PageTransitionsBuilder {
+  const MotionCupertinoPageTransitionsBuilder();
+
+  @override
+  Duration get transitionDuration =>
+      const CupertinoPageTransitionsBuilder().transitionDuration;
+
+  @override
+  Duration get reverseTransitionDuration =>
+      const CupertinoPageTransitionsBuilder().reverseTransitionDuration;
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    final animates = context.motion.animates;
+    return const CupertinoPageTransitionsBuilder().buildTransitions(
+      route,
+      context,
+      animates ? animation : kAlwaysCompleteAnimation,
+      animates ? secondaryAnimation : kAlwaysDismissedAnimation,
+      child,
     );
   }
 }

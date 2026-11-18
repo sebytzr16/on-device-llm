@@ -135,8 +135,9 @@ class SdBindings {
     final failures = <String>[];
     for (final name in names) {
       try {
-        opened = DynamicLibrary.open(name);
-        library = name;
+        final path = LlamaBindings.windowsBridgePath(name);
+        opened = DynamicLibrary.open(path);
+        library = path;
         break;
       } catch (e) {
         // ondevice_sd.dll fails here when the CUDA runtime is missing.

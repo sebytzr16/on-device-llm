@@ -3,11 +3,11 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
 if (-not (Test-Path native/llama.cpp/include/llama.h)) {
-  git clone --depth 1 --branch b12342 https://github.com/ggml-org/llama.cpp.git native/llama.cpp
+  git clone --depth 1 --branch b12503 https://github.com/ggml-org/llama.cpp.git native/llama.cpp
   if ($LASTEXITCODE -ne 0) { throw 'llama.cpp download failed' }
 }
 $revision = git -C native/llama.cpp rev-parse HEAD
-if ($revision -ne '0fb8f157702702f33f4e018de8701b2569a1bc28') { throw 'Unexpected llama.cpp revision. Restore the pinned source.' }
+if ($revision -ne '4577932fab595eaa8b27ad71734d5de1f3c07d8c') { throw 'Unexpected llama.cpp revision. Restore the pinned source.' }
 # Local changes to the pinned source (native/patches), each applied once.
 foreach ($patch in Get-ChildItem native/patches/*.patch | Sort-Object Name) {
   # Windows PowerShell turns a native command's stderr into an error under Stop.

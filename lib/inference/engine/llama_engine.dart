@@ -16,6 +16,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:logging/logging.dart';
 import '../../core/errors/exceptions.dart';
 import '../../core/platform/desktop_host.dart';
+import '../../desktop/engine_updater/engine_updater.dart';
 import '../../features/settings/domain/entities/inference_settings.dart';
 import '../../features/tools/domain/tool_spec.dart';
 import '../ffi/llama_bindings.dart';
@@ -194,15 +195,17 @@ class LlamaEngine implements TextEngine {
     this.owner,
     this.onLibrary,
     this.tokenTimeout = const Duration(seconds: 60),
+    this.firstTokenTimeout = const Duration(minutes: 10),
     this.stopTimeout = const Duration(seconds: 3),
     this.workerEntrypoint,
   });
-  final Duration tokenTimeout, stopTimeout;
+  final Duration tokenTimeout, firstTokenTimeout, stopTimeout;
   @visibleForTesting
   final void Function(List<Object?>)? workerEntrypoint;
   Timer? _tokenWatchdog, _stopWatchdog;
   bool _speculationStalled = false;
   int _prefillRead = -1;
+  bool _firstTokenReceived = false;
   Future<void>? _retiringWorker;
   Completer<void>? _workerExit;
 
@@ -214,7 +217,13 @@ class LlamaEngine implements TextEngine {
 
   void _armTokenWatchdog() {
     _tokenWatchdog?.cancel();
-    _tokenWatchdog = Timer(tokenTimeout, () {
+    final timeout = _firstTokenReceived ? tokenTimeout : firstTokenTimeout;
+    final timeoutLabel = timeout.inMinutes > 0
+        ? '${timeout.inMinutes} minutes'
+        : timeout.inSeconds > 0
+        ? '${timeout.inSeconds} seconds'
+        : '${timeout.inMilliseconds} ms';
+    _tokenWatchdog = Timer(timeout, () {
       if (!_busy) return;
       // Only a load that drafts falls back to normal decoding next time.
       final settings = _loadSettings;
@@ -226,7 +235,7 @@ class LlamaEngine implements TextEngine {
       }
       _output?.addError(
         InferenceException(
-          'No token received for ${tokenTimeout.inSeconds} seconds. '
+          'No token received for $timeoutLabel. '
           'Generation stopped. Try normal decoding or a smaller context.',
         ),
       );
@@ -682,6 +691,7 @@ class LlamaEngine implements TextEngine {
                 ? positions.cached / positions.total
                 : null,
           );
+          if (_busy && !_cancelRequested) _armTokenWatchdog();
         case 'liveMetrics':
           metrics = {
             ...metrics,
@@ -701,6 +711,7 @@ class LlamaEngine implements TextEngine {
           _setPrefill(total > 0 ? (e['read'] as int) / total : null);
         case 'bytes':
           if ((e['data'] as Uint8List).isNotEmpty && !_cancelRequested) {
+            _firstTokenReceived = true;
             _armTokenWatchdog();
           }
           _setPrefill(null);
@@ -771,7 +782,14 @@ class LlamaEngine implements TextEngine {
     try {
       await Isolate.spawn(
         workerEntrypoint ?? _worker,
-        [events.sendPort, cacheDir, ownerId],
+        [
+          events.sendPort,
+          cacheDir,
+          ownerId,
+          // The isolate rebuilds the pack loader from this plain path, so it
+          // opens the same downloaded engine as this isolate.
+          LlamaBindings.enginePack?.rootPath,
+        ],
         onError: events.sendPort,
         onExit: exited.sendPort,
       );
@@ -1318,6 +1336,7 @@ class LlamaEngine implements TextEngine {
     }
     _busy = true;
     _prefillRead = -1;
+    _firstTokenReceived = false;
     _clearGenerationTimers();
     _replyAdmission = InferenceAdmission.shared.hold();
     final output = StreamController<List<int>>(onCancel: cancel);
@@ -1469,16 +1488,26 @@ class LlamaEngine implements TextEngine {
   );
 }
 
+/// Re-read the active pack for every load, including a switch to built-in.
+(String?, String, String?) nativeLibraryChoiceKey({
+  String? backend,
+  required String cpuVariant,
+}) => (backend, cpuVariant, LlamaBindings.enginePack?.activePackDir());
+
 void _worker(List<Object?> args) {
   final events = args[0] as SendPort;
   final options = jsonEncode({
     'cacheDir': args[1] as String? ?? '',
     'owner': args[2] as int? ?? 0,
   });
+  // Pack DLLs are opened in this isolate, so the loader is rebuilt here from
+  // the engines root; null means only the bundled engine exists.
+  final packRoot = args.length > 3 ? args[3] as String? : null;
+  if (packRoot != null) EngineUpdater.installIsolateLoader(packRoot);
   final commands = ReceivePort();
   events.send(commands.sendPort);
   LlamaBindings? api;
-  String? bridgeChoice;
+  (String?, String, String?)? bridgeChoice;
   Pointer<Void> handle = nullptr;
   bool running = false, cancelled = false, disposing = false;
   // Engine info plus which bridge library variant this process loaded (GPU-01).
@@ -1640,15 +1669,25 @@ void _worker(List<Object?> args) {
       );
       final want = selection.backend;
       final cpuVariant = selection.cpuVariant;
-      final choice = '$want/$cpuVariant';
+      final choice = nativeLibraryChoiceKey(
+        backend: want,
+        cpuVariant: cpuVariant,
+      );
       if (m['type'] == 'load' && api != null && bridgeChoice != choice) {
-        // Recreate the runtime when the backend or CPU variant changes.
+        // Recreate when the backend, CPU variant or active pack changes.
         if (handle != nullptr) api!.destroy(handle);
         handle = nullptr;
         api = null;
       }
-      api ??= LlamaBindings(windowsBackend: want, cpuVariant: cpuVariant);
-      if (m['type'] == 'load') bridgeChoice = choice;
+      api ??= LlamaBindings(
+        windowsBackend: want,
+        cpuVariant: cpuVariant,
+        modelLoad: m['type'] == 'load',
+      );
+      if (m['type'] == 'load') {
+        bridgeChoice = choice;
+        api!.markModelLoadStarted();
+      }
       if (handle == nullptr) {
         final opts = options.toNativeUtf8();
         try {
@@ -1709,6 +1748,7 @@ void _worker(List<Object?> args) {
               throw ModelLoadException(api!.error(handle).toDartString());
             }
           }
+          api!.markModelLoadSucceeded();
           send({
             'type': 'loaded',
             'metrics': {...info(), 'fallbackReason': ?fallback},

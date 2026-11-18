@@ -97,8 +97,9 @@ class _SendButtonState extends ConsumerState<SendButton>
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(chatProvider.select((s) => s.isGenerating), (was, now) {
-      if (was == true && !now) _turnEnded();
+    ref.listen(chatProvider, (previous, next) {
+      if (next.turnEndedSince(previous)) _turnEnded();
+      final now = next.isGenerating && !next.housekeeping;
       if (now && _done) {
         _doneHold.stop();
         setState(() => _done = false);

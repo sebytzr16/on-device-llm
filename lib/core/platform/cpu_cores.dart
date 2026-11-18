@@ -1,5 +1,6 @@
 import 'dart:ffi';
 import 'dart:io';
+import '../../inference/ffi/llama_bindings.dart';
 import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// CPU cores for the desktop thread defaults: llama.cpp's own count of
@@ -59,7 +60,7 @@ abstract final class CpuCores {
     for (final name in const ['ondevice_llm_compat.dll', 'ondevice_llm.dll']) {
       try {
         final cores = DynamicLibrary.open(
-          name,
+          LlamaBindings.windowsBridgePath(name),
         ).lookupFunction<Int32 Function(), int Function()>('od_cpu_cores')();
         if (cores > 0) return cores;
       } catch (e, st) {

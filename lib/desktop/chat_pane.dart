@@ -328,6 +328,11 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
         versionsByParent.putIfAbsent(m.parentId, () => []).add(m);
       }
     }
+    // Restoring a version moves its rows to the end of the list; number the
+    // versions by when they were written so 1/2 and 2/2 stay put.
+    for (final list in versionsByParent.values) {
+      list.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    }
     final downloadedModelCount = models.catalog
         .where((m) => m.isDownloaded)
         .length;
@@ -844,6 +849,10 @@ class _ComposerState extends ConsumerState<_Composer> {
     _text.addListener(_saveDraft);
     unawaited(_loadDraft());
     ref.listenManual(chatProvider.select(_key), (_, key) {
+      ref.read(voiceProvider.notifier).discardDictation();
+      if (ref.read(voiceProvider).listening) {
+        unawaited(ref.read(voiceProvider.notifier).stop());
+      }
       if (_draftKey == 'temporary') _drafts.discard(_draftKey);
       _draftKey = key;
       // Changing the controller also notifies its listener.
@@ -898,6 +907,10 @@ class _ComposerState extends ConsumerState<_Composer> {
   Future<void> _send() async {
     if (ref.read(chatProvider).isGenerating) return;
     if (isChatAction(_text.text)) {
+      ref.read(voiceProvider.notifier).discardDictation();
+      if (ref.read(voiceProvider).listening) {
+        unawaited(ref.read(voiceProvider.notifier).stop());
+      }
       final action = _text.text;
       _text.clear();
       await runChatAction(
@@ -920,6 +933,10 @@ class _ComposerState extends ConsumerState<_Composer> {
       lang: Localizations.localeOf(context).languageCode,
       messages: ref.read(chatProvider).messages,
     );
+    ref.read(voiceProvider.notifier).discardDictation();
+    if (ref.read(voiceProvider).listening) {
+      unawaited(ref.read(voiceProvider.notifier).stop());
+    }
     _text.clear();
     setState(_pending.clear);
     _saveDraft();
@@ -1066,8 +1083,8 @@ class _ComposerState extends ConsumerState<_Composer> {
 
   void _dictate(InferenceSettings settings, bool listening) {
     final n = ref.read(voiceProvider.notifier);
-    if (listening) {
-      n.stop();
+    if (listening || ref.read(voiceProvider).listening) {
+      unawaited(n.stop());
       return;
     }
     final before = _text.text;

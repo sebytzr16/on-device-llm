@@ -29,6 +29,16 @@ jobs:
       - run: flutter test
   android:
     runs-on: ubuntu-latest
+    # One APK per ABI: arm64-v8a phones and x86_64 (emulator, ChromeOS).
+    # Each job builds the portable bridge plus the fast variant for its ABI.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            artifact: android-arm64-cpu-debug-signed
+          - abi: x86_64
+            artifact: android-x64-cpu-debug-signed
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -40,9 +50,11 @@ jobs:
           flutter-version: '3.47.5'
           cache: true
       - run: bash scripts/build_android.sh
+        env:
+          ODLLM_ABI: ${{ matrix.abi }}
       - uses: actions/upload-artifact@v4
         with:
-          name: android-arm64-cpu-debug-signed
+          name: ${{ matrix.artifact }}
           path: build/app/outputs/flutter-apk/app-release.apk
 
   ios:

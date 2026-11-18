@@ -237,20 +237,26 @@ class PickModelStep extends StatelessWidget {
             ),
             style: context.text.small,
           ),
-          CheckboxListTile(
-            value: acknowledged,
-            onChanged: (v) => onAcknowledge(v ?? false),
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-            dense: true,
-            title: Text(
-              context.l10n.acknowledgeLicense,
-              style: context.text.body,
-            ),
-          ),
         ],
       ),
       actions: [
+        // Pinned beside the button: on short or wide screens (e.g. a foldable
+        // unfolded in landscape) a checkbox at the end of the scrolling list
+        // falls off-screen and the disabled button looks broken. The notice
+        // stays in the list: pinned too, it pushed the buttons off small or
+        // landscape phones at large text sizes.
+        CheckboxListTile(
+          value: acknowledged,
+          onChanged: (v) => onAcknowledge(v ?? false),
+          contentPadding: EdgeInsets.zero,
+          controlAffinity: ListTileControlAffinity.leading,
+          dense: true,
+          title: Text(
+            context.l10n.acknowledgeLicense,
+            style: context.text.body,
+          ),
+        ),
+        const SizedBox(height: AppSpace.sm),
         FilledButton.icon(
           onPressed: acknowledged ? onDownload : null,
           icon: const Icon(Icons.download_outlined, size: 18),

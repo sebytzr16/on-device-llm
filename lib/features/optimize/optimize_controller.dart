@@ -1,7 +1,11 @@
 import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/providers/shared_providers.dart';
+import 'package:logging/logging.dart';
+
 import '../../core/logging/quiet_failure.dart';
+import '../../core/platform/device_info.dart';
+import '../../core/providers/shared_providers.dart';
 import '../../data/storage/model_storage.dart';
 import '../adapters/adapter_store.dart';
 import '../models/domain/entities/model_catalog.dart';
@@ -17,17 +21,33 @@ import 'optimize_setups.dart';
 import 'optimized_models_provider.dart';
 import 'tune_benchmark_run.dart';
 
-final optimizeMobileProvider = Provider<bool>((ref) => Platform.isAndroid);
+final _log = Logger('optimize');
+
+final optimizeIosProvider = Provider<bool>((ref) => Platform.isIOS);
+final optimizeMobileProvider = Provider<bool>(
+  (ref) => Platform.isAndroid || ref.watch(optimizeIosProvider),
+);
+final optimizeDeviceMemoryProvider = Provider<Future<DeviceMemory?> Function()>(
+  (ref) => DeviceMemory.read,
+);
 final optimizeControllerProvider =
     NotifierProvider.family<OptimizeController, OptimizeState, String>(
       OptimizeController.new,
     );
 
+enum OptimizeFailure { measurement, save, reload }
+
+class _OptimizeSaveFailure implements Exception {
+  const _OptimizeSaveFailure(this.cause);
+  final Object cause;
+}
+
 class OptimizeState {
   final bool running;
   final double? progress;
   final (int, int)? step;
-  final bool failed;
+  final OptimizeFailure? failure;
+  bool get failed => failure != null;
   final (double, double)? rates;
   final OptimizeKeepReason? kept;
   final bool saved;
@@ -36,7 +56,7 @@ class OptimizeState {
     this.running = false,
     this.progress,
     this.step,
-    this.failed = false,
+    this.failure,
     this.rates,
     this.kept,
     this.saved = false,
@@ -46,7 +66,7 @@ class OptimizeState {
   OptimizeState copyWith({
     double? progress,
     (int, int)? step,
-    bool? failed,
+    OptimizeFailure? failure,
     (double, double)? rates,
     OptimizeKeepReason? kept,
     bool? saved,
@@ -55,7 +75,7 @@ class OptimizeState {
     running: running,
     progress: progress?.clamp(0.0, 1.0) ?? this.progress,
     step: step ?? this.step,
-    failed: failed ?? this.failed,
+    failure: failure ?? this.failure,
     rates: rates ?? this.rates,
     kept: kept ?? this.kept,
     saved: saved ?? this.saved,
@@ -97,6 +117,9 @@ class OptimizeController extends Notifier<OptimizeState> {
     final global = ref.read(settingsProvider.notifier);
     final receipts = ref.read(benchmarkReceiptsProvider.notifier);
     final estimator = ref.read(llamaEstimatorProvider);
+    final mobile = ref.read(optimizeMobileProvider);
+    final ios = mobile && ref.read(optimizeIosProvider);
+    final readMemory = ref.read(optimizeDeviceMemoryProvider);
     final original = current;
     // A loaded model holds the memory the estimates read as free, so every
     // layer count looked over budget; the estimates below unload it and the
@@ -117,17 +140,40 @@ class OptimizeController extends Notifier<OptimizeState> {
                 ref.read(modelManagerProvider).vision.contains(model.id)
             ? (await ModelStorage.modelFile(projector.fileName)).path
             : null;
-        return estimator.estimate(
+        final estimate = await estimator.estimate(
           modelPath: model.localPath!,
-          settings: s,
+          // Native Auto can select Metal, while the phone model loader
+          // resolves Auto to CPU.
+          settings: ios && s.backend == GpuBackend.auto
+              ? s.copyWith(backend: GpuBackend.cpu)
+              : s,
           mmprojPath: mmproj,
           adapters: await ref
               .read(adaptersProvider.notifier)
               .resolved(model.id),
-          draftModelPath: await manager.draftPathFor(model, s.draftModelId),
+          draftModelPath: s.speculationMode == 'off'
+              ? null
+              : await manager.draftPathFor(model, s.draftModelId),
         );
+        if (ios && (estimate['ramAvailableMb'] as num? ?? 0) <= 0) {
+          // The bridge's /proc memory probe is unavailable on iOS. Query
+          // the process budget after unloading, for each estimate.
+          final memory = await readMemory();
+          if (memory == null) {
+            throw StateError('iOS process memory budget unavailable');
+          }
+          final available = memory.availableBytes >> 20;
+          return {
+            ...estimate,
+            'ramAvailableMb': available,
+            'ramTotalMb': memory.totalBytes >> 20,
+            // Leave headroom for allocations outside the native estimate.
+            'ramBudgetMb': (available - 256).clamp(0, available),
+          };
+        }
+        return estimate;
       },
-      save: receipts.save,
+      save: (receipt) => _save(() => receipts.save(receipt)),
     );
     busy.state = true;
     _run = runner;
@@ -142,14 +188,15 @@ class OptimizeController extends Notifier<OptimizeState> {
         current: original,
         defaults: global.defaults,
         estimate: runner.estimate,
-        mobile: ref.read(optimizeMobileProvider),
+        mobile: mobile,
+        ios: ios,
       );
       if (runner.cancelled) return;
-      final mobile = ref.read(optimizeMobileProvider);
       final setups = pcOptimizationSetups(
         defaults,
         mobile: mobile,
-        mtpHead: await autoMtpHead(model.localPath!) != null,
+        ios: ios,
+        mtpHead: !ios && await autoMtpHead(model.localPath!) != null,
         userDraft: mobile
             ? ''
             : original.draftModelId.isNotEmpty
@@ -185,20 +232,20 @@ class OptimizeController extends Notifier<OptimizeState> {
       for (var i = 0; i < setups.length; i++) {
         if (runner.cancelled) return;
         _update(_value.copyWith(step: (i + 1, setups.length)));
-        if (await runner.fits(setups[i].toJson())) {
-          try {
+        try {
+          if (await runner.fits(setups[i].toJson())) {
             final m = await runner.benchmark(
               setups[i].toJson(),
               progress: (f) => progress(i + 1, f),
               quick: true,
             );
             measured.add((settings: setups[i], measurement: m));
-          } catch (e, st) {
-            // A setup the engine refuses (a draft whose vocabulary does not
-            // match, say) is skipped; the first is the baseline and must run.
-            if (i == 0) rethrow;
-            quietFailure('optimize_setup_$i', e, st);
           }
+        } catch (e, st) {
+          // Optional setups can be refused by the engine. A failed baseline
+          // or receipt write ends the scan.
+          if (i == 0 || e is _OptimizeSaveFailure) rethrow;
+          quietFailure('optimize_setup_$i', e, st);
         }
         progress(i + 1, 1);
       }
@@ -291,7 +338,12 @@ class OptimizeController extends Notifier<OptimizeState> {
         };
         // The model's profile sits above the app-wide settings, so the
         // winner applies without touching other models (audit P1-13).
-        await profiles.set(model.id, {...profiles.of(model.id), ...changes});
+        await _save(
+          () => profiles.set(model.id, {
+            ...profiles.of(model.id),
+            ...changes,
+          }, requirePersistence: true),
+        );
         finalSettings = winner;
         final changesText = [
           for (final key in pcOptimizationKeys)
@@ -307,13 +359,15 @@ class OptimizeController extends Notifier<OptimizeState> {
           kept: kept,
         ),
       );
-    } catch (_) {
-      if (!runner.cancelled) _update(_value.copyWith(failed: true));
+    } on _OptimizeSaveFailure catch (e, st) {
+      _fail(OptimizeFailure.save, e.cause, st);
+    } catch (e, st) {
+      if (!runner.cancelled) _fail(OptimizeFailure.measurement, e, st);
     } finally {
       try {
         await manager.loadModel(model, forChat: true, settings: finalSettings);
-      } catch (_) {
-        _update(_value.copyWith(failed: true));
+      } catch (e, st) {
+        _fail(OptimizeFailure.reload, e, st);
       }
       try {
         if (!runner.cancelled &&
@@ -323,14 +377,14 @@ class OptimizeController extends Notifier<OptimizeState> {
               .read(optimizedModelsProvider.notifier)
               .markOptimized(model.id);
         }
-      } catch (_) {
-        _update(_value.copyWith(failed: true));
+      } catch (e, st) {
+        _fail(OptimizeFailure.save, e, st);
       } finally {
         if (ref.mounted) busy.state = false;
         _run = null;
         _update(
           OptimizeState(
-            failed: _value.failed,
+            failure: _value.failure,
             rates: _value.rates,
             kept: _value.kept,
             saved: _value.saved,
@@ -343,6 +397,19 @@ class OptimizeController extends Notifier<OptimizeState> {
 
   void _keep(OptimizeKeepReason reason) =>
       _update(_value.copyWith(kept: reason));
+
+  Future<void> _save(Future<void> Function() write) async {
+    try {
+      await write();
+    } catch (e, st) {
+      Error.throwWithStackTrace(_OptimizeSaveFailure(e), st);
+    }
+  }
+
+  void _fail(OptimizeFailure failure, Object error, StackTrace stack) {
+    _log.warning('Optimize ${failure.name} failed for $modelId', error, stack);
+    if (!_value.failed) _update(_value.copyWith(failure: failure));
+  }
 
   void cancel() => _run?.cancel();
 }

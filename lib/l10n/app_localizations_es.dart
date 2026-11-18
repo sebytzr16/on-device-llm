@@ -6470,6 +6470,22 @@ class AppLocalizationsEs extends AppLocalizations {
       'Configuración MCP no válida. Usa mcpServers con un nombre único y un comando, una matriz args y un objeto env, o una URL.';
 
   @override
+  String get mcpNameTakenError =>
+      'Ya existe un servidor con este nombre. Elige otro.';
+
+  @override
+  String get mcpArgsError =>
+      'Los argumentos deben ser una matriz JSON de cadenas, por ejemplo [\"--port\", \"8080\"], o [] si no hay.';
+
+  @override
+  String get mcpEnvError =>
+      'El entorno debe ser un objeto JSON cuyos valores sean cadenas, o llaves vacías si no hay.';
+
+  @override
+  String get mcpCommandError =>
+      'El comando debe ser la ruta completa de un archivo .exe existente. npx, uvx, los shells y los nombres buscados en el PATH no se inician.';
+
+  @override
   String get mcpLoopbackError =>
       'MCP HTTP solo acepta http://127.0.0.1 o http://localhost. La regla sin conexión bloquea los demás servidores.';
 
@@ -7134,6 +7150,18 @@ class AppLocalizationsEs extends AppLocalizations {
   @override
   String get tuneError =>
       'Error de medición o de guardado local. Comprueba el modelo e inténtalo de nuevo.';
+
+  @override
+  String get optimizeMeasurementError =>
+      'No se pudo medir el rendimiento de este modelo. Comprueba el modelo e inténtalo de nuevo.';
+
+  @override
+  String get optimizeSaveError =>
+      'No se pudieron guardar los datos de optimización en este dispositivo. Inténtalo de nuevo.';
+
+  @override
+  String get optimizeReloadError =>
+      'No se pudo volver a cargar el modelo tras la optimización. Intenta cargarlo de nuevo.';
 
   @override
   String tuneReceipt(Object date) {
@@ -8572,6 +8600,9 @@ class AppLocalizationsEs extends AppLocalizations {
   @override
   String get remotePairTrustNote =>
       'Vincula dispositivos solo en una red de confianza.';
+
+  @override
+  String get runGenerationSpeed => 'Velocidad de generación';
 
   @override
   String get runSpeed => 'velocidad';
@@ -10150,4 +10181,109 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get uiModelCardHide => 'Ocultar';
+
+  @override
+  String get confirmRemoveDownloadTitle => '¿Quitar la descarga?';
+
+  @override
+  String get confirmRemoveDownloadHint =>
+      'Se borrarán los archivos descargados de este dispositivo. Puedes volver a descargarlos más tarde.';
+
+  @override
+  String get confirmRemoveZimTitle => '¿Quitar la Wikipedia sin conexión?';
+
+  @override
+  String get confirmRemoveZimHint =>
+      'Se borrará el archivo de este dispositivo. Para volver a usarlo, tendrás que importarlo de nuevo.';
+
+  @override
+  String get confirmDeleteCollectionTitle => '¿Eliminar esta colección?';
+
+  @override
+  String get confirmDeleteCollectionHint =>
+      'Sus archivos y su índice se quitarán de este dispositivo. No se puede deshacer.';
+
+  @override
+  String get confirmDeleteGoalTitle => '¿Eliminar este informe?';
+
+  @override
+  String get confirmCannotUndo => 'No se puede deshacer.';
+
+  @override
+  String get confirmDeleteDocumentTitle => '¿Eliminar este documento?';
+
+  @override
+  String islandRestoringModel(String model) {
+    return 'Cargando tu último modelo: $model';
+  }
+
+  @override
+  String get engineUpdateTitle => 'Actualizaciones del motor';
+
+  @override
+  String engineUpdateBuiltIn(String tag) {
+    return 'Motor: integrado ($tag)';
+  }
+
+  @override
+  String engineUpdatePack(String tag) {
+    return 'Motor: actualización descargada $tag';
+  }
+
+  @override
+  String get engineUpdateAuto =>
+      'Instalar automáticamente las actualizaciones del motor';
+
+  @override
+  String get engineUpdateAutoHint =>
+      'Comprueba las versiones de GitHub de la aplicación una vez al día. Las actualizaciones están firmadas, se verifican antes de instalarse y se aplican en la próxima carga de un modelo.';
+
+  @override
+  String get engineUpdateCheckNow => 'Buscar actualizaciones del motor';
+
+  @override
+  String get engineUpdateChecking => 'Comprobando…';
+
+  @override
+  String get engineUpdateUpToDate => 'El motor está actualizado.';
+
+  @override
+  String engineUpdateAvailable(String tag, String size) {
+    return '$tag está disponible ($size MB).';
+  }
+
+  @override
+  String get engineUpdateInstall => 'Instalar';
+
+  @override
+  String engineUpdateDownloading(String tag, String percent) {
+    return 'Descargando $tag: $percent %';
+  }
+
+  @override
+  String get engineUpdateReady =>
+      'Actualización del motor lista, se aplica en la próxima carga';
+
+  @override
+  String engineUpdateFailed(String message) {
+    return 'La actualización del motor falló: $message';
+  }
+
+  @override
+  String engineUpdateLastCheck(String time) {
+    return 'Última comprobación $time';
+  }
+
+  @override
+  String get engineUpdateUseBuiltIn => 'Usar el motor integrado';
+
+  @override
+  String get engineUpdateRemove => 'Eliminar los motores descargados';
+
+  @override
+  String get engineUpdateReverted =>
+      'El motor descargado no se cargó dos veces, así que se vuelve a usar el motor integrado.';
+
+  @override
+  String get engineUpdateNoGitHub => 'No se pudo conectar con GitHub.';
 }

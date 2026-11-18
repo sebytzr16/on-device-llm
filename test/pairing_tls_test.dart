@@ -243,11 +243,37 @@ void main() {
   );
 
   test('TLS port is stable for a configured HTTP port', () async {
-    // Reserve and release an available pair before testing a fixed-port restart.
     final first = await host();
-    final port = first.port!;
     await first.stop();
-    await first.start(port: port, tls: identity);
+    int? port;
+    for (var attempt = 0; attempt < 20; attempt++) {
+      final http = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final candidate = http.port;
+      ServerSocket? tls;
+      try {
+        // An ephemeral HTTP port says nothing about its neighbour. Reserve
+        // both before restarting, retrying if another test owns either one.
+        tls = await ServerSocket.bind(
+          InternetAddress.loopbackIPv4,
+          candidate == 65535 ? candidate - 1 : candidate + 1,
+        );
+        await http.close();
+        await tls.close();
+        await first.start(port: candidate, tls: identity);
+        if (first.tlsPort ==
+            (candidate == 65535 ? candidate - 1 : candidate + 1)) {
+          port = candidate;
+          break;
+        }
+        await first.stop();
+      } on SocketException {
+        // A parallel process may claim the pair between release and bind.
+      } finally {
+        await http.close();
+        await tls?.close();
+      }
+    }
+    if (port == null) fail('Could not reserve an available HTTP/TLS pair');
     final tlsPort = first.tlsPort;
     expect(tlsPort, port == 65535 ? port - 1 : port + 1);
     await first.stop();
@@ -268,14 +294,28 @@ void main() {
     'CL-1: occupied stable TLS port falls back and advertises actual port',
     () async {
       final s = await host();
-      final port = s.port!;
       await s.stop();
-      final blocked = await ServerSocket.bind(
-        InternetAddress.loopbackIPv4,
-        port == 65535 ? port - 1 : port + 1,
-      );
+      ServerSocket? blocked;
+      int? port;
+      // Keep the TLS reservation alive. If the adjacent HTTP port belongs to
+      // another parallel test, try another OS-assigned reservation.
+      for (var attempt = 0; attempt < 20; attempt++) {
+        final candidate = await ServerSocket.bind(
+          InternetAddress.loopbackIPv4,
+          0,
+        );
+        final httpPort = candidate.port - 1;
+        try {
+          await s.start(port: httpPort, tls: identity);
+          blocked = candidate;
+          port = httpPort;
+          break;
+        } on SocketException {
+          await candidate.close();
+        }
+      }
+      if (blocked == null) fail('Could not reserve adjacent HTTP/TLS ports');
       addTearDown(blocked.close);
-      await s.start(port: port, tls: identity);
       expect(s.port, port);
       expect(s.tlsPort, isNot(blocked.port));
       final target = await PairingCode.tlsTarget('http://127.0.0.1:$port/v1/');

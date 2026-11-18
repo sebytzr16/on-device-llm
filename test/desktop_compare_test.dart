@@ -90,6 +90,20 @@ class _ChatManager extends _Manager {
   ModelManagerState build() => super.build().copyWith(loadedModelId: _first.id);
 }
 
+class _RestoreManager extends _ChatManager {
+  static int restores = 0;
+  static bool failRestore = false;
+
+  @override
+  Future<Future<void> Function()?> suspendChatForCompare() async {
+    await unloadModel();
+    return () async {
+      restores++;
+      if (failRestore) throw StateError('restore failed');
+    };
+  }
+}
+
 class _MemoryManager extends _Manager {
   @override
   Future<void> loadServed(
@@ -108,6 +122,7 @@ class _Engine extends LlamaEngine {
   bool busy = false;
   bool cancelled = false;
   bool disposed = false;
+  bool failDispose = false;
   bool unloaded = false;
   String? config;
   Object? failure;
@@ -163,6 +178,7 @@ class _Engine extends LlamaEngine {
   @override
   void dispose() {
     disposed = true;
+    if (failDispose) throw StateError('release failed');
   }
 
   void finish() {
@@ -182,6 +198,7 @@ void main() {
     bool chatLoaded = false,
     bool chatReserved = false,
     bool memoryError = false,
+    bool trackRestore = false,
   }) async {
     SharedPreferences.setMockInitialValues({});
     starts.clear();
@@ -204,7 +221,9 @@ void main() {
           appDatabaseProvider.overrideWithValue(database),
           sessionBusyProvider.overrideWith((ref) => chatReserved),
           modelManagerProvider.overrideWith(
-            memoryError
+            trackRestore
+                ? _RestoreManager.new
+                : memoryError
                 ? _MemoryManager.new
                 : chatLoaded
                 ? _ChatManager.new
@@ -355,6 +374,25 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
   });
+
+  for (final failure in ['release', 'restore']) {
+    testWidgets(
+      'Compare disposal handles $failure failure and attempts restore',
+      (tester) async {
+        _RestoreManager.restores = 0;
+        _RestoreManager.failRestore = failure == 'restore';
+        await mount(tester, chatLoaded: true, trackRestore: true);
+        await tester.tap(find.text(t.desktopCompareRun));
+        await tester.pumpAndSettle();
+        expect(created, isNotEmpty);
+        created.first.failDispose = failure == 'release';
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+        expect(_RestoreManager.restores, 1);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets('waits while chat is generating', (tester) async {
     await mount(tester, chatLoaded: true);

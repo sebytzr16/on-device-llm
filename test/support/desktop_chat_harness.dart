@@ -99,6 +99,7 @@ Future<ProviderContainer> mountDesktopChat(
   Widget child, {
   bool shell = false,
   List<Chat> chats = const [],
+  AppDatabase? database,
 }) async {
   final previousDesktop = DesktopHost.active;
   final previousInspector = desktopInspectorOpen.value;
@@ -114,6 +115,7 @@ Future<ProviderContainer> mountDesktopChat(
   });
   final container = ProviderContainer(
     overrides: [
+      if (database != null) appDatabaseProvider.overrideWithValue(database),
       desktopChatDraftsProvider.overrideWith((ref) {
         final drafts = DesktopChatDrafts(persist: false);
         ref.onDispose(drafts.dispose);
@@ -125,7 +127,8 @@ Future<ProviderContainer> mountDesktopChat(
       voiceProvider.overrideWith(_Voice.new),
       modelRecommendationsProvider.overrideWith(_Recommendations.new),
       currentProjectProvider.overrideWithValue(null),
-      chatsProvider.overrideWith((ref) => Stream.value(chats)),
+      if (database == null)
+        chatsProvider.overrideWith((ref) => Stream.value(chats)),
     ],
   );
   addTearDown(container.dispose);

@@ -21,6 +21,7 @@ import '../features/settings/presentation/widgets/settings_widgets.dart';
 import 'desktop_theme.dart';
 import '../core/platform/desktop_preferences.dart';
 import 'engine_files_panel.dart';
+import 'engine_updater/engine_update_panel.dart';
 import 'focus_ring.dart';
 import 'keyboard_shortcuts.dart';
 import 'models_folder_setting.dart';
@@ -356,6 +357,7 @@ class _GeneralSettings extends ConsumerWidget {
               ),
               const ModelsFolderSetting(),
               const DesktopTraySettingsPanel(),
+              const EngineUpdatePanel(),
               if (prefs.advanced) const EngineFilesPanel(),
               SettingsTile(
                 leading: const Icon(Icons.keyboard_outlined),

@@ -9,8 +9,8 @@ import 'package:dio/dio.dart';
 abstract final class EnginePins {
   /// llama.cpp tag and commit pinned in native/REVISION and
   /// scripts/bootstrap.ps1. Keep in step with them (a test checks this).
-  static const llamaCppTag = 'b12342';
-  static const llamaCppCommit = '0fb8f157702702f33f4e018de8701b2569a1bc28';
+  static const llamaCppTag = 'b12503';
+  static const llamaCppCommit = '4577932fab595eaa8b27ad71734d5de1f3c07d8c';
 
   /// stable-diffusion.cpp commit pinned in scripts/fetch-stable-diffusion.ps1.
   static const sdCommit = '687915518efd69548965d24818f0d3bbbb903718';
@@ -204,11 +204,35 @@ class EngineUpdateChecker {
     return tag is String && tag.isNotEmpty ? tag : null;
   }
 
+  /// Highest "bNNNN" tag among recent llama.cpp releases. The repo's
+  /// "latest" release is not always a build tag (2026-11-18 it was a stray
+  /// "v1.0.0"), so the newest build is picked from the release list.
+  Future<String?> _latestLlamaBuild() async {
+    final body = await fetch(
+      Uri.parse(
+        'https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=30',
+      ),
+    ).timeout(const Duration(seconds: 10));
+    final j = jsonDecode(body);
+    final tags = <String>[
+      if (j is Map && j['tag_name'] is String) j['tag_name'] as String,
+      if (j is List)
+        for (final r in j)
+          if (r is Map && r['tag_name'] is String) r['tag_name'] as String,
+    ];
+    String? best;
+    for (final t in tags) {
+      final n = llamaBuildNumber(t);
+      if (n != null && (best == null || n > llamaBuildNumber(best)!)) best = t;
+    }
+    return best;
+  }
+
   Future<List<EngineUpdateItem>> check() async {
     final out = <EngineUpdateItem>[];
     const llamaBundled = EnginePins.llamaCppTag;
     try {
-      final tag = await _latestTag('ggml-org/llama.cpp');
+      final tag = await _latestLlamaBuild();
       final a = llamaBuildNumber(tag), b = llamaBuildNumber(llamaBundled);
       out.add(
         EngineUpdateItem(

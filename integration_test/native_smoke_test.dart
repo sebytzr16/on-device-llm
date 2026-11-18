@@ -74,12 +74,16 @@ void main() {
     // An explicit -Arch run deliberately tests the Gradle-built library.
     if (backend == GpuBackend.cpu) {
       const expectFast = bool.fromEnvironment('EXPECT_FAST_CPU');
-      expect(
-        engine.metrics['nativeLibrary'],
-        expectFast && LlamaBindings.cpuHasI8mm()
-            ? 'libondevice_llm_cpu_i8mm.so'
-            : 'libondevice_llm.so',
-      );
+      // arm64 gets the i8mm bridge, x86_64 the AVX2 one; a CPU without
+      // either feature runs the portable Gradle library.
+      final expectedLibrary = !expectFast
+          ? 'libondevice_llm.so'
+          : LlamaBindings.cpuHasI8mm()
+          ? 'libondevice_llm_cpu_i8mm.so'
+          : LlamaBindings.cpuHasAvx2()
+          ? 'libondevice_llm_cpu_avx2.so'
+          : 'libondevice_llm.so';
+      expect(engine.metrics['nativeLibrary'], expectedLibrary);
       expect(engine.metrics['nativeLibrarySkipped'], isNotEmpty);
     } else {
       expect(engine.metrics['nativeLibrary'], 'libondevice_llm_opencl.so');

@@ -10886,6 +10886,30 @@ abstract class AppLocalizations {
   /// **'Invalid MCP configuration. Use mcpServers with a unique name and either a command, args array and env object, or a URL.'**
   String get mcpConfigError;
 
+  /// No description provided for @mcpNameTakenError.
+  ///
+  /// In en, this message translates to:
+  /// **'A server with this name already exists. Pick another name.'**
+  String get mcpNameTakenError;
+
+  /// No description provided for @mcpArgsError.
+  ///
+  /// In en, this message translates to:
+  /// **'Arguments must be a JSON array of strings, for example [\"--port\", \"8080\"], or [] for none.'**
+  String get mcpArgsError;
+
+  /// No description provided for @mcpEnvError.
+  ///
+  /// In en, this message translates to:
+  /// **'Environment must be a JSON object whose values are strings, or empty brackets for none.'**
+  String get mcpEnvError;
+
+  /// No description provided for @mcpCommandError.
+  ///
+  /// In en, this message translates to:
+  /// **'The command must be the full path to an existing .exe file. npx, uvx, shells and names found on PATH are not started.'**
+  String get mcpCommandError;
+
   /// No description provided for @mcpLoopbackError.
   ///
   /// In en, this message translates to:
@@ -12080,6 +12104,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Measurement or local save failed. Check the model and try again.'**
   String get tuneError;
+
+  /// No description provided for @optimizeMeasurementError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not measure this model. Check the model and try again.'**
+  String get optimizeMeasurementError;
+
+  /// No description provided for @optimizeSaveError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save Optimize data on this device. Try again.'**
+  String get optimizeSaveError;
+
+  /// No description provided for @optimizeReloadError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not reload the model after Optimize. Try loading it again.'**
+  String get optimizeReloadError;
 
   /// No description provided for @tuneReceipt.
   ///
@@ -14422,6 +14464,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Pair only on a network you trust.'**
   String get remotePairTrustNote;
+
+  /// No description provided for @runGenerationSpeed.
+  ///
+  /// In en, this message translates to:
+  /// **'Generation speed'**
+  String get runGenerationSpeed;
 
   /// No description provided for @runSpeed.
   ///
@@ -16818,6 +16866,174 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Hide'**
   String get uiModelCardHide;
+
+  /// No description provided for @confirmRemoveDownloadTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove the download?'**
+  String get confirmRemoveDownloadTitle;
+
+  /// No description provided for @confirmRemoveDownloadHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This deletes the downloaded files from this device. You can download them again later.'**
+  String get confirmRemoveDownloadHint;
+
+  /// No description provided for @confirmRemoveZimTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove offline Wikipedia?'**
+  String get confirmRemoveZimTitle;
+
+  /// No description provided for @confirmRemoveZimHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This deletes the archive from this device. To use it again, you will need to import the file again.'**
+  String get confirmRemoveZimHint;
+
+  /// No description provided for @confirmDeleteCollectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this collection?'**
+  String get confirmDeleteCollectionTitle;
+
+  /// No description provided for @confirmDeleteCollectionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Its files and their index are removed from this device. This can\'t be undone.'**
+  String get confirmDeleteCollectionHint;
+
+  /// No description provided for @confirmDeleteGoalTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this report?'**
+  String get confirmDeleteGoalTitle;
+
+  /// No description provided for @confirmCannotUndo.
+  ///
+  /// In en, this message translates to:
+  /// **'This can\'t be undone.'**
+  String get confirmCannotUndo;
+
+  /// No description provided for @confirmDeleteDocumentTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this document?'**
+  String get confirmDeleteDocumentTitle;
+
+  /// No description provided for @islandRestoringModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading your last model: {model}'**
+  String islandRestoringModel(String model);
+
+  /// No description provided for @engineUpdateTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Engine updates'**
+  String get engineUpdateTitle;
+
+  /// No description provided for @engineUpdateBuiltIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Engine: built in ({tag})'**
+  String engineUpdateBuiltIn(String tag);
+
+  /// No description provided for @engineUpdatePack.
+  ///
+  /// In en, this message translates to:
+  /// **'Engine: downloaded update {tag}'**
+  String engineUpdatePack(String tag);
+
+  /// No description provided for @engineUpdateAuto.
+  ///
+  /// In en, this message translates to:
+  /// **'Install engine updates automatically'**
+  String get engineUpdateAuto;
+
+  /// No description provided for @engineUpdateAutoHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Checks this app\'s GitHub releases once a day. Updates are signed, checked before install and apply on the next model load.'**
+  String get engineUpdateAutoHint;
+
+  /// No description provided for @engineUpdateCheckNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Check for engine updates'**
+  String get engineUpdateCheckNow;
+
+  /// No description provided for @engineUpdateChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking…'**
+  String get engineUpdateChecking;
+
+  /// No description provided for @engineUpdateUpToDate.
+  ///
+  /// In en, this message translates to:
+  /// **'The engine is up to date.'**
+  String get engineUpdateUpToDate;
+
+  /// No description provided for @engineUpdateAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'{tag} is available ({size} MB).'**
+  String engineUpdateAvailable(String tag, String size);
+
+  /// No description provided for @engineUpdateInstall.
+  ///
+  /// In en, this message translates to:
+  /// **'Install'**
+  String get engineUpdateInstall;
+
+  /// No description provided for @engineUpdateDownloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading {tag}: {percent}%'**
+  String engineUpdateDownloading(String tag, String percent);
+
+  /// No description provided for @engineUpdateReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Engine update ready, applies on next load'**
+  String get engineUpdateReady;
+
+  /// No description provided for @engineUpdateFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Engine update failed: {message}'**
+  String engineUpdateFailed(String message);
+
+  /// No description provided for @engineUpdateLastCheck.
+  ///
+  /// In en, this message translates to:
+  /// **'Last checked {time}'**
+  String engineUpdateLastCheck(String time);
+
+  /// No description provided for @engineUpdateUseBuiltIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the built-in engine'**
+  String get engineUpdateUseBuiltIn;
+
+  /// No description provided for @engineUpdateRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove downloaded engines'**
+  String get engineUpdateRemove;
+
+  /// No description provided for @engineUpdateReverted.
+  ///
+  /// In en, this message translates to:
+  /// **'The downloaded engine failed to load twice, so the built-in engine is in use again.'**
+  String get engineUpdateReverted;
+
+  /// No description provided for @engineUpdateNoGitHub.
+  ///
+  /// In en, this message translates to:
+  /// **'GitHub could not be reached.'**
+  String get engineUpdateNoGitHub;
 }
 
 class _AppLocalizationsDelegate

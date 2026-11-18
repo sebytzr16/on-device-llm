@@ -78,6 +78,9 @@ class WhisperListener {
     this.listeningPaths = VoiceModels.listeningPaths,
     this.liveCaptionPaths = VoiceModels.liveCaptionPaths,
     this.detector,
+    this.silenceTimeout,
+    this.initialSilenceTimeout,
+    this.onSilenceTimeout,
   });
 
   final Future<ListeningPaths?> Function() listeningPaths;
@@ -90,6 +93,30 @@ class WhisperListener {
   /// Voice-activity detection: Silero from the listening pack unless a
   /// test supplies its own (the native model cannot load there).
   final VoiceDetector? detector;
+
+  /// Dictation end-pointing uses VAD silence, not transcription completion.
+  final Duration? silenceTimeout, initialSilenceTimeout;
+  final void Function()? onSilenceTimeout;
+  Timer? _silenceTimer;
+  int _startEpoch = 0;
+  bool _finishing = false;
+  bool _openingMic = false;
+  bool _heardSpeech = false;
+  Future<void>? _finishingFuture;
+
+  void _idleAfter(Duration? duration) {
+    _silenceTimer?.cancel();
+    if (duration == null) return;
+    _silenceTimer = Timer(duration, () {
+      if (!running) return;
+      final callback = onSilenceTimeout;
+      if (callback != null) {
+        callback();
+      } else {
+        unawaited(finish());
+      }
+    });
+  }
 
   VoiceDetector? _vad;
   StreamSubscription<Float32List>? _frames;
@@ -152,16 +179,22 @@ class WhisperListener {
   /// False when the models are missing or the microphone was refused.
   Future<bool> start() async {
     if (running) return true;
+    final startEpoch = ++_startEpoch;
     final session = _session;
     final paths = await listeningPaths();
-    if (session != _session || paths == null) return false;
+    if (startEpoch != _startEpoch || session != _session || paths == null) {
+      return false;
+    }
     LiveCaptionPaths? live;
     try {
       live = await liveCaptionPaths();
     } catch (e) {
       _log.warning('Live captions unavailable', e);
     }
-    if (session != _session) return false;
+    if (startEpoch != _startEpoch || session != _session) return false;
+    _finishing = false;
+    _heardSpeech = false;
+    _finishingFuture = null;
     _livePaths = live;
     _vad ??=
         detector ?? SpeechDetector.create(paths.vad, minSilence: endSilence);
@@ -184,26 +217,41 @@ class WhisperListener {
       },
     );
     bool started;
+    _openingMic = true;
     try {
       started = await VoiceAudioChannel.startMic();
     } catch (_) {
       await stop();
       rethrow;
+    } finally {
+      _openingMic = false;
     }
-    if (session != _session || !started) {
+    if (startEpoch != _startEpoch || session != _session) {
+      // A permission/start call may open the mic after Stop or finish.
+      // Close it again without discarding a final transcription being drained.
+      await VoiceAudioChannel.stopMic();
+      return false;
+    }
+    if (!started) {
       await stop();
       return false;
     }
+    if (!_heardSpeech) _idleAfter(initialSilenceTimeout);
     return true;
   }
 
   Future<void> stop() async {
+    _startEpoch++;
+    _silenceTimer?.cancel();
+    _finishing = false;
     _epoch++;
     _session++;
-    await _frames?.cancel();
+    final frames = _frames;
     _frames = null;
+    final stopped = VoiceAudioChannel.stopMic();
+    await frames?.cancel();
     try {
-      await VoiceAudioChannel.stopMic();
+      await stopped;
     } catch (e, st) {
       quietFailure('voice_pipeline:158', e, st);
     }
@@ -214,38 +262,35 @@ class WhisperListener {
     _closeLive();
   }
 
-  /// Ends listening without losing the words still being said: the
-  /// utterance in progress is transcribed and delivered before the
-  /// microphone stops.
-  Future<void> finish() async {
-    // Freeze frame ingestion first: cancel the microphone stream so no
-    // new frames can arrive and start another utterance while we drain.
-    await _frames?.cancel();
-    _frames = null;
-    try {
-      await VoiceAudioChannel.stopMic();
-    } catch (e, st) {
-      quietFailure('voice_pipeline:175', e, st);
-    }
+  /// Closes the microphone immediately, then drains the final transcription.
+  Future<void> finish() => _finishingFuture ??= _finish();
 
-    // Capture the final speech buffer (if any) before clearing state.
-    Float32List? finalSpeech;
-    if (_inSpeech) {
-      finalSpeech = _join(_speech);
-    }
+  Future<void> _finish() async {
+    _startEpoch++;
+    _epoch++;
+    _silenceTimer?.cancel();
+    _finishing = true;
+    final session = _session;
+    final frames = _frames;
+    _frames = null;
+    final stopped = VoiceAudioChannel.stopMic();
+    final finalSpeech = _inSpeech ? _join(_speech) : null;
     _inSpeech = false;
     _speech.clear();
     _preroll.clear();
     _vad?.reset();
     _closeLive();
-
-    // Send the captured speech for transcription and wait for it.
-    if (finalSpeech != null) {
-      _send(finalSpeech);
+    await frames?.cancel();
+    try {
+      await stopped;
+    } catch (e, st) {
+      quietFailure('voice_pipeline:finish', e, st);
     }
+    if (session != _session) return;
+    if (finalSpeech != null) _send(finalSpeech);
     await _finals;
-
-    // Now fully stop: increment session/epoch to invalidate any stragglers.
+    if (session != _session) return;
+    _finishing = false;
     _epoch++;
     _session++;
   }
@@ -263,18 +308,29 @@ class WhisperListener {
 
   void dispose() {
     _closeLive();
-    unawaited(stop());
+    if (running || _openingMic) {
+      unawaited(stop());
+    } else {
+      // finish already closed the mic; do not stop a newer listener's mic
+      // when disposal happens after slow transcription of this session.
+      _startEpoch++;
+      _epoch++;
+      _session++;
+      _silenceTimer?.cancel();
+    }
     _vad?.dispose();
     _vad = null;
   }
 
   void _onFrame(Float32List frame) {
     final vad = _vad;
-    if (vad == null) return;
+    if (!running || vad == null) return;
     onLevel?.call(VoiceAudioChannel.level(frame));
     if (_resting) return;
     final finished = vad.accept(frame);
     if (vad.speaking && !_inSpeech) {
+      _heardSpeech = true;
+      _silenceTimer?.cancel();
       _inSpeech = true;
       _speech
         ..clear()
@@ -306,6 +362,19 @@ class WhisperListener {
       _inSpeech = false;
       _speech.clear();
       _send(heard);
+      final silence = silenceTimeout;
+      if (silence != null) {
+        // The VAD endpoint already includes endSilence seconds of quiet.
+        _idleAfter(
+          Duration(
+            microseconds: math.max(
+              0,
+              silence.inMicroseconds -
+                  (endSilence * Duration.microsecondsPerSecond).round(),
+            ),
+          ),
+        );
+      }
     }
     if (_inSpeech && _speech.length >= maxSpeechFrames) {
       // No pause for 28 s: what was said goes now, and listening goes on.
@@ -414,7 +483,7 @@ class WhisperListener {
         _log.warning('Transcription failed', e);
       }
     }
-    if (!running || session != _session) return;
+    if ((!running && !_finishing) || session != _session) return;
     if (text.isNotEmpty) {
       final utterance = onFinalUtterance;
       if (utterance != null) {

@@ -102,11 +102,11 @@ void main() {
   test('update check compares with a fake client', () async {
     final newer = await EngineUpdateChecker(
       fetch: (u) async => u.path.contains('llama.cpp')
-          ? _release('b12400')
+          ? _release('b12600')
           : _release('master-1-6879155'),
     ).check();
     expect(newer[0].state, EngineUpdateState.newer);
-    expect(newer[0].latest, 'b12400');
+    expect(newer[0].latest, 'b12600');
     expect(newer[1].state, EngineUpdateState.upToDate);
 
     final same = await EngineUpdateChecker(
@@ -116,6 +116,19 @@ void main() {
     ).check();
     expect(same[0].state, EngineUpdateState.upToDate);
     expect(same[1].state, EngineUpdateState.newer);
+
+    // A stray non-build "latest" (v1.0.0) must not hide the newest bNNNN.
+    final listed = await EngineUpdateChecker(
+      fetch: (u) async => u.path.contains('llama.cpp')
+          ? jsonEncode([
+              {'tag_name': 'v1.0.0'},
+              {'tag_name': 'b12521'},
+              {'tag_name': EnginePins.llamaCppTag},
+            ])
+          : _release('master-1-6879155'),
+    ).check();
+    expect(listed[0].state, EngineUpdateState.newer);
+    expect(listed[0].latest, 'b12521');
 
     final off = await EngineUpdateChecker(
       fetch: (_) async => throw const SocketException('offline'),
@@ -159,7 +172,7 @@ void main() {
           engineUpdateCheckerProvider.overrideWithValue(
             EngineUpdateChecker(
               fetch: (u) async => _release(
-                u.path.contains('llama.cpp') ? 'b12400' : 'master-1-6879155',
+                u.path.contains('llama.cpp') ? 'b12600' : 'master-1-6879155',
               ),
             ),
           ),
@@ -173,7 +186,7 @@ void main() {
     await tester.tap(find.text('Check for engine updates'));
     await tester.pumpAndSettle();
     expect(
-      find.textContaining('Newer llama.cpp available: b12400'),
+      find.textContaining('Newer llama.cpp available: b12600'),
       findsOneWidget,
     );
     expect(find.textContaining('supports CUDA 12'), findsOneWidget);

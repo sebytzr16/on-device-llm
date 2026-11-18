@@ -130,15 +130,36 @@ Stream<String> _generate(LlamaEngine e, [String text = 'stall']) => e.generate(
   settings: const InferenceSettings(),
 );
 
+Future<LlamaEngine> _engineWithTimeouts({
+  bool cooperative = false,
+  Duration tokenTimeout = const Duration(milliseconds: 80),
+  Duration firstTokenTimeout = const Duration(minutes: 10),
+}) async {
+  final e = LlamaEngine(
+    workerEntrypoint: cooperative ? _cooperative : _stalled,
+    tokenTimeout: tokenTimeout,
+    firstTokenTimeout: firstTokenTimeout,
+    stopTimeout: const Duration(milliseconds: 40),
+  );
+  addTearDown(e.dispose);
+  await e.loadModel(
+    modelPath: 'fake.gguf',
+    settings: const InferenceSettings(),
+  );
+  return e;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   Future<LlamaEngine> engine({
     bool cooperative = false,
     Duration tokenTimeout = const Duration(milliseconds: 80),
+    Duration firstTokenTimeout = const Duration(minutes: 10),
   }) async {
     final e = LlamaEngine(
       workerEntrypoint: cooperative ? _cooperative : _stalled,
       tokenTimeout: tokenTimeout,
+      firstTokenTimeout: firstTokenTimeout,
       stopTimeout: const Duration(milliseconds: 40),
     );
     addTearDown(e.dispose);
@@ -177,7 +198,11 @@ void main() {
   test(
     'no-token watchdog reports an error and clears busy without native events',
     () async {
-      final e = await engine();
+      // Use short firstTokenTimeout so the test completes quickly.
+      final e = await engine(
+        tokenTimeout: const Duration(milliseconds: 80),
+        firstTokenTimeout: const Duration(milliseconds: 120),
+      );
       final errors = <Object>[];
       final done = Completer<void>();
       _generate(e).listen((_) {}, onError: errors.add, onDone: done.complete);
@@ -204,7 +229,10 @@ void main() {
   test(
     'retired FFI worker keeps leases and blocks reload until it exits',
     () async {
-      final e = await engine(tokenTimeout: const Duration(milliseconds: 40));
+      final e = await engine(
+        tokenTimeout: const Duration(milliseconds: 40),
+        firstTokenTimeout: const Duration(milliseconds: 80),
+      );
       final done = Completer<void>();
       _generate(
         e,
@@ -252,7 +280,11 @@ void main() {
   test(
     'prefill progress cannot keep a tokenless generation busy forever',
     () async {
-      final e = await engine();
+      // Use short firstTokenTimeout so non-advancing prefill still times out.
+      final e = await engine(
+        tokenTimeout: const Duration(milliseconds: 80),
+        firstTokenTimeout: const Duration(milliseconds: 120),
+      );
       final errors = <Object>[];
       final done = Completer<void>();
       _generate(
@@ -341,4 +373,28 @@ void main() {
       expect(config['speculationFallback'], contains('missing'));
     }
   });
+
+  test(
+    'firstTokenTimeout allows long prefill without tokens before first byte',
+    () async {
+      // tokenTimeout=50ms, firstTokenTimeout=300ms.
+      // A stalled generation (no events at all) should survive past tokenTimeout
+      // but fail at firstTokenTimeout.
+      final e = await _engineWithTimeouts(
+        tokenTimeout: const Duration(milliseconds: 50),
+        firstTokenTimeout: const Duration(milliseconds: 300),
+      );
+      final errors = <Object>[];
+      final done = Completer<void>();
+      final clock = Stopwatch()..start();
+      _generate(e).listen((_) {}, onError: errors.add, onDone: done.complete);
+      await done.future.timeout(const Duration(seconds: 2));
+      // It outlived tokenTimeout: only firstTokenTimeout ended it.
+      expect(clock.elapsedMilliseconds, greaterThanOrEqualTo(250));
+      expect(errors.single.toString(), contains('No token received'));
+      expect(errors.single.toString(), contains('300'));
+      expect(e.isBusy, isFalse);
+      expect(e.isLoaded, isFalse);
+    },
+  );
 }

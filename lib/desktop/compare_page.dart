@@ -12,6 +12,7 @@ import '../core/design/app_design.dart';
 import '../core/design/app_dialog.dart';
 import 'history_store.dart';
 import '../core/errors/exceptions.dart';
+import '../core/logging/quiet_failure.dart';
 import '../core/l10n/l10n.dart';
 import '../core/providers/shared_providers.dart';
 import '../features/chat/domain/entities/chat_message.dart';
@@ -58,17 +59,34 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
   final _historyScroll = ScrollController();
   int _runEpoch = 0;
   Future<void>? _activeRun;
+  Future<Future<void> Function()?>? _chatRestore;
 
   @override
   void dispose() {
     _historyScroll.dispose();
     _runEpoch++;
+    final releases = <Future<void>>[];
     for (final column in _columns) {
       column.epoch++;
       if (column.loading || column.generating) column.engine?.cancel();
       column.scroll.dispose();
-      unawaited(_release(column));
+      releases.add(_release(column));
     }
+    final restore = _chatRestore;
+    unawaited(() async {
+      // All Compare allocations must be gone before the normal chat load checks
+      // available VRAM. Also wait for a pending chat unload when leaving early.
+      try {
+        try {
+          await Future.wait(releases);
+        } finally {
+          final resume = await restore;
+          await resume?.call();
+        }
+      } catch (e, st) {
+        quietFailure('compare.dispose', e, st);
+      }
+    }());
     _prompt.dispose();
     _system.dispose();
     super.dispose();
@@ -180,7 +198,10 @@ class _DesktopComparePageState extends ConsumerState<DesktopComparePage> {
       // and served-model state are cleared along with the native allocation.
       if (ref.read(llamaEngineProvider).isLoaded ||
           ref.read(modelManagerProvider).loadedModelId != null) {
-        await ref.read(modelManagerProvider.notifier).unloadModel();
+        _chatRestore ??= ref
+            .read(modelManagerProvider.notifier)
+            .suspendChatForCompare();
+        await _chatRestore;
         if (!mounted) return;
         if (ref.read(llamaEngineProvider).isLoaded ||
             ref.read(modelManagerProvider).loadedModelId != null) {

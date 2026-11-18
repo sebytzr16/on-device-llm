@@ -20,6 +20,7 @@ import 'core/storage/startup_recovery.dart';
 import 'data/local/database/app_database.dart';
 import 'desktop/desktop_app.dart';
 import 'desktop/desktop_window.dart';
+import 'desktop/engine_updater/engine_update_controller.dart';
 import 'features/backup/local_backup_service.dart';
 import 'features/goals/goal_watch_background.dart';
 
@@ -100,6 +101,14 @@ Future<Widget> _initialize(bool desktop) async {
     await encryption.completeMigration();
     await db.markInterruptedRuns();
     if (desktop) await DesktopWindow.init();
+    if (desktop) {
+      // A downloaded engine pack is used from the very first model load.
+      try {
+        await engineUpdater.prepare();
+      } catch (e) {
+        Logger('EngineUpdates').warning('Engine packs not prepared', e);
+      }
+    }
     return ProviderScope(
       overrides: [appDatabaseProvider.overrideWithValue(db)],
       child: desktop ? const DesktopApp() : const OnDeviceLlmApp(),

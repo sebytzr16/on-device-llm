@@ -6406,6 +6406,22 @@ class AppLocalizationsEn extends AppLocalizations {
       'Invalid MCP configuration. Use mcpServers with a unique name and either a command, args array and env object, or a URL.';
 
   @override
+  String get mcpNameTakenError =>
+      'A server with this name already exists. Pick another name.';
+
+  @override
+  String get mcpArgsError =>
+      'Arguments must be a JSON array of strings, for example [\"--port\", \"8080\"], or [] for none.';
+
+  @override
+  String get mcpEnvError =>
+      'Environment must be a JSON object whose values are strings, or empty brackets for none.';
+
+  @override
+  String get mcpCommandError =>
+      'The command must be the full path to an existing .exe file. npx, uvx, shells and names found on PATH are not started.';
+
+  @override
   String get mcpLoopbackError =>
       'MCP HTTP only accepts http://127.0.0.1 or http://localhost. Other hosts are blocked by the offline rule.';
 
@@ -7061,6 +7077,18 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get tuneError =>
       'Measurement or local save failed. Check the model and try again.';
+
+  @override
+  String get optimizeMeasurementError =>
+      'Could not measure this model. Check the model and try again.';
+
+  @override
+  String get optimizeSaveError =>
+      'Could not save Optimize data on this device. Try again.';
+
+  @override
+  String get optimizeReloadError =>
+      'Could not reload the model after Optimize. Try loading it again.';
 
   @override
   String tuneReceipt(Object date) {
@@ -8478,6 +8506,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get remotePairTrustNote => 'Pair only on a network you trust.';
+
+  @override
+  String get runGenerationSpeed => 'Generation speed';
 
   @override
   String get runSpeed => 'speed';
@@ -10035,4 +10066,107 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get uiModelCardHide => 'Hide';
+
+  @override
+  String get confirmRemoveDownloadTitle => 'Remove the download?';
+
+  @override
+  String get confirmRemoveDownloadHint =>
+      'This deletes the downloaded files from this device. You can download them again later.';
+
+  @override
+  String get confirmRemoveZimTitle => 'Remove offline Wikipedia?';
+
+  @override
+  String get confirmRemoveZimHint =>
+      'This deletes the archive from this device. To use it again, you will need to import the file again.';
+
+  @override
+  String get confirmDeleteCollectionTitle => 'Delete this collection?';
+
+  @override
+  String get confirmDeleteCollectionHint =>
+      'Its files and their index are removed from this device. This can\'t be undone.';
+
+  @override
+  String get confirmDeleteGoalTitle => 'Delete this report?';
+
+  @override
+  String get confirmCannotUndo => 'This can\'t be undone.';
+
+  @override
+  String get confirmDeleteDocumentTitle => 'Delete this document?';
+
+  @override
+  String islandRestoringModel(String model) {
+    return 'Loading your last model: $model';
+  }
+
+  @override
+  String get engineUpdateTitle => 'Engine updates';
+
+  @override
+  String engineUpdateBuiltIn(String tag) {
+    return 'Engine: built in ($tag)';
+  }
+
+  @override
+  String engineUpdatePack(String tag) {
+    return 'Engine: downloaded update $tag';
+  }
+
+  @override
+  String get engineUpdateAuto => 'Install engine updates automatically';
+
+  @override
+  String get engineUpdateAutoHint =>
+      'Checks this app\'s GitHub releases once a day. Updates are signed, checked before install and apply on the next model load.';
+
+  @override
+  String get engineUpdateCheckNow => 'Check for engine updates';
+
+  @override
+  String get engineUpdateChecking => 'Checking…';
+
+  @override
+  String get engineUpdateUpToDate => 'The engine is up to date.';
+
+  @override
+  String engineUpdateAvailable(String tag, String size) {
+    return '$tag is available ($size MB).';
+  }
+
+  @override
+  String get engineUpdateInstall => 'Install';
+
+  @override
+  String engineUpdateDownloading(String tag, String percent) {
+    return 'Downloading $tag: $percent%';
+  }
+
+  @override
+  String get engineUpdateReady => 'Engine update ready, applies on next load';
+
+  @override
+  String engineUpdateFailed(String message) {
+    return 'Engine update failed: $message';
+  }
+
+  @override
+  String engineUpdateLastCheck(String time) {
+    return 'Last checked $time';
+  }
+
+  @override
+  String get engineUpdateUseBuiltIn => 'Use the built-in engine';
+
+  @override
+  String get engineUpdateRemove => 'Remove downloaded engines';
+
+  @override
+  String get engineUpdateReverted =>
+      'The downloaded engine failed to load twice, so the built-in engine is in use again.';
+
+  @override
+  String get engineUpdateNoGitHub => 'GitHub could not be reached.';
 }

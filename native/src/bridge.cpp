@@ -23,6 +23,7 @@
 #include <cstring>
 #include <chrono>
 #include <condition_variable>
+#include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <atomic>
@@ -75,6 +76,8 @@ static bool weight_loading_callback(float progress, void * data) {
 struct Runtime;
 struct SideBatch;
 static void close_side_batches(Runtime * r);
+// Prompt-store disk spill (defined with the other store helpers below).
+static void store_clear(Runtime * r);
 // Every live runtime, so an Android window that closes can free the models
 // it loaded (od_release_owner): the activity and its Dart isolates go away
 // but the process, and native memory, can live on. Relaunching then loaded
@@ -170,16 +173,24 @@ struct Runtime {
     // copied, so the cap bounds peak memory too; a snapshot larger than the
     // cap is never cached.
     // Recurrent/hybrid memories keep their rollback checkpoints with them.
+    // A snapshot the live host budget cannot take is spilled to disk: its
+    // state and head files leave RAM behind, while the token ids and the
+    // checkpoints stay charged against the RAM cap.
     struct Stored {
         std::vector<llama_token> tokens; std::vector<uint8_t> state, head; std::vector<Checkpoint> marks; uint64_t used;
+        std::string path;        // state file while spilled; empty while in RAM
+        size_t disk_bytes = 0;   // state and head file bytes, 0 while in RAM
+        bool head_disk = false;  // the MTP head is in path + ".mtp"
+        bool spilled() const { return !path.empty(); }
         size_t bytes() const {
             size_t marks_bytes = 0;
             for (const auto & m : marks) marks_bytes += m.data.size();
-            return od_prompt_store::entry_bytes(state.size(), head.size(), marks_bytes, tokens.size());
+            return od_prompt_store::entry_bytes(spilled() ? 0 : state.size(), spilled() ? 0 : head.size(), marks_bytes, tokens.size());
         }
     };
     std::vector<Stored> store;
     size_t store_limit = 0; uint64_t store_clock = 0;
+    std::string store_id;     // per-load id in spilled file names
     int store_restored = 0;   // tokens this turn took from the store
     static constexpr size_t store_min = 128, store_gain = 32;
     bool needs_checkpoints = false;
@@ -313,7 +324,7 @@ struct Runtime {
     void unload() {
         close_side_batches(this);
         progress->store(-1.0f, std::memory_order_relaxed);
-        reset(); forget(); drop_chunks(); store.clear(); store_restored = 0;
+        reset(); forget(); drop_chunks(); store_clear(this); store_restored = 0;
         for (auto & b : bitmaps) mtmd_bitmap_free(b.second);
         bitmaps.clear();
         if (mctx) mtmd_free(mctx);
@@ -451,6 +462,45 @@ static double peak_rss_mb() {
 #endif
 }
 static std::string kernel_cache_dir;
+// Prompt-store snapshots the live host budget cannot take are spilled under
+// cacheDir, so a later turn restores one instead of prefilling its prefix
+// again. The directory is cleared at model load and unload; empty disables it.
+static std::mutex prompt_store_mutex;
+static std::string prompt_store_dir;
+static std::string prompt_store_path() {
+    std::lock_guard<std::mutex> lock(prompt_store_mutex);
+    return prompt_store_dir;
+}
+// Best effort: a file left behind is removed by the next load's clear.
+static void remove_store_file(const std::string & path) {
+    std::error_code ec;
+    std::filesystem::remove(std::filesystem::path(path), ec);
+}
+static void drop_store_files(const Runtime::Stored & s) {
+    if (s.path.empty()) return;
+    if (s.head_disk) remove_store_file(s.path + ".mtp");
+    remove_store_file(s.path);
+}
+static void store_clear(Runtime * r) {
+    for (const auto & s : r->store) drop_store_files(s);
+    r->store.clear();
+}
+// One line per spill and restore, readable from logcat or stderr without a
+// debug build (the same style as admit:).
+static void store_log(const char * what, size_t bytes, double ms) {
+#if defined(__ANDROID__)
+    __android_log_print(ANDROID_LOG_INFO, "ondevice_llm", "store: %s %lld bytes, %.0f ms", what, (long long)bytes, ms);
+#else
+    std::fprintf(stderr, "odllm: store: %s %lld bytes, %.0f ms\n", what, (long long)bytes, ms);
+#endif
+}
+static std::string store_file_path(Runtime * r, const std::string & dir) {
+    static std::atomic<uint64_t> next{0};
+    const uint64_t n = next.fetch_add(1, std::memory_order_relaxed);
+    // Session and clock make the name unique per load, so a file from another
+    // model is never picked up even if a clear did not run.
+    return dir + "/" + (r->store_id.empty() ? std::to_string(r->session) : r->store_id) + "-" + std::to_string(n) + ".bin";
+}
 int32_t od_version() { return 7; }
 #ifdef ODLLM_CUDA_PTX
 // A cubin for sm_XY runs on the same major version with minor >= Y; PTX
@@ -538,6 +588,19 @@ void * od_create(const char * options) {
     try {
         auto opts = options && *options ? json::parse(options, nullptr, false) : json::object();
         if (!opts.is_object()) opts = json::object();
+        // The prompt store cannot ride on call_once: the Windows loader probes
+        // the bridge with od_gpu_device_count() (no options) before the first
+        // real create, so the cache directory is taken from any create.
+        const std::string cache_dir = opts.value("cacheDir", "");
+        if (!cache_dir.empty()) {
+            std::lock_guard<std::mutex> lock(prompt_store_mutex);
+            if (prompt_store_dir.empty()) {
+                prompt_store_dir = cache_dir + "/prompt-store";
+                // Files left by an earlier process are never restored.
+                std::error_code ec;
+                std::filesystem::remove_all(std::filesystem::path(prompt_store_dir), ec);
+            }
+        }
         std::call_once(init_flag, [&opts] {
 #if defined(__ANDROID__)
             relay_stderr();
@@ -2243,6 +2306,11 @@ int32_t od_load(void * h, const char * path, const char * settings) {
         memory_admission.check();
         if (r->released) throw std::runtime_error(released_message);
         r->unload(); r->error.clear(); r->prompt.clear(); r->generated = 0; r->trimmed = 0; r->first_ms = 0;
+        // unload() deleted this runtime's own files. The directory is shared
+        // by every runtime (helpers, side lanes), so it is only emptied once
+        // per process (stale files from a crash); the clock id keeps this
+        // load's names apart from any other runtime's.
+        r->store_id = std::to_string(Clock::now().time_since_epoch().count());
         r->progress->store(0.0f, std::memory_order_relaxed);
         auto s = json::parse(settings);
         const std::string requested = s.value("backend", "auto");
@@ -2643,6 +2711,24 @@ static void trim_store(Runtime * r, const std::vector<llama_token> * pin = nullp
         const int oldest = od_prompt_store::lru_victim(r->store.size(), used, pinned);
         if (oldest < 0) break;
         total -= r->store[(size_t)oldest].bytes();
+        drop_store_files(r->store[(size_t)oldest]);
+        r->store.erase(r->store.begin() + oldest);
+    }
+}
+// Spilled state has its own cap on disk, so a full RAM store does not keep
+// every file. The least recently used spilled entry goes first.
+static void trim_disk(Runtime * r, const std::vector<llama_token> * pin = nullptr) {
+    size_t total = 0;
+    for (const auto & s : r->store) if (s.spilled()) total += s.disk_bytes;
+    const size_t limit = od_prompt_store::disk_limit(r->store_limit);
+    auto spilled = [&](size_t i) { return r->store[i].spilled(); };
+    auto used = [&](size_t i) { return r->store[i].used; };
+    auto pinned = [&](size_t i) { return pin && r->store[i].tokens == *pin; };
+    while (total > limit && !r->store.empty()) {
+        const int oldest = od_prompt_store::spilled_victim(r->store.size(), spilled, used, pinned);
+        if (oldest < 0) break;
+        total -= r->store[(size_t)oldest].disk_bytes;
+        drop_store_files(r->store[(size_t)oldest]);
         r->store.erase(r->store.begin() + oldest);
     }
 }
@@ -2653,9 +2739,14 @@ static void store_resident(Runtime * r, const std::vector<llama_token> * pin = n
     if (r->store_limit == 0 || r->cached.size() < Runtime::store_min || !r->media_meta.empty()) return;
     if (std::find(r->cached.begin(), r->cached.end(), LLAMA_TOKEN_NULL) != r->cached.end()) return;
     // A stored sequence the resident one extends is superseded by it.
-    r->store.erase(std::remove_if(r->store.begin(), r->store.end(), [&](const Runtime::Stored & s) {
-        return s.tokens.size() <= r->cached.size() && std::equal(s.tokens.begin(), s.tokens.end(), r->cached.begin());
-    }), r->store.end());
+    for (auto it = r->store.begin(); it != r->store.end();) {
+        if (it->tokens.size() <= r->cached.size() && std::equal(it->tokens.begin(), it->tokens.end(), r->cached.begin())) {
+            drop_store_files(*it);
+            it = r->store.erase(it);
+        } else {
+            ++it;
+        }
+    }
     const size_t size = llama_state_seq_get_size(r->ctx, 0);
     const size_t head = r->mtp_ctx ? llama_state_seq_get_size(r->mtp_ctx, 0) : 0;
     size_t marks = 0;
@@ -2665,28 +2756,73 @@ static void store_resident(Runtime * r, const std::vector<llama_token> * pin = n
     // before allocating its state: evicting after the copy would hold the old
     // entries and the new snapshot at once, above the cap. The store is only a
     // cache, so a copy that cannot join the process-wide allocation
-    // transaction now, or that the live host budget cannot take, is skipped
-    // rather than waited for behind an unrelated long allocation.
+    // transaction now is skipped rather than waited for behind an unrelated
+    // long allocation.
     if (size == 0 || !od_prompt_store::admits(r->store_limit, entry)) return;
-    MemoryAdmission admission(false);
-    if (!admission.held()) return;
-    if (entry > MemoryAdmission::host_budget()) return;
-    size_t total = 0;
-    for (const auto & s : r->store) total += s.bytes();
-    auto used = [&](size_t i) { return r->store[i].used; };
-    auto pinned = [&](size_t i) { return pin && r->store[i].tokens == *pin; };
-    while (!od_prompt_store::fits(r->store_limit, total, entry)) {
-        const int oldest = od_prompt_store::lru_victim(r->store.size(), used, pinned);
-        if (oldest < 0) return;
-        total -= r->store[(size_t)oldest].bytes();
-        r->store.erase(r->store.begin() + oldest);
+    bool spill = false;
+    {
+        MemoryAdmission admission(false);
+        if (!admission.held()) return;
+        // A full host budget is the one reason to spill instead of dropping
+        // (store_limit and a failed admission still skip the snapshot).
+        spill = entry > MemoryAdmission::host_budget();
+        if (!spill) {
+            size_t total = 0;
+            for (const auto & s : r->store) total += s.bytes();
+            auto used = [&](size_t i) { return r->store[i].used; };
+            auto pinned = [&](size_t i) { return pin && r->store[i].tokens == *pin; };
+            while (!od_prompt_store::fits(r->store_limit, total, entry)) {
+                const int oldest = od_prompt_store::lru_victim(r->store.size(), used, pinned);
+                if (oldest < 0) return;
+                total -= r->store[(size_t)oldest].bytes();
+                drop_store_files(r->store[(size_t)oldest]);
+                r->store.erase(r->store.begin() + oldest);
+            }
+            Runtime::Stored s{r->cached, std::vector<uint8_t>(size), std::vector<uint8_t>(head), r->checkpoints, 0};
+            if (s.bytes() > r->store_limit) return;
+            if (llama_state_seq_get_data(r->ctx, s.state.data(), size, 0) != size) return;
+            if (head && llama_state_seq_get_data(r->mtp_ctx, s.head.data(), head, 0) != head) return;
+            s.used = ++r->store_clock;
+            r->store.push_back(std::move(s));
+            return;
+        }
     }
-    Runtime::Stored s{r->cached, std::vector<uint8_t>(size), std::vector<uint8_t>(head), r->checkpoints, 0};
-    if (s.bytes() > r->store_limit) return;
-    if (llama_state_seq_get_data(r->ctx, s.state.data(), size, 0) != size) return;
-    if (head && llama_state_seq_get_data(r->mtp_ctx, s.head.data(), head, 0) != head) return;
+    // The host budget cannot take the snapshot but the store has room for it:
+    // stream it to disk instead of dropping it, so the next turn reads it back
+    // instead of prefilling the whole prompt (Regenerate on a hybrid model
+    // whose RAM is full). Any I/O failure is a cache miss, never an error.
+    const std::string dir = prompt_store_path();
+    if (dir.empty() || r->store_id.empty()) return;
+    std::error_code ec;
+    std::filesystem::create_directories(std::filesystem::path(dir), ec);
+    if (ec) return;
+    Runtime::Stored s;
+    try {
+        s.tokens = r->cached;
+        s.marks = r->checkpoints;
+    } catch (const std::bad_alloc &) { return; }
+    const auto started = Clock::now();
+    s.path = store_file_path(r, dir);
+    const size_t state_bytes = llama_state_seq_save_file(r->ctx, s.path.c_str(), 0, s.tokens.data(), s.tokens.size());
+    if (state_bytes == 0) { remove_store_file(s.path); s.path.clear(); return; }
+    size_t head_bytes = 0;
+    if (head) {
+        head_bytes = llama_state_seq_save_file(r->mtp_ctx, (s.path + ".mtp").c_str(), 0, s.tokens.data(), s.tokens.size());
+        if (head_bytes == 0) { remove_store_file(s.path); remove_store_file(s.path + ".mtp"); return; }
+        s.head_disk = true;
+    }
+    const size_t disk_bytes = state_bytes + head_bytes;
+    if (!od_prompt_store::disk_fits(od_prompt_store::disk_limit(r->store_limit), 0, disk_bytes)) {
+        remove_store_file(s.path);
+        if (s.head_disk) remove_store_file(s.path + ".mtp");
+        return;
+    }
+    s.disk_bytes = disk_bytes;
     s.used = ++r->store_clock;
     r->store.push_back(std::move(s));
+    trim_store(r, pin);
+    trim_disk(r, pin);
+    store_log("spilled", disk_bytes, std::chrono::duration<double, std::milli>(Clock::now() - started).count());
 }
 // Decides how much of the resident sequence survives for the new prompt.
 static void reuse_prefix(Runtime * r, bool enabled) {
@@ -2694,7 +2830,7 @@ static void reuse_prefix(Runtime * r, bool enabled) {
     // Replay prefill to capture every target feature for each new prompt.
     if (r->dflash) {
         llama_memory_clear(llama_get_memory(r->ctx), true);
-        reset_mtp(r); r->forget(); r->store.clear();
+        reset_mtp(r); r->forget(); store_clear(r);
         r->store_restored = r->cursor = r->reused = 0;
         return;
     }
@@ -2719,10 +2855,32 @@ static void reuse_prefix(Runtime * r, bool enabled) {
             if (r->mtp_ctx) llama_memory_clear(llama_get_memory(r->mtp_ctx), true);
             llama_memory_clear(mem, true);
             r->forget();
-            if (it != r->store.end() && llama_state_seq_set_data(r->ctx, it->state.data(), it->state.size(), 0) == it->state.size()
-                && (it->head.empty() || llama_state_seq_set_data(r->mtp_ctx, it->head.data(), it->head.size(), 0) == it->head.size())) {
+            // A spilled snapshot loads into the context exactly like a RAM one;
+            // the token ids it was saved with prove the file belongs to it.
+            bool restored = false;
+            const auto from = Clock::now();
+            if (it != r->store.end()) {
+                if (it->spilled()) {
+                    std::vector<llama_token> loaded(it->tokens.size());
+                    size_t n = 0;
+                    restored = llama_state_seq_load_file(r->ctx, it->path.c_str(), 0, loaded.data(), loaded.size(), &n) > 0
+                        && n == it->tokens.size() && loaded == it->tokens;
+                    if (restored && it->head_disk) {
+                        std::vector<llama_token> hloaded(it->tokens.size());
+                        size_t hn = 0;
+                        restored = r->mtp_ctx && llama_state_seq_load_file(r->mtp_ctx, (it->path + ".mtp").c_str(), 0, hloaded.data(), hloaded.size(), &hn) > 0
+                            && hn == it->tokens.size() && hloaded == it->tokens;
+                    }
+                } else {
+                    restored = llama_state_seq_set_data(r->ctx, it->state.data(), it->state.size(), 0) == it->state.size()
+                        && (it->head.empty() || llama_state_seq_set_data(r->mtp_ctx, it->head.data(), it->head.size(), 0) == it->head.size());
+                }
+            }
+            if (restored) {
                 r->cached = it->tokens; r->checkpoints = it->marks; it->used = ++r->store_clock;
                 keep = best_len; r->store_restored = keep;
+                if (it->spilled())
+                    store_log("restored", it->disk_bytes, std::chrono::duration<double, std::milli>(Clock::now() - from).count());
             } else {
                 llama_memory_clear(mem, true);
                 keep = 0;
@@ -3186,6 +3344,7 @@ int32_t od_begin(void * h, const char * request) {
             if (store_mb < 0) store_mb = store_default;
             r->store_limit = (size_t)std::clamp(store_mb, 0, 65536) << 20;
             trim_store(r);
+            trim_disk(r);
             reuse_prefix(r, s.value("promptCache", true));
         }
         r->checkpoint_at.clear();

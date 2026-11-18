@@ -79,6 +79,7 @@ Full steps and requirements are in [Install](#install).
 
 - [Top features](#top-features)
 - [Quick start](#quick-start)
+- [What's new in 1.7.0](#whats-new-in-170)
 - [What's new in 1.5.0](#whats-new-in-150)
 - [Screenshots](#screenshots)
 - [Why OnDevice LLM](#why-ondevice-llm)
@@ -97,6 +98,19 @@ Full steps and requirements are in [Install](#install).
 - [Contributors](#contributors)
 - [Support the project](#support-the-project)
 - [License](#license)
+
+## What's new in 1.7.0
+
+- **Engine updates by themselves (Windows).** The app checks for signed
+  engine packs once a day, installs them, tests them in a separate process,
+  and goes back to the built-in engine if a pack fails. Settings > Engine
+  updates.
+- **llama.cpp b12503**, faster Regenerate on large models, and long prompts
+  on Android CPUs no longer stop after 60 s (issue #6).
+- **Android x86_64** builds, one APK per ABI (PR #7, issue #8).
+- **iOS build path and UI fixes**, and the last model loads at start (PR #9).
+- Dictation stops by itself after a pause, Compare gives the chat model
+  back, and many smaller fixes. See [CHANGELOG.md](CHANGELOG.md).
 
 ## What's new in 1.5.0
 
@@ -479,6 +493,11 @@ Requirements: Android 9 (API 28) or later on a 64-bit Arm phone
 of RAM or more is recommended for the Gemma models; the Qwen models up to
 2B fit on smaller phones.
 
+Each release has two APKs: `android-arm64-v8a` for phones and tablets, and
+`android-x86_64` for Chromebooks, Android emulators and other Intel/AMD
+Android devices. To build the x86_64 one yourself, use `ODLLM_ABI=x86_64` as
+described under [Build from source](#build-from-source).
+
 1. Download the APK from the
    [latest release](https://github.com/sebytzr16/on-device-llm/releases/latest).
 2. Open it on the phone and allow installing from that source when Android
@@ -523,6 +542,21 @@ scripts/bootstrap.ps1                  # fetch the pinned llama.cpp and tools
 scripts/build-android.ps1              # CPU build
 scripts/build-android.ps1 -OpenCL      # CPU plus optional OpenCL GPU support
 ```
+
+On Linux (also the CI path) both Android ABIs are available; `ODLLM_ABI`
+selects one APK per build, arm64-v8a by default:
+
+```bash
+bash scripts/build_android.sh                      # arm64-v8a APK
+ODLLM_ABI=x86_64 bash scripts/build_android.sh     # x86_64 APK (emulator, ChromeOS)
+```
+
+Each APK carries the portable bridge (`libondevice_llm.so`, baseline Armv8-A
+or x86-64) plus a fast variant the Dart loader picks when the CPU supports
+it: `libondevice_llm_cpu_i8mm.so` on arm64-v8a and
+`libondevice_llm_cpu_avx2.so` on x86_64. The fast x86_64 bridge is
+Haswell-class (AVX2/FMA/F16C/BMI2); a CPU without AVX2 keeps the portable
+library instead, because the fast one would hit an illegal instruction.
 
 **Windows** (Visual Studio 2022 with C++, CMake; the CUDA Toolkit for the
 NVIDIA engines; Inno Setup for the installer):
@@ -675,6 +709,8 @@ Apple device to build and test on.
 | <img src="https://github.com/sebytzr16.png" width="48" alt="sebytzr16"> | [**sebytzr16**](https://github.com/sebytzr16) | Creator and maintainer: product, design, testing on real devices |
 | <img src="https://github.com/anthropics.png" width="48" alt="Anthropic"> | [**Claude**](https://www.anthropic.com/claude) (Anthropic) | AI pair programmer: app code, engine work, reviews, documentation |
 | <img src="https://github.com/openai.png" width="48" alt="OpenAI"> | [**Codex**](https://openai.com/codex) (OpenAI) | AI pair programmer: engine and desktop code, audits, reviews |
+| <img src="https://github.com/HavenCTO.png" width="48" alt="HavenCTO"> | [**HavenCTO**](https://github.com/HavenCTO) | Android x86_64 build (PR #7) |
+| <img src="https://github.com/cstrazzeri98-code.png" width="48" alt="cstrazzeri98-code"> | [**cstrazzeri98-code**](https://github.com/cstrazzeri98-code) | iOS build path and UI/UX fixes (PR #9) |
 
 Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md)
 first. In short:

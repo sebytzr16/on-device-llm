@@ -143,7 +143,16 @@ class _KnowledgePageState extends ConsumerState<KnowledgePage> {
     } else if (models.embeddingReady) {
       action = OutlinedButton.icon(
         key: const Key('embedding-remove'),
-        onPressed: manager.deleteEmbedding,
+        onPressed: () async {
+          final ok = await confirmAction(
+            context,
+            title: context.l10n.confirmRemoveDownloadTitle,
+            message: context.l10n.confirmRemoveDownloadHint,
+            confirmLabel: context.l10n.remove,
+            destructive: true,
+          );
+          if (ok) await manager.deleteEmbedding();
+        },
         style: OutlinedButton.styleFrom(foregroundColor: c.success),
         icon: const Icon(Icons.check, size: 18),
         label: Text(context.l10n.ready),
@@ -483,6 +492,14 @@ class _KnowledgePageState extends ConsumerState<KnowledgePage> {
                                 color: c.danger,
                               ),
                             ),
+                            // The stored copy may be the user's only one.
+                            confirmDismiss: (_) => confirmAction(
+                              context,
+                              title: context.l10n.confirmDeleteDocumentTitle,
+                              message: context.l10n.confirmCannotUndo,
+                              confirmLabel: context.l10n.delete,
+                              destructive: true,
+                            ),
                             onDismissed: (_) =>
                                 ref.read(knowledgeStoreProvider).remove(d.id),
                             child: SettingsRow(
@@ -627,18 +644,32 @@ class _KnowledgePageState extends ConsumerState<KnowledgePage> {
                               size: 20,
                             ),
                             onPressed: () async {
-                              await ref
+                              // The container outlives this page: it can
+                              // close while a large collection is removed.
+                              final container = ProviderScope.containerOf(
+                                context,
+                                listen: false,
+                              );
+                              final ok = await confirmAction(
+                                context,
+                                title:
+                                    context.l10n.confirmDeleteCollectionTitle,
+                                message:
+                                    context.l10n.confirmDeleteCollectionHint,
+                                confirmLabel: context.l10n.delete,
+                                destructive: true,
+                              );
+                              if (!ok) return;
+                              await container
                                   .read(knowledgeStoreProvider)
                                   .removeCollection(col);
-                              if (ref
-                                      .read(settingsProvider)
-                                      .knowledgeCollection ==
-                                  col) {
-                                await n.update(
-                                  ref
-                                      .read(settingsProvider)
-                                      .copyWith(knowledgeCollection: ''),
-                                );
+                              final s = container.read(settingsProvider);
+                              if (s.knowledgeCollection == col) {
+                                await container
+                                    .read(settingsProvider.notifier)
+                                    .update(
+                                      s.copyWith(knowledgeCollection: ''),
+                                    );
                               }
                             },
                           ),

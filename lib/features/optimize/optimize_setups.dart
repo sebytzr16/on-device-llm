@@ -45,18 +45,21 @@ Map<String, List<Object>> modelTuneCandidates(InferenceSettings s) => {
 List<InferenceSettings> pcOptimizationSetups(
   InferenceSettings best, {
   bool? mobile,
+  bool? ios,
   int? bigCoreCount,
   bool mtpHead = false,
   String userDraft = '',
   String userSpeculationMode = 'auto',
   List<int> cpuMoe = const [],
 }) {
-  if (mobile ?? Platform.isAndroid) {
-    final big = bigCoreCount ?? CpuCores.androidBig;
+  final iphone = ios ?? Platform.isIOS;
+  if (mobile ?? (Platform.isAndroid || iphone)) {
+    final big = iphone ? 4 : bigCoreCount ?? CpuCores.androidBig;
+    final tryMtp = mtpHead && !iphone;
     // Never carry external drafts or expert placement into a phone sweep.
     final safe = best.copyWith(
       draftModelId: '',
-      speculationMode: mtpHead ? 'auto' : 'off',
+      speculationMode: tryMtp ? 'auto' : 'off',
       mtp: false,
       nCpuMoe: -1,
       expertsUsed: -1,
@@ -66,16 +69,17 @@ List<InferenceSettings> pcOptimizationSetups(
       if (safe.effectiveThreads != 4) safe.copyWith(cpuThreads: 4),
       if (big != 4 && big != safe.effectiveThreads)
         safe.copyWith(cpuThreads: big),
-      safe.copyWith(flashAttention: false),
+      if (!iphone || safe.effectiveVCacheType == KvCacheType.fp16)
+        safe.copyWith(flashAttention: false),
       for (final size in [256, 512])
         if (safe.batchSize != size)
           safe.copyWith(
             batchSize: size,
             microBatchSize: safe.effectiveMicroBatchSize.clamp(32, size),
           ),
-      if (safe.backend == GpuBackend.opencl && safe.nGpuLayers > 0)
+      if (_phoneGpu(safe.backend, ios: iphone) && safe.nGpuLayers > 0)
         safe.copyWith(nGpuLayers: 0),
-      if (mtpHead)
+      if (tryMtp)
         safe.copyWith(
           speculationMode: 'off',
           draftModelId: '$mtpHeadPrefix$mtpOff',
@@ -107,6 +111,9 @@ List<InferenceSettings> pcOptimizationSetups(
     best.copyWith(flashAttention: false),
   ];
 }
+
+bool _phoneGpu(GpuBackend backend, {required bool ios}) =>
+    backend == (ios ? GpuBackend.metal : GpuBackend.opencl);
 
 /// Why Optimize kept the user's current settings instead of saving a setup.
 enum OptimizeKeepReason { slower, outputChanged, baselineUnavailable, noisy }
@@ -242,6 +249,7 @@ class OptimizeRunner implements TuneRunner {
 /// Only the explicit Optimize action chooses a new GPU layer count.
 Future<InferenceSettings> pcOptimizationDefaults({
   bool? mobile,
+  bool? ios,
   required InferenceSettings current,
   required InferenceSettings defaults,
   required Future<Map<String, dynamic>> Function(InferenceSettings) estimate,
@@ -261,13 +269,20 @@ Future<InferenceSettings> pcOptimizationDefaults({
         .difference(pcOptimizationKeys)
         .toList(),
   });
-  final phone = mobile ?? Platform.isAndroid;
+  final iphone = ios ?? Platform.isIOS;
+  final phone = mobile ?? (Platform.isAndroid || iphone);
   if (phone) {
-    // Android Auto loads the CPU bridge; preserve an explicit OpenCL choice.
+    // The model loader resolves mobile Auto to CPU. Preserve explicit
+    // phone GPU backends so estimates and loads use the same placement.
     json['backend'] = current.backend.name;
     json['nCpuMoe'] = -1;
     json['expertsUsed'] = -1;
-    json['nGpuLayers'] = current.backend == GpuBackend.opencl ? 999 : 0;
+    json['nGpuLayers'] = _phoneGpu(current.backend, ios: iphone) ? 999 : 0;
+    if (iphone) {
+      json['speculationMode'] = 'off';
+      json['batchSize'] = defaults.effectiveBatchSize.clamp(32, 512);
+      json['microBatchSize'] = defaults.effectiveMicroBatchSize.clamp(32, 256);
+    }
   }
   var settings = InferenceSettings.fromJson(json);
   final info = await estimate(settings);
@@ -282,8 +297,10 @@ Future<InferenceSettings> pcOptimizationDefaults({
   // the vision projector (projectorDevice auto) or MoE experts to RAM, which
   // beats any partial layer count: Gemma 4 26B A4B decodes at 18-20 tok/s
   // that way, like LM Studio.
-  if (settings.backend != GpuBackend.cpu &&
-      (!phone || settings.backend == GpuBackend.opencl)) {
+  final canOffload = phone
+      ? _phoneGpu(settings.backend, ios: iphone)
+      : settings.backend != GpuBackend.cpu;
+  if (canOffload) {
     for (final kv in [KvCacheType.fp16, KvCacheType.q8_0]) {
       final all = settings.copyWith(kvCacheType: kv, nGpuLayers: 999);
       final fit = await estimate(all);
@@ -293,12 +310,7 @@ Future<InferenceSettings> pcOptimizationDefaults({
     }
   }
   for (final kv in [KvCacheType.fp16, KvCacheType.q8_0]) {
-    var low = 0,
-        high =
-            settings.backend == GpuBackend.cpu ||
-                (phone && settings.backend != GpuBackend.opencl)
-            ? 0
-            : layers;
+    var low = 0, high = canOffload ? layers : 0;
     settings = settings.copyWith(kvCacheType: kv);
     while (low < high) {
       final middle = (low + high + 1) ~/ 2;

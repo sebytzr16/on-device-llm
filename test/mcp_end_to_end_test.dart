@@ -191,7 +191,7 @@ void main() {
       final state = registry.servers[name]!;
       expect(state.status, McpStatus.error);
       expect(state.error, isA<McpException>());
-      expect(mcpExplain(t, state.error!), t.mcpConfigError);
+      expect(mcpExplain(t, state.error!), t.mcpCommandError);
       expect(registry.specs, isEmpty);
       expect((await echo('unavailable')).output, t.mcpUnavailableError);
     },

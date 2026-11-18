@@ -26,12 +26,14 @@ void main() {
     hasAvx512: () => avx512,
     fileExists: (_) => false,
     gpuDeviceCount: (_) => 0,
-    open: (name) {
+    // Bundled bridges are opened by absolute path; compare file names.
+    open: (path) {
+      final name = path.split(RegExp(r'[\\/]')).last;
       opened.add(name);
       if (failures.contains(name)) throw StateError('missing dependency');
       return name;
     },
-  ).name;
+  ).name.split(RegExp(r'[\\/]')).last;
   setUp(() {
     opened = [];
     skipped = [];

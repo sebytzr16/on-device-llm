@@ -19,7 +19,7 @@ void main() {
       hasAvx512: () => true,
       open: (name) => name,
       gpuDeviceCount: (_) => 1,
-    ).name;
+    ).name.split(RegExp(r'[\\/]')).last;
   }
 
   test('explicit Vulkan estimate selects Vulkan with CUDA installed (E03)', () {

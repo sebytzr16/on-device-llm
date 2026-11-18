@@ -47,6 +47,24 @@ class McpServerConfig {
     return uri;
   }
 
+  /// Package runners and shells never start as a server: no PATH search,
+  /// downloads or command wrappers at launch.
+  static const blockedLaunchers = {
+    'npx',
+    'npm',
+    'uvx',
+    'uv',
+    'pip',
+    'pip3',
+    'cmd',
+    'powershell',
+    'pwsh',
+    'sh',
+    'bash',
+    'wscript',
+    'cscript',
+  };
+
   static Map<String, McpServerConfig> parse(String text) {
     try {
       final root = jsonDecode(text);
@@ -65,11 +83,12 @@ class McpServerConfig {
         }
         final args = v['args'] ?? <String>[];
         final env = v['env'] ?? <String, String>{};
-        if (args is! List ||
-            args.any((x) => x is! String) ||
-            env is! Map ||
+        if (args is! List || args.any((x) => x is! String)) {
+          throw const McpException(McpProblem.config, 'args');
+        }
+        if (env is! Map ||
             env.entries.any((e) => e.key is! String || e.value is! String)) {
-          throw const McpException(McpProblem.config);
+          throw const McpException(McpProblem.config, 'env');
         }
         final url = v['url'];
         final command = v['command'];

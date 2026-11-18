@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../../core/design/app_dialog.dart';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -77,10 +78,21 @@ class _ZimTileState extends ConsumerState<ZimTile> {
   }
 
   Future<void> _remove() async {
-    await (await ref.read(zimWikipediaProvider.future))?.close();
+    final ok = await confirmAction(
+      context,
+      title: context.l10n.confirmRemoveZimTitle,
+      message: context.l10n.confirmRemoveZimHint,
+      confirmLabel: context.l10n.remove,
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    // The container outlives this tile: leaving Settings mid-removal must
+    // still drop the closed archive from the app.
+    final container = ProviderScope.containerOf(context, listen: false);
+    await (await container.read(zimWikipediaProvider.future))?.close();
     final f = File(await _target());
     if (await f.exists()) await f.delete();
-    ref.invalidate(zimWikipediaProvider);
+    container.invalidate(zimWikipediaProvider);
   }
 
   @override

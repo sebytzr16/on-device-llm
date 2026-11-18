@@ -403,4 +403,23 @@ void main() {
       },
     );
   });
+
+  test('audit 2026-11-18: word sums and "say ... in" are local work', () {
+    for (final input in [
+      'What is 17 times 23?',
+      "what's 10 divided by 4",
+      '17 x 24',
+      'calculate 3 plus 4 minus 1',
+      'Say hi in French.',
+    ]) {
+      expect(RetrievalPlan.localTask(input), isTrue, reason: input);
+    }
+    for (final input in [
+      'What is the population of France?',
+      'times square opening hours',
+      'what is 5G',
+    ]) {
+      expect(RetrievalPlan.localTask(input), isFalse, reason: input);
+    }
+  });
 }

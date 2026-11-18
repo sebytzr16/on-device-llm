@@ -24,9 +24,11 @@ class DesktopShortcut {
 
 class DesktopShortcutScope extends InheritedWidget {
   final List<DesktopShortcut> shortcuts;
+  final VoidCallback? restoreFocus;
   const DesktopShortcutScope({
     super.key,
     required this.shortcuts,
+    this.restoreFocus,
     required super.child,
   });
   static List<DesktopShortcut> of(BuildContext context) => context

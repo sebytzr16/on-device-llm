@@ -174,6 +174,225 @@ void main() {
     });
   });
 
+  group('Whisper dictation lifecycle', () {
+    late _Mic mic;
+    setUp(() {
+      mic = _Mic()..install();
+    });
+    tearDown(() => mic.uninstall());
+    const paths = ListeningPaths(
+      encoder: 'e',
+      decoder: 'd',
+      tokens: 't',
+      vad: 'v',
+    );
+    WhisperListener listenerFor(
+      _CaptionVoice voice,
+      _FakeDetector detector, {
+      void Function(String)? onFinal,
+      Duration? silence,
+      Duration? initialSilence,
+    }) => WhisperListener(
+      voice: voice,
+      language: 'en',
+      detector: detector,
+      listeningPaths: () async => paths,
+      liveCaptionPaths: () async => null,
+      onFinal: onFinal,
+      endSilence: 1,
+      silenceTimeout: silence,
+      initialSilenceTimeout: initialSilence,
+    );
+
+    for (final finish in [false, true]) {
+      test(
+        'a pending microphone start is closed again after ${finish ? "finish" : "stop"}',
+        () async {
+          final pending = Completer<bool>();
+          final requested = Completer<void>();
+          var open = false, stops = 0;
+          const channel = MethodChannel('ondevice_llm/voice_audio');
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(channel, (call) async {
+                if (call.method == 'startMic') {
+                  requested.complete();
+                  await pending.future;
+                  open = true;
+                  return true;
+                }
+                if (call.method == 'stopMic') {
+                  open = false;
+                  stops++;
+                }
+                return null;
+              });
+          final listener = listenerFor(_CaptionVoice(null), _FakeDetector());
+          addTearDown(listener.dispose);
+          final starting = listener.start();
+          await requested.future;
+          await (finish ? listener.finish() : listener.stop());
+          expect(stops, 1);
+          expect(listener.running, isFalse);
+          pending.complete(true);
+          expect(await starting, isFalse);
+          expect(stops, 2);
+          expect(open, isFalse);
+        },
+      );
+    }
+
+    test(
+      'finish stops the microphone before transcription and keeps the final sentence',
+      () async {
+        final voice = _PendingCaptionVoice();
+        final finals = <String>[];
+        final listener = listenerFor(
+          voice,
+          _FakeDetector(),
+          onFinal: finals.add,
+        );
+        addTearDown(listener.dispose);
+        await listener.start();
+        await pumpEventQueue();
+        for (var i = 0; i < 20; i++) {
+          await mic.push(_frame());
+        }
+        final finishing = listener.finish();
+        expect(listener.running, isFalse);
+        await voice.requested.future;
+        expect(finals, isEmpty);
+        voice.result.complete(const Heard('last sentence', 'en'));
+        await finishing;
+        expect(finals, ['last sentence']);
+      },
+    );
+
+    test(
+      'disposing a drained old listener does not stop the next microphone',
+      () async {
+        final voice = _PendingCaptionVoice();
+        final old = listenerFor(voice, _FakeDetector());
+        final next = listenerFor(_CaptionVoice(null), _FakeDetector());
+        addTearDown(next.dispose);
+        var open = false;
+        const channel = MethodChannel('ondevice_llm/voice_audio');
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              if (call.method == 'startMic') {
+                open = true;
+                return true;
+              }
+              if (call.method == 'stopMic') open = false;
+              return null;
+            });
+        await old.start();
+        await pumpEventQueue();
+        for (var i = 0; i < 20; i++) {
+          await mic.push(_frame());
+        }
+        final finishing = old.finish();
+        await voice.requested.future;
+        expect(open, isFalse);
+        await next.start();
+        expect(open, isTrue);
+        voice.result.complete(const Heard('old words', 'en'));
+        await finishing;
+        old.dispose();
+        await pumpEventQueue();
+        expect(open, isTrue);
+      },
+    );
+
+    testWidgets(
+      'silence closes the mic before a slow final transcript completes',
+      (tester) async {
+        final voice = _PendingCaptionVoice();
+        final detector = _FakeDetector();
+        final finals = <String>[];
+        final listener = listenerFor(
+          voice,
+          detector,
+          onFinal: finals.add,
+          silence: const Duration(milliseconds: 2500),
+          initialSilence: const Duration(seconds: 3),
+        );
+        addTearDown(listener.dispose);
+        await listener.start();
+        await tester.pump();
+        for (var i = 0; i < 20; i++) {
+          await mic.push(_frame());
+        }
+        detector.speaking = false;
+        detector.finishing = Float32List(8000);
+        await mic.push(_frame());
+        await tester.pump();
+        expect(voice.requested.isCompleted, isTrue);
+        await tester.pump(const Duration(milliseconds: 1499));
+        expect(listener.running, isTrue);
+        await tester.pump(const Duration(milliseconds: 1));
+        expect(listener.running, isFalse);
+        voice.result.complete(const Heard('kept final', 'en'));
+        await tester.pump();
+        expect(finals, ['kept final']);
+      },
+    );
+
+    testWidgets(
+      'new speech cancels the initial and post-speech silence timeouts',
+      (tester) async {
+        final detector = _FakeDetector()..speaking = false;
+        final listener = listenerFor(
+          _CaptionVoice(null),
+          detector,
+          silence: const Duration(milliseconds: 2500),
+          initialSilence: const Duration(seconds: 3),
+        );
+        addTearDown(listener.dispose);
+        await listener.start();
+        await tester.pump(const Duration(milliseconds: 2999));
+        expect(listener.running, isTrue);
+        detector.speaking = true;
+        await mic.push(_frame());
+        await tester.pump(const Duration(seconds: 4));
+        expect(listener.running, isTrue);
+        detector.speaking = false;
+        detector.finishing = Float32List(8000);
+        await mic.push(_frame());
+        await tester.pump(const Duration(seconds: 1));
+        detector.speaking = true;
+        await mic.push(_frame());
+        await tester.pump(const Duration(seconds: 2));
+        expect(listener.running, isTrue);
+        unawaited(listener.stop());
+        await tester.pump();
+      },
+    );
+  });
+
+  testWidgets('Whisper initial silence stops at 3 seconds', (tester) async {
+    final mic = _Mic()..install();
+    addTearDown(mic.uninstall);
+    final listener = WhisperListener(
+      voice: _CaptionVoice(null),
+      language: 'en',
+      detector: _FakeDetector()..speaking = false,
+      listeningPaths: () async => const ListeningPaths(
+        encoder: 'e',
+        decoder: 'd',
+        tokens: 't',
+        vad: 'v',
+      ),
+      liveCaptionPaths: () async => null,
+      initialSilenceTimeout: const Duration(seconds: 3),
+    );
+    addTearDown(listener.dispose);
+    await listener.start();
+    await tester.pump(const Duration(milliseconds: 2999));
+    expect(listener.running, isTrue);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(listener.running, isFalse);
+  });
+
   group('KokoroSpeaker.sentences', () {
     test('splits at sentence ends and line breaks', () {
       expect(KokoroSpeaker.sentences('Hello there. How are you?\nFine!'), [
@@ -1005,5 +1224,16 @@ class _LoggingVoice extends SherpaVoice {
   }) async {
     log.add('synth $text');
     return SpeechAudio(Int16List(240), 24000);
+  }
+}
+
+class _PendingCaptionVoice extends _CaptionVoice {
+  _PendingCaptionVoice() : super(null);
+  final requested = Completer<void>();
+  final result = Completer<Heard?>();
+  @override
+  Future<Heard?> transcribe(Float32List samples, {String language = ''}) {
+    if (!requested.isCompleted) requested.complete();
+    return result.future;
   }
 }

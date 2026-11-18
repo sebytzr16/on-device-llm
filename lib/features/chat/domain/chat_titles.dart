@@ -34,7 +34,7 @@ class ChatTitles {
       {
         'role': 'user',
         'content':
-            'Conversation:\nUser: ${clip(question, 400)}\nAssistant: ${clip(answer, 300)}\n\nWrite a title of 2 to 6 words naming the topic of this conversation, in the language of the user\'s message. Reply with the title only: no quotes, no "Title:", no full stop.',
+            'Conversation:\nUser: ${clip(question, 400)}\nAssistant: ${clip(answer, 300)}\n\nWrite a title of 2 to 6 words naming the topic of this conversation, in the language the user wrote in (not a language the message asks about). Reply with the title only: no quotes, no "Title:", no full stop.',
       },
     ];
   }
@@ -67,7 +67,8 @@ class ChatTitles {
             '${conversation.substring(0, conversation.indexOf('\n\n'))}\n\n'
             'Notes about the user so far:\n$known\n\n'
             'First, write a title of 2 to 6 words naming the topic of this '
-            "conversation, in the language of the user's message: no "
+            'conversation, in the language the user wrote in (not a language '
+            'the message asks about): no '
             'quotes, no full stop.\n'
             'Then the notes, from what the user wrote only:\n'
             '"""$question"""\n'

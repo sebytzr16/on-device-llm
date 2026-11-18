@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.7.0 - 2026-11-18
+
+### Engine
+- llama.cpp b12503
+- Engine updates on Windows: the app checks for signed engine packs once a day and installs them by itself (Ed25519-signed manifest, per-file SHA-256, a test load in a separate process). A pack is used from the next model load; if it fails twice, the app goes back to the built-in engine. Settings > Engine updates has an on/off switch, Check now, Use the built-in engine and Remove
+- Regenerate on large models no longer re-reads the whole prompt: the prompt store spills to disk when RAM is short
+- Issue #6: the first token may take up to 10 minutes while a long prompt is read (long chats with many tools stopped after 60 s on Android CPUs)
+- Hardware > Check for engine updates reads the newest llama.cpp build correctly
+
+### Android
+- Issue #8 / PR #7: x86_64 build (one APK per ABI); the fast bridge is used only when every core supports AVX, AVX2, FMA, F16C and BMI2
+- Dictation stops by itself after 2.5 s of quiet (6 s when nothing is said), keeps the last words, and the stop button closes the microphone at once
+
+### PC and phone
+- PR #9: iOS build path, UI/UX fixes and the last model loads at start
+- Compare gives the chat model back when you leave it
+- Ctrl+K and other shortcuts work right after renaming a chat
+- Version arrows count by time; benchmark receipts use local time; Enter in "Edit question" sends again (Shift+Enter for a new line)
+- Model settings for the loaded model no longer claim a wrong GPU layer count
+- Chat titles use the language you wrote in; word sums count as local work
+- Clearer MCP server errors (EN/FR/ES); "How this was made" shows "Generation speed"
+
 ## 1.6.0 - 2026-11-17
 
 ### First run

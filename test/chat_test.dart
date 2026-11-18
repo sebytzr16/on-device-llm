@@ -1324,7 +1324,17 @@ void main() {
       await n.send('First question');
       await n.send('Second question');
       final first = container.read(chatProvider).messages.first;
+      final phases = <(bool, bool)>[];
+      final subscription = container.listen(chatProvider, (_, next) {
+        phases.add((next.isGenerating, next.housekeeping));
+      });
       expect(await n.editTurn(first, 'First question, revised'), true);
+      subscription.close();
+      expect(phases.first, (true, true));
+      final readyToSend = phases.indexOf((false, false));
+      expect(readyToSend, greaterThan(0));
+      expect(phases.skip(readyToSend + 1), contains((true, false)));
+      expect(container.read(chatProvider).housekeeping, isFalse);
       var s = container.read(chatProvider);
       // Old branch: 4 turns set aside together; new branch: revised Q + A.
       final branch = s.messages.first.branch;
@@ -2401,6 +2411,7 @@ void main() {
       ]);
       expect(container.read(chatProvider).error, contains('Could not edit'));
       expect(container.read(chatProvider).isGenerating, false);
+      expect(container.read(chatProvider).housekeeping, false);
       expect(container.read(sessionBusyProvider), false);
     },
   );

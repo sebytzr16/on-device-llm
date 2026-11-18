@@ -159,7 +159,9 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text('Benchmark receipt · 2026-10-26'));
+    // Local date and time (audit 2026-11-18), never the stored ISO text.
+    expect(find.textContaining('2026-10-26'), findsNothing);
+    await tester.tap(find.textContaining('Benchmark receipt · '));
     await tester.pumpAndSettle();
     expect(find.text('Median tok/s'), findsOneWidget);
     expect(find.text('123.00'), findsOneWidget);

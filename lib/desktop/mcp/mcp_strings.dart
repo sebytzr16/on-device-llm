@@ -4,7 +4,13 @@ import 'mcp_config.dart';
 String mcpExplain(AppLocalizations t, Object error) {
   if (error is! McpException) return t.mcpOtherError('$error');
   return switch (error.problem) {
-    McpProblem.config => t.mcpConfigError,
+    McpProblem.config => switch (error.detail) {
+      'name' => t.mcpNameTakenError,
+      'args' => t.mcpArgsError,
+      'env' => t.mcpEnvError,
+      'command' => t.mcpCommandError,
+      _ => t.mcpConfigError,
+    },
     McpProblem.loopback => t.mcpLoopbackError,
     McpProblem.protocol => t.mcpProtocolError,
     McpProblem.closed => t.mcpClosedError,

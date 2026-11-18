@@ -93,23 +93,9 @@ class StdioMcpTransport implements McpTransport {
     final executable = p.basenameWithoutExtension(command).toLowerCase();
     if (!p.isAbsolute(command) ||
         !await File(command).exists() ||
-        const [
-          'npx',
-          'npm',
-          'uvx',
-          'uv',
-          'pip',
-          'pip3',
-          'cmd',
-          'powershell',
-          'pwsh',
-          'sh',
-          'bash',
-          'wscript',
-          'cscript',
-        ].contains(executable) ||
+        McpServerConfig.blockedLaunchers.contains(executable) ||
         (Platform.isWindows && !command.toLowerCase().endsWith('.exe'))) {
-      throw const McpException(McpProblem.config);
+      throw const McpException(McpProblem.config, 'command');
     }
     await workingDirectory.create(recursive: true);
     final resolvedCommand = Platform.isWindows

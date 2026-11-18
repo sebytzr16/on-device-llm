@@ -16,6 +16,17 @@ int main() {
     check(fits(100, 40, 60));
     check(!fits(100, 41, 60));
     check(!fits(100, 0, 101));
+    // Spilled snapshots get twice the RAM cap on disk, but at least 1 GiB.
+    const size_t gib = (size_t)1 << 30;
+    check(disk_limit(0) == gib);
+    check(disk_limit(512) == gib);
+    check(disk_limit(gib / 2) == gib);
+    check(disk_limit(gib) == 2 * gib);
+    check(disk_limit((size_t)1 << 20) == gib);
+    check(disk_fits(100, 40, 60));
+    check(!disk_fits(100, 41, 60));
+    check(!disk_fits(100, 0, 101));
+    check(!disk_fits(100, 0, 0));
     // Least recently used goes first, and the entry being restored is kept.
     std::vector<uint64_t> used = {7, 3, 9, 5};
     std::vector<bool> pinned = {false, false, false, false};
@@ -24,6 +35,16 @@ int main() {
     check(lru_victim(used.size(), oldest, pinned_at) == 1);
     pinned[1] = true;
     check(lru_victim(used.size(), oldest, pinned_at) == 3);
+    // Only spilled entries are evicted from disk, and the pinned one stays.
+    std::vector<bool> spilled = {true, false, true, true};
+    auto spilled_at = [&](size_t i) { return spilled[i]; };
+    pinned = {false, false, false, false};
+    check(spilled_victim(used.size(), spilled_at, oldest, pinned_at) == 3);
+    pinned[3] = true;
+    check(spilled_victim(used.size(), spilled_at, oldest, pinned_at) == 0);
+    spilled = {false, false, false, false};
+    check(spilled_victim(used.size(), spilled_at, oldest, pinned_at) == -1);
+    check(spilled_victim(0, spilled_at, oldest, pinned_at) == -1);
     // Evicting the least recently used entries leaves room for the new one.
     pinned = {false, false, false, false};
     std::vector<bool> evicted(used.size(), false);

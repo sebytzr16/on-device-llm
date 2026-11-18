@@ -142,8 +142,20 @@ class ChatState {
   /// showed twice while the chat was named.
   final bool answerSaved;
 
+  /// [isGenerating] is set by a quick edit of the saved chat (delete, undo,
+  /// branch restore, copy) to lock other actions, not by a turn: listeners
+  /// that react to an answer finishing must ignore it.
+  final bool housekeeping;
+
   /// Whether the list shows the answer being written below [messages].
-  bool get showsLiveAnswer => isGenerating && !answerSaved;
+  bool get showsLiveAnswer => isGenerating && !answerSaved && !housekeeping;
+
+  /// A turn (not [housekeeping]) ended between [previous] and this state.
+  bool turnEndedSince(ChatState? previous) =>
+      previous != null &&
+      previous.isGenerating &&
+      !previous.housekeeping &&
+      !isGenerating;
 
   /// Facts the memory feature just stored from the last message, for the
   /// compact banner with its edit/discard affordance.
@@ -162,6 +174,7 @@ class ChatState {
     this.learned = const [],
     this.temporary = false,
     this.answerSaved = false,
+    this.housekeeping = false,
   });
   ChatState copyWith({
     List<ChatMessage>? messages,
@@ -179,6 +192,7 @@ class ChatState {
     Map<String, dynamic>? metrics,
     List<Memory>? learned,
     bool? answerSaved,
+    bool? housekeeping,
   }) => ChatState(
     messages: messages ?? this.messages,
     isGenerating: isGenerating ?? this.isGenerating,
@@ -192,6 +206,7 @@ class ChatState {
     metrics: metrics ?? this.metrics,
     learned: learned ?? this.learned,
     answerSaved: answerSaved ?? this.answerSaved,
+    housekeeping: housekeeping ?? this.housekeeping,
     temporary: temporary,
   );
 }
@@ -402,7 +417,11 @@ class ChatNotifier extends _ChatBase
     }
     final revision = _navigation;
     final db = ref.read(appDatabaseProvider);
-    state = state.copyWith(isGenerating: true, clearError: true);
+    state = state.copyWith(
+      isGenerating: true,
+      housekeeping: true,
+      clearError: true,
+    );
     String? copied;
     try {
       final chat = await db.getChat(id);
@@ -420,7 +439,9 @@ class ChatNotifier extends _ChatBase
     } catch (_) {
       if (_alive) state = state.copyWith(error: _t.desktopChatActionFailed);
     } finally {
-      if (_alive) state = state.copyWith(isGenerating: false);
+      if (_alive) {
+        state = state.copyWith(isGenerating: false, housekeeping: false);
+      }
     }
     if (copied != null && _alive && revision == _navigation) {
       await openChat(copied);

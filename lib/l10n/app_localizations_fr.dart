@@ -6470,6 +6470,22 @@ class AppLocalizationsFr extends AppLocalizations {
       'Configuration MCP invalide. Utilisez mcpServers avec un nom unique et soit une commande, un tableau args et un objet env, soit une URL.';
 
   @override
+  String get mcpNameTakenError =>
+      'Un serveur porte déjà ce nom. Choisissez-en un autre.';
+
+  @override
+  String get mcpArgsError =>
+      'Les arguments doivent être un tableau JSON de chaînes, par exemple [\"--port\", \"8080\"], ou [] si aucun.';
+
+  @override
+  String get mcpEnvError =>
+      'L’environnement doit être un objet JSON dont les valeurs sont des chaînes, ou des accolades vides si aucun.';
+
+  @override
+  String get mcpCommandError =>
+      'La commande doit être le chemin complet d’un fichier .exe existant. npx, uvx, les shells et les noms trouvés dans le PATH ne sont pas lancés.';
+
+  @override
   String get mcpLoopbackError =>
       'MCP HTTP accepte uniquement http://127.0.0.1 ou http://localhost. La règle hors ligne bloque les autres hôtes.';
 
@@ -7134,6 +7150,18 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get tuneError =>
       'Échec de la mesure ou de l’enregistrement local. Vérifiez le modèle et réessayez.';
+
+  @override
+  String get optimizeMeasurementError =>
+      'Impossible de mesurer les performances de ce modèle. Vérifiez le modèle et réessayez.';
+
+  @override
+  String get optimizeSaveError =>
+      'Impossible d’enregistrer les données d’optimisation sur cet appareil. Réessayez.';
+
+  @override
+  String get optimizeReloadError =>
+      'Impossible de recharger le modèle après l’optimisation. Réessayez de le charger.';
 
   @override
   String tuneReceipt(Object date) {
@@ -8572,6 +8600,9 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get remotePairTrustNote =>
       'Effectuez l’association uniquement sur un réseau de confiance.';
+
+  @override
+  String get runGenerationSpeed => 'Vitesse de génération';
 
   @override
   String get runSpeed => 'vitesse';
@@ -10149,4 +10180,109 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get uiModelCardHide => 'Masquer';
+
+  @override
+  String get confirmRemoveDownloadTitle => 'Retirer le téléchargement ?';
+
+  @override
+  String get confirmRemoveDownloadHint =>
+      'Les fichiers téléchargés seront supprimés de cet appareil. Vous pourrez les télécharger à nouveau plus tard.';
+
+  @override
+  String get confirmRemoveZimTitle => 'Retirer Wikipédia hors ligne ?';
+
+  @override
+  String get confirmRemoveZimHint =>
+      'L\'archive sera supprimée de cet appareil. Pour l\'utiliser à nouveau, il faudra réimporter le fichier.';
+
+  @override
+  String get confirmDeleteCollectionTitle => 'Supprimer cette collection ?';
+
+  @override
+  String get confirmDeleteCollectionHint =>
+      'Ses fichiers et leur index seront supprimés de cet appareil. Action irréversible.';
+
+  @override
+  String get confirmDeleteGoalTitle => 'Supprimer ce rapport ?';
+
+  @override
+  String get confirmCannotUndo => 'Action irréversible.';
+
+  @override
+  String get confirmDeleteDocumentTitle => 'Supprimer ce document ?';
+
+  @override
+  String islandRestoringModel(String model) {
+    return 'Chargement de votre dernier modèle : $model';
+  }
+
+  @override
+  String get engineUpdateTitle => 'Mises à jour du moteur';
+
+  @override
+  String engineUpdateBuiltIn(String tag) {
+    return 'Moteur : intégré ($tag)';
+  }
+
+  @override
+  String engineUpdatePack(String tag) {
+    return 'Moteur : mise à jour téléchargée $tag';
+  }
+
+  @override
+  String get engineUpdateAuto =>
+      'Installer automatiquement les mises à jour du moteur';
+
+  @override
+  String get engineUpdateAutoHint =>
+      'Vérifie les versions GitHub de l’application une fois par jour. Les mises à jour sont signées, vérifiées avant l’installation et s’appliquent au prochain chargement d’un modèle.';
+
+  @override
+  String get engineUpdateCheckNow => 'Rechercher des mises à jour du moteur';
+
+  @override
+  String get engineUpdateChecking => 'Vérification…';
+
+  @override
+  String get engineUpdateUpToDate => 'Le moteur est à jour.';
+
+  @override
+  String engineUpdateAvailable(String tag, String size) {
+    return '$tag est disponible ($size Mo).';
+  }
+
+  @override
+  String get engineUpdateInstall => 'Installer';
+
+  @override
+  String engineUpdateDownloading(String tag, String percent) {
+    return 'Téléchargement de $tag : $percent %';
+  }
+
+  @override
+  String get engineUpdateReady =>
+      'Mise à jour du moteur prête, appliquée au prochain chargement';
+
+  @override
+  String engineUpdateFailed(String message) {
+    return 'Échec de la mise à jour du moteur : $message';
+  }
+
+  @override
+  String engineUpdateLastCheck(String time) {
+    return 'Dernière vérification $time';
+  }
+
+  @override
+  String get engineUpdateUseBuiltIn => 'Utiliser le moteur intégré';
+
+  @override
+  String get engineUpdateRemove => 'Supprimer les moteurs téléchargés';
+
+  @override
+  String get engineUpdateReverted =>
+      'Le moteur téléchargé n’a pas pu se charger deux fois : le moteur intégré est de nouveau utilisé.';
+
+  @override
+  String get engineUpdateNoGitHub => 'GitHub est injoignable.';
 }

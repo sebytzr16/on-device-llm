@@ -122,6 +122,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final temporary = ref.read(chatProvider).temporary;
     final key = temporary ? 'temporary' : chatId ?? 'new';
     if (key == _draftKey) return;
+    ref.read(voiceProvider.notifier).discardDictation();
+    // Dictation from the chat being left would type into the next draft.
+    if (ref.read(voiceProvider).listening) {
+      unawaited(ref.read(voiceProvider.notifier).stop());
+    }
     _draftTimer?.cancel();
     if (!_temporaryDraft) {
       unawaited(
@@ -211,7 +216,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // "Share to OnDevice LLM": the share that opened the app, then any
     // share that reaches it while it runs.
     _shares = ShareInbox.arrivals.listen((_) => _openShare());
-    WidgetsBinding.instance.addPostFrameCallback((_) => _openShare());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _openShare();
+      // Load the model used last time while the user reads or types.
+      unawaited(ref.read(modelManagerProvider.notifier).restoreLastModel());
+    });
   }
 
   void _onScroll() {
@@ -545,6 +554,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (ref.read(chatProvider).isGenerating) return;
     final text = _input.text;
     if (isChatAction(text)) {
+      ref.read(voiceProvider.notifier).discardDictation();
+      if (ref.read(voiceProvider).listening) {
+        unawaited(ref.read(voiceProvider.notifier).stop());
+      }
       _input.clear();
       await runChatAction(context, ref, text, export: _exportSheet);
       return;
@@ -558,6 +571,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       lang: Localizations.localeOf(context).languageCode,
       messages: ref.read(chatProvider).messages,
     );
+    ref.read(voiceProvider.notifier).discardDictation();
+    // Dictation still running would write the sent text back in the box.
+    if (ref.read(voiceProvider).listening) {
+      unawaited(ref.read(voiceProvider.notifier).stop());
+    }
     _input.clear();
     setState(_pending.clear);
     _saveDraft();
@@ -673,6 +691,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         versionsByParent.putIfAbsent(message.parentId, () => []).add(message);
       }
     }
+    // Restoring a version moves its rows to the end of the list; number the
+    // versions by when they were written so 1/2 and 2/2 stay put.
+    for (final list in versionsByParent.values) {
+      list.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    }
     final lastUser = liveMessages
         .where((m) => m.role == ChatRole.user)
         .lastOrNull;
@@ -695,8 +718,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
     ref.listen(chatProvider, (previous, next) {
       // Read the finished answer aloud when the setting asks for it.
-      if (previous?.isGenerating == true &&
-          !next.isGenerating &&
+      if (next.turnEndedSince(previous) &&
           next.error == null &&
           ref.read(settingsProvider).readAloud &&
           // The conversation screen speaks its own answers.
@@ -712,8 +734,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       }
       // A finished answer says so at the top (tester, 2026-10-20), with a
       // light tap.
-      if (previous?.isGenerating == true &&
-          !next.isGenerating &&
+      if (next.turnEndedSince(previous) &&
           next.error == null &&
           !ConversationScreen.open) {
         final last = next.messages.lastOrNull;
@@ -930,6 +951,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                 onNotification: _keepBottom,
                                 child: ListView.builder(
                                   controller: _scroll,
+                                  // iOS has no dismiss key for the multiline
+                                  // composer: dragging the chat closes it.
+                                  keyboardDismissBehavior:
+                                      ScrollViewKeyboardDismissBehavior.onDrag,
                                   padding: const EdgeInsets.symmetric(
                                     vertical: AppSpace.lg,
                                   ),
@@ -947,7 +972,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                       final isLastAnswer =
                                           !busy &&
                                           m.id == lastAssistant?.id &&
-                                          m == liveMessages.last;
+                                          m == liveMessages.lastOrNull;
                                       final springs = _springsIn(m);
                                       return SpringEntrance(
                                         key: ValueKey('in-${m.id}'),
@@ -1006,7 +1031,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                               isLastAnswer ||
                                                   (!busy &&
                                                       m.role == ChatRole.user &&
-                                                      m == liveMessages.last)
+                                                      m ==
+                                                          liveMessages
+                                                              .lastOrNull)
                                               ? notifier.regenerate
                                               : null,
                                           onSearchWeb:
@@ -1111,7 +1138,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             busy: busy,
             canSend: !models.isLoadingModel,
             onSend: _send,
-            onStop: notifier.cancel,
+            // A quick edit of the saved chat (delete, restore) has nothing
+            // to stop: Stop only showed "Stopping" for it.
+            onStop: state.housekeeping ? null : notifier.cancel,
             attachments: _pending,
             textOnly: diffusion,
             onAttach: diffusion ? null : (from) => _attach(from: from),
