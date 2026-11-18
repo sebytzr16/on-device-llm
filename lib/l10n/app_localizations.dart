@@ -12081,6 +12081,24 @@ abstract class AppLocalizations {
   /// **'Measurement or local save failed. Check the model and try again.'**
   String get tuneError;
 
+  /// No description provided for @optimizeMeasurementError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not measure this model. Check the model and try again.'**
+  String get optimizeMeasurementError;
+
+  /// No description provided for @optimizeSaveError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save Optimize data on this device. Try again.'**
+  String get optimizeSaveError;
+
+  /// No description provided for @optimizeReloadError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not reload the model after Optimize. Try loading it again.'**
+  String get optimizeReloadError;
+
   /// No description provided for @tuneReceipt.
   ///
   /// In en, this message translates to:
@@ -16872,6 +16890,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Delete this document?'**
   String get confirmDeleteDocumentTitle;
+
+  /// No description provided for @islandRestoringModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading your last model: {model}'**
+  String islandRestoringModel(String model);
 }
 
 class _AppLocalizationsDelegate

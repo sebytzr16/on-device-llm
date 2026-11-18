@@ -7063,6 +7063,18 @@ class AppLocalizationsEn extends AppLocalizations {
       'Measurement or local save failed. Check the model and try again.';
 
   @override
+  String get optimizeMeasurementError =>
+      'Could not measure this model. Check the model and try again.';
+
+  @override
+  String get optimizeSaveError =>
+      'Could not save Optimize data on this device. Try again.';
+
+  @override
+  String get optimizeReloadError =>
+      'Could not reload the model after Optimize. Try loading it again.';
+
+  @override
   String tuneReceipt(Object date) {
     return 'Benchmark receipt · $date';
   }
@@ -10065,4 +10077,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get confirmDeleteDocumentTitle => 'Delete this document?';
+
+  @override
+  String islandRestoringModel(String model) {
+    return 'Loading your last model: $model';
+  }
 }

@@ -798,9 +798,50 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       final info = _fromRow(row);
       if (!info.isDownloaded || info.localPath == null) return;
       if (info.id == diffusionGemmaModelId) return;
-      await loadModel(info);
+      await _loadWithIsland(info);
     } catch (e) {
       _log.info('Last model was not restored', e);
+    }
+  }
+
+  /// The startup load says so in the status island: it spins, then fills
+  /// with the load's progress, and flashes "Model ready" when done.
+  Future<void> _loadWithIsland(ModelInfo info) async {
+    final island = ref.read(islandProvider.notifier);
+    final t = stringsFor(ref.read(settingsProvider).localeCode);
+    IslandMessage message(double? progress) => IslandMessage(
+      t.islandRestoringModel(info.displayName),
+      tone: IslandTone.busy,
+      progress: progress,
+    );
+    // Only this load's own pill is cleared or replaced: a chat turn or
+    // search may take the island over meanwhile.
+    var shown = message(null);
+    island.activity(shown);
+    final ticker = Timer.periodic(const Duration(milliseconds: 150), (_) {
+      if (!_alive || !state.isLoadingModel) return;
+      if (ref.read(islandProvider).activity != shown) return;
+      final next = message(state.loadProgress);
+      if (next == shown) return;
+      shown = next;
+      island.activity(shown);
+    });
+    var loaded = false;
+    try {
+      await loadModel(info);
+      loaded = state.loadedModelId == info.id;
+    } finally {
+      ticker.cancel();
+      if (_alive && ref.read(islandProvider).activity == shown) {
+        island.activity(null);
+        if (loaded) {
+          island.toast(
+            t.islandModelReady,
+            tone: IslandTone.done,
+            duration: const Duration(milliseconds: 1400),
+          );
+        }
+      }
     }
   }
 

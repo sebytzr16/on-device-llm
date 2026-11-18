@@ -47,6 +47,30 @@ void main() {
     expect(setups.map((s) => s.speculationMode).toSet(), {'off', 'auto'});
     expect(setups.every((s) => s.draftMaxTokens == cpu.draftMaxTokens), isTrue);
   });
+  test('iOS sweep compares Metal and CPU with safe settings', () {
+    final setups = pcOptimizationSetups(
+      cpu.copyWith(
+        backend: GpuBackend.metal,
+        nGpuLayers: 24,
+        kvCacheType: KvCacheType.q8_0,
+        mtp: true,
+      ),
+      ios: true,
+      bigCoreCount: 2,
+      mtpHead: true,
+      userDraft: 'draft',
+      cpuMoe: [1, 3],
+    );
+    expect(setups.map((s) => s.nGpuLayers).toSet(), {0, 24});
+    expect(setups.map((s) => s.cpuThreads).toSet(), {4, 6});
+    for (final s in setups) {
+      expect(s.speculationMode, 'off');
+      expect(s.mtp, isFalse);
+      expect(s.draftModelId, isEmpty);
+      expect(s.nCpuMoe, -1);
+      expect(s.flashAttention, isTrue);
+    }
+  });
   for (final backend in [GpuBackend.auto, GpuBackend.cpu, GpuBackend.opencl]) {
     test('mobile defaults respect the $backend backend and budget', () async {
       final tried = <InferenceSettings>[];

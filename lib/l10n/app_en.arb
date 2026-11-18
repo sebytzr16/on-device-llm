@@ -3777,6 +3777,9 @@
   "nativeSetOverflowStop": "Stop at context limit",
   "tuneCancel": "Cancel tuning",
   "tuneError": "Measurement or local save failed. Check the model and try again.",
+  "optimizeMeasurementError": "Could not measure this model. Check the model and try again.",
+  "optimizeSaveError": "Could not save Optimize data on this device. Try again.",
+  "optimizeReloadError": "Could not reload the model after Optimize. Try loading it again.",
   "tuneReceipt": "Benchmark receipt · {date}",
   "tuneExport": "Export receipt to JSON",
   "tuneExported": "Receipt saved.",
@@ -5828,5 +5831,7 @@
   "confirmDeleteCollectionHint": "Its files and their index are removed from this device. This can't be undone.",
   "confirmDeleteGoalTitle": "Delete this report?",
   "confirmCannotUndo": "This can't be undone.",
-  "confirmDeleteDocumentTitle": "Delete this document?"
+  "confirmDeleteDocumentTitle": "Delete this document?",
+  "islandRestoringModel": "Loading your last model: {model}",
+  "@islandRestoringModel": {"placeholders": {"model": {"type": "String"}}}
 }

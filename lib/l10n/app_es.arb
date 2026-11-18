@@ -2494,6 +2494,9 @@
   "nativeSetOverflowStop": "Detener al límite del contexto",
   "tuneCancel": "Cancelar optimización",
   "tuneError": "Error de medición o de guardado local. Comprueba el modelo e inténtalo de nuevo.",
+  "optimizeMeasurementError": "No se pudo medir el rendimiento de este modelo. Comprueba el modelo e inténtalo de nuevo.",
+  "optimizeSaveError": "No se pudieron guardar los datos de optimización en este dispositivo. Inténtalo de nuevo.",
+  "optimizeReloadError": "No se pudo volver a cargar el modelo tras la optimización. Intenta cargarlo de nuevo.",
   "tuneReceipt": "Recibo de medición · {date}",
   "tuneExport": "Exportar recibo a JSON",
   "tuneExported": "Recibo guardado.",
@@ -3838,5 +3841,6 @@
   "confirmDeleteCollectionHint": "Sus archivos y su índice se quitarán de este dispositivo. No se puede deshacer.",
   "confirmDeleteGoalTitle": "¿Eliminar este informe?",
   "confirmCannotUndo": "No se puede deshacer.",
-  "confirmDeleteDocumentTitle": "¿Eliminar este documento?"
+  "confirmDeleteDocumentTitle": "¿Eliminar este documento?",
+  "islandRestoringModel": "Cargando tu último modelo: {model}"
 }

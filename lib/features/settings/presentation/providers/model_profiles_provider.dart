@@ -68,41 +68,49 @@ class ModelProfilesNotifier
   Map<String, dynamic> of(String modelId) => state[modelId] ?? const {};
 
   /// Replaces the profile of [modelId]; an empty map removes it.
-  Future<void> set(String modelId, Map<String, dynamic> overrides) async {
-    await ready;
-    if (!_alive) return;
-    await _set(modelId, overrides);
-  }
+  /// With [requirePersistence], the new profile becomes active after saving.
+  Future<void> set(
+    String modelId,
+    Map<String, dynamic> overrides, {
+    bool requirePersistence = false,
+  }) => _set(modelId, (_) => overrides, requirePersistence: requirePersistence);
 
-  Future<void> _set(String modelId, Map<String, dynamic> overrides) async {
-    final clean = SettingsResolver.sanitize(overrides);
-    final next = Map<String, Map<String, dynamic>>.from(state);
-    if (clean.isEmpty) {
-      next.remove(modelId);
-    } else {
-      next[modelId] = clean;
-    }
-    state = next;
-    final encoded = jsonEncode(next);
-    _writes = _writes.then((_) async {
+  Future<void> _set(
+    String modelId,
+    Map<String, dynamic> Function(Map<String, dynamic>) update, {
+    bool requirePersistence = false,
+  }) async {
+    await ready;
+    final write = _writes.then((_) async {
+      if (!_alive) return;
+      final clean = SettingsResolver.sanitize(update(of(modelId)));
+      final next = {...state};
+      if (clean.isEmpty) {
+        next.remove(modelId);
+      } else {
+        next[modelId] = clean;
+      }
+      if (!requirePersistence) state = next;
+      final encoded = jsonEncode(next);
       try {
         _prefs ??= await SharedPreferences.getInstance();
-        await _prefs!.setString(_kProfilesKey, encoded);
+        if (!await _prefs!.setString(_kProfilesKey, encoded)) {
+          throw StateError('Model profile persistence failed');
+        }
       } catch (e, st) {
-        quietFailure('model_profiles_provider:84', e, st);
+        if (requirePersistence) rethrow;
+        quietFailure('modelProfiles.save', e, st);
       }
+      if (requirePersistence && _alive) state = next;
     });
-    await _writes;
+    _writes = write.catchError((Object _, StackTrace _) {});
+    await write;
   }
 
-  Future<void> setKey(String modelId, String key, Object? value) async {
-    await ready;
-    if (!_alive) return;
-    await _set(
-      modelId,
-      {...of(modelId), key: value}..removeWhere((k, v) => v == null),
-    );
-  }
+  Future<void> setKey(String modelId, String key, Object? value) => _set(
+    modelId,
+    (current) => {...current, key: value}..removeWhere((k, v) => v == null),
+  );
 
   Future<void> clear(String modelId) => set(modelId, const {});
 }

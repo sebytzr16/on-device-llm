@@ -7136,6 +7136,18 @@ class AppLocalizationsEs extends AppLocalizations {
       'Error de medición o de guardado local. Comprueba el modelo e inténtalo de nuevo.';
 
   @override
+  String get optimizeMeasurementError =>
+      'No se pudo medir el rendimiento de este modelo. Comprueba el modelo e inténtalo de nuevo.';
+
+  @override
+  String get optimizeSaveError =>
+      'No se pudieron guardar los datos de optimización en este dispositivo. Inténtalo de nuevo.';
+
+  @override
+  String get optimizeReloadError =>
+      'No se pudo volver a cargar el modelo tras la optimización. Intenta cargarlo de nuevo.';
+
+  @override
   String tuneReceipt(Object date) {
     return 'Recibo de medición · $date';
   }
@@ -10180,4 +10192,9 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get confirmDeleteDocumentTitle => '¿Eliminar este documento?';
+
+  @override
+  String islandRestoringModel(String model) {
+    return 'Cargando tu último modelo: $model';
+  }
 }

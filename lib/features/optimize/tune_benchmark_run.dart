@@ -51,6 +51,9 @@ class TuneBenchmarkRun implements TuneRunner {
     final gpu = (e['gpuLayers'] as num?) ?? 0;
     if (gpu <= 0) return true;
     final need = e['vramNeedMb'] as num?, free = e['vramFreeMb'] as num?;
+    // The bridge counts unified GPU memory in RAM and reports no separate
+    // VRAM budget for it.
+    if (need == 0 && free == null) return true;
     return need != null && free != null && need + s.vramReserveMb <= free;
   }
 

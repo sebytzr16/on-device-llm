@@ -3,13 +3,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:logging/logging.dart';
 import 'package:ondevice_llm/core/l10n/l10n.dart';
 import 'package:ondevice_llm/core/platform/desktop_host.dart';
+import 'package:ondevice_llm/core/platform/device_info.dart';
 import 'package:ondevice_llm/core/providers/shared_providers.dart';
 import 'package:ondevice_llm/desktop/desktop_theme.dart';
 import 'package:ondevice_llm/desktop/model_tune_section.dart';
 import 'package:ondevice_llm/features/models/domain/entities/model_info.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
+import 'package:ondevice_llm/features/optimize/benchmark_receipt.dart';
 import 'package:ondevice_llm/features/optimize/model_speed_engine_provider.dart';
 import 'package:ondevice_llm/features/optimize/model_tuner.dart';
 import 'package:ondevice_llm/features/optimize/optimize_controller.dart';
@@ -22,6 +25,8 @@ import 'package:ondevice_llm/features/tools/domain/tool_spec.dart';
 import 'package:ondevice_llm/inference/engine/llama_engine.dart';
 import 'package:ondevice_llm/inference/engine/text_engine.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
 import 'advanced_pages_2_test.dart' show TestModels, TestSettings, testModel;
 
@@ -80,6 +85,43 @@ class _FailEstimator extends _Estimator {
     List<({String path, double scale})> adapters = const [],
     String? draftModelPath,
   }) async => throw StateError('Estimator failed');
+}
+
+class _IosEstimator extends _Estimator {
+  @override
+  Future<Map<String, dynamic>> estimate({
+    required String modelPath,
+    required InferenceSettings settings,
+    String? mmprojPath,
+    List<({String path, double scale})> adapters = const [],
+    String? draftModelPath,
+  }) async => {
+    'layers': 24,
+    'gpuLayers': settings.nGpuLayers.clamp(0, 24),
+    'ramNeedMb': 2048,
+    'ramAvailableMb': 0,
+    'ramTotalMb': 0,
+    'vramNeedMb': 0,
+  };
+}
+
+class _FailReceipts extends BenchmarkReceipts {
+  @override
+  Future<void> save(BenchmarkReceipt receipt) async {
+    throw StateError('Receipt disk unavailable');
+  }
+}
+
+class _ProfileWriteStore extends InMemorySharedPreferencesStore {
+  _ProfileWriteStore() : super.empty();
+
+  bool failProfileWrite = true;
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async {
+    if (failProfileWrite && key == 'flutter.model_profiles_v1') return false;
+    return super.setValue(valueType, key, value);
+  }
 }
 
 class _Settings extends TestSettings {
@@ -343,6 +385,141 @@ void main() {
       },
     );
     expect(result.kvCacheType, KvCacheType.q8_0);
+  });
+
+  for (final enoughMemory in [true, false]) {
+    test(
+      'iOS Metal sweep uses the process budget (fits: $enoughMemory)',
+      () async {
+        final engine = _Engine();
+        final c = ProviderContainer(
+          overrides: [
+            settingsProvider.overrideWith(_Settings.new),
+            modelManagerProvider.overrideWith(_Models.new),
+            llamaEstimatorProvider.overrideWithValue(_IosEstimator()),
+            modelSpeedEngineProvider.overrideWithValue(engine),
+            optimizeIosProvider.overrideWithValue(true),
+            optimizeDeviceMemoryProvider.overrideWithValue(
+              () async => DeviceMemory(
+                totalBytes: 8 << 30,
+                availableBytes: (enoughMemory ? 3 : 2) << 30,
+                lowMemory: false,
+              ),
+            ),
+          ],
+        );
+        addTearDown(c.dispose);
+        expect(c.read(optimizeMobileProvider), isTrue);
+        final provider = optimizeControllerProvider(testModel.id);
+        final original = _stale.copyWith(backend: GpuBackend.metal);
+        await c.read(provider.notifier).start(testModel, original);
+        final receipts = c.read(benchmarkReceiptsProvider);
+        if (enoughMemory) {
+          expect(c.read(provider).saved, isTrue);
+          expect(engine.calls, greaterThan(0));
+          expect(receipts.map((r) => r.json['modelId']).toSet(), {
+            testModel.id,
+          });
+          final profile = c
+              .read(modelProfilesProvider.notifier)
+              .of(testModel.id);
+          expect(profile['nGpuLayers'], 999);
+          // Speculation is desktop-only: a phone profile never stores it.
+          expect(profile.containsKey('speculationMode'), isFalse);
+          expect(await c.read(optimizedModelsProvider.future), {testModel.id});
+        } else {
+          expect(c.read(provider).failure, OptimizeFailure.measurement);
+          expect(engine.calls, 0);
+          expect(receipts, isEmpty);
+        }
+      },
+    );
+  }
+
+  test(
+    'Optimize reports receipt failure and logs the underlying error',
+    () async {
+      final logs = <LogRecord>[];
+      final subscription = Logger.root.onRecord.listen(logs.add);
+      addTearDown(subscription.cancel);
+      final c = ProviderContainer(
+        overrides: [
+          settingsProvider.overrideWith(_Settings.new),
+          modelManagerProvider.overrideWith(_Models.new),
+          llamaEstimatorProvider.overrideWithValue(_Estimator()),
+          modelSpeedEngineProvider.overrideWithValue(_Engine()),
+          benchmarkReceiptsProvider.overrideWith(_FailReceipts.new),
+          optimizeMobileProvider.overrideWithValue(false),
+        ],
+      );
+      addTearDown(c.dispose);
+      final provider = optimizeControllerProvider(testModel.id);
+      await c.read(provider.notifier).start(testModel, _stale);
+      expect(c.read(provider).failure, OptimizeFailure.save);
+      final log = logs.singleWhere((record) => record.loggerName == 'optimize');
+      expect(log.error.toString(), contains('Receipt disk unavailable'));
+      expect(log.stackTrace, isNotNull);
+      expect(await c.read(optimizedModelsProvider.future), isEmpty);
+    },
+  );
+
+  test(
+    'a failed strict profile save keeps the profile and permits retry',
+    () async {
+      final previousStore = SharedPreferencesStorePlatform.instance;
+      final store = _ProfileWriteStore();
+      SharedPreferencesStorePlatform.instance = store;
+      addTearDown(
+        () => SharedPreferencesStorePlatform.instance = previousStore,
+      );
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+      final profiles = c.read(modelProfilesProvider.notifier);
+      await expectLater(
+        profiles.set(testModel.id, {
+          'nGpuLayers': 24,
+        }, requirePersistence: true),
+        throwsStateError,
+      );
+      expect(profiles.of(testModel.id), isEmpty);
+      store.failProfileWrite = false;
+      await profiles.set(testModel.id, {
+        'nGpuLayers': 4,
+      }, requirePersistence: true);
+      expect(profiles.of(testModel.id), {'nGpuLayers': 4});
+    },
+  );
+
+  testWidgets('iOS Optimize uses the phone label and description', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          modelManagerProvider.overrideWith(_Models.new),
+          optimizeIosProvider.overrideWithValue(true),
+        ],
+        child: MaterialApp(
+          theme: DesktopTheme.of(AccentChoice.amber, dark: true),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: const Scaffold(
+            body: ModelOptimizeSection(
+              model: testModel,
+              settings: InferenceSettings(),
+            ),
+          ),
+        ),
+      ),
+    );
+    final t = AppLocalizationsEn();
+    expect(find.text(t.optimizeSettingsTitle), findsOneWidget);
+    expect(
+      find.text(t.optimizeSettingsHint(testModel.displayName)),
+      findsOneWidget,
+    );
+    expect(find.text(t.desktopOptimize), findsNothing);
+    expect(find.text(t.desktopOptimizeHint), findsNothing);
   });
 
   test(
