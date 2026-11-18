@@ -48,9 +48,7 @@ void main() {
     expect(find.byKey(const Key('engine-update-install')), findsNothing);
   });
 
-  testWidgets('an available pack offers Install with its size', (
-    tester,
-  ) async {
+  testWidgets('an available pack offers Install with its size', (tester) async {
     final fixed = await _pump(
       tester,
       const EngineUpdateView(
@@ -77,7 +75,10 @@ void main() {
     expect(find.byKey(const Key('engine-update-use-built-in')), findsOneWidget);
     expect(find.byKey(const Key('engine-update-remove')), findsOneWidget);
     expect(find.textContaining('next load'), findsOneWidget);
-    expect(find.textContaining('built-in engine is in use again'), findsWidgets);
+    expect(
+      find.textContaining('built-in engine is in use again'),
+      findsWidgets,
+    );
   });
 
   testWidgets('downloading shows progress', (tester) async {

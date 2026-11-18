@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/core/motion/motion.dart';
@@ -29,7 +31,7 @@ void main() {
             body: Center(child: Text('Second page', key: Key('second'))),
           ),
         );
-        navigator.currentState!.push(route);
+        unawaited(navigator.currentState!.push(route));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 1));
         final resting = tester.getTopLeft(find.byKey(const Key('second')));
