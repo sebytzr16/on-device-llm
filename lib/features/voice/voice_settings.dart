@@ -262,6 +262,7 @@ class _VoiceDownloadRow extends ConsumerWidget {
             message: context.l10n.confirmRemoveDownloadHint,
             confirmLabel: context.l10n.remove,
             destructive: true,
+            confirmKey: const Key('voice-remove-confirm'),
           );
           if (!ok) return;
           for (final p in selectedPacks) {

@@ -10,8 +10,8 @@ import 'package:flutter/material.dart' show Icons;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/errors/exceptions.dart';
+import '../../data/last_model_store.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/platform/desktop_host.dart';
@@ -733,7 +733,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
           clearLoadingModel: true,
           clearLoadProgress: true,
         );
-        unawaited(_rememberLastModel(info.id));
+        unawaited(LastModelStore.remember(info.id));
         if (engine.loadCount != loads) {
           _noteContextCap(engine.metrics);
           if (DesktopHost.active) {
@@ -772,17 +772,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     }
   }
 
-  static const _lastModelKey = 'last_loaded_model_id';
   bool _restoredLastModel = false;
-
-  Future<void> _rememberLastModel(String id) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_lastModelKey, id);
-    } catch (e) {
-      _log.fine('Could not remember the last model', e);
-    }
-  }
 
   /// Loads the model that was loaded last time, once per app run, so the
   /// first message does not wait for it. It does nothing when a model is
@@ -794,8 +784,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     _restoredLastModel = true;
     try {
       await ready;
-      final prefs = await SharedPreferences.getInstance();
-      final id = prefs.getString(_lastModelKey);
+      final id = await LastModelStore.read();
       if (id == null || !_alive) return;
       if (ref.read(settingsProvider).remoteEnabled) return;
       if (state.loadedModelId != null ||

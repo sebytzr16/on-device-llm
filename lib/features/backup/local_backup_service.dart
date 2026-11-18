@@ -65,6 +65,8 @@ class LocalBackupService {
     'optimized_models_v1':
         'Optimize results are measured on this device; a restore elsewhere offers it again.',
     'desktop.modelsFolder': 'Device-local model paths.',
+    'last_loaded_model_id':
+        'The model loaded at start; its files stay on this device.',
     'desktop.previousModelFolders': 'Device-local model paths.',
     'device_host_access_token': 'Secret; never included in a backup.',
     'remote_usage_v1': 'Device-local usage accounting.',
