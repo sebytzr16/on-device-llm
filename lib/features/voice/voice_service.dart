@@ -323,7 +323,7 @@ class VoiceNotifier extends Notifier<VoiceState> {
           }
         },
         listenOptions: SpeechListenOptions(
-          onDevice: true,
+          onDevice: onDeviceOnly,
           partialResults: true,
           cancelOnError: true,
           listenFor: const Duration(seconds: 60),

@@ -321,6 +321,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
         _session.listenSystem();
       }
     });
+    ref.listen(voiceProvider.select((v) => v.listening), (was, now) {
+      if (was == true && !now) _session.systemListeningEnded();
+    });
     final packs = ref.watch(voiceModelsProvider);
     final modelName = _session.remote
         ? _session.remoteName

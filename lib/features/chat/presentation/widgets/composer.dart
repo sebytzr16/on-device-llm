@@ -39,7 +39,10 @@ class ChatComposer extends ConsumerStatefulWidget {
   /// Lets the screen put the cursor in the box (widget, shared text).
   final FocusNode? focusNode;
   final bool busy, canSend;
-  final VoidCallback onSend, onStop;
+  final VoidCallback onSend;
+
+  /// Null while there is nothing to stop (a quick edit of the saved chat).
+  final VoidCallback? onStop;
 
   /// Files waiting to go with the next message, and the attach/remove flows.
   /// [onAttach] gets the + button, for the sheet to grow out of.
@@ -61,7 +64,7 @@ class ChatComposer extends ConsumerStatefulWidget {
     required this.busy,
     required this.canSend,
     required this.onSend,
-    required this.onStop,
+    this.onStop,
     this.attachments = const [],
     this.textOnly = false,
     this.onAttach,

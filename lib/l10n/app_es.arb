@@ -3829,5 +3829,14 @@
   "imageUnusedPartsFreed": "Partes sin usar eliminadas: {size} liberados.",
   "imageNoUnusedParts": "Nada que eliminar: cada archivo pertenece a un modelo instalado o en descarga.",
   "recommendedAllRemoved": "Las demás sugerencias para este dispositivo se quitaron de la lista.",
-  "uiModelCardHide": "Ocultar"
+  "uiModelCardHide": "Ocultar",
+  "confirmRemoveDownloadTitle": "¿Quitar la descarga?",
+  "confirmRemoveDownloadHint": "Se borrarán los archivos descargados de este dispositivo. Puedes volver a descargarlos más tarde.",
+  "confirmRemoveZimTitle": "¿Quitar la Wikipedia sin conexión?",
+  "confirmRemoveZimHint": "Se borrará el archivo de este dispositivo. Para volver a usarlo, tendrás que importarlo de nuevo.",
+  "confirmDeleteCollectionTitle": "¿Eliminar esta colección?",
+  "confirmDeleteCollectionHint": "Sus archivos y su índice se quitarán de este dispositivo. No se puede deshacer.",
+  "confirmDeleteGoalTitle": "¿Eliminar este informe?",
+  "confirmCannotUndo": "No se puede deshacer.",
+  "confirmDeleteDocumentTitle": "¿Eliminar este documento?"
 }

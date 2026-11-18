@@ -1,0 +1,33 @@
+PODS:
+  - Flutter (1.0.0)
+  - flutter_tts (0.0.1):
+    - Flutter
+  - OnDeviceNative (0.1.0)
+  - pasteboard (0.0.1):
+    - Flutter
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - flutter_tts (from `.symlinks/plugins/flutter_tts/ios`)
+  - OnDeviceNative (from `OnDeviceNative`)
+  - pasteboard (from `.symlinks/plugins/pasteboard/ios`)
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  flutter_tts:
+    :path: ".symlinks/plugins/flutter_tts/ios"
+  OnDeviceNative:
+    :path: OnDeviceNative
+  pasteboard:
+    :path: ".symlinks/plugins/pasteboard/ios"
+
+SPEC CHECKSUMS:
+  Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
+  flutter_tts: 35ac3c7d42412733e795ea96ad2d7e05d0a75113
+  OnDeviceNative: 4c841573f00b31486db87749d3ca14503b862441
+  pasteboard: 49088aeb6119d51f976a421db60d8e1ab079b63c
+
+PODFILE CHECKSUM: 8a6c9105c00a24c20b74b34dac882e3a283a94e4
+
+COCOAPODS: 1.17.0

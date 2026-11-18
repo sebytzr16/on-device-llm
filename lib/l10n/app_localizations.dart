@@ -16818,6 +16818,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Hide'**
   String get uiModelCardHide;
+
+  /// No description provided for @confirmRemoveDownloadTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove the download?'**
+  String get confirmRemoveDownloadTitle;
+
+  /// No description provided for @confirmRemoveDownloadHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This deletes the downloaded files from this device. You can download them again later.'**
+  String get confirmRemoveDownloadHint;
+
+  /// No description provided for @confirmRemoveZimTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove offline Wikipedia?'**
+  String get confirmRemoveZimTitle;
+
+  /// No description provided for @confirmRemoveZimHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This deletes the archive from this device. To use it again, you will need to import the file again.'**
+  String get confirmRemoveZimHint;
+
+  /// No description provided for @confirmDeleteCollectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this collection?'**
+  String get confirmDeleteCollectionTitle;
+
+  /// No description provided for @confirmDeleteCollectionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Its files and their index are removed from this device. This can\'t be undone.'**
+  String get confirmDeleteCollectionHint;
+
+  /// No description provided for @confirmDeleteGoalTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this report?'**
+  String get confirmDeleteGoalTitle;
+
+  /// No description provided for @confirmCannotUndo.
+  ///
+  /// In en, this message translates to:
+  /// **'This can\'t be undone.'**
+  String get confirmCannotUndo;
+
+  /// No description provided for @confirmDeleteDocumentTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this document?'**
+  String get confirmDeleteDocumentTitle;
 }
 
 class _AppLocalizationsDelegate

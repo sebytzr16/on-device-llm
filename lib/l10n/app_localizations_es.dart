@@ -10150,4 +10150,34 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get uiModelCardHide => 'Ocultar';
+
+  @override
+  String get confirmRemoveDownloadTitle => '¿Quitar la descarga?';
+
+  @override
+  String get confirmRemoveDownloadHint =>
+      'Se borrarán los archivos descargados de este dispositivo. Puedes volver a descargarlos más tarde.';
+
+  @override
+  String get confirmRemoveZimTitle => '¿Quitar la Wikipedia sin conexión?';
+
+  @override
+  String get confirmRemoveZimHint =>
+      'Se borrará el archivo de este dispositivo. Para volver a usarlo, tendrás que importarlo de nuevo.';
+
+  @override
+  String get confirmDeleteCollectionTitle => '¿Eliminar esta colección?';
+
+  @override
+  String get confirmDeleteCollectionHint =>
+      'Sus archivos y su índice se quitarán de este dispositivo. No se puede deshacer.';
+
+  @override
+  String get confirmDeleteGoalTitle => '¿Eliminar este informe?';
+
+  @override
+  String get confirmCannotUndo => 'No se puede deshacer.';
+
+  @override
+  String get confirmDeleteDocumentTitle => '¿Eliminar este documento?';
 }

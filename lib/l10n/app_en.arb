@@ -5819,5 +5819,14 @@
   },
   "imageNoUnusedParts": "Nothing to remove: every file belongs to a model you have or are downloading.",
   "recommendedAllRemoved": "The other suggestions for this device were removed from the list.",
-  "uiModelCardHide": "Hide"
+  "uiModelCardHide": "Hide",
+  "confirmRemoveDownloadTitle": "Remove the download?",
+  "confirmRemoveDownloadHint": "This deletes the downloaded files from this device. You can download them again later.",
+  "confirmRemoveZimTitle": "Remove offline Wikipedia?",
+  "confirmRemoveZimHint": "This deletes the archive from this device. To use it again, you will need to import the file again.",
+  "confirmDeleteCollectionTitle": "Delete this collection?",
+  "confirmDeleteCollectionHint": "Its files and their index are removed from this device. This can't be undone.",
+  "confirmDeleteGoalTitle": "Delete this report?",
+  "confirmCannotUndo": "This can't be undone.",
+  "confirmDeleteDocumentTitle": "Delete this document?"
 }

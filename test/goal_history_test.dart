@@ -88,6 +88,10 @@ void main() {
         expect(find.byType(BackButton), findsNothing);
         await tester.tap(find.byKey(const Key('goal-past-delete')));
         await tester.pumpAndSettle();
+        // Deleting a report asks first: it cannot be undone.
+        expect(c.read(goalHistoryProvider), isNotEmpty);
+        await tester.tap(find.byKey(const Key('goal-past-delete-confirm')));
+        await tester.pumpAndSettle();
         expect(c.read(goalHistoryProvider), isEmpty);
         expect(workspace, findsOneWidget);
         expect(find.byKey(const Key('goal-objective')), findsOneWidget);

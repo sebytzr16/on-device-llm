@@ -10149,4 +10149,34 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get uiModelCardHide => 'Masquer';
+
+  @override
+  String get confirmRemoveDownloadTitle => 'Retirer le téléchargement ?';
+
+  @override
+  String get confirmRemoveDownloadHint =>
+      'Les fichiers téléchargés seront supprimés de cet appareil. Vous pourrez les télécharger à nouveau plus tard.';
+
+  @override
+  String get confirmRemoveZimTitle => 'Retirer Wikipédia hors ligne ?';
+
+  @override
+  String get confirmRemoveZimHint =>
+      'L\'archive sera supprimée de cet appareil. Pour l\'utiliser à nouveau, il faudra réimporter le fichier.';
+
+  @override
+  String get confirmDeleteCollectionTitle => 'Supprimer cette collection ?';
+
+  @override
+  String get confirmDeleteCollectionHint =>
+      'Ses fichiers et leur index seront supprimés de cet appareil. Action irréversible.';
+
+  @override
+  String get confirmDeleteGoalTitle => 'Supprimer ce rapport ?';
+
+  @override
+  String get confirmCannotUndo => 'Action irréversible.';
+
+  @override
+  String get confirmDeleteDocumentTitle => 'Supprimer ce document ?';
 }

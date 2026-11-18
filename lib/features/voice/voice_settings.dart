@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/design/app_dialog.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/design/app_design.dart';
@@ -254,6 +255,15 @@ class _VoiceDownloadRow extends ConsumerWidget {
       action = OutlinedButton.icon(
         key: const Key('voice-remove'),
         onPressed: () async {
+          // The "Ready" badge removes the packs: confirm, they are ~290 MB.
+          final ok = await confirmAction(
+            context,
+            title: context.l10n.confirmRemoveDownloadTitle,
+            message: context.l10n.confirmRemoveDownloadHint,
+            confirmLabel: context.l10n.remove,
+            destructive: true,
+          );
+          if (!ok) return;
           for (final p in selectedPacks) {
             await notifier.delete(p);
           }

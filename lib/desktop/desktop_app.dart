@@ -1,4 +1,5 @@
 import '../features/models/presentation/providers/fresh_downloads_provider.dart';
+import '../features/models/presentation/providers/model_manager_provider.dart';
 import 'dart:async';
 import '../features/settings/presentation/widgets/device_encryption_setting.dart';
 import 'dart:convert';
@@ -144,6 +145,12 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   @override
   void initState() {
     super.initState();
+    // Load the model used last time while the user reads or types.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(ref.read(modelManagerProvider.notifier).restoreLastModel());
+      }
+    });
     _mcp = ref.read(mcpRegistryProvider);
     _mcp.confirm = (server, call) {
       if (!mounted) return Future.value(McpConsent.deny);

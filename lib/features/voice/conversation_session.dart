@@ -1163,22 +1163,50 @@ class ConversationSession {
     _set(() {
       _phase = ConversationPhase.listening;
       _userCaption = '';
+      if (_listenError != null && _notice == _listenError) _notice = null;
+      _listenError = null;
     });
     unawaited(
-      wiring.voice.listen(
-        onDeviceOnly: wiring.settings.voiceOnDeviceOnly,
-        onText: (t) => _set(() => _userCaption = t),
-        onFinal: (t) {
-          if (_closed) return;
-          if (t.trim().isEmpty) {
-            _set(() => _phase = ConversationPhase.idle);
-            return;
-          }
-          unawaited(_ask(t));
-        },
-      ),
+      wiring.voice
+          .listen(
+            onDeviceOnly: wiring.settings.voiceOnDeviceOnly,
+            onText: (t) => _set(() => _userCaption = t),
+            onFinal: (t) {
+              if (_closed) return;
+              if (t.trim().isEmpty) {
+                _set(() => _phase = ConversationPhase.idle);
+                return;
+              }
+              unawaited(_ask(t));
+            },
+          )
+          .then((_) => _checkSystemListening()),
     );
   }
+
+  /// System voice: the recognizer can stop without a final result (an
+  /// error, a denied permission, silence) or never start. The screen then
+  /// stayed on "Listening…" with the mic off and the orb ignored taps.
+  void systemListeningEnded() {
+    if (_closed || _natural) return;
+    // A final result lands just before or after the stop; give it time.
+    Future<void>.delayed(const Duration(milliseconds: 700), () {
+      if (wiring.mounted) _checkSystemListening();
+    });
+  }
+
+  void _checkSystemListening() {
+    if (_closed || _natural || _phase != ConversationPhase.listening) return;
+    final voice = wiring.voiceState;
+    if (voice.listening) return;
+    _set(() {
+      _phase = ConversationPhase.idle;
+      if (voice.error != null) _notice = _listenError = voice.error;
+    });
+  }
+
+  /// The recognizer error last shown as the notice; a new listen clears it.
+  String? _listenError;
 
   // ---- Controls -------------------------------------------------------
 

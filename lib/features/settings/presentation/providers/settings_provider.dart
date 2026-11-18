@@ -246,8 +246,29 @@ class SettingsNotifier extends Notifier<InferenceSettings> {
     await _writes;
   }
 
-  Future<void> reset() =>
-      update(_defaults.copyWith(explicitOverrides: const {}));
+  /// Resets assistant, model and advanced settings only (as the dialog says).
+  /// Connections and their keys, language and appearance, and the active
+  /// knowledge collection are the user's own data, so they survive a reset.
+  Future<void> reset() {
+    final s = state;
+    return update(
+      _defaults.copyWith(
+        explicitOverrides: const {},
+        remoteEnabled: s.remoteEnabled,
+        remoteProfiles: s.remoteProfiles,
+        remoteProfileId: s.remoteProfileId,
+        remoteApiKeys: s.remoteApiKeys,
+        localeCode: s.localeCode,
+        searchRegion: s.searchRegion,
+        themeChoice: s.themeChoice,
+        accent: s.accent,
+        textScale: s.textScale,
+        compactBubbles: s.compactBubbles,
+        motion: s.motion,
+        knowledgeCollection: s.knowledgeCollection,
+      ),
+    );
+  }
 
   Future<void> followRecommended(Set<String> keys) {
     final json = state.toJson();

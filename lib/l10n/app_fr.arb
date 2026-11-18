@@ -3479,5 +3479,14 @@
   "imageUnusedPartsFreed": "Parties inutilisées supprimées : {size} libérés.",
   "imageNoUnusedParts": "Rien à supprimer : chaque fichier appartient à un modèle installé ou en téléchargement.",
   "recommendedAllRemoved": "Les autres suggestions pour cet appareil ont été retirées de la liste.",
-  "uiModelCardHide": "Masquer"
+  "uiModelCardHide": "Masquer",
+  "confirmRemoveDownloadTitle": "Retirer le téléchargement ?",
+  "confirmRemoveDownloadHint": "Les fichiers téléchargés seront supprimés de cet appareil. Vous pourrez les télécharger à nouveau plus tard.",
+  "confirmRemoveZimTitle": "Retirer Wikipédia hors ligne ?",
+  "confirmRemoveZimHint": "L'archive sera supprimée de cet appareil. Pour l'utiliser à nouveau, il faudra réimporter le fichier.",
+  "confirmDeleteCollectionTitle": "Supprimer cette collection ?",
+  "confirmDeleteCollectionHint": "Ses fichiers et leur index seront supprimés de cet appareil. Action irréversible.",
+  "confirmDeleteGoalTitle": "Supprimer ce rapport ?",
+  "confirmCannotUndo": "Action irréversible.",
+  "confirmDeleteDocumentTitle": "Supprimer ce document ?"
 }

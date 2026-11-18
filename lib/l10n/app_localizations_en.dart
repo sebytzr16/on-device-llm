@@ -10035,4 +10035,34 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get uiModelCardHide => 'Hide';
+
+  @override
+  String get confirmRemoveDownloadTitle => 'Remove the download?';
+
+  @override
+  String get confirmRemoveDownloadHint =>
+      'This deletes the downloaded files from this device. You can download them again later.';
+
+  @override
+  String get confirmRemoveZimTitle => 'Remove offline Wikipedia?';
+
+  @override
+  String get confirmRemoveZimHint =>
+      'This deletes the archive from this device. To use it again, you will need to import the file again.';
+
+  @override
+  String get confirmDeleteCollectionTitle => 'Delete this collection?';
+
+  @override
+  String get confirmDeleteCollectionHint =>
+      'Its files and their index are removed from this device. This can\'t be undone.';
+
+  @override
+  String get confirmDeleteGoalTitle => 'Delete this report?';
+
+  @override
+  String get confirmCannotUndo => 'This can\'t be undone.';
+
+  @override
+  String get confirmDeleteDocumentTitle => 'Delete this document?';
 }

@@ -224,10 +224,22 @@ class GoalHistoryPage extends ConsumerWidget {
             icon: const Icon(Icons.delete_outline),
             onPressed: () async {
               final navigator = Navigator.of(context);
+              final route = ModalRoute.of(context);
+              final ok = await confirmAction(
+                context,
+                title: t.confirmDeleteGoalTitle,
+                message: t.confirmCannotUndo,
+                confirmLabel: t.commonDelete,
+                destructive: true,
+                confirmKey: const Key('goal-past-delete-confirm'),
+              );
+              if (!ok) return;
               await ref.read(goalHistoryProvider.notifier).remove(entry.id);
               if (embedded) {
                 onClose?.call();
-              } else {
+              } else if (route?.isCurrent ?? false) {
+                // The user may have gone back while the delete was saved:
+                // pop only this report, never the page under it.
                 navigator.pop();
               }
             },

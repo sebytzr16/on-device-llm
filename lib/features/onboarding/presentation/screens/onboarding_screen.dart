@@ -162,7 +162,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     ),
                     memory: memory,
                     acknowledged: _acknowledged,
-                    onSelect: (m) => setState(() => _selectedId = m.id),
+                    // A different model has its own license and size: the
+                    // user must acknowledge it again.
+                    onSelect: (m) => setState(() {
+                      if (m.id != _selectedId) _acknowledged = false;
+                      _selectedId = m.id;
+                    }),
                     onAcknowledge: (v) => setState(() => _acknowledged = v),
                     onDownload: () {
                       _go(2);

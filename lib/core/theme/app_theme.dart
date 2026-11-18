@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -52,6 +53,8 @@ class AppTheme {
   static SystemUiOverlayStyle overlayFor(AppColors c) => SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: c.isDark ? Brightness.light : Brightness.dark,
+    // iOS reads this one (the brightness of the content under the bar).
+    statusBarBrightness: c.isDark ? Brightness.dark : Brightness.light,
     systemNavigationBarColor: c.ink,
     systemNavigationBarIconBrightness: c.isDark
         ? Brightness.light
@@ -119,11 +122,13 @@ class AppTheme {
       canvasColor: c.ink,
       splashFactory: InkSparkle.splashFactory,
       extensions: [c],
-      // Pages slide in on a calm spring over a page that sinks back.
+      // Pages slide in on a calm spring over a page that sinks back. iOS keeps
+      // the native transition: it carries the edge swipe-back gesture, which
+      // the spring transition has no equivalent for.
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
           TargetPlatform.android: SpringPageTransitionsBuilder(),
-          TargetPlatform.iOS: SpringPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
         },
       ),
       appBarTheme: AppBarTheme(
