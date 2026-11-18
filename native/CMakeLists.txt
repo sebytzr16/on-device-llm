@@ -59,6 +59,22 @@ set(ODLLM_ARM_ARCH "armv8-a" CACHE STRING "ARM -march for the CPU backend")
 if(ANDROID AND CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
   set(GGML_CPU_ARM_ARCH "${ODLLM_ARM_ARCH}" CACHE STRING "" FORCE)
 endif()
+# Android x86_64 splits the same way as arm64: the Gradle build is the portable
+# one (baseline x86-64, because ggml turns every instruction set off when
+# cross-compiling), and scripts/build_android.sh stages a second library with
+# Haswell kernels. Dart loads it only when every core reports avx2 in
+# /proc/cpuinfo, so an Atom without AVX2 keeps the portable library.
+option(ODLLM_X64_FAST "Build the Android x86_64 AVX2 CPU bridge" OFF)
+if(ODLLM_X64_FAST)
+  if(NOT ANDROID OR NOT CMAKE_ANDROID_ARCH_ABI STREQUAL "x86_64")
+    message(FATAL_ERROR "ODLLM_X64_FAST requires Android x86_64")
+  endif()
+  set(GGML_SSE42 ON CACHE BOOL "" FORCE)
+  foreach(feature AVX AVX2 FMA F16C BMI2)
+    set(GGML_${feature} ON CACHE BOOL "" FORCE)
+  endforeach()
+  set(GGML_AVX512 OFF CACHE BOOL "" FORCE)
+endif()
 # Windows x64 defaults to AVX2/FMA/F16C (Haswell and Zen onwards).
 # Fixed SSE4.2, AVX2 and x86-64-v4 variants; never host tuning.
 option(ODLLM_X64_COMPAT "Build the Windows SSE4.2 CPU bridge" OFF)

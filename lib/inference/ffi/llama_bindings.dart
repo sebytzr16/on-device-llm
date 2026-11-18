@@ -9,10 +9,12 @@ class LlamaBindings {
 
   /// The fast CPU bridge is independent of the optional OpenCL driver.
   /// OpenCL builds retain GPU support; CPU-only builds still get the same
-  /// Armv8.6+dotprod+i8mm+fp16 kernels. Older CPUs use portable Armv8-A.
+  /// Armv8.6+dotprod+i8mm+fp16 kernels on arm64, or AVX2 kernels on x86_64.
+  /// Older CPUs use the portable bridge (Armv8-A, or baseline x86-64).
   /// The selected library and skipped candidates are recorded in metrics.
   static const androidVariants = [
     'libondevice_llm_opencl.so',
+    'libondevice_llm_cpu_avx2.so',
     'libondevice_llm_cpu_i8mm.so',
     'libondevice_llm.so',
   ];
@@ -20,6 +22,9 @@ class LlamaBindings {
   static bool variantNeedsI8mm(String name) =>
       name == 'libondevice_llm_opencl.so' ||
       name == 'libondevice_llm_cpu_i8mm.so';
+
+  static bool variantNeedsAvx2(String name) =>
+      name == 'libondevice_llm_cpu_avx2.so';
 
   /// Which library was opened, and why any preferred variant was skipped.
   late final String library;
@@ -359,32 +364,67 @@ class LlamaBindings {
     return DynamicLibrary.process();
   }
 
-  /// The fast variant is compiled for armv8.6+i8mm; a CPU without i8mm
+  /// The fast arm64 variant is compiled for armv8.6+i8mm; a CPU without i8mm
   /// would hit SIGILL, which no catch can recover, so check first.
   /// [cpuinfo] replaces /proc/cpuinfo in tests.
-  static bool cpuHasI8mm({String? cpuinfo}) {
+  static bool cpuHasI8mm({String? cpuinfo}) => _everyCpuFlag(
+    cpuinfo,
+    RegExp(r'^Features\s*:\s*(.*)$', multiLine: true),
+    'i8mm',
+  );
+
+  /// The fast x86_64 variant is compiled for AVX2; a CPU without it would hit
+  /// SIGILL, so check first. False on arm64 (no flags line) and in tests that
+  /// pass an empty or partial cpuinfo.
+  static bool cpuHasAvx2({String? cpuinfo}) => _everyCpuFlag(
+    cpuinfo,
+    RegExp(r'^flags\s*:\s*(.*)$', multiLine: true),
+    'avx2',
+  );
+
+  /// Every core lists its own feature line and the fast library runs on
+  /// whichever core the scheduler picks, so all of them must have [flag].
+  /// A cpuinfo without a matching line (arm64 on x86, or x86 on arm64)
+  /// counts as unsupported.
+  static bool _everyCpuFlag(String? cpuinfo, RegExp line, String flag) {
     try {
       final info = cpuinfo ?? File('/proc/cpuinfo').readAsStringSync();
-      // Every core lists its own Features line; the fast library runs on
-      // whichever core the scheduler picks, so all of them must have i8mm.
-      final lines = RegExp(
-        r'^Features\s*:\s*(.*)$',
-        multiLine: true,
-      ).allMatches(info).toList();
+      final lines = line.allMatches(info).toList();
       if (lines.isEmpty) return false;
       return lines.every(
-        (m) => m.group(1)!.trim().split(RegExp(r'\s+')).contains('i8mm'),
+        (m) => m.group(1)!.trim().split(RegExp(r'\s+')).contains(flag),
       );
     } catch (_) {
       return false;
     }
   }
 
+  static String? _readCpuinfo() {
+    try {
+      return File('/proc/cpuinfo').readAsStringSync();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Why [name] cannot run on this CPU, or null when it may be loaded.
+  static String? _unmetVariant(String name, String? cpuinfo) {
+    if (variantNeedsI8mm(name) && !cpuHasI8mm(cpuinfo: cpuinfo)) {
+      return 'this CPU lacks i8mm';
+    }
+    if (variantNeedsAvx2(name) && !cpuHasAvx2(cpuinfo: cpuinfo)) {
+      return 'this CPU lacks AVX2';
+    }
+    return null;
+  }
+
   DynamicLibrary _openAndroid() {
+    final cpuinfo = _readCpuinfo();
     Object? last;
     for (final name in androidVariants) {
-      if (variantNeedsI8mm(name) && !cpuHasI8mm()) {
-        skipped.add('$name: this CPU lacks i8mm');
+      final unmet = _unmetVariant(name, cpuinfo);
+      if (unmet != null) {
+        skipped.add('$name: $unmet');
         continue;
       }
       try {
