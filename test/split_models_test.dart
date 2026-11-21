@@ -380,6 +380,15 @@ void main() {
     final zone = Zone.current;
     await IOOverrides.runZoned(
       () async {
+        // Older SDKs (Flutter 3.44) do not route every Directory through
+        // IOOverrides; the check only means something where the fake is used.
+        try {
+          await Directory(models.path).resolveSymbolicLinks();
+          markTestSkipped('IOOverrides.createDirectory not applied');
+          return;
+        } on FileSystemException {
+          // The fake is in place.
+        }
         await notifier.importFile(single.path, ModelFamily.qwen);
         expect(container.read(modelManagerProvider).error, isNull);
         final row = (await db.allModels()).singleWhere(
