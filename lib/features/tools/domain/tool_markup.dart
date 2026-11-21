@@ -4,9 +4,18 @@
 /// turn's content next to those structured calls (the template renders the
 /// call again from `tool_calls`, so the model saw every call twice).
 class ToolMarkup {
+  static const _qwenStart = '<tool_call>';
+  static const _qwenEnd = '</tool_call>';
+  // A JSON string can contain an escaped quote, a backslash, or the closing
+  // tag itself. An unfinished string still belongs to the call.
+  static const _qwenBody =
+      r'(?:\s*[\[{](?:[^"<]|<(?!/tool_call>)|"(?:[^"\\]|\\[\s\S])*(?:"|\\?$))*'
+      r'|(?!\s*[\[{])(?:(?!</tool_call>)[\s\S])*)';
+  static final _qwenClosed = RegExp('^$_qwenStart$_qwenBody$_qwenEnd');
+
   static final _blocks = [
     // Qwen / Hermes (JSON or <function=…> inside).
-    RegExp(r'<tool_call>[\s\S]*?(?:</tool_call>|$)'),
+    RegExp('$_qwenStart$_qwenBody(?:$_qwenEnd|\$)'),
     // Gemma 4.
     RegExp(r'<\|tool_call>[\s\S]*?(?:<tool_call\|>|$)'),
     // Kimi K2.
@@ -30,7 +39,7 @@ class ToolMarkup {
   ];
 
   static const _starts = [
-    '<tool_call>',
+    _qwenStart,
     '<|tool_call>',
     '<|tool_calls_section_begin|>',
     '<｜tool▁calls▁begin｜>',
@@ -82,32 +91,44 @@ class ToolMarkup {
     return out.toString();
   }
 
-  /// What may be shown of a streaming answer: everything before the first
-  /// tool-call marker, holding back a marker that is still arriving.
+  // Match a call before scanning any code fences inside its arguments.
+  static final _liveBlocks = RegExp(
+    [
+      _code.pattern,
+      ..._blocks.map((pattern) => pattern.pattern),
+      r'<(?:function|invoke)\s+name\s*=\s*[^>]*$',
+      r'```tool\s*$',
+    ].join('|'),
+  );
+
+  /// What may be shown of a streaming answer. A complete call can be followed
+  /// by answer text in the same round. Only the call and a possible trailing
+  /// marker prefix are held back.
   static String visible(String text) {
-    var cut = text.length;
-    for (final s in _starts) {
-      final i = text.indexOf(s);
-      if (i >= 0 && i < cut) cut = i;
+    final out = StringBuffer();
+    var at = 0;
+    for (final match in _liveBlocks.allMatches(text)) {
+      out.write(text.substring(at, match.start));
+      if (_code.matchAsPrefix(text, match.start) != null) out.write(match[0]!);
+      at = match.end;
     }
-    if (cut == text.length) {
-      // "<tool_c" at the very end may be the start of a marker.
-      for (final s in _starts) {
-        for (var n = s.length - 1; n >= 2; n--) {
-          if (text.endsWith(s.substring(0, n))) {
-            cut = text.length - n < cut ? text.length - n : cut;
-            break;
-          }
+    var keep = 0;
+    for (final start in _starts) {
+      for (var n = start.length.clamp(0, text.length - at); n > keep; n--) {
+        if (text.endsWith(start.substring(0, n))) {
+          keep = n;
+          break;
         }
       }
     }
-    return text.substring(0, cut);
+    out.write(text.substring(at, text.length - keep));
+    return out.toString();
   }
 
   /// What closes a call opened by one of [_starts] (Mistral and Llama
   /// calls run to the end of the turn).
   static const _ends = [
-    '</tool_call>',
+    _qwenEnd,
     '<tool_call|>',
     '<|tool_calls_section_end|>',
     '<｜tool▁calls▁end｜>',
@@ -211,7 +232,9 @@ class ToolMarkup {
     }
     if (at < 0) return null;
     final call = text.substring(at);
-    if (_ends.any(call.contains) ||
+    if ((call.startsWith(_qwenStart)
+            ? _qwenClosed.hasMatch(call)
+            : _ends.any(call.contains)) ||
         (call.startsWith('```') && call.indexOf('```', 3) >= 0)) {
       return null;
     }

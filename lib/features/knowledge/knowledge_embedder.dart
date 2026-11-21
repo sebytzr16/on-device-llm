@@ -319,19 +319,19 @@ class KnowledgeIndexer extends Notifier<KnowledgeIndexState> {
       collection: collection,
       total: 0,
     );
-    final total = await db.countUnindexedKnowledgeChunks(
-      collection,
-      embedder.modelId,
-    );
-    if (_cancel || !ref.mounted) {
-      // A cancel that landed before the first batch still owns the run token
-      // acquired above: release it, or every later index() returns early.
-      if (ref.mounted) state = state.copyWith(running: false, total: total);
-      return;
-    }
-    state = state.copyWith(total: total);
     var done = 0;
     try {
+      // Inside the try: a count that throws (closed db, disk full) must still
+      // release the run token, or every later index() returns early.
+      final total = await db.countUnindexedKnowledgeChunks(
+        collection,
+        embedder.modelId,
+      );
+      if (!ref.mounted) return;
+      state = state.copyWith(total: total);
+      // A cancel that landed before the first batch still owns the run token
+      // acquired above: release it, or every later index() returns early.
+      if (_cancel) return;
       while (!_cancel) {
         final chunks = await db.unindexedKnowledgeChunks(
           collection,

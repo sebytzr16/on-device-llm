@@ -51,6 +51,7 @@ void main() {
     expect(nativeLibraryChoice('{}', windows: true), (
       backend: null,
       cpuVariant: 'auto',
+      engine: 'llama.cpp',
     ));
     expect(
       nativeLibraryChoice(

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/design/app_design.dart';
+import '../providers/effective_settings_provider.dart';
 import '../providers/settings_provider.dart';
 import '../../../../core/motion/motion.dart';
 import '../../../../core/design/app_dialog.dart';
@@ -657,6 +658,41 @@ class SettingChoice<T> extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Web research is the one feature that sends the user's text off the device
+/// (to DuckDuckGo and the result pages), so every path that can turn it on
+/// asks this same informed question before saving (audit 2026-11-20 P1-4).
+Future<bool> confirmWebSearch(BuildContext context) => confirmAction(
+  context,
+  title: context.l10n.enableWebQuestion,
+  message: context.l10n.enableWebHint,
+  confirmLabel: context.l10n.enable,
+);
+
+final webResearchNavigatorKey = GlobalKey<NavigatorState>();
+
+Future<bool> confirmWebResearchFromNavigator() async {
+  final context = webResearchNavigatorKey.currentState?.overlay?.context;
+  return context != null && context.mounted && await confirmWebSearch(context);
+}
+
+/// The one gate in front of web research: resolves the chat's real model
+/// through the whole cascade now and after [change], and asks
+/// [confirmWebSearch] whenever the next turn gains access to web lookups.
+Future<bool> confirmWebModeChange(
+  BuildContext context,
+  WidgetRef ref,
+  SettingsChange change,
+) async {
+  if (!webTurnsOn(
+    ref.read(effectiveSettingsProvider),
+    ref.read(settingsPreviewProvider(change)),
+  )) {
+    return true;
+  }
+  if (!context.mounted) return false;
+  return confirmWebSearch(context);
 }
 
 /// Asks for one integer within [min]..[max]; null when dismissed or invalid.

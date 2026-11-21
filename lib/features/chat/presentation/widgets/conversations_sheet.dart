@@ -469,9 +469,9 @@ class _ConversationsSheetState extends ConsumerState<ConversationsSheet> {
                     ),
                     onPressed: busy
                         ? null
-                        : () {
+                        : () async {
                             Navigator.pop(context);
-                            notifier.newChat();
+                            await notifier.newChat();
                           },
                   ),
                 ),
@@ -487,11 +487,11 @@ class _ConversationsSheetState extends ConsumerState<ConversationsSheet> {
                     ),
                     onPressed: busy
                         ? null
-                        : () {
+                        : () async {
                             final hint = context.l10n.temporaryChatHint;
                             final toast = islandToastFor(context);
                             Navigator.pop(context);
-                            notifier.newChat(temporary: true);
+                            await notifier.newChat(temporary: true);
                             toast(hint);
                           },
                   ),

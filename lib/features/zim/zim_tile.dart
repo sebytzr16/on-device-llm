@@ -36,6 +36,9 @@ class _ZimTileState extends ConsumerState<ZimTile> {
     final f = files.first;
     final target = await _target();
     final part = File('$target.part');
+    // Set once the live archive is closed for the swap: only then a failure
+    // leaves the provider holding a closed instance.
+    var closed = false;
     try {
       await part.parent.create(recursive: true);
       final total = await f.length() ?? 0;
@@ -66,11 +69,16 @@ class _ZimTileState extends ConsumerState<ZimTile> {
       } finally {
         await checked.close();
       }
+      closed = true;
       await (await container.read(zimWikipediaProvider.future))?.close();
       await part.rename(target);
       container.invalidate(zimWikipediaProvider);
     } catch (e) {
       if (await part.exists()) await part.delete();
+      // Only the archive closed above is dropped: the provider keeps handing
+      // out a closed instance while the old file is still on disk. A rejected
+      // file leaves the working archive open, so its readers keep it.
+      if (closed) container.invalidate(zimWikipediaProvider);
       toast(notZim, tone: IslandTone.error);
     } finally {
       if (mounted) setState(() => _progress = null);

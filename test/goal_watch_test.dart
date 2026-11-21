@@ -51,6 +51,26 @@ void main() {
     expect(same.isEmpty, isTrue);
   });
 
+  test('two articles on one path are two pages (audit 05a-5)', () {
+    expect(
+      GoalWatches.pageKey('https://news.example/item?id=1'),
+      isNot(GoalWatches.pageKey('https://news.example/item?id=2')),
+    );
+    // Tracking parameters and the scheme still do not make a new page.
+    expect(
+      GoalWatches.pageKey('https://www.news.example/item/?id=1&utm_source=x'),
+      GoalWatches.pageKey('http://news.example/item?id=1'),
+    );
+    // The runner and the daily watches count the same pages.
+    for (final url in [
+      'https://www.news.example/item/?id=1&utm_source=x',
+      'http://news.example/item?id=2',
+      'https://example.com',
+    ]) {
+      expect(GoalRunner.pageKey(url), GoalWatches.pageKey(url));
+    }
+  });
+
   test('a page seen in an earlier check is not new again', () {
     final w0 = GoalWatch(
       id: 1,
@@ -82,6 +102,30 @@ void main() {
     final back = GoalWatches.decode(GoalWatches.encode([w3])).single;
     expect(back.seen, containsAll(['a.example', 'b.example']));
     expect(back.lastCheckedAt, DateTime(2026, 10, 9));
+  });
+
+  test('a page saved before the key kept its query is not new', () {
+    // A watch upgraded from a build whose keys were host/path (audit 05a-5)
+    // must not report a page it already saw as a new result once.
+    final change = GoalWatches.diff(
+      GoalWatches.snapshot([
+        _r('https://news.example/b', 'older result'),
+      ], DateTime(2026, 11, 20, 9)),
+      GoalWatches.snapshot([
+        _r('https://news.example/item?id=1', 'Price \$499.99'),
+      ], DateTime(2026, 11, 20, 10)),
+      ['news.example/item', 'news.example/b'],
+    );
+    expect(change.fresh, isEmpty);
+    // A page that key does not name is still new.
+    final other = GoalWatches.diff(
+      GoalWatches.snapshot(const [], DateTime(2026, 11, 20, 9)),
+      GoalWatches.snapshot([
+        _r('https://news.example/new?id=7', 'Just listed'),
+      ], DateTime(2026, 11, 20, 10)),
+      ['news.example/item'],
+    );
+    expect(other.fresh.single.url, 'https://news.example/new?id=7');
   });
 
   test('due once the scheduled time has passed since the last check', () {

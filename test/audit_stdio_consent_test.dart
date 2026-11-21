@@ -23,10 +23,12 @@ void main() {
         },
       );
       addTearDown(registry.dispose);
+      final executable = File('${dir.path}/fixture.exe')
+        ..writeAsStringSync('fixture');
       String config(String arg) => jsonEncode({
         'mcpServers': {
           'one': {
-            'command': 'preinstalled',
+            'command': executable.path,
             'args': [arg],
           },
           'two': {'command': 'another'},

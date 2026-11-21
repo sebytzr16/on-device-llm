@@ -101,7 +101,7 @@ void main() {
             .single
             .id;
         final chat = container.read(chatProvider.notifier);
-        chat.newChat(projectId: first);
+        await chat.newChat(projectId: first);
         await chat.send('Hello');
         final id = container.read(chatProvider).chatId!;
         expect(
@@ -336,7 +336,7 @@ void main() {
       );
       try {
         final n = c.read(chatProvider.notifier);
-        n.newChat(temporary: true);
+        await n.newChat(temporary: true);
         expect(await n.send('My name is Ada'), isTrue);
         expect(c.read(chatProvider).messages, hasLength(2));
         expect(await n.regenerate(), isTrue);
@@ -355,7 +355,7 @@ void main() {
           (engine.receivedMessages!.first['content'] as String),
           isNot(contains('Background notes')),
         );
-        n.newChat();
+        await n.newChat();
         expect(c.read(chatProvider).temporary, isFalse);
         expect(c.read(chatProvider).messages, isEmpty);
         expect(await n.send('Hello'), isTrue);

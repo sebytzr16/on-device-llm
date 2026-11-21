@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/inference/engine/llama_engine.dart';
 
@@ -31,4 +33,32 @@ void main() {
       ..configure(startTag: '<|channel>thought', endTags: ['<channel|>']);
     expect(await run(n, ['hello <|chan']), 'hello <|chan');
   });
+
+  test(
+    'short reasoning and answer deltas arrive while input is open',
+    () async {
+      final source = StreamController<String>();
+      final normalizer = ThinkingTagNormalizer()
+        ..configure(startTag: '<|channel>thought', endTags: ['<channel|>']);
+      final output = StreamIterator(source.stream.transform(normalizer));
+
+      Future<void> checkDelta(String input, String expected) async {
+        final next = output.moveNext();
+        source.add(input);
+        expect(await next.timeout(const Duration(seconds: 1)), isTrue);
+        expect(output.current, expected);
+      }
+
+      try {
+        await checkDelta('<|channel>thought', '<think>');
+        await checkDelta('plan<chan', 'plan');
+        await checkDelta('nel|>', '</think>');
+        await checkDelta('🧠', '🧠');
+        await checkDelta('yes', 'yes');
+      } finally {
+        await output.cancel();
+        await source.close();
+      }
+    },
+  );
 }

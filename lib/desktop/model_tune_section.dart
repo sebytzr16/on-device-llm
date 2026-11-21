@@ -43,6 +43,9 @@ class _ModelOptimizeSectionState extends ConsumerState<ModelOptimizeSection> {
   void initState() {
     super.initState();
     if (widget.autoStart) {
+      // The first-run offer starts the run without a tap, but it must not
+      // bypass the disabled entry: start() reports the busy reason instead
+      // of running while the chat or another task holds the model.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _start();
       });
@@ -65,6 +68,18 @@ class _ModelOptimizeSectionState extends ConsumerState<ModelOptimizeSection> {
         OptimizeKeepReason.baselineUnavailable => t.desktopOptimizeKeptBaseline,
         OptimizeKeepReason.slower => t.desktopOptimizeKept,
         OptimizeKeepReason.noisy => t.desktopOptimizeKeptNoise,
+        OptimizeKeepReason.unsupported => t.desktopOptimizeKeptUnsupported,
+      };
+
+  /// Why the run could not start. The entry never fails silently: the same
+  /// sentence that disables the button explains it.
+  String _busyReason(AppLocalizations t, OptimizeBusyReason reason) =>
+      switch (reason) {
+        OptimizeBusyReason.running => t.optimizeBusyRunning,
+        OptimizeBusyReason.generating => t.optimizeBusyGenerating,
+        OptimizeBusyReason.loadingModel => t.optimizeBusyLoading,
+        OptimizeBusyReason.otherRun => t.optimizeBusyOther,
+        OptimizeBusyReason.notLoaded => t.optimizeSettingsNoModel,
       };
 
   @override
@@ -88,6 +103,7 @@ class _ModelOptimizeSectionState extends ConsumerState<ModelOptimizeSection> {
     final rates = optimize.rates;
     final step = optimize.step, progress = optimize.progress;
     final changes = optimize.changes, kept = optimize.kept;
+    final busyReason = optimize.busy, unfit = optimize.unfit;
     final t = context.l10n;
     final mobile = ref.watch(optimizeMobileProvider);
     final error = switch (optimize.failure) {
@@ -96,9 +112,21 @@ class _ModelOptimizeSectionState extends ConsumerState<ModelOptimizeSection> {
       OptimizeFailure.reload => t.optimizeReloadError,
       null => null,
     };
-    final busy =
-        ref.watch(sessionBusyProvider) ||
-        ref.watch(modelManagerProvider).isLoadingModel;
+    final sessionBusy = ref.watch(sessionBusyProvider);
+    final loading = ref.watch(modelManagerProvider).isLoadingModel;
+    final busy = sessionBusy || loading;
+    // A stale explanation is worse than none: the sentence stays only while
+    // the reason still applies (a missing model file always does).
+    final showBusy =
+        busyReason != null &&
+        !optimize.running &&
+        switch (busyReason) {
+          OptimizeBusyReason.loadingModel => loading,
+          OptimizeBusyReason.generating ||
+          OptimizeBusyReason.otherRun => sessionBusy,
+          OptimizeBusyReason.notLoaded => true,
+          OptimizeBusyReason.running => false,
+        };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -108,6 +136,12 @@ class _ModelOptimizeSectionState extends ConsumerState<ModelOptimizeSection> {
               : t.desktopOptimizeHint,
           style: context.text.caption.copyWith(color: context.colors.textMuted),
         ),
+        if (busyReason != null && showBusy)
+          Text(
+            _busyReason(t, busyReason),
+            key: const Key('desktop-optimize-busy'),
+            style: context.text.small.copyWith(color: context.colors.danger),
+          ),
         if (optimize.running) ...[
           const SizedBox(height: 8),
           Row(
@@ -145,6 +179,17 @@ class _ModelOptimizeSectionState extends ConsumerState<ModelOptimizeSection> {
         if (error != null)
           Text(
             error,
+            style: context.text.small.copyWith(color: context.colors.danger),
+          ),
+        // The estimate said the memory is short: the run still measured the
+        // smallest setup, and this names what was short when it did not fit.
+        if (unfit != null && !optimize.saved)
+          Text(
+            switch (unfit) {
+              OptimizeUnfit.ram => t.optimizeMemoryRam,
+              OptimizeUnfit.vram => t.optimizeMemoryVram,
+            },
+            key: const Key('desktop-optimize-unfit'),
             style: context.text.small.copyWith(color: context.colors.danger),
           ),
         if (rates != null)

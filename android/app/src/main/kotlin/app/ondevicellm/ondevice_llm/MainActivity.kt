@@ -21,6 +21,7 @@ class MainActivity : FlutterActivity() {
     private var scheduledPrompts: ScheduledPrompts? = null
     private var hostDiscovery: HostDiscovery? = null
     private var voiceAudio: VoiceAudio? = null
+    private var liteRtLm: LiteRtLm? = null
     private var displayManager: DisplayManager? = null
     private val displayListener = object : DisplayManager.DisplayListener {
         override fun onDisplayAdded(displayId: Int) = refreshDisplay(displayId)
@@ -68,6 +69,8 @@ class MainActivity : FlutterActivity() {
         hostDiscovery = null
         voiceAudio?.close()
         voiceAudio = null
+        liteRtLm?.close()
+        liteRtLm = null
         super.onDestroy()
         // The engine and its isolates are gone; the process and its native
         // memory may stay, so the model this window loaded is freed now.
@@ -123,6 +126,8 @@ class MainActivity : FlutterActivity() {
         }
         scheduledPrompts = ScheduledPrompts(this, flutterEngine.dartExecutor.binaryMessenger)
         BackgroundDownloads(this, flutterEngine.dartExecutor.binaryMessenger)
+        liteRtLm?.close()
+        liteRtLm = LiteRtLm(flutterEngine.dartExecutor.binaryMessenger, cacheDir)
         OnDeviceOcr(this, flutterEngine.dartExecutor.binaryMessenger)
         AudioDecode(flutterEngine.dartExecutor.binaryMessenger)
         PhoneActions(this, flutterEngine.dartExecutor.binaryMessenger)

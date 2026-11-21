@@ -14,6 +14,23 @@ abstract final class EnginePins {
 
   /// stable-diffusion.cpp commit pinned in scripts/fetch-stable-diffusion.ps1.
   static const sdCommit = '687915518efd69548965d24818f0d3bbbb903718';
+
+  /// ik_llama.cpp commit the optional Windows engine pack is built from
+  /// (scripts/build-ik-llama.ps1 -Commit, docs/engines/ik_llama.md). Its packs
+  /// are released under `ik-<first 7 chars>`. The all-zero value means the
+  /// owner has not pinned a commit yet: no ik_llama pack is ever offered until
+  /// this is replaced, and the engine stays unavailable.
+  static const ikLlamaCommit = '0000000000000000000000000000000000000000';
+
+  static String get ikLlamaTag => 'ik-${ikLlamaCommit.substring(0, 7)}';
+
+  /// True when [commit] is a real pin and not the all-zero placeholder.
+  static bool isPinnedCommit(String commit) =>
+      !RegExp(r'^0+$').hasMatch(commit);
+
+  /// True when this app version knows which ik_llama.cpp build to offer. Off
+  /// keeps the engine, its picker, its install row and its strings hidden.
+  static bool get ikLlamaPinned => isPinnedCommit(ikLlamaCommit);
 }
 
 /// "b12342" -> 12342; null when the tag is not a llama.cpp build tag.

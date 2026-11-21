@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -114,8 +115,10 @@ void main() {
       final registry = create();
       addTearDown(registry.dispose);
       await registry.load();
+      final executable = File('${dir.path}/fixture.exe')
+        ..writeAsStringSync('fixture');
       await registry.saveConfig(
-        '{"mcpServers":{"fixture":{"command":"fixture","args":["a","b"],"env":{"X":"Y"}}}}',
+        '{"mcpServers":{"fixture":{"command":${jsonEncode(executable.path)},"args":["a","b"],"env":{"X":"Y"}}}}',
       );
       final original = registry.servers['fixture']!.config.toJson();
       await registry.enableTool('fixture__echo', false);
@@ -154,8 +157,10 @@ void main() {
       );
       addTearDown(registry.dispose);
       await registry.load();
+      final executable = File('${dir.path}/fixture.exe')
+        ..writeAsStringSync('fixture');
       await registry.saveConfig(
-        '{"mcpServers":{"fixture":{"command":"original"}}}',
+        '{"mcpServers":{"fixture":{"command":${jsonEncode(executable.path)}}}}',
       );
       await registry.enableServer('fixture', true, reviewed: true);
       final undo = await registry.remove('fixture');

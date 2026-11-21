@@ -13,8 +13,17 @@ class MessageDeletion {
   final String chatId;
   final List<Message> removed;
   final Map<String, (Message, Message)> changed;
+
+  /// Storage order of the rows the deletion kept, so Undo can tell a chat that
+  /// was reordered (a branch restore, a regenerate) from the one it came from.
+  final Map<String, int> sequences;
   bool _undone = false;
-  MessageDeletion(this.chatId, this.removed, this.changed);
+  MessageDeletion(
+    this.chatId,
+    this.removed,
+    this.changed, {
+    this.sequences = const {},
+  });
 
   /// How long Undo stays available; its attachment files are removed after
   /// (the toast dismisses at four seconds).
@@ -86,7 +95,15 @@ class MessageDeletion {
     for (final row in removed) {
       await db.deleteMessage(row.id);
     }
-    return MessageDeletion(chatId, removed, changed);
+    return MessageDeletion(
+      chatId,
+      removed,
+      changed,
+      sequences: {
+        for (final r in rows)
+          if (!ids.contains(r.id)) r.id: r.sequence,
+      },
+    );
   });
 
   Future<bool> undo(AppDatabase db) => db.transaction(() async {
@@ -99,6 +116,13 @@ class MessageDeletion {
       if (current.any((c) => c.id == r.id) || occupied.contains(r.sequence)) {
         return false;
       }
+    }
+    // The rows this deletion kept must still be where it left them: a chat
+    // reordered since (another branch restored, a turn deleted or rewritten)
+    // would get the restored turns back between unrelated ones.
+    for (final e in sequences.entries) {
+      final now = current.where((r) => r.id == e.key).firstOrNull;
+      if (now == null || now.sequence != e.value) return false;
     }
     for (final e in changed.entries) {
       final now = current.where((r) => r.id == e.key).firstOrNull;

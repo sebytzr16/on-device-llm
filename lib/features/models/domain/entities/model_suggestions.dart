@@ -3,6 +3,7 @@ import 'model_info.dart';
 
 /// Only the curated picks are suggested. Catalog identities and pinned files stay intact.
 int? modelSuggestionRank(ModelInfo model, {required bool desktop}) {
+  if (model.isLiteRt) return null;
   final name = '${model.id} ${model.displayName}'.toLowerCase().replaceAll(
     RegExp(r'[^a-z0-9.]'),
     '',
@@ -55,7 +56,7 @@ List<ModelInfo> availableLibraryModels(
     ...library.where(
       (m) =>
           !m.isDownloaded &&
-          !known.contains(m.id) &&
+          (!known.contains(m.id) || (!desktop && m.isLiteRt)) &&
           modelSuggestionRank(m, desktop: desktop) == null,
     ),
     ...suggestedModels(library, desktop: desktop),

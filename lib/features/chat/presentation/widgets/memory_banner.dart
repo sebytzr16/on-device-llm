@@ -74,14 +74,43 @@ Future<void> showLearnedDialog(
   WidgetRef ref,
   List<Memory> learned,
 ) async {
-  final t = context.l10n;
-  final controller = TextEditingController(
-    text: learned.map((m) => m.content).join('\n'),
-  );
   final notifier = ref.read(chatProvider.notifier);
-  final choice = await showAppDialog<String>(
+  // The dialog owns its controller, so nothing is disposed while it is still
+  // fading out (the route's future completes on pop, before the transition
+  // ends) and reduced motion pays no delay at all.
+  final result = await showAppDialog<({bool discard, String text})>(
     context: context,
-    builder: (context) => AlertDialog(
+    builder: (_) => _LearnedDialog(learned.map((m) => m.content).join('\n')),
+  );
+  if (result == null) return;
+  if (result.discard) {
+    await notifier.dismissLearned(discard: true);
+  } else {
+    await notifier.editLearned(result.text.split('\n'));
+  }
+}
+
+class _LearnedDialog extends StatefulWidget {
+  final String initial;
+  const _LearnedDialog(this.initial);
+
+  @override
+  State<_LearnedDialog> createState() => _LearnedDialogState();
+}
+
+class _LearnedDialogState extends State<_LearnedDialog> {
+  late final _controller = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.l10n;
+    return AlertDialog(
       scrollable: true,
       title: Text(t.memoryDialogTitle),
       content: Column(
@@ -92,7 +121,7 @@ Future<void> showLearnedDialog(
           Text(t.memoryDialogHint, style: context.text.bodyMuted),
           TextField(
             key: const Key('memory-edit-field'),
-            controller: controller,
+            controller: _controller,
             minLines: 1,
             maxLines: 6,
             decoration: InputDecoration(hintText: t.memoryDialogFieldHint),
@@ -105,25 +134,16 @@ Future<void> showLearnedDialog(
             foregroundColor: context.colors.danger,
           ),
           key: const Key('memory-discard'),
-          onPressed: () => Navigator.pop(context, 'discard'),
+          onPressed: () => Navigator.pop(context, (discard: true, text: '')),
           child: Text(t.discard),
         ),
         FilledButton(
           key: const Key('memory-save'),
-          onPressed: () => Navigator.pop(context, 'save'),
+          onPressed: () =>
+              Navigator.pop(context, (discard: false, text: _controller.text)),
           child: Text(t.save),
         ),
       ],
-    ),
-  );
-  final lines = controller.text.split('\n');
-  controller.dispose();
-  switch (choice) {
-    case 'discard':
-      await notifier.dismissLearned(discard: true);
-    case 'save':
-      await notifier.editLearned(lines);
-    default:
-      break;
+    );
   }
 }

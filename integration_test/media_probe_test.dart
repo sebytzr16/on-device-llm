@@ -59,7 +59,10 @@ class _Settings extends SettingsNotifier {
   }
 
   @override
-  Future<void> update(InferenceSettings next) async => state = next;
+  Future<void> update(
+    InferenceSettings next, {
+    bool requirePersistence = false,
+  }) async => state = next;
 }
 
 class _Models extends ModelManagerNotifier {
@@ -248,21 +251,21 @@ void main() {
     // 1. Photos. With a projector the model sees them; without one the
     // app sends only the text OCR found, so only the receipt applies.
     if (vision) {
-      n.newChat();
+      await n.newChat();
       await turn(
         'photo-cat',
         'What animal is in this photo?',
         attachments: [await import('cat-768.jpg')],
         expectAny: ['cat', 'kitten'],
       );
-      n.newChat();
+      await n.newChat();
       await turn(
         'photo-dog',
         'What animal is in this photo?',
         attachments: [await import('dog-768.jpg')],
         expectAny: ['dog', 'puppy'],
       );
-      n.newChat();
+      await n.newChat();
       await turn(
         'photo-car',
         'What is in this photo?',
@@ -275,7 +278,7 @@ void main() {
         'What colour is it?',
         expectAll: ['red'],
       );
-      n.newChat();
+      await n.newChat();
       await turn(
         'photo-fr',
         "Qu'est-ce qu'on voit sur cette photo ?",
@@ -283,7 +286,7 @@ void main() {
         expectAny: ['voiture', 'véhicule', 'automobile', 'toyota'],
       );
     }
-    n.newChat();
+    await n.newChat();
     await turn(
       'photo-receipt',
       'What is the total on this receipt?',
@@ -390,7 +393,7 @@ void main() {
     for (final (name, bytes, q, expected) in docs) {
       final a = await import(name, bytes: bytes);
       if (a.text == null) failures.add('$name: not extracted (${a.error})');
-      n.newChat();
+      await n.newChat();
       final any = name == 'sales.csv';
       await turn(
         'doc-${name.split('.').last}',
@@ -402,7 +405,7 @@ void main() {
     }
 
     // 3. Two files at once: the answer must use the right one.
-    n.newChat();
+    await n.newChat();
     await turn(
       'doc-two-files',
       'Which of these two files mentions the Juniper room, and what is the '

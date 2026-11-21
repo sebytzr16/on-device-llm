@@ -6,8 +6,11 @@ import '../providers/chat_provider.dart';
 import '../../../../core/design/app_design.dart';
 
 /// A bounded view makes a source-message jump reliable even when the original
-/// chat is too long for its lazy list to have built the target row.
-class MessageSourcePage extends ConsumerWidget {
+/// chat is too long for its lazy list to have built the target row. The rows
+/// are loaded once per chat and deliberately frozen: a page opened while a
+/// turn is still streaming shows the source as it was at that moment rather
+/// than swapping the list under the reader on every turn event.
+class MessageSourcePage extends ConsumerStatefulWidget {
   final String chatId, messageId;
   const MessageSourcePage({
     super.key,
@@ -15,17 +18,41 @@ class MessageSourcePage extends ConsumerWidget {
     required this.messageId,
   });
   @override
-  Widget build(BuildContext context, WidgetRef ref) => Scaffold(
+  ConsumerState<MessageSourcePage> createState() => _MessageSourcePageState();
+}
+
+class _MessageSourcePageState extends ConsumerState<MessageSourcePage> {
+  /// Queried once per chat, not once per build: the page rebuilds whenever a
+  /// turn starts or stops (it watches `isGenerating`), so a per-build future
+  /// would run one full message query for every such event.
+  late Future<List<Message>> _messages;
+
+  @override
+  void initState() {
+    super.initState();
+    _messages = ref.read(appDatabaseProvider).getMessages(widget.chatId);
+  }
+
+  @override
+  void didUpdateWidget(MessageSourcePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.chatId != widget.chatId) {
+      _messages = ref.read(appDatabaseProvider).getMessages(widget.chatId);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: Text(context.l10n.sourceMessage)),
     body: FutureBuilder<List<Message>>(
-      future: ref.read(appDatabaseProvider).getMessages(chatId),
+      future: _messages,
       builder: (context, snapshot) {
         if (snapshot.hasError) return Center(child: Text('${snapshot.error}'));
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
         final rows = snapshot.data!;
-        final at = rows.indexWhere((r) => r.id == messageId);
+        final at = rows.indexWhere((r) => r.id == widget.messageId);
         if (at < 0) {
           return Center(child: Text(context.l10n.sourceMessageMissing));
         }
@@ -34,7 +61,7 @@ class MessageSourcePage extends ConsumerWidget {
           children: [
             for (final row in rows.skip((at - 1).clamp(0, rows.length)).take(3))
               Card(
-                color: row.id == messageId
+                color: row.id == widget.messageId
                     ? Theme.of(context).colorScheme.secondaryContainer
                     : null,
                 child: Padding(
@@ -53,7 +80,9 @@ class MessageSourcePage extends ConsumerWidget {
               onPressed: ref.watch(chatProvider.select((s) => s.isGenerating))
                   ? null
                   : () async {
-                      await ref.read(chatProvider.notifier).openChat(chatId);
+                      await ref
+                          .read(chatProvider.notifier)
+                          .openChat(widget.chatId);
                       if (context.mounted) Navigator.pop(context);
                     },
               child: Text(context.l10n.openConversation),

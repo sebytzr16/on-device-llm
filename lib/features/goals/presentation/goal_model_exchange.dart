@@ -24,7 +24,7 @@ extension _GoalModelExchange on GoalNotifier {
     final settings = _goalRef.read(settingsProvider);
     final TextEngine engine = settings.usesRemote
         ? _goalRef.read(remoteEngineProvider)
-        : _goalRef.read(llamaEngineProvider);
+        : _goalRef.read(activeLocalEngineProvider);
     final model = _goalRef.read(modelManagerProvider).loadedModel;
     return (
       engine: engine,
@@ -79,9 +79,8 @@ extension _GoalModelExchange on GoalNotifier {
     String Function(int maxCharacters)? promptForLimit,
   }) async {
     final budget = budgetSpec == null ? TurnBudget() : _budget(budgetSpec);
-    final m = _model();
     // A remote model is used as configured; a local one must be loaded.
-    if (!m.settings.usesRemote &&
+    if (!_goalRef.read(settingsProvider).usesRemote &&
         _goalRef.read(modelManagerProvider).loadedModel == null) {
       final library = _goalRef.read(modelManagerProvider);
       final candidate = library.catalog
@@ -92,6 +91,7 @@ extension _GoalModelExchange on GoalNotifier {
           .read(modelManagerProvider.notifier)
           .loadModel(candidate, forChat: true);
     }
+    final m = _model();
     Future<String> ask(InferenceSettings settings) async {
       if (_stopping) throw StateError('The Goal was stopped.');
       if (_local && settings.contextSize < _goalContext) {

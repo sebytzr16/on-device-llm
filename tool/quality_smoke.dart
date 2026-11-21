@@ -49,7 +49,10 @@ class QualitySettings extends SettingsNotifier {
   }
 
   @override
-  Future<void> update(InferenceSettings next) async => state = next;
+  Future<void> update(
+    InferenceSettings next, {
+    bool requirePersistence = false,
+  }) async => state = next;
 }
 
 class QualityModels extends ModelManagerNotifier {
@@ -108,7 +111,7 @@ Future<void> _run() async {
   try {
     await (await SharedPreferences.getInstance()).remove('active_goal_v2');
     final chat = container.read(chatProvider.notifier);
-    chat.newChat();
+    await chat.newChat();
     for (final question in [
       'What is the latest stable Flutter SDK version and its release date?',
       'Summarize https://en.wikipedia.org/wiki/Adreno in three sentences.',

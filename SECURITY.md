@@ -14,6 +14,7 @@ The app runs its models locally (on Android and Windows) and operates a local or
 - opt-in public web search (DuckDuckGo HTML/lite/news endpoints);
 - opt-in Wikipedia language APIs and news RSS feeds;
 - the manual update check, only when the user presses **Check for updates** in Settings > About: one request to the public GitHub Releases API for this repository, with a generic `OnDeviceLLM` User-Agent and no account, device or usage identifier;
+- on Windows, the engine-pack check: once a day (and when the user presses **Check now** in Settings > Engine updates) one request to the public GitHub Releases API for this repository, plus the download of a signed engine pack when one is newer; it can be turned off in Settings > Engine updates;
 - user-configured remote servers (OpenAI-compatible APIs or hosted endpoints);
 - user-approved Model Context Protocol (MCP) executables that perform their own network calls;
 - local peer discovery and TLS/HTTPS pairing requests over loopback or local Wi-Fi.

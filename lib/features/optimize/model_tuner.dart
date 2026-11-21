@@ -59,6 +59,12 @@ class TuneStep {
 
 enum TuneStatus { complete, drift, cancelled }
 
+/// A tuning run ran past its time budget (slow models): the caller keeps
+/// what is proven instead of reporting an error.
+class OptimizeBudgetExhausted implements Exception {
+  const OptimizeBudgetExhausted();
+}
+
 class TuneReport {
   final TuneStatus status;
   final List<TuneStep> steps;
@@ -154,13 +160,14 @@ class ModelTuner {
     final hashes = {
       ...aa.map((s) => s.outputHash),
       ...ab.map((s) => s.outputHash),
-    };
-    if (!drift.isFinite ||
-        drift > driftNoise ||
-        hashes.length != 1 ||
-        hashes.single.isEmpty) {
+    }.where((h) => h.isNotEmpty).toSet();
+    if (!drift.isFinite || drift > driftNoise || hashes.length > 1) {
       return report(TuneStatus.drift);
     }
+    // One sample that did not reproduce the reference no longer discards
+    // the whole run: the rounds that did still fix the expected answer.
+    final reference = hashes.isEmpty ? '' : hashes.single;
+    if (reference.isEmpty) return report(TuneStatus.drift);
     for (final entry in candidates.entries) {
       for (final value in entry.value) {
         if (_cancelled) return report(TuneStatus.cancelled);
@@ -209,10 +216,7 @@ class ModelTuner {
           prefill ? prefillDriftNoise : driftNoise,
           math.max(_spread(a, prefill), _spread(b, prefill)),
         );
-        final sameOutput = [
-          ...a,
-          ...b,
-        ].every((s) => s.outputHash == hashes.single);
+        final sameOutput = [...a, ...b].every((s) => s.outputHash == reference);
         // Every paired candidate must win; a median alone can hide throttling.
         final stable = List.generate(
           3,

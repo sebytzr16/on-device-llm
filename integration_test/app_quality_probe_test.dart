@@ -54,7 +54,10 @@ class _Settings extends SettingsNotifier {
   }
 
   @override
-  Future<void> update(InferenceSettings next) async => state = next;
+  Future<void> update(
+    InferenceSettings next, {
+    bool requirePersistence = false,
+  }) async => state = next;
 }
 
 class _Models extends ModelManagerNotifier {
@@ -186,11 +189,11 @@ void main() {
     final n = container.read(chatProvider.notifier);
 
     // 1. Small talk: no search, no tools, fast.
-    n.newChat();
+    await n.newChat();
     await turn('small-talk', 'Hi! How are you today?', noSources: true);
 
     // 2. Multi-turn memory across four turns.
-    n.newChat();
+    await n.newChat();
     await turn(
       'memory-1',
       'My name is Lina. I am planning a trip to Lisbon in May with my '
@@ -210,7 +213,7 @@ void main() {
     );
 
     // 3. A long document with one buried fact, then a follow-up.
-    n.newChat();
+    await n.newChat();
     final manual = _manual();
     await turn(
       'document-1',
@@ -235,7 +238,7 @@ void main() {
     );
 
     // 4. Code.
-    n.newChat();
+    await n.newChat();
     await turn(
       'code',
       'Write a Python function is_palindrome(s) that ignores case, spaces '
@@ -245,14 +248,14 @@ void main() {
     );
 
     // 5. Phone actions: a card, no web search.
-    n.newChat();
+    await n.newChat();
     await turn(
       'action-reminder',
       'Remind me tomorrow at 9 am to call the dentist.',
       wantAction: true,
       noSources: true,
     );
-    n.newChat();
+    await n.newChat();
     await turn(
       'action-timer',
       'Set a timer for 12 minutes for the pasta.',
@@ -261,14 +264,14 @@ void main() {
     );
 
     // 6. Live web: facts that do not change.
-    n.newChat();
+    await n.newChat();
     await turn(
       'web-who',
       'When did the WHO declare COVID-19 a pandemic?',
       expectAll: ['11', 'March', '2020'],
       wantSources: true,
     );
-    n.newChat();
+    await n.newChat();
     await turn(
       'web-z30',
       'How much does the Nikon Z30 weigh with battery?',
@@ -281,7 +284,7 @@ void main() {
       'And how many shots does its battery last?',
       expectAll: ['330'],
     );
-    n.newChat();
+    await n.newChat();
     await turn(
       'web-fr',
       'Quelle est la hauteur de la tour Eiffel ?',

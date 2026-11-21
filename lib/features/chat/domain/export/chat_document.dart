@@ -288,6 +288,14 @@ class ChatDocument {
         '<w:insideV w:val="single" w:sz="4"/>'
         '</w:tblBorders></w:tblPr>',
       );
+      // CT_Tbl requires a grid between the properties and the rows; one
+      // column per header cell, or Word reports the document as unreadable.
+      final columns = rows.isEmpty ? 0 : rows.first.length;
+      xml.write('<w:tblGrid>');
+      for (var i = 0; i < columns; i++) {
+        xml.write('<w:gridCol/>');
+      }
+      xml.write('</w:tblGrid>');
       for (final row in rows) {
         xml.write('<w:tr>');
         for (final cell in row) {

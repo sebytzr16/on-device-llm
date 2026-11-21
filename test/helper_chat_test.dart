@@ -84,6 +84,31 @@ class _Helper extends HelperRunner {
   }
 }
 
+class _UnavailableHelper extends _Helper {
+  @override
+  Future<String> modelNameFor(
+    String modelId, {
+    InferenceSettings? agentSettings,
+  }) async =>
+      throw const HelperUnavailable('the engine does not support helpers');
+
+  @override
+  Future<HelperReply> run({
+    required String modelId,
+    required String task,
+    String input = '',
+    String? messageId,
+    int? maxTokens,
+    ToolRunner? webTools,
+    InferenceSettings? agentSettings,
+    Future<bool> Function(CancelToken)? approveWeb,
+    CancelToken? cancel,
+  }) async {
+    calls++;
+    throw const HelperUnavailable('the engine does not support helpers');
+  }
+}
+
 class _NativeEngine extends fixtures.TestEngine {
   final choices = <String>[];
   _NativeEngine() {
@@ -228,6 +253,46 @@ class _SharedBackgroundEngine extends _BackgroundEngine {
 }
 
 void main() {
+  test('helper dispatch preamble appears while the round is open', () async {
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final helper = _Helper();
+    final chunks = StreamController<String>();
+    final engine = fixtures.TestEngine()..answerPieces = chunks.stream;
+    final container = ProviderContainer(
+      overrides: [
+        appDatabaseProvider.overrideWithValue(db),
+        llamaEngineProvider.overrideWithValue(engine),
+        settingsProvider.overrideWith(() => _Settings(true)),
+        modelManagerProvider.overrideWith(fixtures.TestModels.new),
+        helperRunnerProvider.overrideWithValue(helper),
+      ],
+    );
+    final visible = Completer<ChatState>();
+    final subscription = container.listen(chatProvider, (_, state) {
+      if (!visible.isCompleted &&
+          state.isGenerating &&
+          state.reasoning?.content == 'I will split the work.') {
+        visible.complete(state);
+      }
+    });
+    final sent = container
+        .read(chatProvider.notifier)
+        .send('Use one helper to explain tides');
+    try {
+      chunks.add('I will split the work.');
+      final live = await visible.future.timeout(const Duration(seconds: 3));
+      expect(live.partialAnswer, isEmpty);
+    } finally {
+      engine.answerPieces = null;
+      unawaited(chunks.close());
+      await sent;
+      subscription.close();
+      container.dispose();
+      helper.dispose();
+      await db.close();
+    }
+  });
+
   test(
     'empty source-based answer retries once and retains cited findings',
     () async {
@@ -656,4 +721,40 @@ void main() {
       await db.close();
     }
   });
+
+  test(
+    'an engine without helpers fails only the ask_helper call, not the turn',
+    () async {
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      final helper = _UnavailableHelper();
+      final engine = _BackgroundEngine();
+      final container = ProviderContainer(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          llamaEngineProvider.overrideWithValue(engine),
+          settingsProvider.overrideWith(() => _Settings(true)),
+          modelManagerProvider.overrideWith(fixtures.TestModels.new),
+          helperRunnerProvider.overrideWithValue(helper),
+        ],
+      );
+      try {
+        await container
+            .read(chatProvider.notifier)
+            .send('Use one helper to explain tides')
+            .timeout(const Duration(seconds: 10));
+        final state = container.read(chatProvider);
+        expect(state.isGenerating, isFalse);
+        expect(state.messages.last.content, contains('The final answer'));
+        final results = engine.prompts.last
+            .where((m) => m['name'] == 'ask_helper')
+            .map((m) => '${m['content']}');
+        expect(results, isNotEmpty);
+        expect(results.every((c) => !c.contains('started on')), isTrue);
+      } finally {
+        container.dispose();
+        helper.dispose();
+        await db.close();
+      }
+    },
+  );
 }

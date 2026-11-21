@@ -607,17 +607,37 @@ extension _ChatRounds on ChatNotifier {
           );
           final ToolResult result;
           if (call.name == 'ask_helper') {
-            final helperName = await _chatRef
-                .read(helperRunnerProvider)
-                .modelNameFor(settings.helperModelId, agentSettings: settings);
-            result = ToolResult(
-              call: call,
-              ok: true,
-              elapsedMs: 0,
-              output:
-                  'Helper job ${++helperCount} started on $helperName: ${call.args['task']}. '
-                  'Its reply will be added before you write the final answer.',
-            );
+            // An engine without helpers (e.g. a pack-only engine) must fail
+            // this one tool call, not the whole turn.
+            String? helperName;
+            String? unavailable;
+            try {
+              helperName = await _chatRef
+                  .read(helperRunnerProvider)
+                  .modelNameFor(
+                    settings.helperModelId,
+                    agentSettings: settings,
+                  );
+            } on HelperUnavailable catch (e) {
+              unavailable = e.reason;
+            }
+            result = helperName == null
+                ? ToolResult(
+                    call: call,
+                    ok: false,
+                    elapsedMs: 0,
+                    output:
+                        'The helper is not available ($unavailable). '
+                        'Answer without it.',
+                  )
+                : ToolResult(
+                    call: call,
+                    ok: true,
+                    elapsedMs: 0,
+                    output:
+                        'Helper job ${++helperCount} started on $helperName: ${call.args['task']}. '
+                        'Its reply will be added before you write the final answer.',
+                  );
           } else {
             result = await runner.run(call);
           }

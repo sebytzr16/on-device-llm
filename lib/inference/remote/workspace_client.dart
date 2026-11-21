@@ -102,13 +102,17 @@ class WorkspaceClient {
     InferenceSettings settings,
     String path,
     String name, {
+    String? batch,
     CancelToken? cancel,
   }) async {
     final file = File(path);
     final bytes = await DeviceEncryption.instance.read(file);
     final size = bytes.length;
     final response = await _client(settings).postUri(
-      endpoint(settings, 'uploads').replace(queryParameters: {'name': name}),
+      endpoint(
+        settings,
+        'uploads',
+      ).replace(queryParameters: {'name': name, 'batch': ?batch}),
       data: Stream.value(bytes),
       options: options(settings)
         ..headers!.addAll({
@@ -129,6 +133,7 @@ class WorkspaceClient {
     approve,
     CancelToken? cancel,
     List<Map<String, Object>> uploads = const [],
+    Future<List<Map<String, Object>>> Function()? prepareUploads,
     bool webOnly = false,
     bool phoneActions = false,
   }) async {
@@ -166,13 +171,19 @@ class WorkspaceClient {
       },
       'uploads': uploads,
     };
+    List<Map<String, Object>>? prepared;
     var sequence = 0;
     var terminal = false;
+    var reposted = false;
     final answered = <String, bool>{};
     try {
       while (!terminal && cancel?.isCancelled != true) {
         try {
           if (jobId == null) {
+            prepared ??= prepareUploads == null
+                ? uploads
+                : await prepareUploads();
+            body['uploads'] = prepared;
             final response = await _client(settings).postUri(
               endpoint(settings, 'jobs'),
               data: body,
@@ -248,6 +259,18 @@ class WorkspaceClient {
         } on DioException catch (error) {
           if (isTlsFailure(error)) rethrow;
           if (cancel?.isCancelled == true) break;
+          // The server no longer knows a retained job (restarted host or a
+          // lost journal). Forget it and post the work once more instead of
+          // failing every retry of this message.
+          if (error.response?.statusCode == 404 && jobId != null && !reposted) {
+            reposted = true;
+            await _remember(prefs, _jobsKey, entryId, null);
+            jobId = null;
+            prepared = null;
+            answered.clear();
+            sequence = 0;
+            continue;
+          }
           if (error.response != null &&
               !const [
                 408,

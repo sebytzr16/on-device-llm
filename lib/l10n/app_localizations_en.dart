@@ -1841,6 +1841,17 @@ class AppLocalizationsEn extends AppLocalizations {
       'The server also stops when the phone reports severe heat. The screen stays on while it runs.';
 
   @override
+  String get hostShareDocuments => 'Share documents with paired devices';
+
+  @override
+  String get hostShareDocumentsHint =>
+      'Paired devices can search the documents on this device. Off by default.';
+
+  @override
+  String get hostShareDocumentsConfirm =>
+      'Paired devices will be able to read and search every document in your knowledge collection. Turn on?';
+
+  @override
   String get commonOff => 'Off';
 
   @override
@@ -1961,6 +1972,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatPinNone => 'No pin: use the selected model';
 
   @override
+  String get chatPinStaysLocal =>
+      'Pinned. Web research stays off for this chat.';
+
+  @override
   String chatPinned(String model) {
     return '📌 $model';
   }
@@ -2069,6 +2084,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get backupTooLarge => 'Backup exceeds the safety limit.';
+
+  @override
+  String get backupTooLargeForFileSave =>
+      'This backup is too large to save through the Android file picker. Use Share instead.';
 
   @override
   String get backupVerifiedNotice =>
@@ -7091,6 +7110,34 @@ class AppLocalizationsEn extends AppLocalizations {
       'Could not reload the model after Optimize. Try loading it again.';
 
   @override
+  String get optimizeBusyGenerating =>
+      'A reply is still being written. Stop it or wait for it to finish, then run Optimize again.';
+
+  @override
+  String get optimizeBusyLoading =>
+      'A model is loading. Wait for it to finish, then run Optimize again.';
+
+  @override
+  String get optimizeBusyOther =>
+      'Another task is using the model. Wait for it to finish, then run Optimize again.';
+
+  @override
+  String get optimizeBusyRunning =>
+      'Optimize is already running for this model.';
+
+  @override
+  String get optimizeMemoryRam =>
+      'Free RAM is too small for this model or a safe setup. Close other apps or use a smaller model.';
+
+  @override
+  String get optimizeMemoryVram =>
+      'Free graphics memory is too small for this model or a safe setup. Lower the GPU layers or use a smaller model.';
+
+  @override
+  String get desktopOptimizeKeptUnsupported =>
+      'These settings cannot be saved on this device, so the current settings were kept.';
+
+  @override
   String tuneReceipt(Object date) {
     return 'Benchmark receipt · $date';
   }
@@ -7736,6 +7783,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Stop the current response before switching models.';
 
   @override
+  String get modelLoadInProgress =>
+      'A model is already loading. Wait for it to finish, or stop it.';
+
+  @override
   String get modelStopUnload => 'Stop the current response before unloading.';
 
   @override
@@ -8129,6 +8180,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get modelDownloadPaused => 'Paused';
+
+  @override
+  String get downloadPreparing => 'Preparing…';
 
   @override
   String get sidebarCollapse => 'Collapse navigation';
@@ -10168,5 +10222,94 @@ class AppLocalizationsEn extends AppLocalizations {
       'The downloaded engine failed to load twice, so the built-in engine is in use again.';
 
   @override
+  String get engineUpdateUnverified =>
+      'The downloaded engine pack could not be verified, so the built-in engine is in use. Install it again from Settings → Engines.';
+
+  @override
   String get engineUpdateNoGitHub => 'GitHub could not be reached.';
+
+  @override
+  String get liteRtBackend => 'LiteRT backend';
+
+  @override
+  String get liteRtBackendAuto => 'Auto (GPU with CPU fallback)';
+
+  @override
+  String get liteRtBackendGpu => 'GPU (OpenCL)';
+
+  @override
+  String get liteRtBackendCpu => 'CPU';
+
+  @override
+  String get liteRtUnusedSettings => 'Not used by LiteRT models';
+
+  @override
+  String engineUnusedSettings(String engine) {
+    return 'Not used by $engine models';
+  }
+
+  @override
+  String engineUnavailable(String engine) {
+    return '$engine is unavailable on this device.';
+  }
+
+  @override
+  String engineToolsUnavailable(String engine) {
+    return 'Tools are unavailable with $engine models.';
+  }
+
+  @override
+  String get liteRtToolsUnavailable =>
+      'Tools are unavailable with LiteRT models.';
+
+  @override
+  String get liteRtAndroidOnly => 'LiteRT models require Android.';
+
+  @override
+  String get liteRtHelperLoadFirst =>
+      'Load this LiteRT model and wait for chat to finish before using it with a helper.';
+
+  @override
+  String get liteRtImportModel => 'Import a model';
+
+  @override
+  String get liteRtImportHint => 'Choose a .gguf or .litertlm model file.';
+
+  @override
+  String get liteRtImportedLicense => 'Imported file · check publisher license';
+
+  @override
+  String get liteRtNotLoaded => 'Load a LiteRT model first.';
+
+  @override
+  String get liteRtBusy => 'The LiteRT model is busy.';
+
+  @override
+  String get liteRtInvalidModelFilename => 'Choose a single model filename.';
+
+  @override
+  String get ikLlamaLoadFailed =>
+      'ik_llama.cpp could not be loaded. Reinstall its engine pack in Settings, or switch this model back to llama.cpp.';
+
+  @override
+  String get modelEngine => 'Engine';
+
+  @override
+  String get modelEngineUnavailable => 'Install in Settings → Engines';
+
+  @override
+  String get engineUpdateIkTitle => 'ik_llama.cpp engine pack';
+
+  @override
+  String get engineUpdateIkHint =>
+      'Optional second engine, installed only for the models you assign to it. llama.cpp stays the default.';
+
+  @override
+  String engineUpdateIkInstalled(String tag) {
+    return 'Installed pack: $tag';
+  }
+
+  @override
+  String get ikEnginePackReverted =>
+      'The ik_llama.cpp engine pack failed to load twice and was disabled. Reinstall it in Settings → Engines, or switch those models back to llama.cpp.';
 }

@@ -10,6 +10,17 @@ static void configure(Runtime & r, const common_chat_params & p) {
     r.parser = common_chat_parser_params(p);
     r.parser.parser = p.parser;
     r.stops = p.additional_stops;
+    r.think_start = p.thinking_start_tag;
+    r.think_ends = p.thinking_end_tags;
+    r.forced_open = ends_with_tag(p.generation_prompt, r.think_start);
+    r.text_recovery_allowed = true;
+}
+static std::string step(Runtime & r, const std::string & piece) {
+    uint8_t buf[512];
+    check(emit_piece(&r, piece), "Unexpected stop while streaming");
+    r.parsed_at -= std::chrono::milliseconds(40);
+    const auto n = flush(&r, buf, sizeof buf, false);
+    return std::string(reinterpret_cast<char *>(buf), n);
 }
 static std::string stream(Runtime & r, const std::string & raw) {
     std::string output;
@@ -58,12 +69,112 @@ int main() {
         auto harmony = fixture("openai-gpt-oss-120b.jinja");
         auto p = common_chat_templates_apply(harmony.get(), in);
         {
+            for (bool repeat_header : {false, true}) {
+                Runtime r(0); configure(r, p);
+                const std::string header = "<|start|>assistant";
+                r.parser.generation_prompt = common_chat_input(header);
+                check(step(r, (repeat_header ? header : "") + "<|channel|>analysis<|message|>short") == "<think>short",
+                    "Open Harmony analysis did not stream");
+                check(step(r, " reasoning<|en") == " reasoning", "Partial end tag leaked or stalled reasoning");
+                check(step(r, "d|>\n\n<|start|>assis").empty(), "Harmony partial header leaked");
+                check(step(r, "tant<|channel|>final<|message|>The") == "</think>The",
+                    "Natural Harmony handoff with padding stalled the answer");
+                check(step(r, " answer") == " answer", "Harmony answer stopped growing");
+                check(stream(r, "").empty() && r.parse_error.empty(), "Repaired Harmony turn changed at finalization");
+            }
+            std::cout << "PASS natural Harmony reasoning, padded handoff and answer stream before completion\n";
+        }
+        {
+            auto thinking = in;
+            thinking.enable_thinking = true;
+            for (const char * name : {"Qwen-Qwen3-0.6B.jinja", "Qwen3.5-4B.jinja", "google-gemma-4-31B-it.jinja",
+                                    "deepseek-ai-DeepSeek-R1-Distill-Qwen-32B.jinja", "deepseek-ai-DeepSeek-V4.jinja", "GLM-4.7-Flash.jinja"}) {
+                for (bool with_tools : {false, true}) {
+                    thinking.tools.clear();
+                    if (with_tools) thinking.tools.push_back({"example", "Example", "{}"});
+                    const auto tmpl = fixture(name);
+                    const auto format = common_chat_templates_apply(tmpl.get(), thinking);
+                    Runtime r(0); configure(r, format);
+                    r.text_recovery_allowed = !with_tools;
+                    const auto open = r.forced_open ? "" : r.think_start;
+                    const auto close = r.think_ends.front();
+                    check(step(r, open + "reason").find("reason") != std::string::npos, name);
+                    check(step(r, " more" + close.substr(0, close.size() - 1)) == " more", name);
+                    check(step(r, close.substr(close.size() - 1) + "The") == "</think>The", name);
+                    check(step(r, " answer") == " answer", name);
+                    check(stream(r, "").empty() && r.parse_error.empty() && !r.recovering_text, name);
+                }
+            }
+            std::cout << "PASS Qwen, Gemma, DeepSeek and GLM live channels with split delimiters and tools on/off\n";
+        }
+        {
+            Runtime r(0); r.parser_active = r.text_recovery_allowed = true;
+            r.parser.parser = build_chat_peg_parser([](common_chat_peg_builder & p) {
+                return p.literal("expected header") + p.content(p.rest());
+            });
+            r.think_start = "<|channel>thought";
+            r.think_ends = {"<channel|>"};
+            r.stops = {"LATER", "STOP"};
+            check(step(r, "<|channel>thoughtshort") == "<think>short",
+                "An outright partial parse failure withheld short reasoning");
+            const std::string thought(128, 'r');
+            check(step(r, thought + "<chan") == thought,
+                "A failed partial parse withheld reasoning");
+            check(step(r, "nel|>The ST") == "</think>The ", "Recovered answer waited or leaked a stop prefix");
+            check(step(r, "eps") == "STeps", "A non-stop prefix stayed buffered");
+            check(!emit_piece(&r, " aheadSTOPjunkLATER"), "Expected a stop");
+            check(stream(r, "") == " ahead" && !r.parse_error.empty(), "Recovery duplicated output or ignored the earliest stop");
+            std::cout << "PASS failed plain-text parse streams both channels and honors stops before completion\n";
+        }
+        {
+            Runtime r(0); r.parser_active = r.text_recovery_allowed = true;
+            const std::string answer(128, 'a');
+            r.parser.parser = build_chat_peg_parser([&](common_chat_peg_builder & p) {
+                return p.content(p.literal(answer));
+            });
+            check(step(r, answer.substr(0, 64)) == answer.substr(0, 64),
+                "A silent partial parse withheld a full batch of text");
+            check(step(r, answer.substr(64)) == answer.substr(64), "Recovered answer stalled");
+            check(stream(r, "").empty() && r.parse_error.empty(), "A successful final parse replayed recovered bytes");
+            std::cout << "PASS an empty partial result recovers visible text without replay at finalization\n";
+        }
+        {
+            Runtime r(0); r.parser_active = true;
+            r.parsed_msg.tool_calls.push_back({"obsolete", "{}", "partial-id"});
+            check(step(r, "answer") == "answer", "A disappearing partial call blocked visible text");
+            check(stream(r, "").empty() && r.tool_calls.empty(), "Published a partial call");
+            std::cout << "PASS native text deltas do not depend on partial tool-call diffs\n";
+        }
+        {
             Runtime r(0); configure(r, p);
             r.parser.generation_prompt = common_chat_input("<|start|>assistant<|channel|>analysis<|message|>");
             const auto out = stream(r, "reason<|end|><|start|>assistant<|channel|>final<|message|>answer");
             check(out == "<think>reason</think>answer", "Forced reasoning / Harmony header leak");
             check(r.parse_error.empty(), "Harmony parse failed");
             std::cout << "PASS Harmony forced-open with thinking off, byte chunks, 3-byte buffers\n";
+        }
+        {
+            Runtime r(0); configure(r, p);
+            r.parser.generation_prompt = common_chat_input("<|start|>assistant<|channel|>analysis<|message|>");
+            auto step = [&](const std::string & piece) {
+                uint8_t buf[512];
+                check(emit_piece(&r, piece), "Unexpected stop while streaming");
+                r.parsed_at -= std::chrono::milliseconds(40);
+                const int n = flush(&r, buf, sizeof buf, false);
+                return std::string((char *)buf, n);
+            };
+            const std::string thought(64, 'r');
+            check(step(thought) == "<think>" + thought, "Reasoning did not stream");
+            for (int i = 0; i < 255; ++i) {
+                check(step(thought) == thought, "Long reasoning stopped streaming");
+            }
+            step(reasoning_handoff(p.thinking_end_tags));
+            check(step("<|start|>assistant<|channel|>final<|message|>The") == "</think>The",
+                "First answer token did not stream after the reasoning budget");
+            check(step(" answer") == " answer", "Answer did not grow before stream end");
+            finish_tools(&r);
+            check(r.parse_error.empty() && r.parsed_output.empty(), "Finalization changed the streamed answer");
+            std::cout << "PASS long Harmony reasoning hands off to a live answer at the budget\n";
         }
         {
             Runtime r(0); configure(r, p);

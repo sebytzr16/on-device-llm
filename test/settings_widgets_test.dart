@@ -30,7 +30,10 @@ class TestSettings extends SettingsNotifier {
   }
 
   @override
-  Future<void> update(InferenceSettings next) async {
+  Future<void> update(
+    InferenceSettings next, {
+    bool requirePersistence = false,
+  }) async {
     state = next;
   }
 }
@@ -145,7 +148,11 @@ void main() {
     tester,
   ) async {
     final container = ProviderContainer(
-      overrides: [settingsProvider.overrideWith(TestSettings.new)],
+      overrides: [
+        settingsProvider.overrideWith(TestSettings.new),
+        // The search page reads the active model (LiteRT or not).
+        modelManagerProvider.overrideWith(TestModels.new),
+      ],
     );
     addTearDown(container.dispose);
     await tester.pumpWidget(

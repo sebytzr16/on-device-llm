@@ -4,14 +4,23 @@
 #include "prompt_store.h"
 #include "llama.h"
 #include "ggml-backend.h"
+#ifndef OD_IK_LLAMA
 #include "gguf.h"
+#endif
 #include "chat.h"
+#ifdef OD_IK_LLAMA
+// ik_llama.cpp differences stay in one file; the bundled build below is
+// unchanged because the include is compiled out there.
+#include "ik_compat.inc"
+#else
+#include "chat-peg-parser.h"
 #include "common.h"
 #include "speculative.h"
 #include "fit.h"
 #include "json-schema-to-grammar.h"
 #include "mtmd.h"
 #include "mtmd-helper.h"
+#endif
 #include <map>
 #include <set>
 #include "nlohmann/json.hpp"
@@ -30,6 +39,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -83,7 +93,8 @@ static void store_clear(Runtime * r);
 // but the process, and native memory, can live on. Relaunching then loaded
 // a second copy on top (report 2026-09-28: 6.6 GB native heap).
 static std::mutex registry_mutex;
-static std::set<Runtime *> registry;
+static std::condition_variable registry_idle;
+static std::map<void *, Runtime *> registry;
 // Owners being released right now: a load in another window waits for that
 // memory to come back before measuring what is free.
 static std::mutex release_mutex;
@@ -99,16 +110,13 @@ struct Runtime {
     // arrives from another thread. `released` refuses work afterwards.
     std::mutex use;
     bool released = false;
+    // Protected by registry_mutex. Includes callers waiting for use or admission.
+    size_t active_calls = 0;
+    bool destroying = false;
     // od_estimate's scratch runtime: memory short of the need is reported
     // (ramNeedMb over ramAvailableMb), not refused, so callers can weigh it.
     bool planning = false;
-    const bool tracked;
-    explicit Runtime(int64_t owner_id, bool track = true) : owner(owner_id), tracked(track) {
-        if (!tracked) return;
-        { std::lock_guard<std::mutex> lock(cancellation_mutex); cancellations.emplace(session, cancelled); load_progress.emplace(session, progress); }
-        std::lock_guard<std::mutex> lock(registry_mutex);
-        registry.insert(this);
-    }
+    explicit Runtime(int64_t owner_id) : owner(owner_id) {}
     std::vector<std::weak_ptr<SideBatch>> sides;
     std::string model_path;
     llama_model * model = nullptr;
@@ -126,19 +134,20 @@ struct Runtime {
     common_chat_templates_ptr templates;
     bool supports_thinking = false, forced_open = false, supports_tools = false;
     std::string template_error, template_probe_error;
-    std::string think_start, error, info, preview, fallback_reason, backend = "CPU", adapter_info;
+    std::string think_start, error, fallback_reason, backend = "CPU";
     json effective = json::object();
     std::vector<std::string> think_ends;
     std::vector<llama_token> prompt;
+#ifndef OD_IK_LLAMA
     std::vector<ggml_backend_dev_t> devices;
     // Buffers common_fit_params writes and the model params point into.
     std::vector<float> split;
     std::vector<llama_model_tensor_buft_override> overrides;
+#endif
     // The loaded model's placement (devices, split, overrides point into
     // this Runtime), so helper planning measures the same layout.
     llama_model_params model_params = llama_model_default_params();
     std::vector<llama_model_kv_override> kv_overrides;
-    std::string estimate;
     int batch = 256, cursor = 0, generated = 0, maximum = 0, trimmed = 0, pending = -1;
     bool done = true;
     double first_ms = 0;
@@ -236,7 +245,6 @@ struct Runtime {
     // Embedding mode (FX-02): the context pools sequence embeddings instead
     // of producing logits; od_begin/od_step are refused, od_embed works.
     bool embedding = false;
-    std::string embedded;
     // ABI 6 --------------------------------------------------------------
     // Stop sequences (settings.stopSequences plus the template's own for
     // tool formats). Output is held back while it could still be the start
@@ -249,6 +257,7 @@ struct Runtime {
     // Every templated turn uses the syntax returned with its prompt.
     common_chat_parser_params parser;
     bool tools_active = false, parser_active = false, parser_finished = false, output_thinking = false;
+    bool text_recovery_allowed = false, recovering_text = false, recovery_thinking = false;
     common_chat_input generated_input;
     common_chat_msg parsed_msg;
     std::string parsed_output, parse_error;
@@ -314,11 +323,20 @@ struct Runtime {
     float draft_p_min = 0;   // Stop drafting below this confidence
     llama_context * mtp_ctx = nullptr;
     // MTP and DFlash share the common driver's capture/verify lifecycle.
+#ifdef OD_IK_LLAMA
+    common_params_speculative ik_spec;
+    std::unique_ptr<common_speculative, decltype(&common_speculative_free)> mtp{nullptr, common_speculative_free};
+#else
     common_speculative_ptr mtp;
+#endif
     bool dflash = false;
     int64_t dflash_features = 0;
     int dflash_max = 0, dflash_block = 0;
+#ifdef OD_IK_LLAMA
+    void reset() { llama_sampler_free(sampler); llama_sampler_free(grammar); sampler = nullptr; grammar = nullptr; }
+#else
     void reset() { if (backend_sampled && ctx) llama_set_sampler(ctx, 0, nullptr); backend_sampled = false; if (sampler) llama_sampler_free(sampler); if (grammar) llama_sampler_free(grammar); sampler = nullptr; grammar = nullptr; }
+#endif
     void forget() { cached.clear(); media_meta.clear(); checkpoints.clear(); checkpoint_at.clear(); reused = 0; draft_cached.clear(); draft_queue.clear(); }
     void drop_chunks() { if (chunks) mtmd_input_chunks_free(chunks); chunks = nullptr; media_pending = false; }
     void unload() {
@@ -355,14 +373,54 @@ struct Runtime {
         parsed_raw_length = streamed_raw_length = 0;
         tools_active = false; generated_text.clear(); tool_calls = json::array(); tool_format.clear(); tool_content.clear();
     }
-    ~Runtime() {
-        if (!tracked) { unload(); return; }
-        { std::lock_guard<std::mutex> lock(cancellation_mutex); cancellations.erase(session); load_progress.erase(session); }
-        // Waits for a release in progress; afterwards nobody else can reach this runtime.
-        { std::lock_guard<std::mutex> lock(registry_mutex); registry.erase(this); }
-        unload();
-    }
+    ~Runtime() { unload(); }
 };
+
+class RuntimeCall {
+    Runtime * runtime = nullptr;
+public:
+    explicit RuntimeCall(void * handle) {
+        std::lock_guard<std::mutex> lock(registry_mutex);
+        auto found = registry.find(handle);
+        if (found != registry.end()) {
+            runtime = found->second;
+            ++runtime->active_calls;
+        }
+    }
+    ~RuntimeCall() {
+        if (!runtime) return;
+        std::lock_guard<std::mutex> lock(registry_mutex);
+        if (--runtime->active_calls == 0 && runtime->destroying) registry_idle.notify_all();
+    }
+    RuntimeCall(const RuntimeCall &) = delete;
+    RuntimeCall & operator=(const RuntimeCall &) = delete;
+    Runtime * get() const { return runtime; }
+};
+#ifdef OD_IK_LLAMA
+static int decode_target(Runtime * r, llama_batch batch) {
+    if (!r->mtp || r->draft_disabled || r->ik_spec.type == COMMON_SPECULATIVE_TYPE_DRAFT) return llama_decode(r->ctx, batch);
+    const auto base = llama_kv_cache_seq_pos_max(r->ctx, 0) + 1;
+    const bool prefill = r->cursor < (int)r->prompt.size();
+    const int chunk = std::max(1, (int)llama_n_ubatch(r->ctx));
+    for (int offset = 0; offset < batch.n_tokens; offset += chunk) {
+        const int n = std::min(chunk, batch.n_tokens - offset);
+        llama_batch part = llama_batch_init(n, 0, 1);
+        // Every row asks for logits on purpose: a driver that needs all target
+        // hidden rows reads them from this batch's outputs, so "only the last
+        // row" would silently starve the warm-up. The fork's reference loop
+        // warms MTP the same way (examples/main/main.cpp:859-864), which is
+        // why a speculative prefill costs several plain prefills.
+        for (int i = offset; i < offset + n; ++i)
+            common_batch_add(part, batch.token[i], batch.pos ? batch.pos[i] : base + i, {0}, true);
+        int rc = llama_decode(r->ctx, part);
+        if (!rc && prefill && common_speculative_needs_all_target_hidden(r->mtp.get()))
+            rc = common_speculative_on_target_seq_batch(r->mtp.get(), r->ctx, part, 0, true);
+        llama_batch_free(part);
+        if (rc) return rc;
+    }
+    return 0;
+}
+#else
 static void reset_mtp(Runtime * r) {
     r->mtp.reset();
     if (!r->ctx || !r->model || !r->mtp_ctx) throw std::runtime_error("The MTP target or head context is missing.");
@@ -401,6 +459,7 @@ static int decode_target(Runtime * r, llama_batch batch) {
     }
     return 0;
 }
+#endif
 static const char * released_message = "The model was unloaded because the app window closed.";
 static std::once_flag init_flag;
 #if defined(__ANDROID__)
@@ -619,6 +678,9 @@ void * od_create(const char * options) {
 #ifdef ODLLM_CUDA_PTX
             cuda_hide_unsupported();
 #endif
+#ifdef OD_IK_LLAMA
+            llama_log_set(native_log, nullptr); llama_backend_init();
+#else
             llama_log_set(native_log, nullptr); llama_backend_init(); ggml_backend_load_all();
             // A GPU backend with no usable device (old driver, no GPU) would
             // keep its DLL and driver/cuBLAS state loaded for nothing (P3-06).
@@ -626,9 +688,25 @@ void * od_create(const char * options) {
                 ggml_backend_reg_t reg = ggml_backend_reg_get(i);
                 if (ggml_backend_reg_dev_count(reg) == 0) ggml_backend_unload(reg);
             }
+#endif
         });
         const auto owner = opts.contains("owner") && opts["owner"].is_number_integer() ? opts["owner"].get<int64_t>() : 0;
-        return new Runtime(owner);
+        auto runtime = std::make_unique<Runtime>(owner);
+        // The handle is a token, so an old side worker cannot open a newer
+        // runtime even if the allocator reuses the same address.
+        auto * handle = reinterpret_cast<void *>(static_cast<uintptr_t>(runtime->session));
+        std::scoped_lock lock(registry_mutex, cancellation_mutex);
+        try {
+            cancellations.emplace(runtime->session, runtime->cancelled);
+            load_progress.emplace(runtime->session, runtime->progress);
+            registry.emplace(handle, runtime.get());
+        } catch (...) {
+            cancellations.erase(runtime->session);
+            load_progress.erase(runtime->session);
+            throw;
+        }
+        runtime.release();
+        return handle;
     } catch (...) { return nullptr; }
 }
 
@@ -647,10 +725,12 @@ int32_t od_gpu_device_count() {
         if (!h) return 0;
         od_destroy(h);
         int32_t count = 0;
+#ifndef OD_IK_LLAMA
         for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
             const auto type = ggml_backend_dev_type(ggml_backend_dev_get(i));
             if (type == GGML_BACKEND_DEVICE_TYPE_GPU || type == GGML_BACKEND_DEVICE_TYPE_IGPU) ++count;
         }
+#endif
 #ifdef ODLLM_CUDA_PTX
         // ggml lists every CUDA GPU, including ones without kernels here.
         count = std::min(count, cuda_supported_devices());
@@ -688,7 +768,25 @@ int32_t od_cpu_isa() {
     return 0;
 #endif
 }
-void od_destroy(void * h) { delete static_cast<Runtime *>(h); }
+void od_destroy(void * h) {
+    std::unique_ptr<Runtime> runtime;
+    {
+        std::unique_lock<std::mutex> lock(registry_mutex);
+        auto found = registry.find(h);
+        if (found == registry.end()) return;
+        runtime.reset(found->second);
+        runtime->destroying = true;
+        registry.erase(found);
+        runtime->cancelled->store(true, std::memory_order_relaxed);
+        registry_idle.wait(lock, [&] { return runtime->active_calls == 0; });
+    }
+    {
+        std::lock_guard<std::mutex> lock(cancellation_mutex);
+        cancellations.erase(runtime->session);
+        load_progress.erase(runtime->session);
+    }
+    // Runtime::unload also waits for side calls before freeing shared weights.
+}
 int32_t od_release_owner(int64_t owner) {
     if (owner == 0) return 0;
     { std::lock_guard<std::mutex> lock(release_mutex); releasing.insert(owner); }
@@ -698,8 +796,12 @@ int32_t od_release_owner(int64_t owner) {
         std::lock_guard<std::mutex> lock(registry_mutex);
         // Cancel everything first: a generation or load in progress stops at
         // its next check and lets go of the runtime's lock.
-        for (auto * r : registry) if (r->owner == owner) r->cancelled->store(true, std::memory_order_relaxed);
-        for (auto * r : registry) {
+        for (const auto & entry : registry) {
+            auto * r = entry.second;
+            if (r->owner == owner) r->cancelled->store(true, std::memory_order_relaxed);
+        }
+        for (const auto & entry : registry) {
+            auto * r = entry.second;
             if (r->owner != owner) continue;
             std::lock_guard<std::mutex> use(r->use);
             if (r->released) continue;
@@ -721,7 +823,11 @@ extern "C" JNIEXPORT jint JNICALL Java_app_ondevicellm_ondevice_1llm_NativeBridg
     return od_release_owner((int64_t)owner);
 }
 #endif
-int64_t od_session_id(void * h) { return static_cast<Runtime *>(h)->session; }
+int64_t od_session_id(void * h) {
+    RuntimeCall call(h);
+    auto * r = call.get();
+    return r ? r->session : 0;
+}
 void od_cancel_session(int64_t session) {
     std::lock_guard<std::mutex> lock(cancellation_mutex);
     auto found = cancellations.find(session);
@@ -732,11 +838,29 @@ float od_load_progress(int64_t session) {
     auto found = load_progress.find(session);
     return found == load_progress.end() ? -1.0f : found->second->load(std::memory_order_relaxed);
 }
-void od_reset_cancel(void * h) { static_cast<Runtime *>(h)->cancelled->store(false, std::memory_order_relaxed); }
-int32_t od_cancelled(void * h) { return static_cast<Runtime *>(h)->cancelled->load(std::memory_order_relaxed); }
-const char * od_error(void * h) { return static_cast<Runtime *>(h)->error.c_str(); }
+void od_reset_cancel(void * h) {
+    std::lock_guard<std::mutex> lock(registry_mutex);
+    auto found = registry.find(h);
+    if (found != registry.end() && !found->second->released)
+        found->second->cancelled->store(false, std::memory_order_relaxed);
+}
+int32_t od_cancelled(void * h) {
+    RuntimeCall call(h);
+    auto * r = call.get();
+    return r && r->cancelled->load(std::memory_order_relaxed);
+}
+const char * od_error(void * h) {
+    RuntimeCall call(h);
+    auto * r = call.get();
+    if (!r) return "Native runtime is closed.";
+    std::lock_guard<std::mutex> use(r->use);
+    static thread_local std::string error;
+    error = r->error;
+    return error.c_str();
+}
 // b12342: CPU has generic FP8 conversion/dot/FA kernels; CUDA has FA
 // instances. Other backend families must opt in only after gaining kernels.
+#ifndef OD_IK_LLAMA
 static bool supports_fp8_kv(ggml_backend_dev_t dev) {
     const std::string name = ggml_backend_reg_name(ggml_backend_dev_backend_reg(dev));
     if (name != "CPU" && name != "CUDA") return false;
@@ -751,11 +875,16 @@ static bool supports_fp8_kv(ggml_backend_dev_t dev) {
     ggml_free(ctx);
     return supported;
 }
+#endif
 const char * od_info(void * h) {
-    auto * r = static_cast<Runtime *>(h);
+    RuntimeCall call(h);
+    auto * r = call.get();
+    if (!r) return nullptr;
+    static thread_local std::string result;
     std::lock_guard<std::mutex> use(r->use);
     double seconds = r->generated > 1 ? std::chrono::duration<double>(r->last - r->first).count() : 0;
     json devices = json::array();
+#ifndef OD_IK_LLAMA
     for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
         auto dev = ggml_backend_dev_get(i);
         const auto type = ggml_backend_dev_type(dev);
@@ -764,7 +893,15 @@ const char * od_info(void * h) {
             {"description", ggml_backend_dev_description(dev)},
             {"gpu", type == GGML_BACKEND_DEVICE_TYPE_GPU || type == GGML_BACKEND_DEVICE_TYPE_IGPU}});
     }
-    r->info = json{{"abiVersion", 7}, {"supportsDFlash", true},
+#endif
+#ifdef OD_IK_LLAMA
+    // The fork's DFlash path is not exercised by this port: it refuses
+    // targets whose IO tensors cannot be shared. Claim only what loaded.
+    const bool supports_dflash = false;
+#else
+    const bool supports_dflash = true;
+#endif
+    result = json{{"abiVersion", 7}, {"supportsDFlash", supports_dflash},
         {"supportsFp8Kv", r->effective.value("supportsFp8Kv", false)}, {"devices", devices}, {"kernelCacheDir", kernel_cache_dir},
         {"effectiveSettings", r->effective}, {"fallbackReason", r->fallback_reason},
         {"backend", r->backend}, {"tokens", r->generated}, {"promptTokens", r->prompt_positions},
@@ -789,14 +926,24 @@ const char * od_info(void * h) {
         {"hasTemplate", (bool)r->templates}, {"embedding", r->embedding},
         {"embeddingDim", r->model ? llama_model_n_embd_out(r->model) : 0},
         // A reranker (pooling RANK): od_embed scores request.pairs.
+#ifdef OD_IK_LLAMA
+        {"ranks", false},
+#else
         {"ranks", r->ctx && llama_pooling_type(r->ctx) == LLAMA_POOLING_TYPE_RANK},
+#endif
         // ABI 7: media embeddings (EmbeddingGemma 2 projector) and audio input.
         {"supportsAudio", r->mctx && mtmd_support_audio(r->mctx)},
         // ABI 6
         {"finishReason", r->finish}, {"supportsTools", r->supports_tools}, {"toolFormat", r->tool_format},
         {"toolCalls", r->tool_calls}, {"toolContent", r->tool_content}, {"adapters", r->adapter_report},
+#ifdef OD_IK_LLAMA
+        {"speculationMode", r->effective.value("speculationMode", "off")},
+        {"mtp", r->effective.value("mtp", false)},
+        {"mtpAcceptRate", r->effective.value("mtp", false) && r->draft_proposed > 0 ? (double)r->draft_accepted / r->draft_proposed : 0.0},
+#else
         {"speculationMode", r->dflash ? "dflash" : r->mtp ? "mtp" : r->draft_ctx ? "draft" : "off"},
         {"mtp", (bool)r->mtp && !r->dflash}, {"mtpAcceptRate", r->mtp && !r->dflash && r->draft_proposed > 0 ? (double)r->draft_accepted / r->draft_proposed : 0.0},
+#endif
         {"draftModel", r->draft_name}, {"draftProposed", r->draft_proposed}, {"draftAccepted", r->draft_accepted},
         {"draftRounds", r->draft_rounds}, {"draftMs", r->draft_ms}, {"specMs", r->spec_ms}, {"draftDisabled", r->draft_disabled}, {"draftReplays", r->draft_replays},
         // Tokens per ms of speculative rounds relative to plain steps this turn (0 when unmeasured).
@@ -804,10 +951,14 @@ const char * od_info(void * h) {
         {"draftSpeedup", r->spec_ms > 0 && r->plain_ms > 0 && r->plain_steps > 0
             ? ((double)r->spec_tokens / r->spec_ms) / ((double)r->plain_steps / r->plain_ms) : 0.0},
         {"draftAcceptRate", r->draft_proposed > 0 ? (double)r->draft_accepted / (double)r->draft_proposed : 0.0}}.dump();
-    return r->info.c_str();
+    return result.c_str();
 }
 static ggml_type cache_type(const std::string & name) {
+#ifdef OD_IK_LLAMA
+    return name == "q8_0" ? GGML_TYPE_Q8_0 : name == "q4_0" ? GGML_TYPE_Q4_0 : name == "q5_0" ? GGML_TYPE_Q5_0
+#else
     return name == "f8_e4m3" ? GGML_TYPE_F8_E4M3 : name == "q8_0" ? GGML_TYPE_Q8_0 : name == "q4_0" ? GGML_TYPE_Q4_0 : name == "q5_0" ? GGML_TYPE_Q5_0
+#endif
         : name == "q5_1" ? GGML_TYPE_Q5_1 : name == "q4_1" ? GGML_TYPE_Q4_1 : name == "iq4_nl" ? GGML_TYPE_IQ4_NL
         : name == "bf16" ? GGML_TYPE_BF16 : name == "f32" ? GGML_TYPE_F32 : GGML_TYPE_F16;
 }
@@ -834,9 +985,16 @@ static bool probe_tools(Runtime * r) {
         common_chat_msg u; u.role = "user"; u.content = "hi"; in.messages.push_back(u);
         common_chat_tool t; t.name = "odllm_probe_tool"; t.description = "probe"; t.parameters = R"({"type":"object","properties":{"q":{"type":"string"}},"required":["q"]})";
         in.tools.push_back(t);
+#ifdef OD_IK_LLAMA
+        in.use_jinja = true;
+#endif
         in.enable_thinking = false;
         auto p = common_chat_templates_apply(r->templates.get(), in);
+#ifdef OD_IK_LLAMA
+        return p.prompt.find("odllm_probe_tool") != std::string::npos;
+#else
         return p.prompt.str().find("odllm_probe_tool") != std::string::npos;
+#endif
     } catch (const std::exception & e) { r->template_probe_error = e.what(); return false; }
 }
 // An MTP sidecar: a small separate head file that drafts from the target's
@@ -917,6 +1075,7 @@ static void check_head(const std::string & path, const HeadMetadata & h, const s
 // The draft model for speculative decoding defaults to the CPU, with plain
 // FP16 KV and the target's context; draftGpuLayers moves its layers onto
 // the target's GPU.
+#ifndef OD_IK_LLAMA
 static llama_model_params draft_model_params(Runtime * r, const json & s, const llama_model_params & mp) {
     auto dp = llama_model_default_params();
     dp.progress_callback = loading_callback;
@@ -945,6 +1104,7 @@ static llama_context_params draft_context_params(Runtime * r, const llama_contex
     }
     return dc;
 }
+#endif
 // A "Key:  123 kB" field of a /proc file ("/proc/meminfo", "MemAvailable:")
 // in bytes; 0 where there is none.
 static int64_t proc_bytes(const char * file, const std::string & key) {
@@ -1027,6 +1187,7 @@ static SystemMemory system_memory() {
 // Apple GPUs share the RAM, so what they take counts against the RAM. The
 // OpenCL backend reports Adreno/Mali as GPU, not IGPU, so Android never
 // counts as a separate memory (audit 2026-11-16 AUD-004).
+#ifndef OD_IK_LLAMA
 static bool own_memory(ggml_backend_dev_t dev) {
 #if defined(__APPLE__) || defined(__ANDROID__)
     (void)dev; return false;
@@ -1307,10 +1468,36 @@ static json fit_gpu(Runtime * r, const char * path, const json & s, llama_model_
     out["gpuExpertsOnCpu"] = mp.tensor_buft_overrides != nullptr && mp.tensor_buft_overrides[0].pattern != nullptr;
     return out;
 }
+#endif
 // Loads the model, or with [estimate_only] stops after planning and returns
 // what the load would use (od_estimate).
 static json load_with(Runtime * r, const char * path, const json & config, const std::string & requested, bool estimate_only = false) {
         auto s = config;
+#ifdef OD_IK_LLAMA
+        const auto target_meta = head_metadata(path);
+        const std::string mode = s.value("speculationMode", "auto");
+        const bool embedding = s.value("embedding", false);
+        const std::string draft = mode == "off" || embedding ? "" : s.value("draftModel", "");
+        const auto draft_meta = draft.empty() ? HeadMetadata{} : head_metadata(draft);
+        r->dflash = draft_meta.arch == "dflash" || draft_meta.arch == "dflash-draft";
+        const bool use_mtp = !embedding && mode != "off" && (mode == "mtp" || draft_meta.only ||
+            (mode == "auto" && draft.empty() && s.value("mtp", false)));
+        if ((mode == "draft" || mode == "dflash") && draft.empty()) throw std::runtime_error("OD_DRAFT_REQUIRED");
+        if ((mode == "dflash" && !r->dflash) || (mode == "draft" && (r->dflash || use_mtp)) ||
+            (mode == "mtp" && (r->dflash || (!draft.empty() && !draft_meta.only))))
+            throw std::runtime_error("OD_SPEC_MODE");
+        const auto spec_type = r->dflash ? COMMON_SPECULATIVE_TYPE_DFLASH
+            : use_mtp ? COMMON_SPECULATIVE_TYPE_MTP
+            : !draft.empty() ? COMMON_SPECULATIVE_TYPE_DRAFT : COMMON_SPECULATIVE_TYPE_NONE;
+        if (spec_type != COMMON_SPECULATIVE_TYPE_NONE && !s.value("mmproj", "").empty())
+            ik_unsupported("Speculation with a media projector");
+        if (target_meta.only || target_meta.arch == "dflash" || target_meta.arch == "dflash-draft")
+            ik_unsupported("Loading a standalone speculation head");
+        if (requested != "cpu" && requested != "auto") ik_unsupported("GPU backends");
+        if (s.value("swaFull", false)) ik_unsupported("SWA-full");
+        if (s.value("backendSampling", false)) ik_unsupported("Backend sampling");
+        if (estimate_only) return {{"memoryAdmission", "unsupported on ik_llama"}, {"gpuFit", "unsupported on ik_llama"}};
+#else
         const std::string mode = s.value("speculationMode", "auto");
         if (mode == "off") { s["draftModel"] = ""; s["mtp"] = false; }
         if (mode == "mtp") s["mtp"] = true;
@@ -1336,8 +1523,20 @@ static json load_with(Runtime * r, const char * path, const json & config, const
             r->dflash_max = std::min<int>(std::clamp(s.value("draftMaxTokens", 6), 1, 32), draft_meta.dflash_block - 1);
             s["draftMaxTokens"] = r->dflash_max;
         }
+#endif
         auto mp = llama_model_default_params();
         const bool use_mmap = s.value("useMmap", true), use_mlock = s.value("useMlock", false);
+#ifdef OD_IK_LLAMA
+        mp.use_mmap = use_mmap;
+        mp.use_mlock = use_mlock;
+        mp.n_gpu_layers = 0;
+        mp.fit = false;
+        mp.mtp = use_mtp;
+        mp.ncmoe = std::max(0, s.value("nCpuMoe", 0));
+        r->backend = "CPU";
+        r->embedding = s.value("embedding", false);
+        const bool on_cpu = true;
+#else
         // Newer llama.cpp folds mmap and mlock into one load mode.
         mp.load_mode = use_mmap ? (use_mlock ? LLAMA_LOAD_MODE_MMAP_MLOCK : LLAMA_LOAD_MODE_AUTO)
                                 : (use_mlock ? LLAMA_LOAD_MODE_MLOCK : LLAMA_LOAD_MODE_NONE);
@@ -1409,6 +1608,7 @@ static json load_with(Runtime * r, const char * path, const json & config, const
         r->devices.push_back(nullptr); mp.devices = r->devices.data();
         r->embedding = s.value("embedding", false);
         mp.load_mtp = !r->embedding && s.value("mtp", false) && s.value("draftModel", "").empty() && has_mtp_heads(path);
+#endif
         auto cp = llama_context_default_params();
         // App units match upstream --moe-cache-mib; C API takes bytes.
         if (s.contains("moeCacheSizeMb")) cp.moe_cache_size = (size_t)std::clamp<int64_t>(s.value("moeCacheSizeMb", int64_t(0)), 0, int64_t(1) << 30) * 1024 * 1024;
@@ -1417,7 +1617,9 @@ static json load_with(Runtime * r, const char * path, const json & config, const
             cp.moe_cache_cpu_share = std::isfinite(share) ? std::clamp(share, 0.0f, 1.0f) : 0.0f;
         }
         cp.offload_kqv = s.value("offloadKv", true);
+#ifndef OD_IK_LLAMA
         cp.swa_full = s.value("swaFull", false);
+#endif
         cp.abort_callback = cancelled_callback;
         cp.abort_callback_data = r->cancelled.get();
         // The user's choice (roadmap SET-01), then capped below to the model's
@@ -1436,7 +1638,9 @@ static json load_with(Runtime * r, const char * path, const json & config, const
             // bounded by n_batch, and od_embed clears the memory between
             // batches, so an item alone can use the whole context.
             cp.n_seq_max = std::max<int>(cp.n_seq_max, kEmbedBatchSeqs);
+#ifndef OD_IK_LLAMA
             cp.kv_unified = true;
+#endif
         }
         cp.n_batch = r->batch;
         cp.n_ubatch = std::clamp(s.value("effectiveMicroBatchSize", std::min(r->batch, 128)), 32, r->batch);
@@ -1454,6 +1658,16 @@ static json load_with(Runtime * r, const char * path, const json & config, const
         // Prefill scales past the decode optimum (S25+: 8 threads prefill 14%
         // faster than 6 while 8 collapses decode), so the two are separate.
         cp.n_threads_batch = threads(s.value("effectiveBatchThreads", (int)cp.n_threads));
+#ifdef OD_IK_LLAMA
+        cp.mtp = use_mtp;
+        cp.flash_attn = s.value("flashAttention", true);
+        const auto kv = s.value("kvCacheType", "fp16");
+        auto vv = s.value("vCacheType", ""); if (vv.empty()) vv = kv;
+        if (kv == "f8_e4m3" || vv == "f8_e4m3") ik_unsupported("FP8 E4M3 KV cache");
+        cp.type_k = cache_type(kv); cp.type_v = cache_type(vv);
+        if (ggml_is_quantized(cp.type_v)) cp.flash_attn = true;
+        mp.flash_attn = cp.flash_attn;
+#else
         cp.flash_attn_type = s.value("flashAttention", true) ? LLAMA_FLASH_ATTN_TYPE_AUTO : LLAMA_FLASH_ATTN_TYPE_DISABLED;
         // Separate K and V cache types (ABI 6): "vCacheType" empty = same as K.
         auto kv = s.value("kvCacheType", "fp16");
@@ -1483,6 +1697,7 @@ static json load_with(Runtime * r, const char * path, const json & config, const
         // A quantized V cache needs flash attention; a quantized K alone does not.
         if (cp.type_v != GGML_TYPE_F16 && cp.type_v != GGML_TYPE_F32 && cp.type_v != GGML_TYPE_BF16) cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
         if (cp.type_k == GGML_TYPE_F8_E4M3) cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+#endif
         // RoPE / YaRN (ABI 6): "model" keeps the GGUF's values; the others
         // override the scaling type and, when non-zero, base/scale/yarn.
         const std::string rope = s.value("ropeScaling", "model");
@@ -1518,6 +1733,14 @@ static json load_with(Runtime * r, const char * path, const json & config, const
                 }
             }
         }
+#ifdef OD_IK_LLAMA
+        const std::string mmproj = s.value("mmproj", "");
+        if (!mmproj.empty() && s.value("projectorDevice", "auto") == "gpu") ik_unsupported("GPU projectors");
+        json admission = {{"gpuFit", "unsupported on ik_llama"}, {"memoryAdmission", "unsupported on ik_llama"},
+            // P3-5: the fork's DFlash path is not exercised by this port.
+            {"supportsDFlash", false}, {"supportsFp8Kv", false}, {"useMmap", use_mmap}, {"useMlock", use_mlock},
+            {"projectorDevice", mmproj.empty() ? "" : "cpu"}, {"speculationMode", "off"}};
+#else
         const std::string draft = r->embedding ? "" : s.value("draftModel", "");
         const std::string mmproj = s.value("mmproj", "");
         auto dp = draft_model_params(r, s, mp);
@@ -1716,6 +1939,7 @@ static json load_with(Runtime * r, const char * path, const json & config, const
             admission["backend"] = r->backend;
             return admission;
         }
+#endif
         LoadingProgress loading{r->cancelled.get(), r->progress.get()};
         mp.progress_callback = weight_loading_callback;
         mp.progress_callback_user_data = &loading;
@@ -1741,14 +1965,21 @@ static json load_with(Runtime * r, const char * path, const json & config, const
                 common_chat_templates_inputs probe;
                 common_chat_msg user; user.role = "user"; user.content = "hi"; probe.messages.push_back(user);
                 probe.force_pure_content = true;
+#ifdef OD_IK_LLAMA
+                probe.use_jinja = true;
+                r->supports_thinking = common_chat_templates_apply(r->templates.get(), probe).supports_thinking;
+#else
                 common_chat_templates_apply(r->templates.get(), probe);
+#endif
             } catch (const std::exception & e) {
                 r->template_error = e.what(); r->templates.reset();
                 if (!chat_template.empty()) throw std::runtime_error(std::string("Invalid prompt template: ") + e.what());
             }
             if (r->templates) {
+#ifndef OD_IK_LLAMA
                 try { r->supports_thinking = common_chat_templates_support_enable_thinking(r->templates.get()); }
                 catch (const std::exception & e) { r->template_probe_error = e.what(); }
+#endif
                 // A missing template still permits the caller's legacy family fallback.
                 if (!common_chat_templates_was_explicit(r->templates.get())) r->templates.reset();
             }
@@ -1767,11 +1998,19 @@ static json load_with(Runtime * r, const char * path, const json & config, const
                 auto * adapter = llama_adapter_lora_init(r->model, apath.c_str());
                 if (!adapter) throw std::runtime_error("The adapter \"" + apath.substr(apath.find_last_of("/\\") + 1) + "\" could not be loaded: it is not a LoRA GGUF for this model's architecture.");
                 r->adapters.push_back(adapter); scales.push_back(scale);
+#ifdef OD_IK_LLAMA
+                adapter_report.push_back({{"path", apath}, {"scale", scale}, {"name", ""}});
+#else
                 char buf[256];
                 std::string name = llama_adapter_meta_val_str(adapter, "general.name", buf, sizeof buf) >= 0 ? buf : "";
                 adapter_report.push_back({{"path", apath}, {"scale", scale}, {"name", name}});
+#endif
             }
         }
+#ifdef OD_IK_LLAMA
+        if (use_mtp && draft.empty() && llama_model_mtp_package(r->model) != LLAMA_MTP_PACKAGE_EMBEDDED)
+            ik_unsupported("Embedded MTP for this model");
+#endif
         r->ctx = llama_init_from_model(r->model, cp);
         if (!r->ctx) throw std::runtime_error("Cannot allocate context. Reduce context size, use FP16 cache, or choose a smaller model.");
         // The accepted parameters and scales are kept for helper contexts.
@@ -1779,9 +2018,14 @@ static json load_with(Runtime * r, const char * path, const json & config, const
         if (!r->adapters.empty() && llama_set_adapters_lora(r->ctx, r->adapters.data(), r->adapters.size(), scales.data()) != 0)
             throw std::runtime_error("The LoRA adapters could not be applied to this model.");
         r->adapter_report = adapter_report;
+#ifdef OD_IK_LLAMA
+        r->n_swa = llama_kv_cache_n_swa(r->ctx);
+        r->needs_checkpoints = llama_model_has_recurrent(r->model) || r->n_swa > 0;
+#else
         r->swa_full = cp.swa_full;
         r->n_swa = llama_model_n_swa(r->model);
         r->needs_checkpoints = llama_model_is_recurrent(r->model) || llama_model_is_hybrid(r->model) || (r->n_swa > 0 && !r->swa_full);
+#endif
         // Vision projector: optional; a failure leaves the text model usable
         // and is reported so the app can say why photos are unavailable.
         if (!mmproj.empty()) {
@@ -1790,6 +2034,13 @@ static json load_with(Runtime * r, const char * path, const json & config, const
             // copies each one over for an image's large batches (op offload,
             // patches/mtmd-weights-on-host.patch). Without it a 1,023-token
             // photo took 25.7 s on 8 CPU cores against 2.5 s on an RTX 3070.
+#ifdef OD_IK_LLAMA
+            vp.use_gpu = false;
+            vp.n_threads = cp.n_threads_batch;
+            vp.flash_attn_type = cp.flash_attn ? LLAMA_FLASH_ATTN_TYPE_ENABLED : LLAMA_FLASH_ATTN_TYPE_DISABLED;
+            vp.print_timings = false;
+            if (!r->embedding || s.contains("imageMaxTokens")) vp.image_max_tokens = std::clamp(s.value("imageMaxTokens", 1024), 64, 16384);
+#else
             vp.use_gpu = mp.n_gpu_layers > 0;
             vp.weights_on_host = vp.use_gpu && !projector_gpu;
             vp.device = vp.use_gpu ? r->devices[mp.split_mode == LLAMA_SPLIT_MODE_NONE ? mp.main_gpu : 0] : nullptr;
@@ -1805,10 +2056,22 @@ static json load_with(Runtime * r, const char * path, const json & config, const
             // session is cancelled, matching the model/context loads (audit E21).
             vp.progress_callback = loading_callback;
             vp.progress_callback_user_data = r->cancelled.get();
+#endif
             r->mctx = mtmd_init_from_file(mmproj.c_str(), r->model, vp);
             if (!r->mctx) r->vision_error = "The vision projector could not be loaded (wrong file for this model, or out of memory).";
             else if (!mtmd_support_vision(r->mctx) && !(r->embedding && mtmd_support_audio(r->mctx))) { mtmd_free(r->mctx); r->mctx = nullptr; r->vision_error = "This projector has no image encoder."; }
         }
+#ifdef OD_IK_LLAMA
+        r->progress->store(0.97f, std::memory_order_relaxed);
+        r->effective = {{"contextSize", llama_n_ctx(r->ctx)}, {"batchSize", llama_n_batch(r->ctx)},
+            {"microBatchSize", llama_n_ubatch(r->ctx)}, {"threads", llama_n_threads(r->ctx)},
+            {"batchThreads", llama_n_threads_batch(r->ctx)}, {"cpuCores", od_cpu_cores()}, {"gpuLayers", 0},
+            {"layers", target_meta.blocks + 1}, {"kvCacheType", kv}, {"vCacheType", vv},
+            {"flashAttentionPolicy", cp.flash_attn ? "enabled" : "disabled"},
+            {"contextTrain", llama_model_n_ctx_train(r->model)}, {"ropeScaling", rope},
+            {"ropeFreqBase", cp.rope_freq_base}, {"ropeFreqScale", cp.rope_freq_scale},
+            {"ropeFreqScaleTrain", llama_model_rope_freq_scale_train(r->model)}, {"adapters", r->adapters.size()}};
+#else
         // Draft model for speculative decoding (ABI 6): CPU unless
         // draftGpuLayers, plain FP16 KV, same context. Vocabulary mismatch is a load error the app shows.
         if (sidecar) {
@@ -1857,6 +2120,7 @@ static json load_with(Runtime * r, const char * path, const json & config, const
             {"ropeFreqScaleTrain", llama_model_rope_freq_scale_train(r->model)},
             {"adapters", (int)r->adapters.size()}, {"draftModel", r->draft_name}, {"draftMaxTokens", r->draft_max},
             {"draftGpuLayers", r->draft_model ? std::min<int>(dp.n_gpu_layers, llama_model_n_layer(r->draft_model) + llama_model_n_layer_nextn(r->draft_model) + 1) : 0}};
+#endif
         r->effective.update(admission);
         // Warm-up decode: GPU backends compile their kernels lazily, so a driver
         // that rejects a shader only fails here. Doing it at load time makes the
@@ -1890,6 +2154,7 @@ static json load_with(Runtime * r, const char * path, const json & config, const
         llama_memory_clear(llama_get_memory(r->ctx), true);
         llama_perf_context_reset(r->ctx);
         if (r->draft_ctx) llama_memory_clear(llama_get_memory(r->draft_ctx), true);
+#ifndef OD_IK_LLAMA
         // A separately selected draft keeps precedence over the model's own heads.
         if (sidecar || (mp.load_mtp && !r->draft_ctx && llama_model_n_layer_nextn(r->model) > 0)) {
             auto mc = cp;
@@ -1904,8 +2169,77 @@ static json load_with(Runtime * r, const char * path, const json & config, const
             reset_mtp(r);
         }
         if (r->dflash) reset_mtp(r);
+#else
+        r->ik_spec = {};
+        r->ik_spec.type = spec_type;
+        if (spec_type != COMMON_SPECULATIVE_TYPE_NONE) {
+            r->draft_max = std::clamp(s.value("draftMaxTokens", 6), 1, 32);
+            r->draft_p_min = std::clamp(s.value("draftMinP", 0.0f), 0.0f, 1.0f);
+            r->ik_spec.n_max = r->draft_max;
+            r->ik_spec.p_min = r->draft_p_min;
+            r->ik_spec.cparams_dft = cp;
+            r->ik_spec.cparams_dft.type_k = GGML_TYPE_F16;
+            r->ik_spec.cparams_dft.type_v = GGML_TYPE_F16;
+            if (!draft.empty()) {
+                auto dp = llama_model_default_params();
+                dp.n_gpu_layers = 0;
+                dp.fit = false;
+                dp.mtp = use_mtp;
+                dp.progress_callback = loading_callback;
+                dp.progress_callback_user_data = r->cancelled.get();
+                r->draft_model = llama_model_load_from_file(draft.c_str(), dp);
+                if (!r->draft_model) throw std::runtime_error("The speculative draft model could not be loaded on ik_llama.");
+                if (spec_type == COMMON_SPECULATIVE_TYPE_DRAFT) {
+                    const auto why = draft_incompatible(r->model, r->draft_model);
+                    if (!why.empty()) throw std::runtime_error("Speculative decoding is off: " + why + ".");
+                }
+                if (use_mtp && llama_model_is_gemma4_mtp_assistant(r->draft_model)) {
+                    if (target_meta.arch != "gemma4" || llama_model_mtp_feature_width(r->draft_model) != llama_model_mtp_feature_width(r->model))
+                        throw std::runtime_error("The selected MTP assistant does not match the target.");
+                } else if (use_mtp &&
+                    (llama_model_mtp_package(r->draft_model) != LLAMA_MTP_PACKAGE_COMPANION ||
+                    target_meta.arch != draft_meta.arch ||
+                    llama_model_mtp_feature_width(r->model) != llama_model_mtp_feature_width(r->draft_model))) {
+                    throw std::runtime_error("The selected MTP companion does not match the target.");
+                }
+                r->ik_spec.model_dft = r->draft_model;
+                r->ik_spec.model = draft;
+                r->draft_name = std::filesystem::path(draft).filename().string();
+            }
+            if (use_mtp) {
+                // Mirrors common_speculative_prepare_mtp_runtime() at this pin:
+                // the target must not be a companion or invalid package, a
+                // target-only package needs an external head, a Step target
+                // needs every MTP head it claims, and cparams_dft.mtp makes
+                // the head context expose its hidden outputs
+                // (llama_context_has_mtp_outputs requires it).
+                const auto target_package = llama_model_mtp_package(r->model);
+                if (target_package == LLAMA_MTP_PACKAGE_COMPANION || target_package == LLAMA_MTP_PACKAGE_INVALID)
+                    throw std::runtime_error("Speculative decoding is off: this file is an MTP companion, not a full target model.");
+                if (target_package == LLAMA_MTP_PACKAGE_TARGET_ONLY && draft.empty())
+                    throw std::runtime_error("Speculative decoding is off: this target has no MTP heads; select a matching companion.");
+                if (llama_model_is_step35(r->model) && target_package == LLAMA_MTP_PACKAGE_EMBEDDED &&
+                    !llama_model_step35_has_nextn_weights(r->model))
+                    throw std::runtime_error("Speculative decoding is off: this Step target is missing one or more MTP heads.");
+                r->ik_spec.cparams_dft.pooling_type = LLAMA_POOLING_TYPE_NONE;
+                r->ik_spec.cparams_dft.mtp = true;
+                r->ik_spec.cparams_dft.mtp_op_type = MTP_OP_WARMUP;
+                r->ik_spec.cparams_dft.embeddings = true;
+                llama_set_embeddings(r->ctx, true);
+            }
+            r->mtp.reset(common_speculative_init(r->ik_spec, r->ctx));
+            if (!r->mtp) throw std::runtime_error("The speculative driver could not initialize on ik_llama.");
+        }
+#endif
+#ifdef OD_IK_LLAMA
+        r->effective["mtp"] = use_mtp;
+        r->effective["speculationMode"] = r->dflash ? "dflash" : use_mtp ? "mtp" : r->mtp ? "draft" : "off";
+        r->effective["draftModel"] = r->draft_name;
+        r->effective["draftGpuLayers"] = 0;
+#else
         r->effective["mtp"] = (bool)r->mtp && !r->dflash;
         r->effective["speculationMode"] = r->dflash ? "dflash" : r->mtp ? "mtp" : r->draft_ctx ? "draft" : "off";
+#endif
         r->effective["draftMaxTokens"] = r->draft_max;
         r->effective["draftMinP"] = r->draft_p_min;
         r->forget();
@@ -1972,6 +2306,12 @@ static std::vector<std::vector<float>> pooled_batch(Runtime * r, const std::vect
 // medium, and its rows go into ONE batch with the text tokens, because the
 // encoder attends both ways and pools over the whole sequence; separate
 // decodes would pool only the last piece.
+#ifdef OD_IK_LLAMA
+static std::vector<float> embed_media(Runtime *, const std::string &, const std::vector<std::string> &, int) {
+    ik_unsupported("Mixed text and media embeddings");
+    return {};
+}
+#else
 static std::vector<float> embed_media(Runtime * r, const std::string & text, const std::vector<std::string> & media, int dims) {
     std::string prompt;
     for (size_t i = 0; i < media.size(); ++i) prompt += mtmd_default_marker();
@@ -2017,6 +2357,8 @@ static std::vector<float> embed_media(Runtime * r, const std::string & text, con
 }
 // Tokens of a rerank prompt piece: the template's markup parses as special
 // tokens, the query and document stay literal text.
+#endif
+#ifndef OD_IK_LLAMA
 static std::vector<llama_token> rank_tokens(const llama_vocab * vocab, const std::string & text, bool first, bool markup) {
     if (text.empty()) return {};
     int count = llama_tokenize(vocab, text.data(), text.size(), nullptr, 0, first, markup);
@@ -2094,6 +2436,7 @@ static std::vector<float> rank_pair(Runtime * r, const std::string & query, cons
     const int n = std::max(1, (int)llama_model_n_cls_out(r->model));
     return std::vector<float>(out, out + n);
 }
+#endif
 // Embeds every item of request.texts with the loaded embedding model,
 // truncated to the context, pooled by the model's policy and L2-normalised so
 // cosine similarity is a dot product. Text items that fit n_batch share one
@@ -2106,7 +2449,10 @@ static std::vector<float> rank_pair(Runtime * r, const std::string & query, cons
 // ...]) returns {"labels": [...], "scores": [[raw outputs], ...]} instead
 // (optional request.instruction: see rank_pair).
 const char * od_embed(void * h, const char * request) {
-    auto * r = static_cast<Runtime *>(h);
+    RuntimeCall call(h);
+    auto * r = call.get();
+    if (!r) return nullptr;
+    static thread_local std::string result;
     std::lock_guard<std::mutex> use(r->use);
     try {
         if (r->released) throw std::runtime_error(released_message);
@@ -2117,6 +2463,9 @@ const char * od_embed(void * h, const char * request) {
         const int n_ctx = (int)llama_n_ctx(r->ctx);
         const int dims = req.value("dims", 0);
         if (req.contains("pairs")) {
+#ifdef OD_IK_LLAMA
+            ik_unsupported("Reranking");
+#else
             if (llama_pooling_type(r->ctx) != LLAMA_POOLING_TYPE_RANK) throw std::runtime_error("The loaded model is not a reranker.");
             json labels = json::array(), scores = json::array();
             for (uint32_t i = 0; i < llama_model_n_cls_out(r->model); ++i) {
@@ -2127,8 +2476,9 @@ const char * od_embed(void * h, const char * request) {
                 if (r->cancelled->load(std::memory_order_relaxed)) throw std::runtime_error("Scoring cancelled.");
                 scores.push_back(rank_pair(r, p.value("query", std::string()), p.value("document", std::string()), req.value("instruction", std::string())));
             }
-            r->embedded = json{{"labels", labels}, {"scores", scores}}.dump();
-            return r->embedded.c_str();
+            result = json{{"labels", labels}, {"scores", scores}}.dump();
+            return result.c_str();
+#endif
         }
         // Text items: exact token counts (special tokens included) and the
         // limit one input may use, without decoding. Hosts refuse over-limit
@@ -2140,8 +2490,8 @@ const char * od_embed(void * h, const char * request) {
         if (req.value("countOnly", false)) {
             json counts = json::array();
             for (const auto & item : req.at("texts")) counts.push_back(count_tokens(item.is_string() ? item.get<std::string>() : item.value("text", std::string())));
-            r->embedded = json{{"counts", counts}, {"limit", n_ctx}}.dump();
-            return r->embedded.c_str();
+            result = json{{"counts", counts}, {"limit", n_ctx}}.dump();
+            return result.c_str();
         }
         json vectors = json::array();
         int dim = 0;
@@ -2217,14 +2567,17 @@ const char * od_embed(void * h, const char * request) {
         }
         flush();
         if (dim == 0) dim = dims > 0 ? std::min(dims, llama_model_n_embd_out(r->model)) : llama_model_n_embd_out(r->model);
-        r->embedded = json{{"dim", dim}, {"vectors", vectors}}.dump();
-        return r->embedded.c_str();
+        result = json{{"dim", dim}, {"vectors", vectors}}.dump();
+        return result.c_str();
     } catch (const std::exception & e) { r->error = e.what(); return nullptr; }
 }
 // GGUF header only (no tensor data): enough to tell a LoRA adapter, its base
 // architecture and name before it is attached to a model.
 const char * od_adapter_info(void * h, const char * path) {
-    auto * r = static_cast<Runtime *>(h);
+    RuntimeCall call(h);
+    auto * r = call.get();
+    if (!r) return nullptr;
+    static thread_local std::string result;
     std::lock_guard<std::mutex> use(r->use);
     try {
         gguf_init_params ip{true, nullptr};
@@ -2243,10 +2596,10 @@ const char * od_adapter_info(void * h, const char * path) {
         }
         const int64_t tensors = gguf_get_n_tensors(g);
         gguf_free(g);
-        r->adapter_info = json{{"architecture", keys.value("general.architecture", "")}, {"type", keys.value("general.type", "")},
+        result = json{{"architecture", keys.value("general.architecture", "")}, {"type", keys.value("general.type", "")},
             {"adapterType", keys.value("adapter.type", "")}, {"name", keys.value("general.name", "")},
             {"alpha", keys.contains("adapter.lora.alpha") && keys["adapter.lora.alpha"].is_number() ? keys["adapter.lora.alpha"].get<double>() : 0.0}, {"tensors", tensors}, {"keys", keys}}.dump();
-        return r->adapter_info.c_str();
+        return result.c_str();
     } catch (const std::exception & e) { r->error = e.what(); return nullptr; }
 }
 // What loading [path] with [settings] would use, without loading it (additive, looked up optionally):
@@ -2254,8 +2607,11 @@ const char * od_adapter_info(void * h, const char * path) {
 // RAM free now. An empty path returns the devices alone. A scratch runtime
 // plans it, so the handle's loaded model is untouched.
 const char * od_estimate(void * h, const char * path, const char * settings) {
+    RuntimeCall call(h);
+    auto * r = call.get();
+    if (!r) return nullptr;
+    static thread_local std::string result;
     MemoryAdmission memory_admission;
-    auto * r = static_cast<Runtime *>(h);
     try {
         memory_admission.check();
         auto s = settings && *settings ? json::parse(settings) : json::object();
@@ -2266,6 +2622,7 @@ const char * od_estimate(void * h, const char * path, const char * settings) {
             out = load_with(&plan, path, s, s.value("backend", "auto"), true);
         }
         json devices = json::array();
+#ifndef OD_IK_LLAMA
         for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
             auto dev = ggml_backend_dev_get(i);
             const auto type = ggml_backend_dev_type(dev);
@@ -2278,6 +2635,7 @@ const char * od_estimate(void * h, const char * path, const char * settings) {
                     : type == GGML_BACKEND_DEVICE_TYPE_CPU ? "cpu" : "accel"},
                 {"freeMb", (int64_t)(free >> 20)}, {"totalMb", (int64_t)(total >> 20)}});
         }
+#endif
         const SystemMemory ram = system_memory();
         out["devices"] = devices;
         out["ramAvailableMb"] = ram.available >> 20;
@@ -2286,8 +2644,8 @@ const char * od_estimate(void * h, const char * path, const char * settings) {
         // Free memory was read with this model still in it; a load frees
         // it first, so the app says the estimate is pessimistic.
         out["modelLoaded"] = r->model != nullptr;
-        r->estimate = out.dump();
-        return r->estimate.c_str();
+        result = out.dump();
+        return result.c_str();
     } catch (const std::exception & e) {
         std::lock_guard<std::mutex> use(r->use);
         r->error = e.what();
@@ -2295,8 +2653,10 @@ const char * od_estimate(void * h, const char * path, const char * settings) {
     }
 }
 int32_t od_load(void * h, const char * path, const char * settings) {
+    RuntimeCall call(h);
+    auto * r = call.get();
+    if (!r) return -1;
     MemoryAdmission memory_admission;
-    auto * r = static_cast<Runtime *>(h);
     std::lock_guard<std::mutex> use(r->use);
     struct FinishProgress {
         std::atomic<float> & progress;
@@ -2325,7 +2685,10 @@ int32_t od_load(void * h, const char * path, const char * settings) {
                     || reason.find("OD_SPEC_MODE") != std::string::npos
                     || reason.find("Speculative decoding is off:") != std::string::npos
                     || reason.find("draft model could not be loaded") != std::string::npos
-                    || reason.find("draft model's context") != std::string::npos;
+                    || reason.find("draft model's context") != std::string::npos
+                    // ik reports its own speculation load failures (P2-3).
+                    || reason.find("could not be loaded on ik_llama") != std::string::npos
+                    || reason.find("could not initialize on ik_llama") != std::string::npos;
                 if (!speculation_error || r->cancelled->load(std::memory_order_relaxed)) throw;
                 r->unload();
                 s["speculationMode"] = "off"; s["draftModel"] = ""; s["mtp"] = false;
@@ -2414,6 +2777,9 @@ static std::string render(Runtime * r, const json & messages, const std::string 
             if (schema.is_object() && schema.empty()) schema["type"] = "object";
             inputs.json_schema = schema.dump();
         }
+#ifdef OD_IK_LLAMA
+        inputs.use_jinja = true;
+#endif
         inputs.enable_thinking = thinking;
         inputs.reasoning_format = COMMON_REASONING_FORMAT_DEEPSEEK;
         inputs.add_generation_prompt = generation;
@@ -2432,9 +2798,17 @@ static std::string render(Runtime * r, const json & messages, const std::string 
             params = common_chat_templates_apply(r->templates.get(), inputs);
             r->template_probe_error = why;
         }
+#ifdef OD_IK_LLAMA
+        const auto & prompt = params.prompt;
+        if (!generation) return prompt;
+        r->think_start = params.thinking_start_tag;
+        r->think_ends.clear();
+        if (!params.thinking_end_tag.empty()) r->think_ends.push_back(params.thinking_end_tag);
+#else
         const auto prompt = params.prompt.str();
         if (!generation) return prompt;
         r->think_start = params.thinking_start_tag; r->think_ends = params.thinking_end_tags;
+#endif
         // Some templates open the reasoning block inside the prompt itself, so the
         // model never emits the opening tag. The output parser consumes it.
         r->forced_open = params.supports_thinking && ends_with_tag(params.generation_prompt, params.thinking_start_tag);
@@ -2478,11 +2852,18 @@ static mtmd_input_chunks * tokenize_media(Runtime * r, const std::string & text,
     for (const auto & path : images) {
         auto it = r->bitmaps.find(path);
         if (it == r->bitmaps.end()) {
+#ifdef OD_IK_LLAMA
+            auto * bitmap = mtmd_helper_bitmap_init_from_file(r->mctx, path.c_str());
+            if (!bitmap) throw std::runtime_error("Could not read image or audio: " + path);
+            mtmd_bitmap_set_id(bitmap, path.c_str());
+            it = r->bitmaps.emplace(path, bitmap).first;
+#else
             auto w = mtmd_helper_bitmap_init_from_file(r->mctx, path.c_str(), false, mtmd_helper_init_opt_default());
             if (!w.bitmap) throw std::runtime_error("Could not decode the attached photo or recording (images: jpg/png/bmp/gif; audio: wav/mp3/flac).");
             if (w.video_ctx) mtmd_helper_video_free(w.video_ctx);
             mtmd_bitmap_set_id(w.bitmap, path.c_str());
             it = r->bitmaps.emplace(path, w.bitmap).first;
+#endif
         }
         bms.push_back(it->second);
     }
@@ -2826,14 +3207,23 @@ static void store_resident(Runtime * r, const std::vector<llama_token> * pin = n
 }
 // Decides how much of the resident sequence survives for the new prompt.
 static void reuse_prefix(Runtime * r, bool enabled) {
+#ifdef OD_IK_LLAMA
+    // The target's prefix stays valid: only the fork driver's own state (its
+    // last hidden row and the companion KV) is dropped here, and the suffix
+    // prefill re-warms it (common_speculative_on_target_seq_batch in
+    // decode_target), as llama-server retires a slot's spec state.
+    if (r->mtp) common_speculative_clear_sequence(r->mtp.get(), 0, true);
+#endif
     // Stored target snapshots do not contain DFlash's injected draft KV.
     // Replay prefill to capture every target feature for each new prompt.
+#ifndef OD_IK_LLAMA
     if (r->dflash) {
         llama_memory_clear(llama_get_memory(r->ctx), true);
         reset_mtp(r); r->forget(); store_clear(r);
         r->store_restored = r->cursor = r->reused = 0;
         return;
     }
+#endif
     auto mem = llama_get_memory(r->ctx);
     const int limit = (int)r->prompt.size() - 1;
     int keep = enabled ? shared_prefix(r->cached, r->prompt, limit) : 0;
@@ -2904,6 +3294,10 @@ static void reuse_prefix(Runtime * r, bool enabled) {
     }
     if (!ok) { llama_memory_clear(mem, true); keep = 0; }
     r->store_restored = std::min(r->store_restored, keep);
+#ifdef OD_IK_LLAMA
+    // The fork driver owns its contexts (r->mtp_ctx is null here); its
+    // sequence was cleared above and the suffix prefill re-warms it.
+#else
     if (r->mtp) {
         // The head reads the target's KV, and the suffix prefill refreshes
         // its hidden row, so the kept prefix stays valid (llama-server drops
@@ -2913,6 +3307,7 @@ static void reuse_prefix(Runtime * r, bool enabled) {
             reset_mtp(r);
         }
     }
+#endif
     // LLAMA_TOKEN_NULL placeholders never match a real token, so the common
     // prefix ends before the first image and positions equal indices there.
     r->cached.assign(r->prompt.begin(), r->prompt.begin() + keep);
@@ -2948,7 +3343,10 @@ static int think_room(const json & s, int context) {
     return std::min(budget > 0 ? budget : context / 4, context / 4);
 }
 const char * od_preview(void * h, const char * request) {
-    auto * r = static_cast<Runtime *>(h);
+    RuntimeCall call(h);
+    auto * r = call.get();
+    if (!r) return nullptr;
+    static thread_local std::string result;
     std::lock_guard<std::mutex> use(r->use);
     // render() discovers thinking markers; preserve the active generation's metadata.
     const auto forced = r->forced_open;
@@ -2973,11 +3371,11 @@ const char * od_preview(void * h, const char * request) {
         }
         const int context = llama_n_ctx(r->ctx);
         const int reserve = std::min(response_reserve(s, context) + think_room(s, context), context - 1);
-        r->preview = json{{"formattedPrompt", text}, {"promptTokens", count}, {"contextSize", context},
+        result = json{{"formattedPrompt", text}, {"promptTokens", count}, {"contextSize", context},
             {"reservedTokens", reserve}, {"availableTokens", context - reserve - count},
             {"fits", count + reserve <= context}}.dump();
         restore();
-        return r->preview.c_str();
+        return result.c_str();
     } catch (const std::exception & e) { restore(); r->error = e.what(); return nullptr; }
 }
 // The sampler chain in the user's order (ABI 6). Names follow llama.cpp:
@@ -2985,6 +3383,9 @@ const char * od_preview(void * h, const char * request) {
 static void build_sampler(Runtime * r, const json & s, const std::string & grammar, bool grammar_lazy,
                           const std::vector<std::string> & trigger_patterns, const std::vector<llama_token> & trigger_tokens, const std::string & generation_prompt, bool prefill_grammar) {
     const auto * vocab = llama_model_get_vocab(r->model);
+#ifdef OD_IK_LLAMA
+    r->sampler = ik_make_sampler(r->ctx, s).release();
+#else
     r->sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
     // Samplers llama.cpp can run on the backend; any other one keeps the chain on the CPU.
     r->sampler_offloadable = grammar.empty() && s.value("dryMultiplier", 0.0f) <= 0;
@@ -3004,7 +3405,17 @@ static void build_sampler(Runtime * r, const json & s, const std::string & gramm
     if (!biases.empty()) llama_sampler_chain_add(r->sampler,
         llama_sampler_init_logit_bias(llama_vocab_n_tokens(vocab), (int)biases.size(), biases.data()));
     r->effective["logitBias"] = effective_bias;
+#endif
     if (!grammar.empty()) {
+#ifdef OD_IK_LLAMA
+        auto owned = std::make_unique<IkSampler>(r->ctx);
+        std::vector<const char *> pats;
+        for (const auto & pattern : trigger_patterns) pats.push_back(pattern.c_str());
+        owned->grammar.reset(grammar_lazy
+            ? llama_sampler_init_grammar_lazy_patterns(vocab, grammar.c_str(), "root", pats.data(), pats.size(), trigger_tokens.data(), trigger_tokens.size())
+            : llama_sampler_init_grammar(vocab, grammar.c_str(), "root"));
+        auto * g = owned->grammar ? owned.release() : nullptr;
+#else
         llama_sampler * g = nullptr;
         if (grammar_lazy) {
             std::vector<const char *> pats;
@@ -3013,6 +3424,7 @@ static void build_sampler(Runtime * r, const json & s, const std::string & gramm
         } else {
             g = llama_sampler_init_grammar(vocab, grammar.c_str(), "root");
         }
+#endif
         if (!g) throw std::runtime_error("The grammar could not be parsed. Check the GBNF or JSON schema.");
         // Tool/format grammars generated by the template already contain the
         // generation prompt the template placed in the prompt.
@@ -3029,6 +3441,7 @@ static void build_sampler(Runtime * r, const json & s, const std::string & gramm
         }
         r->grammar = g;
     }
+#ifndef OD_IK_LLAMA
     const float temp = s.value("temperature", 0.7f);
     const int last_n = s.value("repeatLastN", 64);
     auto add_penalties = [&] {
@@ -3074,6 +3487,7 @@ static void build_sampler(Runtime * r, const json & s, const std::string & gramm
         else if (name == "temperature") llama_sampler_chain_add(r->sampler, llama_sampler_init_temp(temp));
     }
     llama_sampler_chain_add(r->sampler, llama_sampler_init_dist(seed));
+#endif
 }
 // Sampling with the grammar applied first, then the user's chain, as
 // llama_sampler_sample would do for a single chain.
@@ -3095,12 +3509,14 @@ static llama_token_data_array fill_candidates(Runtime * r, int idx) {
 }
 static llama_token sample(Runtime * r, int idx) {
     AddElapsed timed{r->sample_ms};
+#ifndef OD_IK_LLAMA
     if (r->backend_sampled) {
         const llama_token t = llama_get_sampled_token_ith(r->ctx, idx);
         if (t != LLAMA_TOKEN_NULL) { llama_sampler_accept(r->sampler, t); return t; }
     }
     AddElapsed cpu_timed{r->sample_cpu_ms};
     ++r->sample_cpu_tokens;
+#endif
     auto cur_p = fill_candidates(r, idx);
     llama_sampler_apply(r->sampler, &cur_p);
     if (cur_p.selected < 0 || cur_p.selected >= (int64_t)cur_p.size) throw std::runtime_error("Sampling selected no token.");
@@ -3153,10 +3569,35 @@ static void track_reasoning(const std::string & start, const std::vector<std::st
 // (a bare tag left small models reasoning on, owner, 2026-09-24) and the
 // template's own end tag. Helper sequences write the same hand-off (audit E08).
 static std::string reasoning_handoff(const std::vector<std::string> & ends) {
+    const std::string end = ends.empty() ? "</think>" : ends.front();
+    // In Harmony, the next channel starts immediately after <|end|>.
+    // Whitespace here makes the parser reject every subsequent answer prefix.
     return "\n\nConsidering the limited time by the user, I have to give the solution based on the thinking directly now.\n"
-        + (ends.empty() ? std::string("</think>") : ends.front()) + "\n\n";
+        + end + (end == "<|end|>" ? "" : "\n\n");
 }
+static constexpr std::string_view harmony_analysis = "<|channel|>analysis<|message|>";
+static constexpr std::string_view harmony_assistant = "<|start|>assistant";
+static constexpr std::string_view harmony_end = "<|end|>";
+static constexpr std::string_view harmony_final = "<|channel|>final<|message|>";
+static constexpr std::string_view harmony_commentary = "<|channel|>commentary<|message|>";
+
+#ifdef OD_IK_LLAMA
+static void close_side_batches(Runtime *) {}
+OD_API void * od_side_open(void * handle, const char *) {
+    RuntimeCall call(handle);
+    if (auto * r = call.get()) {
+        std::lock_guard<std::mutex> lock(r->use);
+        r->error = "Side batches are unsupported on ik_llama.";
+    }
+    return nullptr;
+}
+OD_API int32_t od_side_submit(void *, int32_t, const char *) { return -1; }
+OD_API const char * od_side_step(void *) { return R"({"error":"Side batches are unsupported on ik_llama."})"; }
+OD_API void od_side_cancel(void *, int32_t) {}
+OD_API void od_side_close(void *) {}
+#else
 #include "side_batch.inc"
+#endif
 
 // Drops [steps] of the oldest exchanges after the system prompt, but
 // never the current question or anything after it: in a tool round
@@ -3186,7 +3627,9 @@ static bool drop_oldest_exchanges(json & m, int steps, int & erased) {
 
 int32_t od_begin(void * h, const char * request) {
     const auto begin_started = Clock::now();
-    auto * r = static_cast<Runtime *>(h);
+    RuntimeCall call(h);
+    auto * r = call.get();
+    if (!r) return -1;
     std::lock_guard<std::mutex> use(r->use);
     // Reset first so a rejected request never shows the previous turn's times.
     r->begin_ms = r->prefill_ms = r->checkpoint_ms = r->sample_ms = r->sample_cpu_ms = 0;
@@ -3208,6 +3651,7 @@ int32_t od_begin(void * h, const char * request) {
         r->plain_ms = r->spec_ms = r->draft_ms = 0; r->plain_steps = r->spec_tokens = 0;
         r->parser = common_chat_parser_params();
         r->parser_active = false; r->parser_finished = false; r->output_thinking = false;
+        r->text_recovery_allowed = r->recovering_text = r->recovery_thinking = false;
         r->generated_input = {}; r->parsed_msg = {}; r->parsed_output.clear(); r->parse_error.clear();
         r->parsed_raw_length = r->streamed_raw_length = 0; r->parsed_at = {};
         const int n_ctx = (int)llama_n_ctx(r->ctx);
@@ -3402,11 +3846,17 @@ int32_t od_begin(void * h, const char * request) {
             }
         }
         if (r->templates) {
-            r->tools_active = !tools.empty();
+            r->tools_active = !tools.empty() && tool_choice != "none";
             r->parser_active = format != "gbnf";
+            r->text_recovery_allowed = !r->tools_active && json_schema.empty();
             r->parser = common_chat_parser_params(chat_params);
+#ifdef OD_IK_LLAMA
+            if (!chat_params.parser.empty()) r->parser.parser.load(chat_params.parser);
+            r->parser.reasoning_format = COMMON_REASONING_FORMAT_DEEPSEEK;
+#else
             r->parser.parser = chat_params.parser;
             r->parser.generation_prompt = common_chat_input_tokenize(vocab, chat_params.generation_prompt);
+#endif
             // A continuation's existing answer must not be streamed again.
             if (r->parser_active && !prefix.empty()) {
                 try { r->parsed_msg = common_chat_parse({}, true, r->parser); }
@@ -3420,6 +3870,7 @@ int32_t od_begin(void * h, const char * request) {
         // not see it: chat templates quote tool-call examples in the system
         // prompt, which would fire a lazy grammar's trigger mid-prompt.
         for (auto token : r->prompt) llama_sampler_accept(r->sampler, token);
+#ifndef OD_IK_LLAMA
 #ifdef __ANDROID__
         const bool backend_sampling = s.value("backendSampling", false);   // not yet measured on phone GPUs
 #else
@@ -3431,20 +3882,22 @@ int32_t od_begin(void * h, const char * request) {
         // RNG state for rejected rows. Use host sampling for every spec mode.
         r->backend_sampled = backend_sampling && !r->draft_ctx && !r->mtp
             && r->sampler_offloadable && llama_set_sampler(r->ctx, 0, r->sampler);
+#endif
         // reuse_prefix set the cursor to the first token that still needs evaluating.
         r->pending = -1; r->done = false; r->started = Clock::now();
         return 0;
     } catch (const std::exception & e) { return fail(r, e); }
 }
-// Stop-sequence hold-back: the longest suffix of [held] that is a proper
-// prefix of some stop sequence stays unsent.
+static size_t partial_marker(std::string_view text, std::string_view marker) {
+    if (marker.empty()) return 0;
+    for (size_t n = std::min(text.size(), marker.size() - 1); n > 0; --n)
+        if (text.substr(text.size() - n) == marker.substr(0, n)) return n;
+    return 0;
+}
+// Only the suffix that can still become a stop stays unsent.
 static size_t hold_length(const Runtime * r) {
     size_t best = 0;
-    for (const auto & st : r->stops) {
-        if (st.empty()) continue;
-        for (size_t n = std::min(st.size() - 1, r->held.size()); n > best; --n)
-            if (r->held.compare(r->held.size() - n, n, st, 0, n) == 0) { best = n; break; }
-    }
+    for (const auto & st : r->stops) best = std::max(best, partial_marker(r->held, st));
     return best;
 }
 // The answer has its Max tokens, or the context is full.
@@ -3463,23 +3916,163 @@ static bool emit_piece(Runtime * r, const std::string & piece, llama_token token
     r->held += piece;
     r->generated_text += piece;
     if (r->parser_active) r->generated_input.append(piece, token);
-    for (const auto & st : r->stops) {
-        const size_t at = r->held.find(st);
-        if (at != std::string::npos) {
-            const size_t cut = r->held.size() - at;
-            r->held.erase(at);
-            r->generated_text.erase(r->generated_text.size() - cut);
-            if (r->parser_active) r->generated_input.truncate(r->generated_text.size());
-            return false;
+    size_t stop = std::string::npos;
+    for (const auto & st : r->stops) stop = std::min(stop, r->held.find(st));
+    if (stop == std::string::npos) return true;
+    const size_t cut = r->held.size() - stop;
+    r->held.erase(stop);
+    r->generated_text.erase(r->generated_text.size() - cut);
+    if (r->parser_active) r->generated_input.truncate(r->generated_text.size());
+    return false;
+}
+
+static common_chat_msg parse_harmony(const Runtime * r, size_t length, bool final,
+                                    size_t & reasoning_end, size_t & content_end) {
+    const std::string_view text(r->generated_input.text.data(), length);
+#ifdef OD_IK_LLAMA
+    const auto & prompt = r->parser.generation_prompt;
+#else
+    const auto & prompt = r->parser.generation_prompt.text;
+#endif
+    common_chat_input input;
+    // Map PEG offsets past each retained input span back onto the raw stream.
+    std::vector<std::pair<size_t, size_t>> span_ends;
+    const auto append = [&](size_t start, size_t end) {
+        if (start == end) return;
+        input.append(r->generated_input.substr(start, end - start));
+        span_ends.emplace_back(prompt.size() + input.size(), end);
+    };
+    // A model can repeat the assistant prefix already supplied by the prompt.
+    size_t from = prompt == harmony_assistant && text.substr(0, harmony_assistant.size()) == harmony_assistant
+        ? harmony_assistant.size() : 0;
+    for (size_t end = text.find(harmony_end, from); end != std::string_view::npos;) {
+        end += harmony_end.size();
+        const size_t next = text.find_first_not_of(" \t\r\n", end);
+        if (next != std::string_view::npos && next > end &&
+            text.substr(next, harmony_assistant.size()) == harmony_assistant) {
+            append(from, end);
+            from = next;
+        }
+        end = text.find(harmony_end, end);
+    }
+    append(from, length);
+    if (!final) {
+        // Ending an analysis segment for the parser lets it return the
+        // reasoning AST even if the next channel has not arrived yet.
+        const std::string effective = prompt + input.text;
+        const auto analysis = effective.rfind(harmony_analysis);
+        const auto end = effective.rfind(harmony_end);
+        const auto assistant = effective.rfind(harmony_assistant);
+        if (analysis != std::string::npos && (end == std::string::npos || end < analysis) &&
+            (assistant == std::string::npos || assistant < analysis)) {
+            input.truncate(input.size() - partial_marker(input.text, harmony_end));
+            input.append(std::string(harmony_end), LLAMA_TOKEN_NULL);
         }
     }
-    return true;
+#ifdef OD_IK_LLAMA
+    if (r->parser.parser.empty()) return common_chat_parse(input.text, !final, r->parser);
+    auto flags = COMMON_PEG_PARSE_FLAG_LENIENT;
+    if (r->parser.debug) flags |= COMMON_PEG_PARSE_FLAG_DEBUG;
+    common_peg_parse_context ctx(prompt + input.text, flags);
+#else
+    if (r->parser.parser.empty()) return common_chat_parse(input, !final, r->parser);
+
+    input.prepend(r->parser.generation_prompt);
+    auto flags = COMMON_PEG_PARSE_FLAG_LENIENT;
+    if (final) flags |= COMMON_PEG_PARSE_FLAG_COMPLETE;
+    if (r->parser.debug) flags |= COMMON_PEG_PARSE_FLAG_DEBUG;
+    common_peg_parse_context ctx(std::move(input.text), std::move(input.tokens), flags);
+#endif
+    const auto result = r->parser.parser.parse(ctx);
+    if (result.fail() && (final || result.end == 0))
+        throw std::runtime_error("The model produced output that does not match the expected Harmony format");
+
+    common_chat_msg msg;
+    msg.role = "assistant";
+    common_chat_peg_mapper mapper(msg);
+    mapper.from_ast(ctx.ast, result);
+    ctx.ast.visit(result, [&](const common_peg_ast_node & node) {
+        if (node.end <= prompt.size() || node.end == node.start) return;
+        if (node.tag != common_chat_peg_builder::REASONING && node.tag != common_chat_peg_builder::CONTENT) return;
+        for (const auto & [parsed_end, raw_end] : span_ends) {
+            if (node.end <= parsed_end) {
+                auto & end = node.tag == common_chat_peg_builder::REASONING ? reasoning_end : content_end;
+                end = std::max(end, raw_end - (parsed_end - node.end));
+                break;
+            }
+        }
+    });
+    return msg;
+}
+
+static void emit_text_delta(Runtime * r, std::string_view text, bool thinking) {
+    if (text.empty()) return;
+    if (r->output_thinking != thinking) {
+        r->parsed_output += thinking ? "<think>" : "</think>";
+        r->output_thinking = thinking;
+    }
+    r->parsed_output.append(text);
+}
+
+static std::string_view trim_marker(std::string_view marker) {
+    const auto start = marker.find_first_not_of(" \t\r\n");
+    if (start == std::string_view::npos) return {};
+    return marker.substr(start, marker.find_last_not_of(" \t\r\n") - start + 1);
+}
+
+// A broken plain-text parse may still have useful text after its last parsed
+// byte. Once recovery publishes that text it owns the remaining display
+// stream. The template parser still owns final structured metadata.
+static void recover_text(Runtime * r, size_t length, bool final, bool harmony = false) {
+    auto & cursor = r->streamed_raw_length;
+    while (cursor < length) {
+        const std::string_view tail(r->generated_input.text.data() + cursor, length - cursor);
+        size_t next = std::string_view::npos, marker_size = 0, keep = 0;
+        bool next_thinking = r->recovery_thinking;
+        const auto consider = [&](std::string_view marker, bool thinking) {
+            if (marker.empty()) return;
+            const auto at = tail.find(marker);
+            if (at != std::string_view::npos && (at < next || (at == next && marker.size() > marker_size))) {
+                next = at;
+                marker_size = marker.size();
+                next_thinking = thinking;
+            }
+            if (!final || harmony) keep = std::max(keep, partial_marker(tail, marker));
+        };
+        consider("<think>", true);
+        consider("</think>", false);
+        consider(trim_marker(r->think_start), true);
+        if (!r->think_ends.empty()) consider(trim_marker(r->think_ends.front()), false);
+        if (harmony) {
+            consider(harmony_analysis, true);
+            consider(harmony_assistant, false);
+            consider(harmony_end, false);
+            consider(harmony_final, false);
+            consider(harmony_commentary, false);
+            consider("<|channel|>analysis", true);
+            consider("<|channel|>final", false);
+            consider("<|channel|>commentary", false);
+            for (auto marker : {"<|start|>", "<|channel|>", "<|message|>", "<|constrain|>",
+                                "<|return|>", "<|call|>"})
+                consider(marker, r->recovery_thinking);
+        }
+        const size_t visible = next == std::string_view::npos ? tail.size() - keep : next;
+        emit_text_delta(r, tail.substr(0, visible), r->recovery_thinking);
+        cursor += visible + marker_size;
+        if (marker_size == 0) break;
+        r->recovery_thinking = next_thinking;
+    }
 }
 // Keep protocol text in the native parser; Dart receives canonical channels.
 static void parse_output(Runtime * r, bool final) {
     if (!r->parser_active || r->parser_finished) return;
     const size_t keep = final ? 0 : hold_length(r);
     const size_t length = r->generated_input.size() - keep;
+    r->held.erase(0, r->held.size() - keep);
+    if (!final && r->recovering_text) {
+        recover_text(r, length, false);
+        return;
+    }
     // An unchanged buffer is never reparsed (callers drain small buffers).
     // Each parse reads the whole answer, so ordinary text waits for 64 bytes
     // or 30 ms, whichever comes first; the first visible text, protocol
@@ -3490,45 +4083,81 @@ static void parse_output(Runtime * r, bool final) {
     const auto now = Clock::now();
     if (!final && !r->parsed_msg.empty() && length > r->parsed_raw_length &&
         length - r->parsed_raw_length < 64 && now - r->parsed_at < std::chrono::milliseconds(30) &&
-        r->generated_text.find_first_of("\n<>{}", r->parsed_raw_length) >= length) return;
+        r->generated_input.text.find_first_of("\n<>{}", r->parsed_raw_length) >= length) return;
     r->parsed_raw_length = length;
     r->parsed_at = now;
+    const bool harmony = r->think_start == harmony_analysis ||
+#ifdef OD_IK_LLAMA
+        r->parser.generation_prompt.find(harmony_assistant) == 0;
+#else
+        r->parser.generation_prompt.text.find(harmony_assistant) == 0;
+#endif
+    const size_t before = r->streamed_raw_length;
+    bool failed = false;
     try {
-        auto msg = common_chat_parse(r->generated_input.substr(0, length), !final, r->parser);
+        size_t reasoning_end = 0, content_end = 0;
+        auto msg = harmony ? parse_harmony(r, length, final, reasoning_end, content_end)
+            : common_chat_parse(r->generated_input.substr(0, length), !final, r->parser);
         if (final && msg.empty() && !r->generated_text.empty())
             throw std::runtime_error("Template parser returned no message for nonempty output.");
-        if (!msg.empty()) {
-            auto cover_raw = [&](const std::string & delta) {
-                // Deltas omit protocol markers. Locate their raw bytes rather
-                // than counting canonical <think> tags or a continuation's
-                // prefill. Only visible deltas advance the fallback boundary;
-                // a partial parser can leave an unparsed tail in this input.
-                const auto at = r->generated_text.find(delta, r->streamed_raw_length);
-                r->streamed_raw_length = at != std::string::npos && at + delta.size() <= length
-                    ? at + delta.size() : length; // A mapper may sanitize text.
+        if (!r->recovering_text && !msg.empty()) {
+            const auto rewrites_text = [](const std::string & previous, const std::string & current) {
+                const size_t shared = std::min(previous.size(), current.size());
+                return previous.compare(0, shared, current, 0, shared) != 0;
             };
-            for (const auto & diff : common_chat_msg_diff::compute_diffs(r->parsed_msg, msg)) {
-                if (!diff.reasoning_content_delta.empty()) {
-                    if (!r->output_thinking) { r->parsed_output += "<think>"; r->output_thinking = true; }
-                    r->parsed_output += diff.reasoning_content_delta;
-                    cover_raw(diff.reasoning_content_delta);
+            if (final && (rewrites_text(r->parsed_msg.reasoning_content, msg.reasoning_content) ||
+                          rewrites_text(r->parsed_msg.content, msg.content)))
+                throw std::runtime_error("Template parser revised text that was already streamed.");
+            const auto publish = [&](std::string & previous, const std::string & current, bool thinking, size_t end) {
+                // Partial tool calls can be revised or disappear when the
+                // parser changes branches. Only the two visible fields need
+                // append-only diffs.
+                if (current.size() <= previous.size() || current.compare(0, previous.size(), previous) != 0) return;
+                const std::string_view delta(current.data() + previous.size(), current.size() - previous.size());
+                emit_text_delta(r, delta, thinking);
+                previous = current;
+                if (harmony) {
+                    r->streamed_raw_length = std::max(r->streamed_raw_length, end);
+                    return;
                 }
-                if (!diff.content_delta.empty()) {
-                    if (r->output_thinking) { r->parsed_output += "</think>"; r->output_thinking = false; }
-                    r->parsed_output += diff.content_delta;
-                    cover_raw(diff.content_delta);
+                auto raw = delta;
+                const auto first = raw.find_first_not_of(" \t\r\n");
+                auto at = r->generated_input.text.find(raw, r->streamed_raw_length);
+                if ((at == std::string::npos || at + raw.size() > length) && first != std::string_view::npos) {
+                    // The mapper can include a newline from a prefilled tag.
+                    raw.remove_prefix(first);
+                    at = r->generated_input.text.find(raw, r->streamed_raw_length);
                 }
-            }
-            r->parsed_msg = std::move(msg);
+                r->streamed_raw_length = at != std::string::npos && at + raw.size() <= length
+                    ? at + raw.size() : length;
+            };
+            publish(r->parsed_msg.reasoning_content, msg.reasoning_content, true, reasoning_end);
+            publish(r->parsed_msg.content, msg.content, false, content_end);
         }
+        if (final) r->parsed_msg = std::move(msg);
     } catch (const std::exception & e) {
-        // A partial prefix can be incomplete. Retry with the finished turn.
-        if (!final) return;
-        r->parse_error = e.what();
-        if (r->output_thinking) { r->parsed_output += "</think>"; r->output_thinking = false; }
-        r->parsed_output += r->generated_text.substr(std::min(r->streamed_raw_length, r->generated_text.size()));
+        failed = true;
+        if (final) {
+            r->parse_error = e.what();
+            if (harmony) {
+                r->recovery_thinking = r->output_thinking || (before == 0 && r->forced_open);
+                recover_text(r, length, true, true);
+            } else if (!r->recovering_text) {
+                if (r->output_thinking) { r->parsed_output += "</think>"; r->output_thinking = false; }
+                r->parsed_output += r->generated_input.text.substr(std::min(r->streamed_raw_length, length));
+            }
+        }
+    }
+    // A nonthrowing partial result may still be waiting on a protocol marker.
+    // Give it a batch of input to make progress before falling back to text.
+    if (!final && !harmony && r->text_recovery_allowed && before == r->streamed_raw_length &&
+        length > before && (failed || length - before >= 64)) {
+        r->recovering_text = true;
+        r->recovery_thinking = r->output_thinking || (before == 0 && r->forced_open);
+        recover_text(r, length, false);
     }
     if (final) {
+        if (r->recovering_text) recover_text(r, length, true);
         if (r->output_thinking) { r->parsed_output += "</think>"; r->output_thinking = false; }
         r->parser_finished = true;
         r->tool_calls = json::array();
@@ -3536,7 +4165,6 @@ static void parse_output(Runtime * r, bool final) {
             r->tool_calls.push_back({{"id", c.id}, {"name", c.name}, {"arguments", c.arguments}});
         r->tool_content = r->parse_error.empty() ? r->parsed_msg.content : r->generated_text;
     }
-    r->held.erase(0, r->held.size() - keep);
 }
 // Moves the sendable text to the caller's buffer, retaining partial stops.
 static int flush(Runtime * r, uint8_t * output, int32_t capacity, bool all) {
@@ -3564,12 +4192,14 @@ static bool make_context_room(Runtime * r, int required) {
     auto mem = llama_get_memory(r->ctx);
     if (!llama_memory_seq_rm(mem, 0, keep, keep + discard)) return false;
     llama_memory_seq_add(mem, 0, keep + discard, -1, -discard);
+#ifndef OD_IK_LLAMA
     if (r->mtp_ctx) {
         // The MTP head keeps its own cache at the target's positions.
         auto head = llama_get_memory(r->mtp_ctx);
         if (!llama_memory_seq_rm(head, 0, keep, keep + discard)) { llama_memory_clear(head, true); reset_mtp(r); }
         else llama_memory_seq_add(head, 0, keep + discard, -1, -discard);
     }
+#endif
     r->cached.erase(r->cached.begin() + keep, r->cached.begin() + keep + discard);
     r->checkpoints.clear();
     // od_info reports the positions still resident, so a shifted turn must
@@ -3611,6 +4241,7 @@ static bool drop_tail(llama_context * ctx, int pos, const std::vector<uint8_t> &
 // the draft as it goes. Afterwards the draft KV holds
 // cached ++ [last] ++ proposals. Returns false when the draft failed; it is
 // then switched off for the rest of the session.
+#ifndef OD_IK_LLAMA
 static bool propose(Runtime * r, llama_token last, int limit, std::vector<llama_token> & out) {
     out.clear();
     if (r->mtp) {
@@ -3664,8 +4295,75 @@ static bool propose(Runtime * r, llama_token last, int limit, std::vector<llama_
     }
     return true;
 }
+#endif
+#ifdef OD_IK_LLAMA
+static bool ik_speculate(Runtime * r, int room, std::vector<llama_token> & accepted, bool & eog) {
+    if (!r->mtp || r->draft_disabled || r->pending < 0 || room <= 0) return false;
+    auto params = r->ik_spec;
+    params.n_max = std::min(params.n_max, room);
+    const auto base = (llama_pos)r->cached.size();
+    const auto last = (llama_token)r->pending;
+    const auto started = Clock::now();
+    // A round that cannot finish must not end the turn: the fork's reference
+    // loop (examples/main/main.cpp:1008-1070) drops the driver's state and
+    // carries on plain. draft_ex has already advanced the driver (hidden rows
+    // and companion KV), so clearing the sequence makes it consistent again.
+    auto abort_round = [&] {
+        common_speculative_clear_sequence(r->mtp.get(), 0, true);
+        r->draft_disabled = true;
+        accepted.clear();
+        eog = false;
+        return false;
+    };
+    auto proposal = common_speculative_draft_ex(r->mtp.get(), r->ctx, params, r->cached, last, base);
+    const auto & drafts = proposal.tokens;
+    if (drafts.empty()) return false;
+    if (drafts.size() > (size_t)room) return abort_round();
+    if (common_speculative_needs_checkpoint(r->model) &&
+        !common_speculative_before_draft(r->mtp.get(), r->model, r->ctx, nullptr, {},
+            0, base, last, (int)drafts.size() + 1, params.spec_ckpt_mode))
+        return abort_round();
+
+    llama_batch batch = llama_batch_init((int)drafts.size() + 1, 0, 1);
+    common_batch_add(batch, last, base, {0}, true);
+    for (size_t i = 0; i < drafts.size(); ++i)
+        common_batch_add(batch, drafts[i], base + (llama_pos)i + 1, {0}, true);
+    const int rc = llama_decode(r->ctx, batch);
+    llama_batch_free(batch);
+    if (rc) return abort_round();
+
+    const auto * vocab = llama_model_get_vocab(r->model);
+    std::vector<int32_t> outputs;
+    for (size_t i = 0; i <= drafts.size(); ++i) {
+        const auto token = sample(r, (int)i);
+        accepted.push_back(token);
+        outputs.push_back((int)i);
+        eog = llama_vocab_is_eog(vocab, token);
+        if (eog || i == drafts.size() || token != drafts[i]) break;
+    }
+    if (!common_speculative_commit(r->mtp.get(), r->ctx, nullptr, 0, last,
+        accepted, (int)drafts.size(), base + 1, outputs)) {
+        // The verified batch sits in the target's cache; drop it so the plain
+        // step lands at the position `cached` reports.
+        llama_memory_seq_rm(llama_get_memory(r->ctx), 0, base, -1);
+        return abort_round();
+    }
+    r->cached.push_back(last);
+    r->cached.insert(r->cached.end(), accepted.begin(), accepted.end() - 1);
+    r->pending = eog ? -1 : accepted.back();
+    r->draft_proposed += (long)drafts.size();
+    r->draft_accepted += (long)accepted.size() - 1;
+    ++r->draft_rounds;
+    r->spec_tokens += (long)accepted.size();
+    r->spec_ms += std::chrono::duration<double, std::milli>(Clock::now() - started).count();
+    return true;
+}
+#endif
 int32_t od_step(void * h, uint8_t * output, int32_t capacity, int32_t * length) {
-    auto * r = static_cast<Runtime *>(h); *length = 0;
+    *length = 0;
+    RuntimeCall call(h);
+    auto * r = call.get();
+    if (!r) return -1;
     std::lock_guard<std::mutex> use(r->use);
     try {
         if (r->released) throw std::runtime_error(released_message);
@@ -3704,7 +4402,17 @@ int32_t od_step(void * h, uint8_t * output, int32_t capacity, int32_t * length) 
             if (decoded != 0) { r->forget(); throw std::runtime_error("Prompt evaluation failed. Try a smaller context/model."); }
             r->cursor += n;
             r->cached.assign(r->prompt.begin(), r->prompt.begin() + r->cursor);
+#ifdef OD_IK_LLAMA
+            if (r->mtp && r->cursor == (int)r->prompt.size()) {
+                common_speculative_begin(r->mtp.get(), r->prompt);
+                // As the fork's reference loop does (examples/main/main.cpp:975):
+                // the prompt's hidden rows are captured, so later tokens only
+                // need logits.
+                if (r->ik_spec.type == COMMON_SPECULATIVE_TYPE_MTP) llama_set_embeddings(r->ctx, false);
+            }
+#else
             if (r->mtp && r->cursor == (int)r->prompt.size()) common_speculative_begin(r->mtp.get(), 0, r->prompt);
+#endif
             while (!r->checkpoint_at.empty() && r->checkpoint_at.front() <= r->cursor) {
                 if (r->checkpoint_at.front() == r->cursor) take_checkpoint(r, r->cursor);
                 r->checkpoint_at.erase(r->checkpoint_at.begin());
@@ -3742,8 +4450,7 @@ int32_t od_step(void * h, uint8_t * output, int32_t capacity, int32_t * length) 
             // ("Wait, I need to check…" in every Qwen3.5 0.8B goal step on
             // the phone, 2026-09-24). Qwen's recommended hand-off sentence
             // before the tag makes them answer.
-            std::string close = reasoning_handoff(r->think_ends);
-            auto tokens = tokenize(vocab, close, false);
+            auto tokens = tokenize(vocab, reasoning_handoff(r->think_ends), false);
             if (tokens.empty()) throw std::runtime_error("Cannot close the reasoning block.");
             if (r->grammar) {
                 // A tool grammar may refuse part of the hand-off (Gemma 4's
@@ -3760,15 +4467,17 @@ int32_t od_step(void * h, uint8_t * output, int32_t capacity, int32_t * length) 
                 }
                 if (kept.empty()) throw std::runtime_error("Cannot close the reasoning block.");
                 tokens = kept;
-                close.clear();
-                for (auto t : tokens) close += common_token_to_piece(vocab, t, true);
             }
             if (!make_context_room(r, (int)tokens.size())) return end("length");
             decode_into_target(r, tokens);
             for (auto t : tokens) llama_sampler_accept(r->sampler, t);
             r->generated += (int)tokens.size(); r->reasoning += (int)tokens.size(); r->in_think = false; r->tail.clear();
-            r->held += close; r->generated_text += close;
-            if (r->parser_active) for (auto token : tokens) r->generated_input.append(common_token_to_piece(vocab, token, true), token);
+            for (auto token : tokens) {
+                const auto piece = common_token_to_piece(vocab, token, true);
+                r->held += piece;
+                r->generated_text += piece;
+                if (r->parser_active) r->generated_input.append(piece, token);
+            }
             *length = flush(r, output, capacity, false);
             r->last = Clock::now();
             return 1;
@@ -3776,6 +4485,7 @@ int32_t od_step(void * h, uint8_t * output, int32_t capacity, int32_t * length) 
         std::vector<llama_token> accepted;   // tokens sampled this step, in order
         bool eog = false;
         // Room for [pending] + drafts + the bonus token, within context and cap.
+#ifndef OD_IK_LLAMA
         const int room = std::min({(int)llama_n_ctx(r->ctx) - (int)r->cached.size() - 2,
             r->maximum - (r->generated - r->reasoning) - 1, r->total_cap - r->generated - 1});
         std::vector<llama_token> drafts;
@@ -3876,6 +4586,14 @@ int32_t od_step(void * h, uint8_t * output, int32_t capacity, int32_t * length) 
                 }
             }
         } else {
+#endif
+#ifdef OD_IK_LLAMA
+        const int room = std::min({(int)llama_n_ctx(r->ctx) - (int)r->cached.size() - 2,
+            (int)llama_n_ubatch(r->ctx) - 1, r->maximum - (r->generated - r->reasoning) - 1,
+            r->total_cap - r->generated - 1});
+        if (!ik_speculate(r, room, accepted, eog)) {
+            const auto previous = (llama_token)r->pending;
+#endif
             const bool decoded = r->pending >= 0;
             if (decoded) {
                 auto token = (llama_token)r->pending;
@@ -3889,10 +4607,23 @@ int32_t od_step(void * h, uint8_t * output, int32_t capacity, int32_t * length) 
             // one decode plus the tokens sampled from it, so sampling is
             // inside the measured interval here too (a CPU sampler used to be
             // left out and made speculation look slower than it is).
+#ifdef OD_IK_LLAMA
+            if (r->mtp && !r->draft_disabled && r->ik_spec.type != COMMON_SPECULATIVE_TYPE_DRAFT) {
+                const auto pos = (llama_pos)r->cached.size() - 1;
+                if (decoded) {
+                    if (!common_speculative_commit_accepted_output(r->mtp.get(), r->ctx,
+                        r->ik_spec.type, 0, pos + 1, previous, {token}, {0}))
+                        throw std::runtime_error("Could not update the ik_llama speculative companion.");
+                } else if (r->ik_spec.type == COMMON_SPECULATIVE_TYPE_MTP) {
+                    common_speculative_capture_output_hidden(r->mtp.get(), r->ctx, -1, 0, pos);
+                }
+            }
+#else
             if (decoded && (r->draft_ctx || r->mtp)) {
                 r->plain_ms += std::chrono::duration<double, std::milli>(Clock::now() - step_started).count();
                 ++r->plain_steps;
             }
+#endif
             accepted.push_back(token);
             if (llama_vocab_is_eog(vocab, token)) eog = true; else r->pending = token;
         }

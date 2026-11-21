@@ -1,7 +1,7 @@
 // Separate contexts own their scheduler and CUDA streams/cuBLAS handles; only
 // immutable model tensors are shared (ggml-cuda/common.cuh, owner, 2026-11-02).
 struct SideSequence {
-    Runtime formatting{0, false};
+    Runtime formatting{0};
     std::vector<llama_token> prompt;
     int position = 0, prompt_cursor = 0, generated = 0, maximum = 512;
     // The chat path's reasoning budget: the answer keeps [maximum] and the
@@ -16,10 +16,64 @@ struct SideSequence {
     double prefill_ms = 0;
     std::vector<std::string> stops;
     std::string held;
+    // Keep token visibility aligned with raw bytes through stop and tag holdback.
+    std::string held_controls;
+    std::string tag_tail;
+    std::string tag_controls;
     ~SideSequence() { formatting.model = nullptr; }
 };
+
+static std::string side_hold_token(SideSequence & seq, const llama_vocab * vocab, llama_token token) {
+    const bool control = llama_vocab_get_attr(vocab, token) & (LLAMA_TOKEN_ATTR_CONTROL | LLAMA_TOKEN_ATTR_UNKNOWN);
+    auto piece = common_token_to_piece(vocab, token, true);
+    seq.held += piece;
+    seq.held_controls.append(piece.size(), control ? '\1' : '\0');
+    return piece;
+}
+
+// Keep partial model tags across steps. Helper consumers recognize the same
+// canonical tags as chat, including when the prompt opened the reasoning block.
+static std::string side_stream_text(SideSequence & seq, const std::string & piece,
+                                    std::string_view controls = {}) {
+    std::string output;
+    if (seq.formatting.forced_open) {
+        output = "<think>";
+        seq.formatting.forced_open = false;
+    }
+    seq.tag_tail += piece;
+    if (controls.empty()) seq.tag_controls.append(piece.size(), '\0');
+    else seq.tag_controls.append(controls);
+    std::string_view remaining(seq.tag_tail);
+    while (!remaining.empty()) {
+        bool partial = false;
+        auto replace = [&](std::string_view tag, std::string_view canonical) {
+            if (tag.empty()) return false;
+            if (remaining.substr(0, tag.size()) == tag) {
+                output.append(canonical);
+                remaining.remove_prefix(tag.size());
+                return true;
+            }
+            partial |= tag.size() > remaining.size() && tag.substr(0, remaining.size()) == remaining;
+            return false;
+        };
+        if (replace(seq.formatting.think_start, "<think>")) continue;
+        const auto & ends = seq.formatting.think_ends;
+        if (std::any_of(ends.begin(), ends.end(), [&](const auto & tag) { return replace(tag, "</think>"); })) continue;
+        if (seq.formatting.think_start == harmony_analysis &&
+            (replace(harmony_assistant, "") || replace(harmony_final, "") || replace(harmony_commentary, ""))) continue;
+        if (partial && seq.active) break;
+        if (!seq.tag_controls[seq.tag_tail.size() - remaining.size()])
+            output.push_back(remaining.front());
+        remaining.remove_prefix(1);
+    }
+    seq.tag_controls.erase(0, seq.tag_tail.size() - remaining.size());
+    seq.tag_tail.erase(0, seq.tag_tail.size() - remaining.size());
+    return output;
+}
+
 struct SideBatch {
     std::mutex use;
+    std::atomic<bool> shutdown{false};
     llama_context * ctx = nullptr;
     llama_model * model = nullptr;
     int context = 4096, gpu_layers = 0, allocated_context = 0, allocated_sequences = 0;
@@ -38,6 +92,7 @@ struct SideBatch {
     std::string backend, result, error;
     std::vector<std::unique_ptr<SideSequence>> sequences;
     void invalidate() {
+        shutdown.store(true, std::memory_order_relaxed);
         std::lock_guard<std::mutex> lock(use);
         error = "chat model changed";
         if (ctx) llama_free(ctx);
@@ -48,6 +103,7 @@ struct SideBatch {
     ~SideBatch() { if (ctx) llama_free(ctx); llama_batch_free(batch); }
 };
 static void close_side_batches(Runtime * r) {
+    for (auto & weak : r->sides) if (auto side = weak.lock()) side->shutdown.store(true, std::memory_order_relaxed);
     for (auto & weak : r->sides) if (auto side = weak.lock()) side->invalidate();
     r->sides.clear();
 }
@@ -84,6 +140,8 @@ static void resize_side(SideBatch & side, int context, int count, bool measured_
     side.ctx = nullptr;
     auto cp = side.params;
     cp.n_ctx = context * count; cp.n_seq_max = count;
+    cp.abort_callback = cancelled_callback;
+    cp.abort_callback_data = &side.shutdown;
     if (cp.offload_kqv && !measured_fit && !side_fits_gpu(side, context, count)) cp.offload_kqv = false;
     // Shared weights are already resident; admit only the new host context
     // and compute buffers, with the chat load's RAM reserve policy.
@@ -114,8 +172,10 @@ static void resize_side(SideBatch & side, int context, int count, bool measured_
 }
 
 void * od_side_open(void * h, const char * options) {
+    RuntimeCall call(h);
+    auto * r = call.get();
+    if (!r) return nullptr;
     MemoryAdmission memory_admission;
-    auto * r = static_cast<Runtime *>(h);
     std::lock_guard<std::mutex> lock(r->use);
     try {
         memory_admission.check();
@@ -185,7 +245,7 @@ int32_t od_side_submit(void * h, int32_t id, const char * request) {
     auto & side = side_of(h);
     std::lock_guard<std::mutex> lock(side.use);
     try {
-        if (!side.model) throw std::runtime_error("chat model changed");
+        if (side.shutdown.load(std::memory_order_relaxed) || !side.model) throw std::runtime_error("chat model changed");
         auto & seq = *side.sequences.at(id);
         if (seq.active) throw std::runtime_error("Helper sequence is busy");
         const auto req = json::parse(request), settings = req.at("settings");
@@ -219,7 +279,8 @@ int32_t od_side_submit(void * h, int32_t id, const char * request) {
         build_sampler(&seq.formatting, settings, "", false, {}, {}, "", false);
         for (auto token : seq.prompt) llama_sampler_accept(seq.formatting.sampler, token);
         seq.position = seq.prompt_cursor = seq.generated = 0; seq.next = LLAMA_TOKEN_NULL;
-        seq.prefill_ms = 0; seq.first = {}; seq.held.clear(); seq.stops.clear();
+        seq.prefill_ms = 0; seq.first = {}; seq.held.clear(); seq.held_controls.clear();
+        seq.stops.clear(); seq.tag_tail.clear(); seq.tag_controls.clear();
         for (const auto & stop : settings.value("stopSequences", json::array())) if (stop.is_string() && !stop.get<std::string>().empty()) seq.stops.push_back(stop.get<std::string>());
         seq.started = Clock::now(); seq.active = true;
         side.error.clear();
@@ -234,7 +295,7 @@ const char * od_side_step(void * h) {
     json events = json::array();
     try {
         memory_admission.check();
-        if (!side.model) throw std::runtime_error("chat model changed");
+        if (side.shutdown.load(std::memory_order_relaxed) || !side.model) throw std::runtime_error("chat model changed");
         if (!side.error.empty()) { const auto error = side.error; side.error.clear(); throw std::runtime_error(error); }
         if (side.adaptive) {
             int needed = std::min(side.context, 1024), count = 0;
@@ -280,13 +341,21 @@ const char * od_side_step(void * h) {
                 if (batch.logits[row]) outputs[id] = row;
             }
         }
+        if (side.shutdown.load(std::memory_order_relaxed)) throw std::runtime_error("chat model changed");
         const int rc = batch.n_tokens ? llama_decode(side.ctx, batch) : 0;
+        if (side.shutdown.load(std::memory_order_relaxed)) throw std::runtime_error("chat model changed");
         if (rc != 0) throw std::runtime_error("Helper batch decode failed");
         const auto now = Clock::now();
         for (size_t id = 0; id < side.sequences.size(); ++id) {
             auto & seq = *side.sequences[id];
             if (!seq.active) continue;
-            std::string text;
+            std::string text, controls;
+            const auto take_held = [&](size_t length) {
+                text.append(seq.held, 0, length);
+                controls.append(seq.held_controls, 0, length);
+                seq.held.erase(0, length);
+                seq.held_controls.erase(0, length);
+            };
             if (outputs[id] >= 0) {
                 const auto token = llama_sampler_sample(seq.formatting.sampler, side.ctx, outputs[id]);
                 llama_sampler_accept(seq.formatting.sampler, token);
@@ -294,31 +363,33 @@ const char * od_side_step(void * h) {
                     seq.first = now;
                     seq.prefill_ms = std::chrono::duration<double, std::milli>(now - seq.started).count();
                 }
-                if (llama_vocab_is_eog(llama_model_get_vocab(side.model), token)) {
-                    seq.active = false; text.swap(seq.held);
+                const auto * vocab = llama_model_get_vocab(side.model);
+                if (llama_vocab_is_eog(vocab, token)) {
+                    seq.active = false; take_held(seq.held.size());
                 } else {
                     ++seq.generated; seq.next = token;
-                    const std::string piece = common_token_to_piece(llama_model_get_vocab(side.model), token, false);
+                    const auto piece = side_hold_token(seq, vocab, token);
                     // Count the reasoning block with the chat path's tracker, so
                     // the budget and the model's own delimiters are the same
                     // (audit E08).
                     if (seq.think_budget > 0)
                         track_reasoning(seq.formatting.think_start, seq.formatting.think_ends, piece,
                             seq.think_tokens, seq.reasoning, seq.in_think, seq.tail);
-                    seq.held += piece;
                     size_t stop_at = std::string::npos;
                     for (const auto & stop : seq.stops) stop_at = std::min(stop_at, seq.held.find(stop));
-                    if (stop_at != std::string::npos) { text = seq.held.substr(0, stop_at); seq.held.clear(); seq.active = false; }
+                    if (stop_at != std::string::npos) {
+                        take_held(stop_at); seq.held.clear(); seq.held_controls.clear(); seq.active = false;
+                    }
                     else {
                         size_t hold = 0;
                         for (const auto & stop : seq.stops) for (size_t n = 1; n < stop.size() && n <= seq.held.size(); ++n)
                             if (seq.held.compare(seq.held.size() - n, n, stop, 0, n) == 0) hold = std::max(hold, n);
-                        text = seq.held.substr(0, seq.held.size() - hold); seq.held.erase(0, text.size());
+                        take_held(seq.held.size() - hold);
                     }
                     // The answer keeps its allowance; the combined total stays
                     // inside the window.
                     if (seq.generated - seq.reasoning >= seq.maximum || seq.generated >= seq.total_cap
-                        || seq.position >= side.context) { seq.active = false; text += seq.held; seq.held.clear(); }
+                        || seq.position >= side.context) { seq.active = false; take_held(seq.held.size()); }
                 }
                 if (seq.active && seq.think_budget > 0 && seq.in_think && seq.think_tokens >= seq.think_budget) {
                     // Budget spent: close the reasoning block on the model's
@@ -328,7 +399,7 @@ const char * od_side_step(void * h) {
                     const auto tokens = tokenize(llama_model_get_vocab(side.model), close, false);
                     if (tokens.empty()) throw std::runtime_error("Cannot close the reasoning block.");
                     if (seq.position + 1 + (int)tokens.size() >= side.context) {
-                        seq.active = false; text += seq.held; seq.held.clear();
+                        seq.active = false; take_held(seq.held.size());
                     } else {
                         // The prefill cursor is independent of generated KV positions.
                         // Decode the pending token before the closing instruction.
@@ -340,6 +411,7 @@ const char * od_side_step(void * h) {
                         seq.generated += (int)tokens.size(); seq.reasoning += (int)tokens.size();
                         seq.in_think = false; seq.tail.clear();
                         text += close;
+                        controls.append(close.size(), '\0');
                     }
                 }
             }
@@ -357,6 +429,7 @@ const char * od_side_step(void * h) {
                 metrics["prefillMs"] = metrics["firstTokenMs"] = seq.prefill_ms;
                 metrics["tokensPerSecond"] = seconds > 0 ? std::max(0, seq.generated - 1) / seconds : 0;
             }
+            text = side_stream_text(seq, text, controls);
             events.push_back({{"seq", id}, {"bytes", std::vector<uint8_t>(text.begin(), text.end())}, {"done", !seq.active}, {"metrics", metrics}});
         }
         side.result = json({{"events", events}}).dump();

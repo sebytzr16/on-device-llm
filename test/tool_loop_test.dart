@@ -359,6 +359,17 @@ void main() {
       );
       expect(ToolMarkup.visible('Let me check. <tool_c'), 'Let me check. ');
       expect(ToolMarkup.visible('Plain answer.'), 'Plain answer.');
+      expect(ToolMarkup.visible('Plan. <invoke name="calcu'), 'Plan. ');
+      expect(
+        ToolMarkup.visible('Plan. <invoke name="calc">{}</invoke>Result.'),
+        'Plan. Result.',
+      );
+      const example =
+          'Example:\n```text\n<tool_call>example</tool_call>\n```\n';
+      expect(
+        ToolMarkup.visible('${example}Continued.'),
+        '${example}Continued.',
+      );
     });
   });
 

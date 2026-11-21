@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../../inference/engine/engine_registry_provider.dart';
 import '../../../../core/storage/prefs_rescue.dart';
 import '../../../../data/network/hugging_face.dart';
 import '../../../../data/storage/gguf_metadata.dart';
@@ -51,7 +52,12 @@ class ModelRecommendationsNotifier
   /// Reads the `general.sampling.*` keys of [m]'s file once. Local only.
   Future<void> learnFromFile(ModelInfo m, {bool force = false}) async {
     final path = m.localPath;
-    if (path == null || !_checking.add(m.id)) return;
+    final engine = ref.read(engineRegistryProvider).descriptorFor(m);
+    if (!engine.capabilities.ggufMetadata ||
+        path == null ||
+        !_checking.add(m.id)) {
+      return;
+    }
     try {
       await ready;
       if (!force && state[m.id]?.sources.contains('checked') == true) return;
@@ -81,6 +87,8 @@ class ModelRecommendationsNotifier
   /// Face. Called next to the download only (the no-server rule allows
   /// Hugging Face for downloads), never on its own.
   Future<void> learnFromHub(ModelInfo m) async {
+    final engine = ref.read(engineRegistryProvider).descriptorFor(m);
+    if (!engine.capabilities.ggufMetadata) return;
     final repo = ModelRecommendations.repoOf(m.downloadUrl);
     if (repo == null) return;
     String? revision;

@@ -1,3 +1,4 @@
+import '../../../../inference/engine/engine_registry_provider.dart';
 import '../../../helper/helper_runner.dart';
 import '../../domain/entities/model_suggestions.dart';
 import '../widgets/download_center.dart';
@@ -30,6 +31,7 @@ import '../../../../core/tips/tip_anchor.dart';
 import '../../../../core/tips/tips_store.dart';
 import 'model_readiness_page.dart';
 import '../../../../core/l10n/l10n.dart';
+import '../../../../core/widgets/stop_load_button.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/motion/motion.dart';
 import '../../../../core/design/app_dialog.dart';
@@ -67,7 +69,11 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
           title: Text(
-            fromLink ? context.l10n.addFromHf : context.l10n.importGguf,
+            fromLink
+                ? context.l10n.addFromHf
+                : ref.read(liteRtAvailableProvider)
+                ? context.l10n.liteRtImportModel
+                : context.l10n.importGguf,
           ),
           content: SingleChildScrollView(
             child: Column(
@@ -78,6 +84,8 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                 Text(
                   fromLink
                       ? context.l10n.addFromHfHint
+                      : ref.read(liteRtAvailableProvider)
+                      ? context.l10n.liteRtImportHint
                       : context.l10n.importGgufHint,
                   style: context.text.bodyMuted,
                 ),
@@ -299,7 +307,14 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
             manager.pauseDownload(ModelManagerState.visionKey(model.id)),
         onDeleteVision: () =>
             _attempt(context, () => manager.deleteVision(model)),
-        onBenchmark: () => showBenchmarkDialog(context, ref, model),
+        onBenchmark:
+            ref
+                .watch(engineRegistryProvider)
+                .descriptorFor(model)
+                .capabilities
+                .benchmark
+            ? () => showBenchmarkDialog(context, ref, model)
+            : null,
         onRemoveEntry: model.isDownloaded
             ? null
             : () => _attempt(
@@ -338,11 +353,20 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
       state.loadedModelId,
     );
     final hidden = ref.watch(hiddenLibraryModelsProvider);
-    final available = rankRecommended(
-      availableLibraryModels(state.catalog, desktop: false, hidden: hidden),
+    final downloadable = availableLibraryModels(
+      state.catalog,
+      desktop: false,
+      hidden: hidden,
+    );
+    final recommended = rankRecommended(
+      downloadable,
       fit: (m) => modelFit(memory, m),
       desktop: false,
     );
+    final available = [
+      ...recommended,
+      ...downloadable.where((m) => m.isLiteRt),
+    ];
     // Suggestions removed with the card's close button (all of them on the
     // tester's phone, 2026-11-16): offer them back instead of an empty list.
     final removed = hidden.isEmpty
@@ -356,9 +380,9 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
     // First-run guide: the top Recommended model is marked only when it
     // really fits this phone.
     final bestId =
-        available.isNotEmpty &&
-            modelFit(memory, available.first) == ModelFit.fits
-        ? available.first.id
+        recommended.isNotEmpty &&
+            modelFit(memory, recommended.first) == ModelFit.fits
+        ? recommended.first.id
         : null;
     return Scaffold(
       appBar: AppBar(
@@ -505,7 +529,9 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                                     size: 18,
                                   ),
                                   label: Text(
-                                    context.l10n.importGgufButton,
+                                    ref.watch(liteRtAvailableProvider)
+                                        ? context.l10n.liteRtImportModel
+                                        : context.l10n.importGgufButton,
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
@@ -522,7 +548,11 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                       if (state.isImporting)
                         _StatusLine(context.l10n.checkingCopying),
                       if (state.isLoadingModel)
-                        _StatusLine(context.l10n.loadingModel),
+                        _StatusLine(
+                          context.l10n.loadingModel,
+                          // A load can be stopped at any moment (OR-02).
+                          trailing: const StopLoadButton(),
+                        ),
                       if (state.error != null) _ErrorCard(state.error!),
                       const SizedBox(height: AppSpace.section),
                     ],
@@ -707,7 +737,8 @@ class _SectionLabel extends StatelessWidget {
 
 class _StatusLine extends StatelessWidget {
   final String text;
-  const _StatusLine(this.text);
+  final Widget? trailing;
+  const _StatusLine(this.text, {this.trailing});
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(top: AppSpace.lg),
@@ -719,7 +750,12 @@ class _StatusLine extends StatelessWidget {
           child: const LinearProgressIndicator(minHeight: 3),
         ),
         const SizedBox(height: AppSpace.row),
-        Text(text, style: context.text.mono),
+        Row(
+          children: [
+            Expanded(child: Text(text, style: context.text.mono)),
+            ?trailing,
+          ],
+        ),
       ],
     ),
   );

@@ -26,7 +26,10 @@ class _ToolsOn extends SettingsNotifier {
   }
 
   @override
-  Future<void> update(InferenceSettings next) async => state = next;
+  Future<void> update(
+    InferenceSettings next, {
+    bool requirePersistence = false,
+  }) async => state = next;
 }
 
 class _NoModels extends ModelManagerNotifier {

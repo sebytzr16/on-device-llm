@@ -293,7 +293,9 @@ void main() {
         expect((await run()).ok, false);
         registry.confirm = (_, _) async => McpConsent.always;
         await run();
-        await registry.saveConfig(registry.raw);
+        await registry.saveConfig(
+          '{"mcpServers":{"fixture":{"url":"http://localhost:2/mcp"}}}',
+        );
         expect(registry.alwaysAllowed(call.name), false);
       },
     );
@@ -377,6 +379,457 @@ void main() {
       transport.errorResult = true;
       expect((await run()).ok, false);
     });
+    test(
+      'a damaged permissions file keeps servers listed but disabled',
+      () async {
+        await File(
+          '${directory.path}/mcp-permissions.json',
+        ).writeAsString('["not", "an", "object"]');
+        final restored = McpRegistry(
+          directory: () async => directory,
+          connector: (_) async => FakeMcpTransport(),
+        );
+        await restored.load();
+        addTearDown(restored.dispose);
+        expect(restored.error, isNull);
+        expect(restored.loaded, isTrue);
+        expect(restored.servers.keys, contains('fixture'));
+        // Nothing reviewed the servers, so none may run until enabled again.
+        expect(restored.serverEnabled('fixture'), isFalse);
+        expect(restored.alwaysAllowed(call.name), isFalse);
+      },
+    );
+    test(
+      'a malformed permissions field keeps executable approvals off',
+      () async {
+        final dir = await Directory.systemTemp.createTemp('mcp-partial-');
+        addTearDown(() => dir.delete(recursive: true));
+        final command = McpRegistry(
+          directory: () async => dir,
+          connector: (_) async => FakeMcpTransport(),
+        );
+        addTearDown(command.dispose);
+        final executable = File('${dir.path}/fixture.exe')
+          ..writeAsStringSync('fixture');
+        await command.saveConfig(
+          jsonEncode({
+            'mcpServers': {
+              'fixture': {'command': executable.path},
+            },
+          }),
+        );
+        await command.enableServer('fixture', true, reviewed: true);
+        expect(command.serverEnabled('fixture'), isTrue);
+        final prefs = File('${dir.path}/mcp-permissions.json');
+        final snapshot = jsonDecode(await prefs.readAsString()) as Map;
+        // The approvals decode fine; a later field no longer does.
+        snapshot['disabledTools'] = <Object>[1];
+        await prefs.writeAsString(jsonEncode(snapshot));
+
+        final restored = McpRegistry(
+          directory: () async => dir,
+          connector: (_) async => FakeMcpTransport(),
+        );
+        await restored.load();
+        addTearDown(restored.dispose);
+        expect(restored.serverEnabled('fixture'), isFalse);
+        expect(restored.alwaysAllowed(call.name), isFalse);
+      },
+    );
+    test(
+      'a grant is not published while its permissions write is pending',
+      () async {
+        final dir = await Directory.systemTemp.createTemp('mcp-grant-');
+        addTearDown(() => dir.delete(recursive: true));
+        final reached = Completer<void>();
+        final gate = Completer<void>();
+        var gated = false;
+        final local = McpRegistry(
+          directory: () async {
+            if (gated) {
+              if (!reached.isCompleted) reached.complete();
+              await gate.future;
+            }
+            return dir;
+          },
+          connector: (_) async => FakeMcpTransport(),
+        );
+        addTearDown(local.dispose);
+        await local.saveConfig(
+          '{"mcpServers":{"fixture":{"url":"http://localhost:1/mcp"}}}',
+        );
+        local.confirm = (_, _) async => McpConsent.always;
+        gated = true;
+        final pending = local.call(
+          call,
+          explain: (e) => mcpExplain(t, e),
+          unsupportedContent: t.mcpUnsupportedContent,
+        );
+        await reached.future;
+        expect(local.alwaysAllowed(call.name), isFalse);
+        gate.complete();
+        expect((await pending).ok, isTrue);
+        expect(local.alwaysAllowed(call.name), isTrue);
+      },
+    );
+    test(
+      'a change whose write failed is not persisted by a later change',
+      () async {
+        final good = await Directory.systemTemp.createTemp('mcp-serial-');
+        final broken = await Directory.systemTemp.createTemp('mcp-broken-');
+        addTearDown(() {
+          good.deleteSync(recursive: true);
+          broken.deleteSync(recursive: true);
+        });
+        // The atomic write fails while any live file stays intact.
+        await Directory('${broken.path}/mcp-permissions.json.tmp').create();
+        var failing = false;
+        final serial = McpRegistry(
+          directory: () async {
+            final dir = failing ? broken : good;
+            failing = false;
+            return dir;
+          },
+          connector: (_) async => FakeMcpTransport(),
+        );
+        addTearDown(serial.dispose);
+        await serial.saveConfig(
+          '{"mcpServers":{"fixture":{"url":"http://localhost:1/mcp"}}}',
+        );
+        failing = true;
+        final first = serial.enableTool('tool_a', false);
+        final second = serial.enableTool('tool_b', false);
+        await expectLater(first, throwsA(isA<FileSystemException>()));
+        await second;
+        expect(serial.toolEnabled('tool_a'), isTrue);
+        expect(serial.toolEnabled('tool_b'), isFalse);
+        final saved =
+            jsonDecode(
+                  await File(
+                    '${good.path}/mcp-permissions.json',
+                  ).readAsString(),
+                )
+                as Map;
+        expect(saved['disabledTools'], ['tool_b']);
+      },
+    );
+    test(
+      'a failed permissions write leaves the committed config live',
+      () async {
+        registry.confirm = (_, _) async => McpConsent.always;
+        expect((await run()).ok, isTrue);
+        expect(registry.alwaysAllowed(call.name), isTrue);
+        // mcp.json commits, then the atomic permissions write fails.
+        final temp = Directory('${directory.path}/mcp-permissions.json.tmp');
+        await temp.create();
+        await expectLater(
+          registry.saveConfig(
+            '{"mcpServers":{"other":{"url":"http://localhost:2/mcp"}}}',
+          ),
+          throwsA(isA<FileSystemException>()),
+        );
+        expect(registry.raw, contains('other'));
+        expect(registry.servers.keys, ['other']);
+        expect(registry.serverEnabled('other'), isFalse);
+        expect(registry.servers['other']!.status, McpStatus.disabled);
+        expect(registry.alwaysAllowed(call.name), isFalse);
+        await temp.delete();
+      },
+    );
+    test('hosted calls require a host decision despite local grants', () async {
+      registry.confirm = (_, _) async => McpConsent.always;
+      expect((await run()).ok, isTrue);
+      final sent = transport.sent.length;
+      registry.confirmHosted = (_, _) async => McpConsent.deny;
+      final result = await registry.call(
+        call,
+        explain: (e) => mcpExplain(t, e),
+        unsupportedContent: t.mcpUnsupportedContent,
+        requireHostConfirmation: true,
+        confirmation: (_, _) async => McpConsent.once,
+      );
+      expect(result.ok, isFalse);
+      expect(transport.sent, hasLength(sent));
+    });
+
+    for (final missingDigest in [false, true]) {
+      test(
+        'unverified URL config remains disabled (missing digest: $missingDigest)',
+        () async {
+          final raw = File('${directory.path}/mcp.json');
+          await raw.writeAsString(
+            '{"mcpServers":{"fixture":{"url":"http://localhost:2/mcp"},"added":{"url":"http://localhost:3/mcp"}}}',
+          );
+          if (missingDigest) {
+            final prefs = File('${directory.path}/mcp-permissions.json');
+            final snapshot = jsonDecode(await prefs.readAsString()) as Map;
+            snapshot.remove('configDigest');
+            await prefs.writeAsString(jsonEncode(snapshot));
+          }
+          var connects = 0;
+          final next = McpRegistry(
+            directory: () async => directory,
+            connector: (_) async {
+              connects++;
+              return FakeMcpTransport();
+            },
+          );
+          addTearDown(next.dispose);
+          await next.load();
+          expect(connects, 0);
+          expect(next.serverEnabled('fixture'), isFalse);
+          expect(next.serverEnabled('added'), isFalse);
+          await next.enableServer('fixture', true);
+          expect(connects, 1);
+          expect(next.serverEnabled('added'), isFalse);
+        },
+      );
+    }
+
+    test(
+      'Always Allow is rejected after a queued server replacement',
+      () async {
+        final saving = Completer<void>();
+        final unblock = Completer<void>();
+        var hold = false;
+        final queued = McpRegistry(
+          directory: () async {
+            if (hold) {
+              hold = false;
+              saving.complete();
+              await unblock.future;
+            }
+            return directory;
+          },
+          connector: (_) async => FakeMcpTransport(),
+        );
+        addTearDown(queued.dispose);
+        await queued.saveConfig(registry.raw);
+        final asked = Completer<void>();
+        final consent = Completer<McpConsent>();
+        queued.confirm = (_, _) {
+          asked.complete();
+          return consent.future;
+        };
+        final pending = queued.call(
+          call,
+          explain: (e) => '$e',
+          unsupportedContent: '',
+        );
+        await asked.future;
+        hold = true;
+        final replace = queued.saveConfig(
+          '{"mcpServers":{"fixture":{"url":"http://localhost:2/mcp"}}}',
+        );
+        await saving.future;
+        consent.complete(McpConsent.always);
+        await Future<void>.delayed(Duration.zero);
+        unblock.complete();
+        await replace;
+        expect((await pending).ok, isFalse);
+        expect(queued.alwaysAllowed(call.name), isFalse);
+      },
+    );
+
+    test(
+      'restarts recheck approval after preparing a working directory',
+      () async {
+        final preparing = Completer<void>();
+        final unblock = Completer<void>();
+        var hold = false;
+        var starts = 0;
+        final executable = File('${directory.path}/fixture.exe')
+          ..writeAsStringSync('fixture');
+        final guarded = McpRegistry(
+          directory: () async {
+            if (hold) {
+              hold = false;
+              preparing.complete();
+              await unblock.future;
+            }
+            return directory;
+          },
+          connector: (_) async {
+            starts++;
+            return FakeMcpTransport();
+          },
+        );
+        addTearDown(guarded.dispose);
+        await guarded.saveConfig(
+          jsonEncode({
+            'mcpServers': {
+              'fixture': {'command': executable.path},
+            },
+          }),
+        );
+        await guarded.enableServer('fixture', true, reviewed: true);
+        expect(starts, 1);
+        hold = true;
+        final restarting = guarded.restart('fixture');
+        await preparing.future;
+        await guarded.enableServer('fixture', false);
+        unblock.complete();
+        await restarting;
+        expect(starts, 1);
+        expect(guarded.servers['fixture']!.status, McpStatus.disabled);
+      },
+    );
+
+    test('changing an approved executable requires a new review', () async {
+      var starts = 0;
+      final executable = File('${directory.path}/fixture.exe')
+        ..writeAsStringSync('original');
+      final guarded = McpRegistry(
+        directory: () async => directory,
+        connector: (_) async {
+          starts++;
+          return FakeMcpTransport();
+        },
+      );
+      addTearDown(guarded.dispose);
+      await guarded.saveConfig(
+        jsonEncode({
+          'mcpServers': {
+            'fixture': {'command': executable.path},
+          },
+        }),
+      );
+      await guarded.enableServer('fixture', true, reviewed: true);
+      expect(starts, 1);
+      await executable.writeAsString('replacement');
+      await guarded.restart('fixture');
+      expect(starts, 1);
+      expect(guarded.specs, isEmpty);
+      await guarded.enableServer('fixture', true, reviewed: true);
+      expect(starts, 2);
+    });
+
+    test('a failed permission write rolls the change back', () async {
+      registry.confirm = (_, _) async => McpConsent.always;
+      expect((await run()).ok, isTrue);
+      expect(registry.alwaysAllowed(call.name), isTrue);
+      // A folder where the temporary file belongs makes every write fail while
+      // the live snapshot stays valid.
+      final temp = Directory('${directory.path}/mcp-permissions.json.tmp');
+      await temp.create();
+      await expectLater(
+        registry.revoke(call.name),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(registry.alwaysAllowed(call.name), isTrue);
+      await expectLater(
+        registry.enableTool(call.name, false),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(registry.toolEnabled(call.name), isTrue);
+      await temp.delete();
+      // The untouched snapshot still restores the grant in a fresh registry.
+      final restored = McpRegistry(
+        directory: () async => directory,
+        connector: (_) async => FakeMcpTransport(),
+      );
+      await restored.load();
+      addTearDown(restored.dispose);
+      expect(restored.alwaysAllowed(call.name), isTrue);
+    });
+    test('a running server stays available during a config save', () async {
+      final dir = await Directory.systemTemp.createTemp('mcp-save-');
+      addTearDown(() => dir.delete(recursive: true));
+      final reached = Completer<void>();
+      final gate = Completer<void>();
+      var gated = false, calls = 0;
+      final local = McpRegistry(
+        directory: () async {
+          // The first write of a save is mcp.json; hold the permissions write.
+          if (gated && ++calls >= 2) {
+            if (!reached.isCompleted) reached.complete();
+            await gate.future;
+          }
+          return dir;
+        },
+        connector: (_) async => FakeMcpTransport(),
+      );
+      addTearDown(local.dispose);
+      const raw = '{"mcpServers":{"fixture":{"url":"http://localhost:1/mcp"}}}';
+      await local.saveConfig(raw);
+      expect(local.serverEnabled('fixture'), isTrue);
+      calls = 0;
+      gated = true;
+      final saving = local.saveConfig(raw);
+      await reached.future;
+      // Permissions are still being written, but an unrelated save must not
+      // make a running server unavailable to a chat turn.
+      expect(local.serverEnabled('fixture'), isTrue);
+      expect(local.specs, isNotEmpty);
+      gate.complete();
+      await saving;
+      expect(local.serverEnabled('fixture'), isTrue);
+    });
+    test('an enable click survives a queued identical config save', () async {
+      final raw = registry.raw;
+      await registry.enableServer('fixture', false);
+      expect(registry.serverEnabled('fixture'), isFalse);
+      final saving = registry.saveConfig('  $raw');
+      final enabling = registry.enableServer('fixture', true);
+      await saving;
+      await enabling;
+      expect(registry.serverEnabled('fixture'), isTrue);
+    });
+
+    test('a queued enable cannot approve a replacement executable', () async {
+      String config(String path) => jsonEncode({
+        'mcpServers': {
+          'fixture': {'command': path},
+        },
+      });
+      final first = File('${directory.path}/first.exe')
+        ..writeAsStringSync('one');
+      final second = File('${directory.path}/second.exe')
+        ..writeAsStringSync('two');
+      await registry.saveConfig(config(first.path));
+      final saving = registry.saveConfig(config(second.path));
+      await expectLater(
+        registry.enableServer('fixture', true, reviewed: true),
+        throwsA(isA<McpException>()),
+      );
+      await saving;
+      expect(registry.servers['fixture']!.config.command, second.path);
+      expect(registry.serverEnabled('fixture'), isFalse);
+    });
+
+    test(
+      'editing another server preserves a stdio client and its grants',
+      () async {
+        final executable = File('${directory.path}/fixture.exe')
+          ..writeAsStringSync('fixture');
+        String config(int port) => jsonEncode({
+          'mcpServers': {
+            'fixture': {'command': executable.path},
+            'other': {'url': 'http://localhost:$port/mcp'},
+          },
+        });
+        await registry.saveConfig(config(1));
+        await registry.enableServer('fixture', true, reviewed: true);
+        registry.confirm = (_, _) async => McpConsent.always;
+        expect((await run()).ok, isTrue);
+        final unchanged = registry.servers['fixture']!.client;
+        final changed = registry.servers['other']!.client;
+
+        await registry.saveConfig(config(2));
+        expect(registry.serverEnabled('fixture'), isTrue);
+        expect(registry.servers['fixture']!.client, same(unchanged));
+        expect(registry.servers['other']!.client, isNot(same(changed)));
+        expect(registry.alwaysAllowed(call.name), isTrue);
+        final restored = McpRegistry(
+          directory: () async => directory,
+          connector: (_) async => FakeMcpTransport(),
+        );
+        addTearDown(restored.dispose);
+        await restored.load();
+        expect(restored.serverEnabled('fixture'), isTrue);
+        expect(restored.alwaysAllowed(call.name), isTrue);
+      },
+    );
   });
 
   test(

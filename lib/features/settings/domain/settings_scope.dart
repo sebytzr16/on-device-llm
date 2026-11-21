@@ -63,27 +63,43 @@ class ResolvedSettings {
 class SettingsResolver {
   /// A registry edit changes inference keys only. Global privacy, appearance
   /// and credentials survive resetting or importing model-setting values.
+  /// [resets] narrows which settings a reset to [resetMissingTo] touches, so
+  /// a page that does not expose a key (per-model sampling) leaves it alone.
   static InferenceSettings editGlobal(
     InferenceSettings current,
     Map<String, dynamic> values, {
     InferenceSettings? resetMissingTo,
+    bool Function(SettingSpec spec)? resets,
   }) {
     final json = current.toJson();
     final reset = resetMissingTo?.toJson();
     if (reset != null) {
       for (final spec in SettingSpec.all) {
+        if (resets != null && !resets(spec)) continue;
         json[spec.key] = reset[spec.key];
       }
     }
-    json.addAll(sanitize(values));
-    json['explicitOverrides'] = {
+    final edits = sanitize(values)..remove('liteRtBackend');
+    json.addAll(edits);
+    // A key the reset leaves alone keeps its explicit marker.
+    final explicit = <String>{
       if (reset == null) ...current.explicitOverrides,
-      ...sanitize(values).keys,
-    }.toList();
+      if (reset != null)
+        for (final key in current.explicitOverrides)
+          if (!resetsKey(key, resets)) key,
+      ...edits.keys,
+    };
+    json['explicitOverrides'] = explicit.toList();
     return InferenceSettings.fromJson(json).copyWith(
       remoteApiKeys: current.remoteApiKeys,
       remoteHeaders: current.remoteHeaders,
     );
+  }
+
+  /// Whether a reset would touch the setting stored under [key].
+  static bool resetsKey(String key, bool Function(SettingSpec spec)? resets) {
+    final spec = SettingSpec.byKey(key);
+    return spec != null && (resets?.call(spec) ?? true);
   }
 
   /// Only keys the registry knows are honoured from profile/preset/chat/turn
@@ -157,7 +173,11 @@ class SettingsResolver {
         for (final e in layer.values.entries) {
           if (!base.containsKey(e.key)) continue;
           final spec = SettingSpec.byKey(e.key);
-          if (spec != null && !spec.available) continue;
+          if (spec != null &&
+              (!spec.available ||
+                  (spec.modelOnly && layer.id != SettingsLayer.idModel))) {
+            continue;
+          }
           merged[e.key] = e.value;
           origin[e.key] = layer.id;
           (requested[e.key] ??= []).add((layer.id, e.value));

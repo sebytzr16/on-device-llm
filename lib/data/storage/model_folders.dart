@@ -10,6 +10,18 @@ class ModelFolderException implements Exception {
   const ModelFolderException(this.reason);
 }
 
+/// Thrown by a [ModelFolders.change] `updatePaths` callback that could not
+/// undo its catalog or settings write. Saved paths still point at the copies
+/// in the new folder, so they must stay on disk (audit 09-2). [cause] is the
+/// failure to report.
+class ModelFolderKeptCopiesException implements Exception {
+  final Object cause;
+  const ModelFolderKeptCopiesException(this.cause);
+
+  @override
+  String toString() => 'Model paths were kept after a failed rollback: $cause';
+}
+
 /// Absolute catalog paths remain valid when a folder is left in place.
 /// Older roots also resolve companion files, which are stored by filename.
 class ModelFolders {
@@ -141,7 +153,14 @@ class ModelFolders {
         throw const ModelFolderException(ModelFolderFailure.notWritable);
       }
       await preferences.setStringList(_rootsKey, const []);
-    } catch (error) {
+    } catch (error, stackTrace) {
+      var failure = error;
+      if (error is ModelFolderKeptCopiesException) {
+        // The rollback failed, so saved paths still point at the copies:
+        // they stay and the original cause is reported (audit 09-2).
+        pathsUpdated = true;
+        failure = error.cause;
+      }
       // A failed preference write must not remove files the committed catalog
       // can already reference. Originals are retained on every failure.
       if (!pathsUpdated) {
@@ -149,15 +168,16 @@ class ModelFolders {
           if (await file.exists()) await file.delete();
         }
       }
-      if (error is FileSystemException) {
+      if (failure is FileSystemException) {
         // Windows ERROR_DISK_FULL / ERROR_HANDLE_DISK_FULL.
         throw ModelFolderException(
-          [39, 112].contains(error.osError?.errorCode)
+          [39, 112].contains(failure.osError?.errorCode)
               ? ModelFolderFailure.insufficientSpace
               : ModelFolderFailure.notWritable,
         );
       }
-      rethrow;
+      if (identical(failure, error)) rethrow;
+      Error.throwWithStackTrace(failure, stackTrace);
     } finally {
       if (staging != null && await staging.exists()) {
         await staging.delete(recursive: true);

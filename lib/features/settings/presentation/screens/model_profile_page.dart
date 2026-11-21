@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../inference/engine/engine_registry_provider.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../models/domain/entities/model_info.dart';
@@ -43,8 +44,11 @@ class ModelProfilePage extends ConsumerWidget {
         return OverridesPage(
           title: context.l10n.modelProfileTitle(model.displayName),
           scopeLabel: context.l10n.modelProfileScope,
+          engine: ref.watch(engineRegistryProvider).descriptorFor(model),
+          modelProfile: true,
           overrides: profiles[model.id] ?? const {},
           inherited: inherited,
+          change: (o) => SettingsChange(profileModelId: model.id, profile: o),
           onChanged: (o) =>
               ref.read(modelProfilesProvider.notifier).set(model.id, o),
           actions: [

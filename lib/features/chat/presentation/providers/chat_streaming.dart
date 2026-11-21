@@ -106,18 +106,22 @@ extension _ChatStreaming on ChatNotifier {
                   : _t.noticePreparingTool(writing))
             : null;
         preparing = writing;
+        final visible = tools.isEmpty && !t.serverWorkspace
+            ? answerText
+            : ToolMarkup.visible(answerText);
+        // A helper dispatch round can write a preamble while it is still
+        // deciding what to delegate. Show it with the work in progress.
+        final reasoningText = t.holdAnswer && visible.trim().isNotEmpty
+            ? [if (thinking.isNotEmpty) thinking.toString(), visible].join('\n')
+            : thinking.toString();
         _chatState = _chatState.copyWith(
           notice: notice ?? _chatState.notice,
           // A tool call being written is not part of the answer.
-          partialAnswer: t.holdAnswer
-              ? ''
-              : tools.isEmpty && !t.serverWorkspace
-              ? answerText
-              : ToolMarkup.visible(answerText),
+          partialAnswer: t.holdAnswer ? '' : visible,
           hasReasoningTokens: t.hasReasoningTokens,
-          reasoning: thinking.isEmpty
+          reasoning: reasoningText.isEmpty
               ? null
-              : ReasoningBlock(id: reasoningId, content: thinking.toString()),
+              : ReasoningBlock(id: reasoningId, content: reasoningText),
         );
       }
     });

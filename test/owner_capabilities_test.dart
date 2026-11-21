@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/data/storage/gguf_metadata.dart';
+import 'package:ondevice_llm/features/models/domain/entities/model_catalog.dart';
 import 'package:ondevice_llm/features/models/presentation/widgets/model_capabilities.dart';
 
 void main() {
@@ -26,6 +27,20 @@ void main() {
     ], everyElement(isTrue));
     expect(facts.contextLength, 32768);
     expect(ModelCapabilities.derive().tools, isFalse);
+  });
+  test('a LiteRT model badges vision only once the runtime probed it', () {
+    final model = liteRtCatalog.first;
+    // Its tags and file name say nothing until the runtime read the file:
+    // no badge, not the "every LiteRT model sees" guess.
+    expect(ModelCapabilities.derive(model: model).vision, isFalse);
+    expect(
+      ModelCapabilities.derive(model: model, liteRtVision: false).vision,
+      isFalse,
+    );
+    expect(
+      ModelCapabilities.derive(model: model, liteRtVision: true).vision,
+      isTrue,
+    );
   });
   testWidgets('HF badges show capabilities without a duplicate context chip', (
     tester,

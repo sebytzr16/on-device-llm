@@ -4,6 +4,8 @@ import '../../../../core/platform/cpu_cores.dart';
 import '../../../../core/platform/desktop_host.dart';
 
 import '../../../../core/motion/motion_choice.dart';
+import '../../../../inference/engine/engine_descriptor.dart'
+    show llamaLoadSettingKeys;
 import '../../../../inference/remote/remote_provider.dart';
 
 export '../../../../core/motion/motion_choice.dart' show MotionChoice;
@@ -19,6 +21,8 @@ enum WebMode { off, auto, always }
 // Persisted by name; keep existing names stable. `qnn` is retained only so old
 // preferences still parse — it is never offered and native load rejects it.
 enum GpuBackend { auto, metal, vulkan, opencl, qnn, cpu, cuda }
+
+enum LiteRtBackend { auto, gpu, cpu }
 
 /// Position-encoding stretch for contexts beyond what the model was trained
 /// for. `model` keeps whatever the GGUF declares.
@@ -228,6 +232,7 @@ class InferenceSettings {
   final int microBatchSize;
   final int nGpuLayers;
   final GpuBackend backend;
+  final LiteRtBackend liteRtBackend;
   final String cpuVariant;
   final String projectorDevice;
   final int cpuThreads;
@@ -528,6 +533,11 @@ class InferenceSettings {
   final bool toolWeb;
   final bool toolDocuments;
 
+  /// Let jobs submitted by PAIRED devices search this device's knowledge
+  /// collection (the PC/phone hosting page's opt-in). Off by default and
+  /// never settable by a workspace client: loopback jobs keep their access.
+  final bool hostShareDocuments;
+
   /// Saved facts the model may recall (needs Memory on).
   final bool toolMemory;
 
@@ -586,6 +596,7 @@ class InferenceSettings {
     this.microBatchSize = 0,
     this.nGpuLayers = 999,
     this.backend = GpuBackend.auto,
+    this.liteRtBackend = LiteRtBackend.auto,
     this.cpuVariant = 'auto',
     this.projectorDevice = 'auto',
     this.cpuThreads = 0,
@@ -696,6 +707,7 @@ class InferenceSettings {
     this.toolCalculator = true,
     this.toolWeb = true,
     this.toolDocuments = true,
+    this.hostShareDocuments = false,
     this.toolMemory = true,
     this.toolActions = true,
     this.toolHelper = false,
@@ -846,51 +858,7 @@ class InferenceSettings {
     return [profile];
   }
 
-  static const loadTimeKeys = {
-    'chatTemplate',
-    'contextSize',
-    'contextAuto',
-    'imageMaxTokens',
-    'batchSize',
-    'microBatchSize',
-    'nGpuLayers',
-    'backend',
-    'cpuVariant',
-    'projectorDevice',
-    'cpuThreads',
-    'batchThreads',
-    'vramReserveMb',
-    'draftMinP',
-    'promptStoreMb',
-    'useMmap',
-    'visionEnabled',
-    'useMlock',
-    'mainGpu',
-    'splitMode',
-    'offloadKv',
-    'swaFull',
-    'nCpuMoe',
-    'moeCacheSizeMb',
-    'moeCacheCpuShare',
-    'expertsUsed',
-    'draftGpuLayers',
-
-    'flashAttention',
-    'mtp',
-    'speculationMode',
-    'kvCacheType',
-    'vCacheType',
-    'ropeScaling',
-    'ropeFreqBase',
-    'ropeFreqScale',
-    'yarnExtFactor',
-    'yarnAttnFactor',
-    'yarnBetaFast',
-    'yarnBetaSlow',
-    'yarnOrigCtx',
-    'draftModelId',
-    'draftMaxTokens',
-  };
+  static const loadTimeKeys = {...llamaLoadSettingKeys, 'liteRtBackend'};
 
   InferenceSettings copyWith({
     Set<String>? explicitOverrides,
@@ -900,6 +868,7 @@ class InferenceSettings {
     int? microBatchSize,
     int? nGpuLayers,
     GpuBackend? backend,
+    LiteRtBackend? liteRtBackend,
     String? cpuVariant,
     String? projectorDevice,
     int? cpuThreads,
@@ -1011,6 +980,7 @@ class InferenceSettings {
     bool? toolCalculator,
     bool? toolWeb,
     bool? toolDocuments,
+    bool? hostShareDocuments,
     bool? toolMemory,
     bool? toolActions,
     bool? toolHelper,
@@ -1047,6 +1017,7 @@ class InferenceSettings {
           if (microBatchSize != null) 'microBatchSize',
           if (nGpuLayers != null) 'nGpuLayers',
           if (backend != null) 'backend',
+          if (liteRtBackend != null) 'liteRtBackend',
           if (cpuVariant != null) 'cpuVariant',
           if (projectorDevice != null) 'projectorDevice',
           if (cpuThreads != null) 'cpuThreads',
@@ -1154,6 +1125,7 @@ class InferenceSettings {
           if (toolCalculator != null) 'toolCalculator',
           if (toolWeb != null) 'toolWeb',
           if (toolDocuments != null) 'toolDocuments',
+          if (hostShareDocuments != null) 'hostShareDocuments',
           if (toolMemory != null) 'toolMemory',
           if (toolActions != null) 'toolActions',
           if (toolHelper != null) 'toolHelper',
@@ -1186,6 +1158,7 @@ class InferenceSettings {
     microBatchSize: microBatchSize ?? this.microBatchSize,
     nGpuLayers: nGpuLayers ?? this.nGpuLayers,
     backend: backend ?? this.backend,
+    liteRtBackend: liteRtBackend ?? this.liteRtBackend,
     cpuVariant: cpuVariant ?? this.cpuVariant,
     projectorDevice: projectorDevice ?? this.projectorDevice,
     cpuThreads: cpuThreads ?? this.cpuThreads,
@@ -1307,6 +1280,7 @@ class InferenceSettings {
     toolCalculator: toolCalculator ?? this.toolCalculator,
     toolWeb: toolWeb ?? this.toolWeb,
     toolDocuments: toolDocuments ?? this.toolDocuments,
+    hostShareDocuments: hostShareDocuments ?? this.hostShareDocuments,
     toolMemory: toolMemory ?? this.toolMemory,
     toolActions: toolActions ?? this.toolActions,
     toolHelper: toolHelper ?? this.toolHelper,
@@ -1351,6 +1325,7 @@ class InferenceSettings {
     'microBatchSize': microBatchSize,
     'nGpuLayers': nGpuLayers,
     'backend': backend.name,
+    'liteRtBackend': liteRtBackend.name,
     'cpuVariant': cpuVariant,
     'projectorDevice': projectorDevice,
     'cpuThreads': cpuThreads,
@@ -1467,6 +1442,7 @@ class InferenceSettings {
     'toolCalculator': toolCalculator,
     'toolWeb': toolWeb,
     'toolDocuments': toolDocuments,
+    'hostShareDocuments': hostShareDocuments,
     'toolMemory': toolMemory,
     'toolActions': toolActions,
     'toolHelper': toolHelper,
@@ -1578,6 +1554,8 @@ class InferenceSettings {
       microBatchSize: integer('microBatchSize', 0, 0, maxBatch),
       nGpuLayers: integer('nGpuLayers', 999, 0, 999),
       backend: named(GpuBackend.values, 'backend') ?? GpuBackend.auto,
+      liteRtBackend:
+          named(LiteRtBackend.values, 'liteRtBackend') ?? LiteRtBackend.auto,
       projectorDevice:
           const ['auto', 'gpu', 'cpu'].contains(j['projectorDevice'])
           ? j['projectorDevice'] as String
@@ -1750,6 +1728,7 @@ class InferenceSettings {
       toolCalculator: boolean('toolCalculator', true),
       toolWeb: boolean('toolWeb', true),
       toolDocuments: boolean('toolDocuments', true),
+      hostShareDocuments: boolean('hostShareDocuments', false),
       toolMemory: boolean('toolMemory', true),
       toolActions: boolean('toolActions', true),
       toolHelper: boolean('toolHelper', false),

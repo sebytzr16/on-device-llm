@@ -67,6 +67,11 @@ class DownloadManager {
   final Map<String, int> _remaining = {};
   final Map<String, List<String>> _systemIds = {};
 
+  /// Last smoothed rate per part, for [DownloadProgress.bytesPerSecond]: the
+  /// raw per-window delta is jagged (Android's 700 ms poll, Dio's 300 ms
+  /// windows), so the number shown eases into it.
+  final Map<String, double> _rates = {};
+
   /// Maps canonical destination path to the in-flight download holder.
   /// Allows multiple callers for the same file to join the same transfer.
   final Map<String, _DestinationDownload> _destinationFutures = {};
@@ -111,6 +116,7 @@ class DownloadManager {
   void _release(String id) {
     _active.remove(id);
     _remaining.remove(id);
+    _rates.removeWhere((key, _) => key == id || key.startsWith('$id:part:'));
     while (!_disposed && _active.length < 2 && _queue.isNotEmpty) {
       final next = _queue.removeAt(0);
       if (next.token.isCancelled) {
@@ -120,6 +126,15 @@ class DownloadManager {
       _active.add(next.id);
       next.ready.complete(true);
     }
+  }
+
+  /// A rate over the previous windows, so the label does not jump between
+  /// 0 and full speed on every poll. Same field, no API change.
+  double _smoothRate(String key, double raw) {
+    final previous = _rates[key];
+    final next = previous == null ? raw : previous + (raw - previous) * 0.35;
+    _rates[key] = next < 0 ? 0 : next;
+    return _rates[key]!;
   }
 
   Future<Response<ResponseBody>> _fetch(
@@ -478,7 +493,7 @@ class DownloadManager {
       );
       // Enqueue can complete after Pause: remove the newly created job too.
       if (token.isCancelled && !_disposed) await _system.pause(systemId);
-      var previous = 0;
+      int? previous;
       final clock = Stopwatch()..start();
       while (true) {
         if (token.isCancelled) throw token.cancelError!;
@@ -498,6 +513,13 @@ class DownloadManager {
           await _system.stage(systemId);
           break;
         }
+        final elapsed = clock.elapsedMilliseconds;
+        // The first poll has no previous sample: a rate from zero would read
+        // as a spike of the whole file.
+        double? raw;
+        if (previous != null && elapsed > 0) {
+          raw = (received - previous).clamp(0, expectedSize) * 1000 / elapsed;
+        }
         emit(
           DownloadProgress(
             modelId: modelId,
@@ -506,11 +528,7 @@ class DownloadManager {
                 : DownloadStatus.downloading,
             received: received,
             total: expectedSize,
-            bytesPerSecond: clock.elapsedMilliseconds > 0
-                ? (received - previous).clamp(0, expectedSize) *
-                      1000 /
-                      clock.elapsedMilliseconds
-                : null,
+            bytesPerSecond: raw == null ? null : _smoothRate(systemId, raw),
           ),
         );
         previous = received;
@@ -579,8 +597,10 @@ class DownloadManager {
                 status: DownloadStatus.downloading,
                 received: received,
                 total: expectedSize,
-                bytesPerSecond:
-                    (received - lastBytes) * 1000 / watch.elapsedMilliseconds,
+                bytesPerSecond: _smoothRate(
+                  systemId,
+                  (received - lastBytes) * 1000 / watch.elapsedMilliseconds,
+                ),
               ),
             );
             lastBytes = received;

@@ -61,6 +61,46 @@ class ZimPicker extends FilePickerPlatform {
   }) async => [file];
 }
 
+/// A live archive the tile can close, without a file behind it.
+class FakeZim extends ZimWikipedia {
+  FakeZim(super.path);
+  var closed = false;
+  @override
+  Future<void> close() async => closed = true;
+  @override
+  Future<String> name() async => 'Offline Wikipedia';
+}
+
+Future<void> importWithArchiveOpenedDuringCopy(
+  WidgetTester tester,
+  ProviderContainer container,
+  SlowZimFile file,
+  FakeZim live,
+) async {
+  // The tile only offers Import while no archive is loaded. Pause the copy
+  // while the provider loads an archive that the import will find at swap time.
+  await tester.runAsync(() async {
+    tester.widget<TextButton>(find.byKey(const Key('zim-action'))).onPressed!();
+    await file.copying.future.timeout(const Duration(seconds: 5));
+  });
+  container.invalidate(zimWikipediaProvider);
+  await tester.pumpAndSettle();
+  expect(container.read(zimWikipediaProvider).requireValue, same(live));
+
+  file.resume.complete();
+  final error = find.text(
+    AppLocalizations.of(tester.element(find.byType(ZimTile))).zimNotAZim,
+  );
+  for (var i = 0; i < 200 && error.evaluate().isEmpty; i++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+    await tester.pump();
+  }
+  expect(error, findsOneWidget);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets('ZIM import completes after its tile is unmounted', (
     tester,
@@ -113,5 +153,117 @@ void main() {
     expect(File('$target.part').existsSync(), isFalse);
     expect(tester.takeException(), isNull);
     expect(p.basename(target), 'wikipedia.zim');
+  });
+
+  testWidgets('a failed ZIM swap drops the archive that was closed', (
+    tester,
+  ) async {
+    final root = Directory.systemTemp.createTempSync('zim-swap-');
+    final paths = PathProviderPlatform.instance;
+    final picker = FilePickerPlatform.instance;
+    final file = (await tester.runAsync(
+      () async =>
+          SlowZimFile(File('test/fixtures/zim/mini.zim').readAsBytesSync()),
+    ))!;
+    PathProviderPlatform.instance = BackupPaths(root.path, root.path);
+    FilePickerPlatform.instance = ZimPicker(file);
+    // The swap target is a directory, so rename() fails like a locked or
+    // read-only file does.
+    final target = ZimWikipedia.fileIn(root.path);
+    Directory(target).createSync(recursive: true);
+    final live = FakeZim(target);
+    final fresh = FakeZim(target);
+    var opens = 0;
+    final container = ProviderContainer(
+      overrides: [
+        zimWikipediaProvider.overrideWith(
+          (ref) async => switch (++opens) {
+            1 => null,
+            2 => live,
+            _ => fresh,
+          },
+        ),
+      ],
+    );
+    addTearDown(() {
+      container.dispose();
+      PathProviderPlatform.instance = paths;
+      FilePickerPlatform.instance = picker;
+      root.deleteSync(recursive: true);
+    });
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(body: ZimTile()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(opens, 1);
+    await importWithArchiveOpenedDuringCopy(tester, container, file, live);
+    // The archive that was closed before the failed rename must not stay in
+    // the provider: a fresh one is opened on the file still on disk.
+    expect(opens, 3);
+    expect(live.closed, isTrue);
+    expect(fresh.closed, isFalse);
+    expect(container.read(zimWikipediaProvider).requireValue, same(fresh));
+    expect(File('$target.part').existsSync(), isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a file that fails validation leaves the open archive alone', (
+    tester,
+  ) async {
+    final root = Directory.systemTemp.createTempSync('zim-invalid-');
+    final paths = PathProviderPlatform.instance;
+    final picker = FilePickerPlatform.instance;
+    // Magic bytes then garbage: isZim() accepts the file, ZimArchive.open()
+    // rejects it, so the import fails before it touches the live archive.
+    final bytes = Uint8List(200);
+    ByteData.sublistView(bytes).setUint32(0, 72173914, Endian.little);
+    final file = (await tester.runAsync(() async => SlowZimFile(bytes)))!;
+    PathProviderPlatform.instance = BackupPaths(root.path, root.path);
+    FilePickerPlatform.instance = ZimPicker(file);
+    final target = ZimWikipedia.fileIn(root.path);
+    final live = FakeZim(target);
+    var opens = 0;
+    final container = ProviderContainer(
+      overrides: [
+        zimWikipediaProvider.overrideWith((ref) async {
+          if (++opens == 1) return null;
+          ref.onDispose(live.close);
+          return live;
+        }),
+      ],
+    );
+    addTearDown(() {
+      container.dispose();
+      PathProviderPlatform.instance = paths;
+      FilePickerPlatform.instance = picker;
+      root.deleteSync(recursive: true);
+    });
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(body: ZimTile()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(opens, 1);
+    await importWithArchiveOpenedDuringCopy(tester, container, file, live);
+    // The working archive was never closed, so it must stay in the provider:
+    // reopening it would hand out a closed instance to an in-flight lookup.
+    expect(opens, 2);
+    expect(live.closed, isFalse);
+    expect(container.read(zimWikipediaProvider).requireValue, same(live));
+    expect(File('$target.part').existsSync(), isFalse);
+    expect(tester.takeException(), isNull);
   });
 }

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -16,6 +17,7 @@ import 'package:ondevice_llm/inference/engine/llama_engine.dart';
 import 'package:ondevice_llm/desktop/engine_updater/engine_update_controller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 
 const _releasesApi =
     'https://api.github.com/repos/sebytzr16/on-device-llm/releases?per_page=30';
@@ -1064,6 +1066,132 @@ void main() {
   });
 
   group('engine folders', () {
+    test(
+      'activation rejects a download below the current revision floor',
+      () async {
+        final key = await _testKey();
+        final older = await _release(key.keyPair, tag: 'engine-b12510');
+        final newer = await _release(key.keyPair, tag: 'engine-b12511');
+        final server = _Server({})
+          ..add(older)
+          ..add(newer)
+          ..publish([older.releaseJson]);
+        final stale = updater(server, publicKey: key.publicKey);
+        expect((await stale.check()).tag, older.tag);
+        expect((await stale.download()).state, EngineDownloadState.done);
+        server.publish([newer.releaseJson]);
+        final current = updater(server, publicKey: key.publicKey);
+        expect((await current.check(force: true)).tag, newer.tag);
+        expect((await current.download()).state, EngineDownloadState.done);
+        expect(await current.activate(), isTrue);
+
+        // The marker itself carries the floor, even before state.json mirrors it.
+        final state = File(p.join(root.path, 'state.json'));
+        final data = jsonDecode(state.readAsStringSync()) as Map;
+        data.remove('verifiedTag');
+        state.writeAsStringSync(jsonEncode(data));
+        expect(await stale.activate(), isFalse);
+        expect(current.verifiedPackDir(), p.join(root.path, newer.tag));
+        await current.useBundled();
+        server.publish([older.releaseJson]);
+        expect(
+          (await current.check(force: true)).state,
+          EngineCheckState.upToDate,
+        );
+      },
+    );
+
+    test(
+      'startup retries a stranded legacy restore and quarantines the target',
+      () async {
+        final key = await _testKey();
+        final release = await _release(key.keyPair);
+        final server = _Server({})
+          ..add(release)
+          ..publish([release.releaseJson]);
+        await installed(server, publicKey: key.publicKey);
+        final target = p.join(root.path, release.tag);
+        final aside = Directory(target).renameSync('$target.legacy');
+        final obstruction = File(target)
+          ..writeAsStringSync('blocks the rename');
+        await updater(server, publicKey: key.publicKey).prepare();
+        expect(aside.existsSync(), isTrue);
+        obstruction.deleteSync();
+
+        Directory(target).createSync();
+        File(p.join(target, _cpuDll)).writeAsStringSync('failed promotion');
+        final restarted = updater(server, publicKey: key.publicKey);
+        await restarted.prepare();
+        expect(restarted.verifiedPackDir(), target);
+        expect(aside.existsSync(), isFalse);
+        expect(
+          root.listSync().map((entry) => p.basename(entry.path)),
+          isNot(contains(startsWith('${release.tag}.broken.'))),
+        );
+      },
+    );
+
+    test(
+      'a leftover legacy aside with a delete marker does not block activation',
+      () async {
+        final key = await _testKey();
+        final release = await _release(key.keyPair);
+        final server = _Server({})
+          ..add(release)
+          ..publish([release.releaseJson]);
+        final up = updater(server, publicKey: key.publicKey);
+        expect((await up.check()).state, EngineCheckState.available);
+        expect((await up.download()).state, EngineDownloadState.done);
+        // A successful promotion left its old pack aside because the cleanup
+        // rename failed: the marker says the aside is garbage, not a restore.
+        final target = p.join(root.path, release.tag);
+        final aside = Directory('$target.legacy')..createSync();
+        File(p.join(aside.path, _cpuDll)).writeAsStringSync('old pack');
+        final marker = File('${aside.path}.delete-on-start')
+          ..writeAsStringSync('');
+        expect(await up.activate(), isTrue);
+        expect(up.activePackDir(), target);
+        expect(aside.existsSync(), isFalse);
+        expect(marker.existsSync(), isFalse);
+      },
+    );
+
+    test(
+      'an aside from the same promotion nonce does not block activation',
+      () async {
+        final key = await _testKey();
+        final older = await _release(key.keyPair, tag: 'engine-b12505');
+        final newer = await _release(key.keyPair, tag: 'engine-b12510');
+        final server = _Server({})
+          ..add(older)
+          ..add(newer)
+          ..publish([older.releaseJson]);
+        final up = updater(server, publicKey: key.publicKey);
+        expect((await up.check()).state, EngineCheckState.available);
+        expect((await up.download()).state, EngineDownloadState.done);
+        expect(await up.activate(), isTrue);
+        final active =
+            jsonDecode(
+                  File(p.join(root.path, 'active.json')).readAsStringSync(),
+                )
+                as Map;
+        final promotion = active['promotion'] as String;
+        // The same nonce in the aside and in active.json means the promotion
+        // that produced the active pack finished; the aside is disposable.
+        final aside = Directory(p.join(root.path, '${newer.tag}.legacy'))
+          ..createSync();
+        File(
+          p.join(aside.path, installedMetaName),
+        ).writeAsStringSync(jsonEncode({'promotion': promotion}));
+        server.publish([newer.releaseJson]);
+        expect((await up.check(force: true)).state, EngineCheckState.available);
+        expect((await up.download()).state, EngineDownloadState.done);
+        expect(await up.activate(), isTrue);
+        expect(up.activePackDir(), p.join(root.path, newer.tag));
+        expect(aside.existsSync(), isFalse);
+      },
+    );
+
     test('useBundled keeps the pack folder and drops the marker', () async {
       final key = await _testKey();
       final release = await _release(key.keyPair);
@@ -1175,7 +1303,7 @@ void main() {
       await up.activate();
       final packed = nativeLibraryChoiceKey(backend: 'cpu', cpuVariant: 'avx2');
       expect(packed, isNot(bundled));
-      expect(packed.$3, up.activePackDir());
+      expect(packed.$4, up.activePackDir());
       await up.useBundled();
       expect(
         nativeLibraryChoiceKey(backend: 'cpu', cpuVariant: 'avx2'),
@@ -1235,6 +1363,350 @@ void main() {
       expect(view.message, contains('cleanup denied'));
       expect(failing.activePackDir(), isNull);
     });
+
+    test('an unwritable engines folder refuses the pack for that load', () async {
+      final key = await _testKey();
+      final release = await _release(key.keyPair);
+      final server = _Server({})
+        ..add(release)
+        ..publish([release.releaseJson]);
+      final up = await installed(server, publicKey: key.publicKey);
+      expect(up.activePackDir(), isNotNull);
+      // The crash marker file cannot be written: a folder squats on its name.
+      final stateFile = File(p.join(root.path, 'state.json'));
+      await stateFile.delete();
+      await Directory(stateFile.path).create();
+      expect(up.markLoadStarted(), isFalse);
+      // A load whose attempt cannot be counted must not run the pack unguarded.
+      final guard = EnginePackLoadGuard(EnginePackFiles(root.path));
+      expect(guard.beforeOpen, throwsStateError);
+      // The pack itself is untouched and still the active one.
+      expect(up.activePackDir(), isNotNull);
+    });
+
+    test('a failed switch to built-in shows the error in the panel', () async {
+      final failing = _BundledErrorUpdater(root);
+      final container = ProviderContainer(
+        overrides: [engineUpdaterProvider.overrideWithValue(failing)],
+      );
+      addTearDown(container.dispose);
+      final controller = container.read(engineUpdateProvider.notifier);
+      await controller.useBundled();
+      final view = container.read(engineUpdateProvider);
+      expect(view.phase, EngineUpdatePhase.error);
+      expect(view.message, contains('marker denied'));
+    });
+
+    test(
+      'closing the panel during a refresh touches no notifier state',
+      () async {
+        // Auto-update on: the refresh is followed by a check, which must not
+        // read the disposed notifier either.
+        SharedPreferences.setMockInitialValues({});
+        final slow = _SlowPrepareUpdater(root);
+        final container = ProviderContainer(
+          overrides: [engineUpdaterProvider.overrideWithValue(slow)],
+        );
+        final started = container.read(engineUpdateProvider.notifier).start();
+        await Future<void>.delayed(Duration.zero);
+        container.dispose();
+        slow.gate.complete();
+        await expectLater(started, completes);
+      },
+    );
+
+    test('a pack that cannot be activated leaves the panel usable', () async {
+      final key = await _testKey();
+      final release = await _release(key.keyPair);
+      final server = _Server({})
+        ..add(release)
+        ..publish([release.releaseJson]);
+      final failing = _ActivateErrorUpdater(root, server, key.publicKey);
+      final container = ProviderContainer(
+        overrides: [engineUpdaterProvider.overrideWithValue(failing)],
+      );
+      addTearDown(container.dispose);
+      final controller = container.read(engineUpdateProvider.notifier);
+      await controller.checkNow();
+      expect(
+        container.read(engineUpdateProvider).phase,
+        EngineUpdatePhase.available,
+      );
+      await controller.update();
+      final view = container.read(engineUpdateProvider);
+      expect(view.phase, EngineUpdatePhase.error);
+      expect(view.busy, isFalse);
+      expect(view.message, contains('engines folder is read-only'));
+      expect(view.installed, isNull);
+    });
+
+    test(
+      'an installed pack loads even when the build has no release version',
+      () async {
+        final key = await _testKey();
+        final release = await _release(key.keyPair, minApp: '9.0.0');
+        final server = _Server({})
+          ..add(release)
+          ..publish([release.releaseJson]);
+        // Installed by a build that satisfies minApp...
+        final up = updater(
+          server,
+          publicKey: key.publicKey,
+          appVersion: '9.0.0+1',
+        );
+        expect((await up.check()).state, EngineCheckState.available);
+        expect((await up.download()).state, EngineDownloadState.done);
+        expect(await up.activate(), isTrue);
+        // ...then loaded by a development build with the fallback version. The
+        // signature and DLL hashes still gate the load; minApp is install-only.
+        final files = EnginePackFiles(
+          root.path,
+          signingPublicKey: key.publicKey,
+          appVersion: '0.1.1+2',
+        );
+        await files.prepare();
+        expect(files.verifiedPackDir(), p.join(root.path, release.tag));
+        // Another bridge API is still refused at load time.
+        final other = EnginePackFiles(
+          root.path,
+          signingPublicKey: key.publicKey,
+          appVersion: '0.1.1+2',
+          bridgeApi: kEngineBridgeApi + 1,
+        );
+        await other.prepare();
+        expect(other.verifiedPackDir(), isNull);
+      },
+    );
+
+    test(
+      'a pack from an earlier build is re-offered, never silently dropped',
+      () async {
+        final key = await _testKey();
+        final release = await _release(key.keyPair);
+        final server = _Server({})
+          ..add(release)
+          ..publish([release.releaseJson]);
+        final up = await installed(server, publicKey: key.publicKey);
+        final dir = p.join(root.path, release.tag);
+        // Earlier builds wrote only the marker, no copied manifest/signature.
+        File(p.join(dir, installedManifestName)).deleteSync();
+        File(p.join(dir, installedSignatureName)).deleteSync();
+
+        expect(up.activePackDir(), isNotNull);
+        await up.prepare();
+        expect(up.verifiedPackDir(), isNull);
+        expect(up.needsMigration, isTrue);
+        expect(up.unverifiedNotice, isTrue);
+        // The folder is kept and the same tag is offered for a signed reinstall.
+        expect(Directory(dir).existsSync(), isTrue);
+        final check = await up.check(force: true);
+        expect(check.state, EngineCheckState.available);
+        expect(check.tag, release.tag);
+        expect((await up.download()).state, EngineDownloadState.done);
+        expect(await up.activate(), isTrue);
+        expect(up.verifiedPackDir(), dir);
+        expect(up.needsMigration, isFalse);
+        expect(up.unverifiedNotice, isFalse);
+      },
+    );
+
+    test(
+      'two isolates record crash attempts without sharing a temp file',
+      () async {
+        final key = await _testKey();
+        final release = await _release(key.keyPair);
+        final server = _Server({})
+          ..add(release)
+          ..publish([release.releaseJson]);
+        await installed(server, publicKey: key.publicKey);
+        final path = root.path;
+        // The two real writers are the model-load isolate's crash guard and the
+        // UI isolate. Concurrent read-modify-write cycles must be serialised by
+        // the lock file, or a crash attempt is lost.
+        for (var round = 0; round < 2; round++) {
+          final results = await Future.wait([
+            for (var i = 0; i < 3; i++)
+              Isolate.run(() => _recordCrashAttempt(path)),
+          ]);
+          expect(results, everyElement(isTrue), reason: 'round $round');
+        }
+        final state =
+            jsonDecode(File(p.join(path, 'state.json')).readAsStringSync())
+                as Map;
+        // Six attempts, no lost update: the crash guard sees every load.
+        expect(state['crashCount'], 6);
+      },
+    );
+
+    test(
+      'an unverified pack keeps the revision floor of its last install',
+      () async {
+        final key = await _testKey();
+        final newest = await _release(key.keyPair, tag: 'engine-b12510-3');
+        final older = await _release(key.keyPair, tag: 'engine-b12510-1');
+        final server = _Server({})
+          ..add(newest)
+          ..add(older)
+          ..publish([newest.releaseJson]);
+        final up = await installed(server, publicKey: key.publicKey);
+        final dir = p.join(root.path, newest.tag);
+        // The pack stops verifying (a tampered or half-removed install).
+        File(p.join(dir, installedManifestName)).deleteSync();
+        File(p.join(dir, installedSignatureName)).deleteSync();
+        await up.prepare();
+        expect(up.verifiedPackDir(), isNull);
+        expect(up.activePackDir(), isNotNull);
+
+        // An older signed release must not roll the install back...
+        server.publish([older.releaseJson]);
+        expect((await up.check(force: true)).state, EngineCheckState.upToDate);
+        // ...while the same tag and revision may be reinstalled from its signed
+        // release, which is what migration needs.
+        server.publish([newest.releaseJson]);
+        final reinstall = await up.check(force: true);
+        expect(reinstall.state, EngineCheckState.available);
+        expect(reinstall.tag, newest.tag);
+      },
+    );
+
+    test(
+      'prepare hashes an unchanged pack once and re-hashes any change',
+      () async {
+        final key = await _testKey();
+        final release = await _release(key.keyPair);
+        final server = _Server({})
+          ..add(release)
+          ..publish([release.releaseJson]);
+        await installed(server, publicKey: key.publicKey);
+        final dir = p.join(root.path, release.tag);
+        final files = EnginePackFiles(
+          root.path,
+          signingPublicKey: key.publicKey,
+        );
+        await files.prepare();
+        expect(files.verifiedPackDir(), dir);
+        expect(files.contentHashRuns, 1);
+        // An unchanged folder is not read again on the next load (P2-2); the
+        // native open still hashes the bridge it maps.
+        await files.prepare();
+        expect(files.verifiedPackDir(), dir);
+        expect(files.contentHashRuns, 1);
+        // Same size, different bytes, new modification time: re-hashed and
+        // refused.
+        final dll = File(p.join(dir, _cpuDll));
+        final bytes = dll.readAsBytesSync();
+        bytes[0] ^= 0xFF;
+        dll.writeAsBytesSync(bytes);
+        dll.setLastModifiedSync(DateTime.now().add(const Duration(minutes: 1)));
+        await files.prepare();
+        expect(files.contentHashRuns, 2);
+        expect(files.verifiedPackDir(), isNull);
+      },
+    );
+
+    test(
+      'a legacy install sets the revision floor before it is reinstalled',
+      () async {
+        final key = await _testKey();
+        final newest = await _release(key.keyPair, tag: 'engine-b12510');
+        final older = await _release(key.keyPair, tag: 'engine-b12509');
+        final server = _Server({})
+          ..add(newest)
+          ..add(older)
+          ..publish([newest.releaseJson]);
+        final up = await installed(server, publicKey: key.publicKey);
+        final dir = p.join(root.path, newest.tag);
+        // An earlier build wrote no signed floor into state.json and copied no
+        // manifest into the folder.
+        final stateFile = File(p.join(root.path, 'state.json'));
+        final state = jsonDecode(stateFile.readAsStringSync()) as Map;
+        state.remove('verifiedTag');
+        stateFile.writeAsStringSync(jsonEncode(state));
+        File(p.join(dir, installedManifestName)).deleteSync();
+        File(p.join(dir, installedSignatureName)).deleteSync();
+        await up.prepare();
+        expect(up.needsMigration, isTrue);
+        // engine-b12510 is still installed: an older signed release must not
+        // be installed over it while its reinstall is pending (P3-3).
+        server.publish([older.releaseJson]);
+        expect((await up.check(force: true)).state, EngineCheckState.upToDate);
+        // Its own tag stays reinstallable.
+        server.publish([newest.releaseJson]);
+        final reinstall = await up.check(force: true);
+        expect(reinstall.state, EngineCheckState.available);
+        expect(reinstall.tag, newest.tag);
+      },
+    );
+
+    test(
+      'a legacy install is only replaced after the signed pack is promoted',
+      () async {
+        final key = await _testKey();
+        final release = await _release(key.keyPair, tag: 'engine-b12510');
+        final server = _Server({})
+          ..add(release)
+          ..publish([release.releaseJson]);
+        final up = await installed(server, publicKey: key.publicKey);
+        final dir = p.join(root.path, release.tag);
+        final legacyBytes = utf8.encode('legacy bridge bytes');
+        File(p.join(dir, _cpuDll)).writeAsBytesSync(legacyBytes);
+        File(p.join(dir, installedManifestName)).deleteSync();
+        File(p.join(dir, installedSignatureName)).deleteSync();
+        await up.prepare();
+        expect(up.needsMigration, isTrue);
+        expect((await up.check(force: true)).tag, release.tag);
+        expect((await up.download()).state, EngineDownloadState.done);
+
+        // The marker cannot be switched: the legacy folder must survive, and
+        // the moved-aside copy is put back.
+        final marker = File(p.join(root.path, 'active.json'));
+        marker.deleteSync();
+        Directory(marker.path).createSync();
+        await expectLater(up.activate(), throwsA(isA<FileSystemException>()));
+        expect(File(p.join(dir, _cpuDll)).readAsBytesSync(), legacyBytes);
+        expect(Directory('$dir.legacy').existsSync(), isFalse);
+        // The half-promoted folder is moved aside, never deleted first, and
+        // removed once the legacy install is back (P3-1).
+        expect(Directory('$dir.broken').existsSync(), isFalse);
+        expect(up.needsMigration, isTrue);
+
+        // With the marker writable again the replacement is promoted first and
+        // the legacy folder is deleted only afterwards.
+        Directory(marker.path).deleteSync();
+        expect((await up.download()).state, EngineDownloadState.done);
+        expect(await up.activate(), isTrue);
+        expect(
+          File(p.join(dir, _cpuDll)).readAsBytesSync(),
+          utf8.encode('cpu bridge ${release.tag}'),
+        );
+        expect(Directory('$dir.legacy').existsSync(), isFalse);
+        expect(up.needsMigration, isFalse);
+        expect(up.verifiedPackDir(), dir);
+      },
+    );
+
+    test(
+      'a failed restore puts the half-promoted pack aside for the next start',
+      () async {
+        final key = await _testKey();
+        final release = await _release(key.keyPair);
+        final server = _Server({})
+          ..add(release)
+          ..publish([release.releaseJson]);
+        await installed(server, publicKey: key.publicKey);
+        // A restore that cannot delete the half-promoted folder in place moves
+        // it to `<tag>.broken` and schedules it (P3-1).
+        final broken = Directory(p.join(root.path, '${release.tag}.broken'))
+          ..createSync();
+        File(p.join(broken.path, _cpuDll)).writeAsStringSync('half removed');
+        final scheduled = File('${broken.path}$deleteOnStartSuffix')
+          ..writeAsStringSync('');
+        await updater(server, publicKey: key.publicKey).prepare();
+        expect(broken.existsSync(), isFalse);
+        expect(scheduled.existsSync(), isFalse);
+        expect(Directory(p.join(root.path, release.tag)).existsSync(), isTrue);
+      },
+    );
 
     test('two unfinished loads revert to the bundled engine', () async {
       final key = await _testKey();
@@ -1383,8 +1855,70 @@ void main() {
         'compat',
       );
     });
+
+    test('a pack file outside the signed manifest is never opened', () {
+      final listed = _ListedPack(pack, {_cpuDll: 'a' * 64});
+      expect(LlamaBindings.packBridgeSha256(listed, pack, _cpuDll), 'a' * 64);
+      // Exactly what a file added to a verified folder after the shape check
+      // sees: no digest, so the open refuses it instead of mapping it
+      // unverified (P1-1).
+      expect(
+        () => LlamaBindings.packBridgeSha256(listed, pack, _cudaDll),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('signed manifest'),
+          ),
+        ),
+      );
+      // Without a pack the loader is on the bundled path and passes no digest.
+      expect(
+        () => LlamaBindings.packBridgeSha256(null, pack, _cpuDll),
+        throwsStateError,
+      );
+    });
   });
 }
+
+/// A pack loader whose signed manifest lists exactly [files], so the loader
+/// gate can be tested without a real signed release.
+class _ListedPack implements EnginePackLoader {
+  _ListedPack(this.dir, this.files);
+
+  final String dir;
+  final Map<String, String> files;
+
+  @override
+  String? get rootPath => dir;
+
+  @override
+  int? get cudaMajor => null;
+
+  @override
+  List<String> get unavailableFiles => const [];
+
+  @override
+  String? activePackDir() => dir;
+
+  @override
+  String? verifiedPackDir() => dir;
+
+  @override
+  String? expectedFileSha256(String dir, String name) =>
+      files[name.toLowerCase()];
+
+  @override
+  bool markLoadStarted() => true;
+
+  @override
+  void markLoadSucceeded() {}
+}
+
+/// Runs in a throwaway isolate: records one crash attempt through the real
+/// loader, so the test covers the per-isolate state temp file (P3-2).
+bool _recordCrashAttempt(String root) =>
+    EnginePackFiles(root).markLoadStarted();
 
 class _RemovalErrorUpdater extends EngineUpdater {
   _RemovalErrorUpdater(Directory root) : super(root: root);
@@ -1394,6 +1928,52 @@ class _RemovalErrorUpdater extends EngineUpdater {
     await super.removeAll();
     throw const FileSystemException('cleanup denied');
   }
+}
+
+/// Reads normally; deleting the active marker fails (read-only engines folder).
+class _BundledErrorUpdater extends EngineUpdater {
+  _BundledErrorUpdater(Directory root) : super(root: root);
+
+  @override
+  Future<void> useBundled() async {
+    throw const FileSystemException('marker denied');
+  }
+}
+
+/// Holds the first prepare open, so the panel can be closed mid-refresh.
+class _SlowPrepareUpdater extends EngineUpdater {
+  _SlowPrepareUpdater(Directory root) : super(root: root);
+
+  final gate = Completer<void>();
+
+  // A pending revert notice makes the refresh read state after its last
+  // await, where a disposed notifier must not be touched.
+  @override
+  bool get revertedNotice => true;
+
+  @override
+  Future<void> prepare() async {
+    await gate.future;
+    await super.prepare();
+  }
+}
+
+/// Reads and downloads normally; the engines folder rejects the new pack.
+class _ActivateErrorUpdater extends EngineUpdater {
+  _ActivateErrorUpdater(Directory root, _Server server, String publicKey)
+    : super(
+        root: root,
+        fetch: server.fetch,
+        appVersion: '1.6.0+9',
+        signingPublicKey: publicKey,
+        openSmoke: _accept,
+      );
+
+  static Future<bool> _accept(String path) async => true;
+
+  @override
+  Future<bool> activate({String? tag}) async =>
+      throw const FileSystemException('engines folder is read-only');
 }
 
 class _SmokeProcess implements Process {

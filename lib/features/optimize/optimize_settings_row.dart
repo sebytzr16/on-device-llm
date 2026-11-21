@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../inference/engine/engine_registry_provider.dart';
 import '../../core/design/app_design.dart';
 import '../../core/l10n/l10n.dart';
+import '../../core/providers/shared_providers.dart';
 import '../../desktop/load_settings_dialog.dart';
 import '../models/presentation/providers/model_manager_provider.dart';
 import '../settings/presentation/widgets/settings_widgets.dart';
@@ -21,10 +23,17 @@ class OptimizeSettingsRow extends ConsumerWidget {
     final c = context.colors;
     final loaded = ref.watch(modelManagerProvider.select((m) => m.loadedModel));
     final model = loaded?.localPath == null ? null : loaded;
+    final engine = ref.watch(engineRegistryProvider).descriptorFor(model);
+    final canOptimize = engine.capabilities.optimize;
     final done =
         model != null &&
         (ref.watch(optimizedModelsProvider).value?.contains(model.id) ?? false);
     final mobile = ref.watch(optimizeMobileProvider);
+    // While the chat, a load or another model task holds the model, the row
+    // says so instead of opening a run that could not start.
+    final busy =
+        ref.watch(sessionBusyProvider) ||
+        ref.watch(modelManagerProvider.select((m) => m.isLoadingModel));
     return SettingsRow(
       key: const Key('optimize-settings-row'),
       leading: Icon(Icons.auto_fix_high_rounded, color: c.accent),
@@ -32,6 +41,10 @@ class OptimizeSettingsRow extends ConsumerWidget {
       subtitle: Text(
         model == null
             ? t.optimizeSettingsNoModel
+            : !canOptimize
+            ? t.engineUnusedSettings(engine.displayName)
+            : busy
+            ? t.optimizeBusyOther
             : t.optimizeSettingsHint(model.displayName),
       ),
       trailing: done
@@ -47,8 +60,8 @@ class OptimizeSettingsRow extends ConsumerWidget {
               ],
             )
           : const Icon(Icons.chevron_right, size: 20),
-      enabled: model != null,
-      onTap: model == null
+      enabled: model != null && canOptimize && !busy,
+      onTap: model == null || !canOptimize || busy
           ? null
           : () => mobile
                 ? OptimizePage.open(context, model, autoStart: !done)

@@ -164,6 +164,23 @@ void main() {
     expect(html, isNot(contains('&amp;lt;')));
   });
 
+  test('DOCX tables carry the grid CT_Tbl requires (Word repair prompt)', () {
+    final document = ChatDocument(
+      messages: [message('one', '| A | B |\n| --- | --- |\n| 1 | 2 |')],
+      title: 'Test',
+    );
+    final archive = ZipDecoder().decodeBytes(document.docx);
+    final xml = utf8.decode(
+      archive.findFile('word/document.xml')!.content as List<int>,
+    );
+    expect(
+      xml,
+      contains(
+        '</w:tblPr><w:tblGrid><w:gridCol/><w:gridCol/></w:tblGrid><w:tr>',
+      ),
+    );
+  });
+
   test('Markdown blocks preserve headings, lists, code and tables', () async {
     const content =
         '# Heading\n\n- One\n- Two\n\n1. Third\n\n'

@@ -58,7 +58,11 @@ class ToolAliases {
     'evaluate_expression': 'calculator', 'calculator_tool': 'calculator',
     // search_documents
     'search_docs': 'search_documents', 'document_search': 'search_documents',
-    'search_files': 'search_documents', 'search_knowledge': 'search_documents',
+    // Where no project folder is offered (a phone) search_files still means
+    // the knowledge collection, as it always did; the desktop project tool
+    // keeps the name there (see name's projectTools).
+    'search_files': 'search_documents',
+    'search_knowledge': 'search_documents',
     'knowledge_search': 'search_documents', 'retrieve': 'search_documents',
     'file_search': 'search_documents',
     'search_my_documents': 'search_documents',
@@ -194,15 +198,29 @@ class ToolAliases {
     'calculator',
     'generate_image',
     'edit_image',
+    // The desktop project-file tools (ProjectFileTools.specs): their calls
+    // must reach the project gate unchanged, not become a document search
+    // (audit 05b-2), so they keep their own names like ours.
+    'list_files',
+    'read_file',
+    'search_files',
+    'write_file',
+    'edit_file',
   };
 
   /// The tool [raw] means: our own name, a known alias, or [raw] cleaned up
   /// ("functions.search_web", "Search Web" and "search-web" all work).
-  static String name(String raw) {
+  ///
+  /// [projectTools] says whether this turn offers the desktop project-file
+  /// tools. Without them (a phone, or no project folder) `search_files` is
+  /// the document search it always was there (audit 05b-2 follow-up).
+  static String name(String raw, {bool projectTools = true}) {
     var n = raw.trim().toLowerCase();
     n = n.replaceFirst(RegExp(r'^(functions|function|tools|tool)\.'), '');
     n = n.replaceAll(RegExp(r'[\s\-]+'), '_');
-    if (canonical.contains(n)) return n;
+    if (canonical.contains(n) && (projectTools || n != 'search_files')) {
+      return n;
+    }
     return _names[n] ?? raw.trim();
   }
 
@@ -256,8 +274,8 @@ class ToolAliases {
   }
 
   /// [call] with its tool name and arguments mapped to ours.
-  static ToolCall normalize(ToolCall call) {
-    final tool = name(call.name);
+  static ToolCall normalize(ToolCall call, {bool projectTools = true}) {
+    final tool = name(call.name, projectTools: projectTools);
     Object? raw;
     try {
       raw = jsonDecode(call.arguments);

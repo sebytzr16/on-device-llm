@@ -19,10 +19,17 @@ import 'chat_test.dart' show TestEngine, TestModels, TestSettings, testModel;
 /// full preview equals the isolated per-exchange previews the old code made:
 /// the messages kept here are the ones those would have kept.
 class _CountingEngine extends TestEngine {
-  _CountingEngine({required this.contextSize, this.reservedTokens = 0});
+  _CountingEngine({
+    required this.contextSize,
+    this.reservedTokens = 0,
+    this.known = true,
+  });
 
   final int contextSize;
   final int reservedTokens;
+
+  /// False stands for an engine that has not measured its window yet.
+  final bool known;
 
   int calls = 0;
   final previewedCounts = <int>[];
@@ -44,11 +51,11 @@ class _CountingEngine extends TestEngine {
     final prompt = chars ~/ 4;
     final available = contextSize - reservedTokens - prompt;
     return {
-      'fits': available >= 0,
+      'fits': known ? available >= 0 : null,
       'promptTokens': prompt,
-      'contextSize': contextSize,
+      'contextSize': known ? contextSize : null,
       'reservedTokens': reservedTokens,
-      'availableTokens': available,
+      'availableTokens': known ? available : null,
     };
   }
 }
@@ -155,6 +162,37 @@ void main() {
       expect(messages.last['content'], filled('t', 400));
     },
   );
+
+  test('an unknown fit drops no turn and cuts no tool result', () async {
+    final engine = _CountingEngine(contextSize: 0, known: false);
+    final (container, db) = await mount(engine);
+    addTearDown(() async {
+      container.dispose();
+      await db.close();
+    });
+    final original = filled('t', 7000);
+    final messages = [
+      msg('system', filled('s', 100)),
+      msg('user', filled('q', 100)),
+      msg('tool', original),
+    ];
+    final toolMessages = [messages[2]];
+    final result = await container
+        .read(chatProvider.notifier)
+        .fitToolResults(
+          engine,
+          messages,
+          toolMessages,
+          container.read(settingsProvider),
+          testModel,
+        );
+    // A LiteRT engine that has not measured its window cannot say the prompt
+    // does not fit, so nothing is cut or dropped on a guess.
+    expect(result, isNull);
+    expect(engine.calls, 1);
+    expect(messages[2]['content'], original);
+    expect(toolMessages.single['content'], original);
+  });
 
   test(
     'a tool result too large to drop is cut once, confirmed by one preview',

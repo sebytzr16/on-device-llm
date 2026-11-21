@@ -884,6 +884,9 @@
   "hostHeat": "heat",
   "hostLowBattery": "Stop on low battery",
   "hostLowBatteryHint": "The server also stops when the phone reports severe heat. The screen stays on while it runs.",
+  "hostShareDocuments": "Share documents with paired devices",
+  "hostShareDocumentsHint": "Paired devices can search the documents on this device. Off by default.",
+  "hostShareDocumentsConfirm": "Paired devices will be able to read and search every document in your knowledge collection. Turn on?",
   "commonOff": "Off",
   "hostConnect": "Connect another device",
   "hostServerUrl": "Server URL",
@@ -962,6 +965,7 @@
   "chatPinModel": "Pin a model to this chat",
   "chatPinHint": "This chat always answers with the pinned model, whatever the model picker says.",
   "chatPinNone": "No pin: use the selected model",
+  "chatPinStaysLocal": "Pinned. Web research stays off for this chat.",
   "chatPinned": "📌 {model}",
   "@chatPinned": {
     "placeholders": {
@@ -1041,6 +1045,7 @@
   "backupReplaceHint": "Restoring replaces chats, knowledge, attachments, and app settings the next time the app starts. Local model files and saved API keys are not included in the backup.",
   "backupRestoreAction": "Restore",
   "backupTooLarge": "Backup exceeds the safety limit.",
+  "backupTooLargeForFileSave": "This backup is too large to save through the Android file picker. Use Share instead.",
   "backupVerifiedNotice": "Backup verified. Fully close and reopen the app to apply the restore.",
   "backupRestoreFailed": "Restore failed: {error}",
   "@backupRestoreFailed": {
@@ -3784,6 +3789,13 @@
   "optimizeMeasurementError": "Could not measure this model. Check the model and try again.",
   "optimizeSaveError": "Could not save Optimize data on this device. Try again.",
   "optimizeReloadError": "Could not reload the model after Optimize. Try loading it again.",
+  "optimizeBusyGenerating": "A reply is still being written. Stop it or wait for it to finish, then run Optimize again.",
+  "optimizeBusyLoading": "A model is loading. Wait for it to finish, then run Optimize again.",
+  "optimizeBusyOther": "Another task is using the model. Wait for it to finish, then run Optimize again.",
+  "optimizeBusyRunning": "Optimize is already running for this model.",
+  "optimizeMemoryRam": "Free RAM is too small for this model or a safe setup. Close other apps or use a smaller model.",
+  "optimizeMemoryVram": "Free graphics memory is too small for this model or a safe setup. Lower the GPU layers or use a smaller model.",
+  "desktopOptimizeKeptUnsupported": "These settings cannot be saved on this device, so the current settings were kept.",
   "tuneReceipt": "Benchmark receipt · {date}",
   "tuneExport": "Export receipt to JSON",
   "tuneExported": "Receipt saved.",
@@ -4248,6 +4260,7 @@
   },
   "modelDownloadFirst": "Download or import this model first.",
   "modelStopSwitch": "Stop the current response before switching models.",
+  "modelLoadInProgress": "A model is already loading. Wait for it to finish, or stop it.",
   "modelStopUnload": "Stop the current response before unloading.",
   "modelStopDelete": "Stop generation and pause downloads before deleting.",
   "scheduleChannel": "Scheduled prompts",
@@ -4504,6 +4517,7 @@
   "modelDownloadCancelled": "Cancelled",
   "modelDownloadInterrupted": "Interrupted",
   "modelDownloadPaused": "Paused",
+  "downloadPreparing": "Preparing…",
   "sidebarCollapse": "Collapse navigation",
   "sidebarExpand": "Expand navigation",
   "slashCompact": "Summarize older messages to free context",
@@ -5904,5 +5918,77 @@
   "engineUpdateUseBuiltIn": "Use the built-in engine",
   "engineUpdateRemove": "Remove downloaded engines",
   "engineUpdateReverted": "The downloaded engine failed to load twice, so the built-in engine is in use again.",
-  "engineUpdateNoGitHub": "GitHub could not be reached."
+  "engineUpdateUnverified": "The downloaded engine pack could not be verified, so the built-in engine is in use. Install it again from Settings → Engines.",
+  "engineUpdateNoGitHub": "GitHub could not be reached.",
+  "liteRtBackend": "LiteRT backend",
+  "liteRtBackendAuto": "Auto (GPU with CPU fallback)",
+  "liteRtBackendGpu": "GPU (OpenCL)",
+  "liteRtBackendCpu": "CPU",
+  "liteRtUnusedSettings": "Not used by LiteRT models",
+  "engineUnusedSettings": "Not used by {engine} models",
+  "engineUnavailable": "{engine} is unavailable on this device.",
+  "engineToolsUnavailable": "Tools are unavailable with {engine} models.",
+  "@engineUnusedSettings": {
+    "placeholders": {
+      "engine": {
+        "type": "String"
+      }
+    }
+  },
+  "@engineUnavailable": {
+    "placeholders": {
+      "engine": {
+        "type": "String"
+      }
+    }
+  },
+  "@engineToolsUnavailable": {
+    "placeholders": {
+      "engine": {
+        "type": "String"
+      }
+    }
+  },
+  "liteRtToolsUnavailable": "Tools are unavailable with LiteRT models.",
+  "liteRtAndroidOnly": "LiteRT models require Android.",
+  "liteRtHelperLoadFirst": "Load this LiteRT model and wait for chat to finish before using it with a helper.",
+  "liteRtImportModel": "Import a model",
+  "liteRtImportHint": "Choose a .gguf or .litertlm model file.",
+  "liteRtImportedLicense": "Imported file · check publisher license",
+  "liteRtNotLoaded": "Load a LiteRT model first.",
+  "liteRtBusy": "The LiteRT model is busy.",
+  "liteRtInvalidModelFilename": "Choose a single model filename.",
+  "ikLlamaLoadFailed": "ik_llama.cpp could not be loaded. Reinstall its engine pack in Settings, or switch this model back to llama.cpp.",
+  "@ikLlamaLoadFailed": {
+    "description": "Shown when the optional ik_llama.cpp engine pack DLLs fail to load."
+  },
+  "modelEngine": "Engine",
+  "@modelEngine": {
+    "description": "Model details label for the engine that runs this model file."
+  },
+  "modelEngineUnavailable": "Install in Settings → Engines",
+  "@modelEngineUnavailable": {
+    "description": "Model details hint for an optional engine whose pack is not installed."
+  },
+  "engineUpdateIkTitle": "ik_llama.cpp engine pack",
+  "@engineUpdateIkTitle": {
+    "description": "Settings row title for the optional ik_llama.cpp engine pack."
+  },
+  "engineUpdateIkHint": "Optional second engine, installed only for the models you assign to it. llama.cpp stays the default.",
+  "@engineUpdateIkHint": {
+    "description": "Settings row hint for the optional ik_llama.cpp engine pack."
+  },
+  "engineUpdateIkInstalled": "Installed pack: {tag}",
+  "@engineUpdateIkInstalled": {
+    "description": "Settings row subtitle showing the installed ik_llama.cpp pack tag.",
+    "placeholders": {
+      "tag": {
+        "type": "String"
+      }
+    }
+  },
+  "ikEnginePackReverted": "The ik_llama.cpp engine pack failed to load twice and was disabled. Reinstall it in Settings → Engines, or switch those models back to llama.cpp.",
+  "@ikEnginePackReverted": {
+    "description": "Shown when the ik_llama.cpp crash guard disabled its engine pack."
+  }
 }

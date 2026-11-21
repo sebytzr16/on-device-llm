@@ -1,14 +1,17 @@
+import '../../../../inference/engine/engine_descriptor.dart';
 import '../widgets/answer_tokens_control.dart';
 import '../../../../core/l10n/l10n.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/design/app_design.dart';
 import '../../domain/entities/inference_settings.dart';
 import '../../domain/setting_specs.dart';
 import '../setting_labels.dart';
 import '../../domain/settings_scope.dart';
+import '../providers/effective_settings_provider.dart';
 import '../widgets/settings_widgets.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/design/app_dialog.dart';
@@ -17,7 +20,7 @@ import '../../../../core/design/app_dialog.dart';
 /// overridable setting is listed with the value it inherits from the layers
 /// below; tapping sets an explicit value for this scope, the clear icon
 /// returns it to inherited. Saved on every change through [onChanged].
-class OverridesPage extends StatefulWidget {
+class OverridesPage extends ConsumerStatefulWidget {
   final String title;
   final String scopeLabel;
   final Map<String, dynamic> overrides;
@@ -26,9 +29,21 @@ class OverridesPage extends StatefulWidget {
   final InferenceSettings inherited;
   final Future<void> Function(Map<String, dynamic> overrides) onChanged;
 
+  /// This scope's saved overrides as a change to the cascade. The web
+  /// research question resolves the whole cascade for the chat's real model
+  /// with it, so a preset's typed Off or a profile's Auto is never missed
+  /// (audit 2026-11-20 P1-4).
+  final SettingsChange Function(Map<String, dynamic> overrides) change;
+
+  /// Narrows the listed settings when a scope cannot own every key (the
+  /// global page leaves sampling to each model, SettingSpec.perModel).
+  final bool Function(SettingSpec spec)? filter;
+
   /// Extra app-bar actions (the model profile's share/import menu).
   final List<Widget> actions;
   final String? error;
+  final EngineDescriptor? engine;
+  final bool modelProfile;
   const OverridesPage({
     super.key,
     required this.title,
@@ -36,15 +51,19 @@ class OverridesPage extends StatefulWidget {
     required this.overrides,
     required this.inherited,
     required this.onChanged,
+    required this.change,
     this.actions = const [],
+    this.filter,
     this.error,
+    this.engine,
+    this.modelProfile = false,
   });
 
   @override
-  State<OverridesPage> createState() => _OverridesPageState();
+  ConsumerState<OverridesPage> createState() => _OverridesPageState();
 }
 
-class _OverridesPageState extends State<OverridesPage> {
+class _OverridesPageState extends ConsumerState<OverridesPage> {
   late Map<String, dynamic> _overrides = Map.of(widget.overrides);
   String? _error;
 
@@ -59,14 +78,14 @@ class _OverridesPageState extends State<OverridesPage> {
   }
 
   Future<void> _set(String key, Object? value) async {
-    setState(() {
-      _overrides = {..._overrides};
-      if (value == null) {
-        _overrides.remove(key);
-      } else {
-        _overrides[key] = value;
-      }
-    });
+    final next = {..._overrides};
+    if (value == null) {
+      next.remove(key);
+    } else {
+      next[key] = value;
+    }
+    if (!await _webAllowed(next)) return;
+    setState(() => _overrides = next);
     try {
       await widget.onChanged(SettingsResolver.sanitize(_overrides));
       if (mounted) setState(() => _error = null);
@@ -75,10 +94,29 @@ class _OverridesPageState extends State<OverridesPage> {
     }
   }
 
+  /// Off to Auto or Always sends the user's text off the device: this scope
+  /// asks the same informed question the main switch does before saving it
+  /// (audit 2026-11-20 P1-4).
+  Future<bool> _webAllowed(Map<String, dynamic> next) => confirmWebModeChange(
+    context,
+    ref,
+    widget.change(SettingsResolver.sanitize(next)),
+  );
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final inheritedJson = widget.inherited.toJson();
+    final specs = SettingSpec.all.where(
+      (s) =>
+          s.available &&
+          (widget.filter?.call(s) ?? true) &&
+          (!s.modelOnly || widget.modelProfile) &&
+          s.usedBy(widget.engine?.capabilities) &&
+          (!widget.modelProfile ||
+              widget.engine?.capabilities.vision != false ||
+              s.key != 'visionEnabled'),
+    );
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.title),
@@ -86,6 +124,7 @@ class _OverridesPageState extends State<OverridesPage> {
           if (_overrides.isNotEmpty)
             TextButton(
               onPressed: () async {
+                if (!await _webAllowed(const {})) return;
                 setState(() => _overrides = {});
                 try {
                   await widget.onChanged(const {});
@@ -117,17 +156,20 @@ class _OverridesPageState extends State<OverridesPage> {
                 icon: Icons.error_outline,
                 tone: c.danger,
               ),
-            for (final group in SettingSpec.groups) ...[
-              SettingsSection(
-                label: settingGroupLabel(group, context.l10n),
-                children: [
-                  for (final spec in SettingSpec.visible.where(
-                    (s) => s.group == group,
-                  ))
-                    _row(context, spec, inheritedJson[spec.key], c),
-                ],
-              ),
-            ],
+            if (widget.engine case final engine?)
+              if (engine.capabilities.visibleSettingKeys != null)
+                SettingsNote(
+                  context.l10n.engineUnusedSettings(engine.displayName),
+                ),
+            for (final group in SettingSpec.groups)
+              if (specs.any((s) => s.group == group))
+                SettingsSection(
+                  label: settingGroupLabel(group, context.l10n),
+                  children: [
+                    for (final spec in specs.where((s) => s.group == group))
+                      _row(context, spec, inheritedJson[spec.key], c),
+                  ],
+                ),
           ],
         ),
       ),
@@ -142,6 +184,9 @@ class _OverridesPageState extends State<OverridesPage> {
   ) {
     final overridden = _overrides.containsKey(spec.key);
     final value = overridden ? _overrides[spec.key] : inherited;
+    final label = spec.modelOnly && value is String
+        ? nativeSettingOption(context.l10n, spec.key, value)
+        : null;
     return SettingsRow(
       key: Key('override-${spec.key}'),
       title: Text(
@@ -149,7 +194,7 @@ class _OverridesPageState extends State<OverridesPage> {
         style: TextStyle(color: overridden ? c.accent : null),
       ),
       subtitle: Text(
-        '${overridden ? context.l10n.settingExplicit : context.l10n.settingInherited} · ${spec.display(value)}',
+        '${overridden ? context.l10n.settingExplicit : context.l10n.settingInherited} · ${label ?? spec.display(value)}',
       ),
       trailing: overridden
           ? IconButton(

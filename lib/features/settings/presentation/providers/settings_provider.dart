@@ -168,7 +168,13 @@ class SettingsNotifier extends Notifier<InferenceSettings> {
     await _writes;
   }
 
-  Future<void> update(InferenceSettings next) async {
+  /// With [requirePersistence], a failed write is rethrown instead of only
+  /// being reported: callers that delete the old copy of a moved file must
+  /// know the new path reached storage first (audit 09-2).
+  Future<void> update(
+    InferenceSettings next, {
+    bool requirePersistence = false,
+  }) async {
     _loaded = true;
     // Credentials never go through the JSON round trip: they are not written
     // to plaintext SharedPreferences, only to the keystore.
@@ -199,7 +205,7 @@ class SettingsNotifier extends Notifier<InferenceSettings> {
     );
     DuckDuckGoScraper.preferredRegion = state.searchRegion;
     final encoded = jsonEncode(state.toJson());
-    _writes = _writes.then((_) async {
+    final write = _writes.then((_) async {
       try {
         final store = ref.read(remoteKeyStoreProvider);
         // Store header values before rewriting the settings without them, so
@@ -241,9 +247,12 @@ class SettingsNotifier extends Notifier<InferenceSettings> {
             state.localeCode,
           ).settingsSaveFailed;
         }
+        if (requirePersistence) rethrow;
       }
     });
-    await _writes;
+    // A checked failure must not poison the queue: later updates still run.
+    _writes = write.catchError((Object _, StackTrace _) {});
+    await write;
   }
 
   /// Resets assistant, model and advanced settings only (as the dialog says).

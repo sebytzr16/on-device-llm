@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/features/hosting/device_model_server.dart';
 import 'package:ondevice_llm/features/hosting/pairing_code.dart';
+import 'package:ondevice_llm/features/hosting/paired_devices.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 
 import 'device_model_server_test.dart' show FakeEngine;
@@ -13,7 +14,7 @@ void main() {
   DeviceModelServer? server;
   late String endpoint;
 
-  Future<void> start({String? code = '482913'}) async {
+  Future<void> start({String? code = '482913', PairedDevices? devices}) async {
     server = DeviceModelServer(
       engine: FakeEngine(),
       settings: () => const InferenceSettings(),
@@ -21,6 +22,7 @@ void main() {
       fallbackTemplate: '',
       accessToken: token,
       pairCode: code,
+      pairedDevices: devices,
     );
     await server!.start();
     endpoint = 'http://127.0.0.1:${server!.port}/v1/';
@@ -66,6 +68,33 @@ void main() {
         'model': 'test-model',
         'key': pairing['key'],
       });
+    },
+  );
+
+  test(
+    'pairing credentials rotate only after device storage succeeds',
+    () async {
+      var attempts = 0;
+      final devices = PairedDevices(
+        save: (_) async {
+          if (++attempts == 1) throw StateError('Device storage unavailable');
+        },
+      );
+      await start(devices: devices);
+      final code = server!.pairCode!;
+      final secret = server!.pairingSecret;
+      await expectLater(
+        PairingCode.redeem(endpoint, code),
+        throwsA(isA<PairingException>()),
+      );
+      expect(server!.pairCode, code);
+      expect(server!.pairingSecret, secret);
+      expect(devices.devices, isEmpty);
+      final paired =
+          jsonDecode(await PairingCode.redeem(endpoint, code)) as Map;
+      expect(devices.principal(paired['key'] as String), isNotNull);
+      expect(server!.pairCode, isNot(code));
+      expect(server!.pairingSecret, isNot(secret));
     },
   );
 

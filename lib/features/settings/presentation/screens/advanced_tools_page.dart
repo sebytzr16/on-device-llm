@@ -76,9 +76,22 @@ class ToolsPage extends ConsumerWidget {
               ),
               subtitle: Text(context.l10n.toolWebGlobeHint),
               value: s.webSearchEnabled && s.toolWeb,
-              onChanged: (v) => n.update(
-                s.copyWith(webMode: webModeFor(s, v), toolWeb: true),
-              ),
+              onChanged: (v) async {
+                // Off to on sends the user's text off the device: run the
+                // shared informed confirmation before saving (audit
+                // 2026-11-20 P1-4).
+                final next = s.copyWith(webMode: webModeFor(s, v), toolWeb: v);
+                if (!await confirmWebModeChange(
+                  context,
+                  ref,
+                  SettingsChange(global: next),
+                )) {
+                  return;
+                }
+                // On offers the tool too; off clears both, never forcing
+                // a stored toolWeb back on (audit 2026-11-20 P1-4).
+                await n.update(next);
+              },
             ),
             SettingsSwitchRow(
               secondary: const Icon(Icons.find_in_page_outlined),
@@ -148,9 +161,12 @@ class _HelperModelRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final s = ref.watch(settingsProvider);
     final c = context.colors;
+    final registry = ref.watch(engineRegistryProvider);
     final models = [
       for (final m in ref.watch(modelManagerProvider).catalog)
         if (m.isDownloaded &&
+            registry.descriptorFor(m).capabilities.helpers ==
+                EngineHelperMode.dedicated &&
             modelCategory(m.localPath ?? m.id) == ModelCategory.llm)
           m,
     ]..sort((a, b) => a.sizeBytes.compareTo(b.sizeBytes));
@@ -228,18 +244,23 @@ class AgentsSettingsSection extends ConsumerWidget {
     final s = ref.watch(settingsProvider);
     final n = ref.read(settingsProvider.notifier);
     final t = context.l10n;
+    const defaults = InferenceSettings();
+    // [off] is the value an empty field means: -1 where the agent inherits
+    // the model's sampling, else the app default for rows that do not
+    // inherit at all (audit 2026-11-20 P1-1).
     Widget number(
       String label,
       double value,
       void Function(double) changed, {
       double? max,
       bool integer = false,
-      bool inherit = false,
+      double off = -1,
+      String? offLabel,
     }) => _NumberRow(
       label: label,
       value: value,
-      off: inherit ? -1 : -999,
-      offLabel: t.agentModelDefault,
+      off: off,
+      offLabel: offLabel ?? t.agentModelDefault,
       hint: label,
       max: max,
       integer: integer,
@@ -260,20 +281,20 @@ class AgentsSettingsSection extends ConsumerWidget {
           s.agentTemperature,
           (v) => n.update(s.copyWith(agentTemperature: v)),
           max: 2,
+          off: defaults.agentTemperature,
+          offLabel: t.settingDefaultValue('${defaults.agentTemperature}'),
         ),
         number(
           t.agentTopP,
           s.agentTopP,
           (v) => n.update(s.copyWith(agentTopP: v)),
           max: 1,
-          inherit: true,
         ),
         number(
           t.agentMinP,
           s.agentMinP,
           (v) => n.update(s.copyWith(agentMinP: v)),
           max: 1,
-          inherit: true,
         ),
         number(
           t.agentTopK,
@@ -281,14 +302,12 @@ class AgentsSettingsSection extends ConsumerWidget {
           (v) => n.update(s.copyWith(agentTopK: v.round())),
           max: 1000,
           integer: true,
-          inherit: true,
         ),
         number(
           t.agentRepeatPenalty,
           s.agentRepeatPenalty,
           (v) => n.update(s.copyWith(agentRepeatPenalty: v)),
           max: 2,
-          inherit: true,
         ),
         number(
           t.agentContextSize,
@@ -296,6 +315,8 @@ class AgentsSettingsSection extends ConsumerWidget {
           (v) => n.update(s.copyWith(agentContextSize: v.round())),
           max: 65536,
           integer: true,
+          off: defaults.agentContextSize.toDouble(),
+          offLabel: t.settingDefaultValue('${defaults.agentContextSize}'),
         ),
         SettingSlider(
           label: t.agentMaxConcurrent,
@@ -378,6 +399,8 @@ class AgentsSettingsSection extends ConsumerWidget {
           (v) => n.update(s.copyWith(agentInputBudget: v.round())),
           max: 65536,
           integer: true,
+          off: defaults.agentInputBudget.toDouble(),
+          offLabel: t.settingDefaultValue('${defaults.agentInputBudget}'),
         ),
         SettingsRow(
           key: const Key('agents-reset'),

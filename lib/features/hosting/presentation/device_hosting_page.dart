@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../inference/engine/engine_registry_provider.dart';
 import '../../../app.dart';
 import '../../../core/design/app_design.dart';
 import '../../../core/design/app_dialog.dart';
@@ -12,6 +13,7 @@ import '../../../core/design/app_sheet.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/motion/motion.dart';
 import '../../models/presentation/providers/model_manager_provider.dart';
+import '../../settings/presentation/providers/settings_provider.dart';
 import '../../settings/presentation/widgets/settings_widgets.dart';
 import '../device_model_server.dart';
 import '../pairing_code.dart';
@@ -97,7 +99,13 @@ class _DeviceHostingPageState extends ConsumerState<DeviceHostingPage> {
   /// 2026-10-20: the loaded model could not be changed here).
   Future<void> _chooseModel() async {
     final models = ref.read(modelManagerProvider);
-    final local = models.catalog.where((m) => m.isDownloaded).toList();
+    final registry = ref.read(engineRegistryProvider);
+    final local = models.catalog
+        .where(
+          (m) =>
+              m.isDownloaded && registry.descriptorFor(m).capabilities.hosting,
+        )
+        .toList();
     final picked = await showMorphSheet<String>(
       context: context,
       useSafeArea: true,
@@ -229,11 +237,11 @@ class _DeviceHostingPageState extends ConsumerState<DeviceHostingPage> {
     final controller = ref.read(deviceHostingProvider.notifier);
     final canStart =
         !state.starting &&
+        !state.resettingIdentity &&
         !_switching &&
         modelName != null &&
         _portError == null;
-    final tlsError = context.l10n.hostTlsIdentityError;
-    final showResetIdentity = state.error == tlsError;
+    final showResetIdentity = state.tlsIdentityFailure;
     return [
       if (state.stoppedReason != null)
         SettingsNote(
@@ -254,18 +262,20 @@ class _DeviceHostingPageState extends ConsumerState<DeviceHostingPage> {
               Padding(
                 padding: const EdgeInsets.only(top: AppDesign.sm),
                 child: OutlinedButton.icon(
-                  onPressed: () async {
-                    final confirmed = await confirmAction(
-                      context,
-                      title: context.l10n.hostResetIdentity,
-                      message: context.l10n.hostResetIdentityConfirm,
-                      confirmLabel: context.l10n.hostResetIdentity,
-                      destructive: true,
-                    );
-                    if (confirmed && context.mounted) {
-                      await controller.resetHostIdentity();
-                    }
-                  },
+                  onPressed: state.resettingIdentity
+                      ? null
+                      : () async {
+                          final confirmed = await confirmAction(
+                            context,
+                            title: context.l10n.hostResetIdentity,
+                            message: context.l10n.hostResetIdentityConfirm,
+                            confirmLabel: context.l10n.hostResetIdentity,
+                            destructive: true,
+                          );
+                          if (confirmed && context.mounted) {
+                            await controller.resetHostIdentity();
+                          }
+                        },
                   icon: const Icon(Icons.refresh),
                   label: Text(context.l10n.hostResetIdentity),
                   style: OutlinedButton.styleFrom(foregroundColor: c.danger),
@@ -326,21 +336,42 @@ class _DeviceHostingPageState extends ConsumerState<DeviceHostingPage> {
             leading: const Icon(Icons.autorenew),
             title: Text(context.l10n.hostRotate),
             subtitle: Text(context.l10n.hostRotateHint),
-            onTap: () async {
-              await controller.regenerateToken();
-              if (context.mounted) {
-                showIslandToast(context, context.l10n.hostRotated);
-              }
-            },
+            onTap: state.resettingIdentity
+                ? null
+                : () async {
+                    await controller.regenerateToken();
+                    if (context.mounted) {
+                      showIslandToast(context, context.l10n.hostRotated);
+                    }
+                  },
           ),
         ],
       ),
     ];
   }
 
+  /// Paired devices search the host's knowledge collection only while this
+  /// switch is on. Turning it on asks first; turning it off needs no confirm.
+  Future<void> _setShareDocuments(bool value) async {
+    final settings = ref.read(settingsProvider);
+    if (settings.hostShareDocuments == value) return;
+    if (value) {
+      final confirmed = await confirmAction(
+        context,
+        title: context.l10n.hostShareDocuments,
+        message: context.l10n.hostShareDocumentsConfirm,
+        confirmLabel: context.l10n.hostShareDocuments,
+      );
+      if (!confirmed || !mounted) return;
+    }
+    final next = ref.read(settingsProvider).copyWith(hostShareDocuments: value);
+    await ref.read(settingsProvider.notifier).update(next);
+  }
+
   List<Widget> _running(BuildContext context, DeviceHostingState state) {
     final c = context.colors;
     final controller = ref.read(deviceHostingProvider.notifier);
+    final shareDocuments = ref.watch(settingsProvider).hostShareDocuments;
     final token = state.token ?? '';
     final uptime = state.startedAt == null
         ? Duration.zero
@@ -451,6 +482,16 @@ class _DeviceHostingPageState extends ConsumerState<DeviceHostingPage> {
                   maxThermal: controller.guards.maxThermal,
                 ),
               ),
+            ),
+          ),
+          SettingsRow(
+            key: const Key('host-share-documents'),
+            leading: const Icon(Icons.folder_shared_outlined),
+            title: Text(context.l10n.hostShareDocuments),
+            subtitle: Text(context.l10n.hostShareDocumentsHint),
+            trailing: SpringSwitch(
+              value: shareDocuments,
+              onChanged: _setShareDocuments,
             ),
           ),
         ],

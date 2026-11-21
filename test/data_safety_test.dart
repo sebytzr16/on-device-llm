@@ -150,6 +150,74 @@ void main() {
     },
   );
 
+  test('a truncated draft is read from the crash backup beside it', () async {
+    final store = ChatDraftStore();
+    await store.save('chat-1', const ChatDraft(text: 'unsaved long draft'));
+    final file = (await Directory(
+      p.join(support.path, 'drafts'),
+    ).list().toList()).whereType<File>().single;
+    await file.copy('${file.path}.bak');
+    // A kill during the next write leaves a truncated main file.
+    await file.writeAsString('{"text":"unsaved lo');
+    expect((await store.read('chat-1')).text, 'unsaved long draft');
+  });
+
+  test(
+    'a flushed pending draft wins in both interrupted rename windows',
+    () async {
+      final store = ChatDraftStore();
+      await store.save('chat', const ChatDraft(text: 'previous'));
+      final file = File(p.join(support.path, 'drafts', 'Y2hhdA.json'));
+      final pending = File('${file.path}.enc-pending');
+      await pending.writeAsString('{"text":"newest"}');
+      expect((await store.read('chat')).text, 'newest');
+      await file.rename('${file.path}.enc-original');
+      expect((await store.read('chat')).text, 'newest');
+      await pending.writeAsString('{"text":"new');
+      expect((await store.read('chat')).text, 'previous');
+    },
+  );
+
+  test('draft recovery keeps text and readable attachments', () async {
+    final store = ChatDraftStore();
+    await store.save('chat', const ChatDraft(text: 'draft'));
+    final file = File(p.join(support.path, 'drafts', 'Y2hhdA.json'));
+    const attachment = Attachment(
+      id: 'good',
+      kind: AttachmentKind.document,
+      name: 'notes.txt',
+      mime: 'text/plain',
+      path: 'notes.txt',
+      sizeBytes: 12,
+    );
+    await file.writeAsString(
+      jsonEncode({
+        'text': 'keep this text',
+        'attachments': [
+          {'id': 'bad', 'kind': 'unknown'},
+          {'id': 'missing kind'},
+          attachment.toJson(),
+        ],
+      }),
+    );
+    final draft = await store.read('chat');
+    expect(draft.text, 'keep this text');
+    expect(draft.attachments.map((a) => a.id), ['good']);
+  });
+
+  test('an empty autosave clears every draft artifact', () async {
+    final store = ChatDraftStore();
+    await store.save('chat', const ChatDraft(text: 'cleared text'));
+    final file = File(p.join(support.path, 'drafts', 'Y2hhdA.json'));
+    for (final suffix in ['.bak', '.tmp', '.enc-original', '.enc-pending']) {
+      await file.copy('${file.path}$suffix');
+    }
+    await store.save('chat', const ChatDraft());
+    expect(await file.parent.list().toList(), isEmpty);
+    expect(await store.keys(), isEmpty);
+    expect((await store.read('chat')).isEmpty, isTrue);
+  });
+
   test('crafted backup draft cannot point outside app storage', () async {
     final victim = await File(
       p.join(root.path, 'keep.txt'),

@@ -192,4 +192,106 @@ void main() {
     expect(await done, true);
     expect(widgetRef.read(modelProfilesProvider)['test'], {'temperature': 0.2});
   });
+
+  testWidgets('applying a card keeps the profile\'s explicit web choice', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    late WidgetRef widgetRef;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith(TestSettings.new),
+          modelManagerProvider.overrideWith(TestModels.new),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.dark,
+          home: Consumer(
+            builder: (context, ref, _) {
+              widgetRef = ref;
+              return const Scaffold();
+            },
+          ),
+        ),
+      ),
+    );
+    // Keep the next message local, whatever the user's settings say.
+    await widgetRef.read(modelProfilesProvider.notifier).set('test', {
+      'webMode': 'off',
+      'temperature': 0.9,
+    });
+    final card = ModelConfigCard.decode(
+      jsonEncode({
+        'ondevice_llm': 'model-config',
+        'version': 1,
+        'name': 'Precise answers',
+        'model': {'id': 'test', 'fileName': 'test.gguf'},
+        'settings': {'temperature': 0.2},
+      }),
+    )!;
+    final context = tester.element(find.byType(Scaffold));
+    final done = showConfigCardPreview(context, widgetRef, card);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('config-apply')));
+    await tester.pumpAndSettle();
+    expect(await done, true);
+    // A card never carries a web choice, and replacing the profile must not
+    // drop the explicit Off that kept research local (audit 2026-11-20 P1-4).
+    expect(widgetRef.read(modelProfilesProvider)['test'], {
+      'temperature': 0.2,
+      'webMode': 'off',
+    });
+  });
+
+  testWidgets('a card with no model to target applies nothing', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    late WidgetRef widgetRef;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith(TestSettings.new),
+          modelManagerProvider.overrideWith(TestModels.new),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.dark,
+          home: Consumer(
+            builder: (context, ref, _) {
+              widgetRef = ref;
+              return const Scaffold();
+            },
+          ),
+        ),
+      ),
+    );
+    final card = ModelConfigCard.decode(
+      jsonEncode({
+        'ondevice_llm': 'model-config',
+        'version': 1,
+        'name': 'No target',
+        'model': {'id': 'not-here', 'fileName': 'missing.gguf'},
+        'settings': {'temperature': 0.2},
+      }),
+    )!;
+    final context = tester.element(find.byType(Scaffold));
+    final done = showConfigCardPreview(context, widgetRef, card);
+    await tester.pumpAndSettle();
+    // Nothing downloaded matches the card and none was passed in, so there is
+    // no profile to write: Apply stays disabled and dismissing the preview
+    // applies nothing instead of falling through with a null model.
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('config-apply')))
+          .onPressed,
+      isNull,
+    );
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextButton),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(await done, false);
+    expect(widgetRef.read(modelProfilesProvider).isEmpty, isTrue);
+  });
 }

@@ -46,6 +46,29 @@ class AttachmentStore {
     '.tiff',
   };
 
+  static String safeDiskSuffix(String name) {
+    final suffix = p.extension(p.basename(name)).toLowerCase();
+    if (imageExtensions.contains(suffix) ||
+        DocumentText.supportsTextSuffix(suffix) ||
+        const {
+          '.pdf',
+          '.docx',
+          '.pptx',
+          '.xlsx',
+          '.odt',
+          '.odp',
+          '.ods',
+          '.epub',
+          '.rtf',
+          '.bin',
+        }.contains(suffix)) {
+      return suffix;
+    }
+    // Unknown types still get an allowlisted type on disk: a copied or shared
+    // file keeps a readable suffix instead of becoming an extensionless blob.
+    return '.bin';
+  }
+
   static Future<Directory> directory() async {
     final base = await appDataDirectory();
     final dir = Directory(p.join(base.path, 'attachments'));
@@ -101,9 +124,7 @@ class AttachmentStore {
     final id = const Uuid().v4();
     final dir = await directory();
     if (deferProcessing) {
-      final file = File(
-        p.join(dir.path, '$id${p.extension(name).toLowerCase()}'),
-      );
+      final file = File(p.join(dir.path, '$id${safeDiskSuffix(name)}'));
       await DeviceEncryption.instance.write(file, data);
       return Attachment(
         id: id,
@@ -166,9 +187,7 @@ class AttachmentStore {
         error: ocrNotice,
       );
     }
-    final file = File(
-      p.join(dir.path, '$id${p.extension(name).toLowerCase()}'),
-    );
+    final file = File(p.join(dir.path, '$id${safeDiskSuffix(name)}'));
     await DeviceEncryption.instance.write(file, data);
     String? text, error;
     try {

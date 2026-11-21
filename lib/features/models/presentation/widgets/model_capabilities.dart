@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../../../../inference/engine/engine_registry.dart';
+import '../../../../inference/engine/engine_descriptor.dart';
+import '../../../../inference/engine/engine_registry_provider.dart';
 import '../../../../core/design/app_design.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,17 +15,30 @@ import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../../data/storage/gguf_metadata.dart';
 import '../../domain/entities/model_catalog.dart';
 import '../../domain/entities/model_info.dart';
+import '../providers/model_manager_provider.dart';
 import 'model_tags.dart';
 
 final modelMetadataProvider = FutureProvider.family<GgufMetadata?, String>((
   ref,
   path,
 ) async {
+  final engine = ref.watch(engineRegistryProvider).forPath(path);
+  if (engine?.capabilities.ggufMetadata == false) return null;
   try {
     return await GgufMetadata.inspect(path);
   } catch (_) {
     return null;
   }
+});
+
+/// What the runtime probed from the model file when it loaded it: null
+/// until then, because the file's own capability is unknown.
+final runtimeVisionProbeProvider = Provider.family<bool?, String>((ref, id) {
+  if (ref.watch(modelManagerProvider.select((s) => s.loadedModelId)) != id) {
+    return null;
+  }
+  final probed = ref.watch(activeLocalEngineProvider).metrics['visionCapable'];
+  return probed is bool ? probed : null;
 });
 
 final modelDeviceMemoryProvider = FutureProvider<DeviceMemory?>((ref) async {
@@ -88,21 +104,29 @@ class ModelCapabilities {
     GgufMetadata? metadata,
     Iterable<String> tags = const [],
     int? contextLength,
+    bool? liteRtVision,
+    EngineCapabilities? engine,
   }) {
     final hints = tags.map((s) => s.toLowerCase()).toSet();
+    final runtime =
+        engine ?? defaultEngineRegistry.descriptorFor(model).capabilities;
+    // Some formats only report a model's modalities once the file is open.
+    final vision = runtime.visionFromRuntime
+        ? liteRtVision == true
+        : metadata?.supportsVision == true ||
+              model?.projector != null ||
+              visionProjectors.containsKey(model?.id) ||
+              hints.any(
+                const {'vision', 'image-text-to-text', 'multimodal'}.contains,
+              );
     return ModelCapabilities(
       tools:
-          metadata?.supportsTools == true ||
-          hints.any(
-            const {'tool-use', 'tool-calling', 'function-calling'}.contains,
-          ),
-      vision:
-          metadata?.supportsVision == true ||
-          model?.projector != null ||
-          visionProjectors.containsKey(model?.id) ||
-          hints.any(
-            const {'vision', 'image-text-to-text', 'multimodal'}.contains,
-          ),
+          runtime.tools &&
+          (metadata?.supportsTools == true ||
+              hints.any(
+                const {'tool-use', 'tool-calling', 'function-calling'}.contains,
+              )),
+      vision: runtime.vision && vision,
       thinking:
           metadata?.supportsThinking == true ||
           catalogMeta[model?.id]?.reasoning == true ||
@@ -138,6 +162,10 @@ class ModelCapabilityBadges extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final m = model;
+    final engine = ref
+        .watch(engineRegistryProvider)
+        .descriptorFor(m)
+        .capabilities;
     final path = m?.localPath;
     final metadata = path == null
         ? null
@@ -147,6 +175,10 @@ class ModelCapabilityBadges extends ConsumerWidget {
       metadata: metadata,
       tags: tags,
       contextLength: contextLength,
+      engine: engine,
+      liteRtVision: m != null && engine.visionFromRuntime
+          ? ref.watch(runtimeVisionProbeProvider(m.id))
+          : null,
     );
     final memory = m == null || !showFit
         ? null

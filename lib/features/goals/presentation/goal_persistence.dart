@@ -2,99 +2,179 @@ part of 'goal_provider.dart';
 
 /// Serialization and active-goal checkpoints.
 class _GoalPersistenceCodec {
+  /// What a cap this build cannot read falls back to: the goal's own
+  /// defaults, so a corrupt number never makes a goal uncapped.
+  static const _specDefaults = GoalSpec(objective: '', successCriteria: '');
+
+  /// A stored text; a value of another type reads as [fallback] (audit
+  /// 05a-4: one unreadable field must not lose the whole goal).
+  static String _text(Object? v, [String fallback = '']) =>
+      v is String ? v : fallback;
+
+  static String? _textOrNull(Object? v) => v is String ? v : null;
+
+  /// A stored count: a number or a text of digits reads as the int it
+  /// names; anything else as [fallback].
+  static int _count(Object? v, [int fallback = 0]) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse('$v') ?? fallback;
+  }
+
+  /// A stored cap: absent (or null) stays "no cap"; a value this build
+  /// cannot read falls back instead of uncapping the goal.
+  static int? _cap(Object? v, int fallback) =>
+      v == null ? null : _count(v, fallback);
+
+  /// The share of the criteria a review must find met. A value outside
+  /// (0, 1] falls back to the default; the spec refuses to hold another.
+  static double _target(Object? v) {
+    final n = v is num ? v.toDouble() : double.tryParse('$v');
+    return n != null && n > 0 && n <= 1 ? n : 0.85;
+  }
+
+  /// A stored duration, in milliseconds or minutes; a text of digits reads
+  /// as the number it names.
+  static Duration? _duration(Object? ms, Object? minutes) {
+    final millis = ms is int
+        ? ms
+        : ms is num
+        ? ms.toInt()
+        : int.tryParse(_text(ms).trim());
+    if (millis != null) return Duration(milliseconds: millis);
+    return minutes == null ? null : Duration(minutes: _count(minutes, 30));
+  }
+
+  static List<Object?> _list(Object? v) => v is List ? v : const [];
+
+  static List<String> _texts(Object? v) => [
+    for (final s in _list(v))
+      if (s is String) s,
+  ];
+
+  /// One stored item this build cannot read is dropped, so it never takes
+  /// the whole goal with it (audit 05a-4).
+  static T? _item<T>(
+    Object? raw,
+    T? Function(Map<String, dynamic>) read,
+    String name,
+  ) {
+    if (raw is! Map) return null;
+    try {
+      return read(Map<String, dynamic>.from(raw));
+    } catch (e, st) {
+      quietFailure('goal_persistence:$name', e, st);
+      return null;
+    }
+  }
+
+  /// The recorded action outcomes by index; a key or an entry this build
+  /// cannot read is left out.
+  static Map<int, GoalActionOutcome> _outcomes(Object? raw) {
+    final out = <int, GoalActionOutcome>{};
+    if (raw is! Map) return out;
+    for (final e in raw.entries) {
+      final index = int.tryParse('${e.key}');
+      final outcome = _item(
+        e.value,
+        (m) => GoalActionOutcome.fromJson(m),
+        'outcome',
+      );
+      if (index != null && outcome != null) out[index] = outcome;
+    }
+    return out;
+  }
+
   /// A saved goal; a goal that was running when the app stopped comes back
   /// paused, to be continued by hand.
   static GoalProgress decode(Map<String, dynamic> map) {
+    // A value a newer build wrote differently must not lose the whole goal
+    // (audit 05a-4): every field reads what it can and falls back.
+    final objective = _text(map['objective']);
+    // The start time is the goal's identity ([GoalHistoryNotifier.idOf]) and
+    // the base of its age: a record without a readable one is dropped
+    // rather than restored under a new identity (audit 05a-4).
+    final startedAt = DateTime.tryParse(_text(map['startedAt']));
+    if (startedAt == null) {
+      throw const FormatException('The saved goal has no start time.');
+    }
     final allowance = map['initialAllowance'];
+    final criteria = _text(map['criteria']);
     final spec = GoalSpec(
-      objective: map['objective'] as String,
-      successCriteria: map['criteria'] as String? ?? '',
-      maxSteps: map['maxSteps'] as int?,
-      maxTokens: map['maxTokens'] as int?,
-      maxToolCalls: map['maxToolCalls'] as int?,
-      maxDuration: map['maxDurationMs'] is int
-          ? Duration(milliseconds: map['maxDurationMs'] as int)
-          : map['maxMinutes'] == null
-          ? null
-          : Duration(minutes: map['maxMinutes'] as int),
+      objective: objective,
+      successCriteria: criteria,
+      maxSteps: _cap(map['maxSteps'], _specDefaults.maxSteps!),
+      maxTokens: _cap(map['maxTokens'], _specDefaults.maxTokens!),
+      maxToolCalls: _cap(map['maxToolCalls'], _specDefaults.maxToolCalls!),
+      maxDuration: _duration(map['maxDurationMs'], map['maxMinutes']),
       initialAllowance: allowance is Map
           ? GoalSpec(
-              objective: map['objective'] as String,
-              successCriteria: map['criteria'] as String? ?? '',
-              maxSteps: allowance['maxSteps'] as int?,
-              maxTokens: allowance['maxTokens'] as int?,
-              maxToolCalls: allowance['maxToolCalls'] as int?,
-              maxDuration: allowance['maxDurationMs'] is int
-                  ? Duration(milliseconds: allowance['maxDurationMs'] as int)
-                  : null,
+              objective: objective,
+              successCriteria: criteria,
+              maxSteps: _cap(allowance['maxSteps'], _specDefaults.maxSteps!),
+              maxTokens: _cap(allowance['maxTokens'], _specDefaults.maxTokens!),
+              maxToolCalls: _cap(
+                allowance['maxToolCalls'],
+                _specDefaults.maxToolCalls!,
+              ),
+              maxDuration: _duration(allowance['maxDurationMs'], null),
             )
           : null,
       specialization: GoalSpecialization.byName(
-        map['specialization'] as String?,
+        _textOrNull(map['specialization']),
       ),
-      terms: [
-        for (final t in (map['terms'] as List?) ?? const [])
-          if (t is String) t,
-      ],
-      rules: map['rules'] as String? ?? '',
-      completionTarget: (map['completionTarget'] as num?)?.toDouble() ?? 0.85,
-      searchGuidance: map['searchGuidance'] as String? ?? '',
+      terms: _texts(map['terms']),
+      rules: _text(map['rules']),
+      completionTarget: _target(map['completionTarget']),
+      searchGuidance: _text(map['searchGuidance']),
       clarifications: GoalClarification.parse(map['clarifications']),
     );
-    final saved = GoalStatus.values.byName(
-      map['status'] as String? ?? 'paused',
-    );
+    final saved =
+        GoalStatus.values.asNameMap()[map['status']] ?? GoalStatus.paused;
     return GoalProgress(
       spec: spec,
       status: saved == GoalStatus.running ? GoalStatus.paused : saved,
       phase:
           GoalPhase.values.asNameMap()[map['phase']] ?? GoalPhase.researching,
-      steps: map['steps'] as int? ?? 0,
-      usedTokens: map['usedTokens'] as int? ?? 0,
-      usedToolCalls: map['usedToolCalls'] as int? ?? 0,
-      startedAt: DateTime.parse(map['startedAt'] as String),
+      steps: _count(map['steps']),
+      usedTokens: _count(map['usedTokens']),
+      usedToolCalls: _count(map['usedToolCalls']),
+      startedAt: startedAt,
       tasks: [
-        for (final t in (map['tasks'] as List?) ?? const [])
-          GoalTask.fromJson(Map<String, dynamic>.from(t as Map)),
+        for (final t in _list(map['tasks']))
+          ?_item(t, GoalTask.fromJson, 'task'),
       ],
       sources: [
-        for (final s in (map['sources'] as List?) ?? const [])
-          GoalSource.fromJson(Map<String, dynamic>.from(s as Map)),
+        for (final s in _list(map['sources']))
+          ?_item(s, GoalSource.fromJson, 'source'),
       ],
-      reviews: map['reviews'] as int? ?? 0,
-      reviewedSteps: map['reviewedSteps'] as int? ?? 0,
-      gapRounds: map['gapRounds'] as int? ?? 0,
-      models: [
-        for (final m in (map['models'] as List?) ?? const [])
-          if (m is String) m,
+      reviews: _count(map['reviews']),
+      reviewedSteps: _count(map['reviewedSteps']),
+      gapRounds: _count(map['gapRounds']),
+      models: _texts(map['models']),
+      report: _text(map['report']),
+      latestAnswer: _text(map['latestAnswer']),
+      nextStep: _text(map['nextStep'], objective),
+      missing: _texts(map['missing']),
+      error: _textOrNull(map['error']),
+      reportChecks: [
+        for (final c in _list(map['reportChecks']))
+          ?_item(c, (m) => GoalCheck.fromJson(m), 'check'),
       ],
-      report: map['report'] as String? ?? '',
-      latestAnswer: map['latestAnswer'] as String? ?? '',
-      nextStep: map['nextStep'] as String? ?? spec.objective,
-      missing: (map['missing'] as List?)?.cast<String>() ?? const [],
-      error: map['error'] as String?,
-      reportChecks: GoalCheck.listFromJson(map['reportChecks']),
-      planNotes: map['planNotes'] as String? ?? '',
-      reviewNotes: map['reviewNotes'] as String? ?? '',
+      planNotes: _text(map['planNotes']),
+      reviewNotes: _text(map['reviewNotes']),
       criteriaSatisfied: map['criteriaSatisfied'] == true,
       clarificationChecked: map['clarificationChecked'] == true,
-      awaitingInputSince: DateTime.tryParse(
-        map['awaitingInputSince'] as String? ?? '',
-      ),
+      awaitingInputSince: DateTime.tryParse(_text(map['awaitingInputSince'])),
       criteria: [
-        for (final c in map['criterionAssessments'] as List? ?? const [])
-          if (c is Map) GoalCriterion.fromJson(Map<String, dynamic>.from(c)),
+        for (final c in _list(map['criterionAssessments']))
+          ?_item(c, GoalCriterion.fromJson, 'criterion'),
       ],
       actions: [
-        for (final a in map['actions'] as List? ?? const [])
-          ?PhoneAction.fromJson(a),
+        for (final a in _list(map['actions']))
+          ?_item(a, PhoneAction.fromJson, 'action'),
       ],
-      actionOutcomes: {
-        for (final e in (map['actionOutcomes'] as Map? ?? const {}).entries)
-          if (int.tryParse('${e.key}') != null &&
-              GoalActionOutcome.fromJson(e.value) != null)
-            int.parse('${e.key}'): GoalActionOutcome.fromJson(e.value)!,
-      },
+      actionOutcomes: _outcomes(map['actionOutcomes']),
     );
   }
 
@@ -156,16 +236,32 @@ extension _GoalPersistence on GoalNotifier {
     // Retain legacy state until an explicit migration/deletion.
     final raw = await DeviceEncryption.instance.readGoal(GoalNotifier._key);
     if (raw == null) return;
+    final Object? decoded;
     try {
-      final map = jsonDecode(raw) as Map<String, dynamic>;
-      if (_goalState != null || _runner != null) return;
-      _goalChatId = map['chatId'] as String?;
-      _goalState = GoalNotifier.decode(map);
-      if (GoalNotifier.isFinished(_goalState!)) {
-        _archivedId = GoalHistoryNotifier.idOf(_goalState!);
-      }
-    } catch (_) {
+      decoded = jsonDecode(raw);
+    } catch (e, st) {
+      // Not JSON at all: nothing in it can be read again.
+      quietFailure('goal_persistence:156', e, st);
       await DeviceEncryption.instance.removeGoal(GoalNotifier._key);
+      return;
+    }
+    if (decoded is! Map) {
+      await DeviceEncryption.instance.removeGoal(GoalNotifier._key);
+      return;
+    }
+    if (_goalState != null || _runner != null) return;
+    try {
+      final map = Map<String, dynamic>.from(decoded);
+      _goalChatId = map['chatId'] is String ? map['chatId'] as String : null;
+      final goal = GoalNotifier.decode(map);
+      _goalState = goal;
+      if (GoalNotifier.isFinished(goal)) {
+        _archivedId = GoalHistoryNotifier.idOf(goal);
+      }
+    } catch (e, st) {
+      // A saved goal this build cannot read at all is kept on the device
+      // instead of deleted (audit 05a-4); the next save replaces it.
+      quietFailure('goal_persistence:decode', e, st);
     }
   }
 

@@ -3,12 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/core/motion/motion.dart';
 import 'package:ondevice_llm/core/theme/app_theme.dart';
+import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
 import 'package:ondevice_llm/features/presets/domain/preset.dart';
 import 'package:ondevice_llm/features/presets/presentation/preset_sheet.dart';
 import 'package:ondevice_llm/features/presets/presentation/providers/presets_provider.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
+import 'package:ondevice_llm/features/settings/presentation/providers/settings_provider.dart';
 import 'package:ondevice_llm/l10n/app_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'advanced_pages_2_test.dart' show TestModels, TestSettings;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -66,6 +70,126 @@ void main() {
     );
     expect(copy.overrides, {'topK': 20});
   });
+
+  testWidgets(
+    'inactive web preset edits save and activation asks for consent',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      tester.view.physicalSize = const Size(600, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final container = ProviderContainer(
+        overrides: [
+          settingsProvider.overrideWith(TestSettings.new),
+          modelManagerProvider.overrideWith(TestModels.new),
+        ],
+      );
+      addTearDown(container.dispose);
+      final presets = container.read(presetsProvider.notifier);
+      final web = (await tester.runAsync(() async {
+        await presets.ready;
+        return presets.create(
+          const Preset(
+            id: '',
+            name: 'Web preset',
+            emoji: 'W',
+            systemPrompt: '',
+            webMode: WebMode.auto,
+            overrides: {'topK': 20},
+          ),
+          activate: false,
+        );
+      }))!;
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: AppTheme.dark,
+            supportedLocales: AppLocalizations.supportedLocales,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            builder: (context, page) =>
+                MotionScope(choice: MotionChoice.off, child: page!),
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => TextButton(
+                  onPressed: () => showPresetSheet(context),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final open = find.text('open');
+      final t = AppLocalizations.of(tester.element(open));
+      await tester.tap(open);
+      await tester.pumpAndSettle();
+      final row = find.byKey(Key('preset-${web.id}'));
+      await tester.drag(find.byType(ListView), const Offset(0, -250));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(row);
+      await tester.tap(
+        find.descendant(of: row, matching: find.byTooltip(t.more)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.presetMoreOverridesCount(1)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.uiOverridesPageClearAll));
+      await tester.pumpAndSettle();
+      expect(find.text(t.enableWebQuestion), findsNothing);
+      final updated = container
+          .read(presetsProvider)
+          .presets
+          .singleWhere((p) => p.id == web.id);
+      expect(updated.overrides, isEmpty);
+      expect(updated.webMode, WebMode.auto);
+      expect(container.read(presetsProvider).activeId, 'general');
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(row);
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      expect(find.text(t.enableWebQuestion), findsOneWidget);
+      expect(container.read(presetsProvider).activeId, 'general');
+      await tester.tap(find.text(t.enable));
+      await tester.pumpAndSettle();
+      expect(container.read(presetsProvider).activeId, web.id);
+    },
+  );
+
+  test(
+    'a preset saved without confirming web is created but not active',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final n = container.read(presetsProvider.notifier);
+      await n.ready;
+      // The sheet asks before a new/copied preset turns web research on;
+      // when the user stays local the preset is kept but the old one stays
+      // active (audit 2026-11-20 P1-4).
+      final web = await n.create(
+        const Preset(
+          id: '',
+          name: 'Web',
+          emoji: '🌐',
+          systemPrompt: '',
+          webMode: WebMode.auto,
+        ),
+        activate: false,
+      );
+      final state = container.read(presetsProvider);
+      expect(state.activeId, 'general');
+      expect(state.presets.any((x) => x.id == web.id), isTrue);
+      final copy = await n.duplicate(web, activate: false);
+      expect(container.read(presetsProvider).activeId, 'general');
+      expect(
+        container.read(presetsProvider).presets.any((x) => x.id == copy.id),
+        isTrue,
+      );
+    },
+  );
 
   test('a preset overrides only what it sets and round-trips JSON', () {
     const s = InferenceSettings(temperature: 0.7, thinkingModeEnabled: true);

@@ -83,18 +83,32 @@ mixin _ChatBranches on _ChatBase {
     if (at < 0 || user.role != ChatRole.user || !ChatNotifier.isLive(user)) {
       return false;
     }
+    final members = state.messages.skip(at).where(ChatNotifier.isLive).toList();
+    return _replaceTurns(
+      members,
+      () => send(text, attachments: user.attachments, parentId: user.parentId),
+    );
+  }
+
+  /// Sets aside the old turns until the replacement can start.
+  Future<bool> _replaceTurns(
+    List<ChatMessage> members,
+    Future<bool> Function() start,
+  ) async {
     if (ref.read(sessionBusyProvider) ||
         ref.read(modelManagerProvider).isLoadingModel) {
+      state = state.copyWith(error: _t.desktopCompareBusy);
       return false;
     }
+    if (members.isEmpty) return start();
+    final chatId = state.chatId!;
+    final db = _database;
     final branch = const Uuid().v4();
-    final members = state.messages.skip(at).where(ChatNotifier.isLive).toList();
     final statuses = {
       for (final m in members) m.id: 'superseded:$branch:${m.status}',
     };
-    final db = _database;
     // Block navigation and competing engine work before the first await.
-    _navigation++;
+    final navigation = ++_navigation;
     state = state.copyWith(
       isGenerating: true,
       housekeeping: true,
@@ -128,7 +142,57 @@ mixin _ChatBranches on _ChatBase {
         ref.read(sessionBusyProvider.notifier).state = false;
       }
     }
-    return send(text, attachments: user.attachments, parentId: user.parentId);
+    final ok = _alive && _navigation == navigation && await start();
+    if (!ok) {
+      await _restoreStatuses(db, chatId, navigation, members, statuses);
+    }
+    return ok;
+  }
+
+  /// Roll back only statuses still owned by the refused replacement.
+  Future<void> _restoreStatuses(
+    AppDatabase db,
+    String chatId,
+    int navigation,
+    List<ChatMessage> members,
+    Map<String, String> superseded,
+  ) async {
+    final restored = <String, String>{};
+    try {
+      await db.transaction(() async {
+        final current = {
+          for (final row in await db.getMessages(chatId)) row.id: row.status,
+        };
+        if (_alive && state.chatId == chatId && _navigation != navigation) {
+          return;
+        }
+        for (final m in members) {
+          final status = current[m.id];
+          if (status == superseded[m.id]) {
+            await db.updateMessage(
+              m.id,
+              MessagesCompanion(status: drift.Value(m.status)),
+            );
+          } else if (status != null) {
+            continue;
+          }
+          restored[m.id] = m.status;
+        }
+      });
+    } catch (e, st) {
+      quietFailure('chat_branches:restore', e, st);
+      restored.clear();
+    }
+    if (!_alive || _navigation != navigation) return;
+    state = state.copyWith(
+      error: state.error ?? _t.desktopCompareBusy,
+      messages: [
+        for (final m in state.messages)
+          restored.containsKey(m.id) && m.status == superseded[m.id]
+              ? m.copyWith(status: restored[m.id])
+              : m,
+      ],
+    );
   }
 
   /// Brings a retained branch back. The conversation is a tree (every turn
@@ -199,6 +263,7 @@ mixin _ChatBranches on _ChatBase {
     final next = [...kept, ...restored];
     final db = _database;
     // Two passes avoid collisions with the unique (chat, sequence) index.
+    _navigation++;
     state = state.copyWith(isGenerating: true, housekeeping: true);
     try {
       await db.transaction(() async {
@@ -284,37 +349,35 @@ mixin _ChatBranches on _ChatBase {
 
   /// The last answer becomes a retained earlier version; the same question
   /// is answered again (with retrieval re-run).
-  Future<bool> regenerate() async {
-    if (state.isGenerating) return false;
-    final user = _lastLiveUser, assistant = _lastLiveAssistant;
-    if (user == null) return false;
-    if (assistant != null &&
-        state.messages.indexOf(assistant) > state.messages.indexOf(user)) {
-      await _supersede(assistant);
-    }
-    return send(user.content, insertUser: false, attachments: user.attachments);
-  }
+  Future<bool> regenerate() => _retryAnswer();
 
   /// Answers the last question again with a web search, replacing the
   /// answer the model gave from memory, and keeps the question locally as
   /// a phrasing the keyword lists missed ([searchMissesProvider]).
-  Future<bool> searchAgain() async {
+  Future<bool> searchAgain() => _retryAnswer(forceResearch: true);
+
+  Future<bool> _retryAnswer({bool forceResearch = false}) async {
     if (state.isGenerating) return false;
     final user = _lastLiveUser, assistant = _lastLiveAssistant;
     if (user == null) return false;
-    if (!state.temporary) {
-      unawaited(ref.read(searchMissesProvider.notifier).add(user.content));
-    }
-    if (assistant != null &&
-        state.messages.indexOf(assistant) > state.messages.indexOf(user)) {
-      await _supersede(assistant);
-    }
-    return send(
-      user.content,
-      insertUser: false,
-      attachments: user.attachments,
-      forceResearch: true,
+    final recordMiss = forceResearch && !state.temporary;
+    final ok = await _replaceTurns(
+      [
+        if (assistant != null &&
+            state.messages.indexOf(assistant) > state.messages.indexOf(user))
+          assistant,
+      ],
+      () => send(
+        user.content,
+        insertUser: false,
+        attachments: user.attachments,
+        forceResearch: forceResearch,
+      ),
     );
+    if (ok && _alive && recordMiss) {
+      await ref.read(searchMissesProvider.notifier).add(user.content);
+    }
+    return ok;
   }
 
   /// Resumes a stopped, interrupted or failed answer from its saved text.

@@ -118,14 +118,61 @@ class AttachmentChips extends StatelessWidget {
   );
 }
 
-class _Thumb extends StatelessWidget {
+class _Thumb extends StatefulWidget {
   final Attachment a;
   final ValueChanged<Attachment>? onRemove;
   final bool large;
   const _Thumb(this.a, {this.onRemove, this.large = false});
 
   @override
+  State<_Thumb> createState() => _ThumbState();
+}
+
+class _ThumbState extends State<_Thumb> {
+  /// One decryption per attachment: a future created in build() re-read the
+  /// whole picture and reset the thumbnail to waiting on every rebuild.
+  late Future<Uint8List> _bytes = _read();
+
+  /// The vault this thumbnail reads through: a failed decrypt must not stay
+  /// cached, so a restored vault re-reads the picture.
+  late final ValueNotifier<bool> _recovery = DeviceEncryption.instance.recovery;
+
+  Future<Uint8List> _read() =>
+      DeviceEncryption.instance.read(File(widget.a.path));
+
+  @override
+  void initState() {
+    super.initState();
+    _recovery.addListener(_vaultChanged);
+  }
+
+  @override
+  void dispose() {
+    _recovery.removeListener(_vaultChanged);
+    super.dispose();
+  }
+
+  /// The vault was locked and is usable again (EncryptionRecovery): read the
+  /// picture once more instead of keeping the lock placeholder.
+  void _vaultChanged() {
+    if (!mounted || _recovery.value) return;
+    final bytes = _read();
+    setState(() {
+      _bytes = bytes;
+    });
+  }
+
+  @override
+  void didUpdateWidget(_Thumb old) {
+    super.didUpdateWidget(old);
+    if (old.a.path != widget.a.path) _bytes = _read();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final a = widget.a;
+    final onRemove = widget.onRemove;
+    final large = widget.large;
     final c = context.colors;
     final size = large ? 240.0 : 72.0;
     return Stack(
@@ -142,7 +189,7 @@ class _Thumb extends StatelessWidget {
             child: ClipRRect(
               borderRadius: AppDesign.radius(AppDesign.rMd),
               child: FutureBuilder<Uint8List>(
-                future: DeviceEncryption.instance.read(File(a.path)),
+                future: _bytes,
                 builder: (context, snapshot) => snapshot.hasData
                     ? Image.memory(
                         snapshot.data!,
@@ -182,7 +229,7 @@ class _Thumb extends StatelessWidget {
               shape: const CircleBorder(),
               child: InkWell(
                 customBorder: const CircleBorder(),
-                onTap: () => onRemove!(a),
+                onTap: () => onRemove(a),
                 child: const Padding(
                   padding: EdgeInsets.all(3),
                   child: Icon(Icons.close, size: 14),

@@ -56,11 +56,22 @@ class _BackupPageState extends ConsumerState<BackupPage> {
         _password.text,
       );
       if (!mounted) return;
-      final action = await _showSaveDialog(context);
-      if (action == _SaveAction.share) {
-        await _shareBackup(file, t);
-      } else if (action == _SaveAction.saveToFile) {
-        await _saveBackupToFile(file, t);
+      var action = await _showSaveDialog(context);
+      while (mounted) {
+        if (action == _SaveAction.share) {
+          // The share sheet returns before Gmail/Drive reads the URI, so the
+          // archive moves to the swept staging folder instead of being
+          // deleted by this method's finally (audit 08d-3).
+          await _shareBackup(await LocalBackupService.stageForShare(file), t);
+          return;
+        }
+        if (action != _SaveAction.saveToFile) return;
+        if (await _saveBackupToFile(file, t)) return;
+        // Too large for Android's in-memory picker: back to the same archive's
+        // actions, where Share is offered, instead of dropping the file the
+        // user just generated (audit 08d-2).
+        if (!mounted) return;
+        action = await _showSaveDialog(context);
       }
     } catch (error) {
       if (mounted) {
@@ -128,35 +139,11 @@ class _BackupPageState extends ConsumerState<BackupPage> {
     );
   }
 
-  Future<void> _saveBackupToFile(File file, AppLocalizations t) async {
-    try {
-      // Android writes through the system picker and needs the bytes; the
-      // desktop picker returns a path and the file is copied there.
-      final android = Platform.isAndroid;
-      final saved = await FilePicker.saveFile(
-        dialogTitle: t.backupSaveToFile,
-        fileName: 'ondevice-llm-backup.odllm',
-        bytes: android ? await file.readAsBytes() : Uint8List(0),
-        type: FileType.custom,
-        allowedExtensions: ['odllm'],
-      );
-      if (saved != null && !android) await file.copy(saved.toFilePath());
-      if (!mounted) return;
-      showIslandToast(
-        context,
-        saved != null ? t.backupSavedToFile : t.backupSaveCancelled,
-        tone: saved != null ? IslandTone.done : IslandTone.info,
-      );
-    } catch (error) {
-      if (mounted) {
-        showIslandToast(
-          context,
-          t.backupSaveFailed('$error'),
-          tone: IslandTone.error,
-        );
-      }
-    }
-  }
+  /// Saves [file] through the system picker. False means the archive is too
+  /// large for Android to take whole: the caller returns to the action picker,
+  /// where Share is offered (audit 08d-2).
+  Future<bool> _saveBackupToFile(File file, AppLocalizations t) =>
+      saveBackupArchive(context, file, t);
 
   Future<void> _restore() async {
     final t = context.l10n;
@@ -295,3 +282,68 @@ class _BackupPageState extends ConsumerState<BackupPage> {
 }
 
 enum _SaveAction { saveToFile, share }
+
+/// Saves [file] through the system picker. False means the archive is too
+/// large for Android to take whole: the page returns to the action picker with
+/// the same file, where Share is offered, and never reads it into memory
+/// (audit 08d-2).
+///
+/// [android] and [read] exist so a widget test can reach the phone's branch
+/// (`dart:io`'s `Platform.isAndroid` cannot be faked) and prove the archive is
+/// not read above the cap.
+@visibleForTesting
+Future<bool> saveBackupArchive(
+  BuildContext context,
+  File file,
+  AppLocalizations t, {
+  bool? android,
+  Future<Uint8List> Function()? read,
+}) async {
+  final onAndroid = android ?? LocalBackupService.onAndroid;
+  try {
+    // Android writes through the system picker and needs the bytes; the
+    // desktop picker returns a path and the file is copied there.
+    // Reading the archive whole into RAM is what makes a large backup fail on
+    // a phone: never read it when it is over the cap.
+    final bytes = onAndroid
+        ? await LocalBackupService.androidPickerBytes(
+            await file.length(),
+            read ?? file.readAsBytes,
+          )
+        : Uint8List(0);
+    if (bytes == null) {
+      if (context.mounted) {
+        showIslandToast(
+          context,
+          t.backupTooLargeForFileSave,
+          tone: IslandTone.error,
+        );
+      }
+      return false;
+    }
+    final saved = await FilePicker.saveFile(
+      dialogTitle: t.backupSaveToFile,
+      fileName: 'ondevice-llm-backup.odllm',
+      bytes: bytes,
+      type: FileType.custom,
+      allowedExtensions: ['odllm'],
+    );
+    if (saved != null && !onAndroid) await file.copy(saved.toFilePath());
+    if (!context.mounted) return true;
+    showIslandToast(
+      context,
+      saved != null ? t.backupSavedToFile : t.backupSaveCancelled,
+      tone: saved != null ? IslandTone.done : IslandTone.info,
+    );
+    return true;
+  } catch (error) {
+    if (context.mounted) {
+      showIslandToast(
+        context,
+        t.backupSaveFailed('$error'),
+        tone: IslandTone.error,
+      );
+    }
+    return true;
+  }
+}

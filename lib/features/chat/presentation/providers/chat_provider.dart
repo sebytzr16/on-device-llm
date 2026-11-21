@@ -26,6 +26,7 @@ import '../../../../data/network/web_search/duckduckgo_scraper.dart';
 import '../../../../data/network/web_search/search_models.dart';
 import '../../../../data/network/web_search/web_page_reader.dart';
 import '../../../../data/network/web_search/wikipedia_client.dart';
+import '../../../../inference/engine/engine_registry_provider.dart';
 import '../../../../inference/engine/stream_parser.dart';
 import '../../../attachments/domain/attachment.dart';
 import '../../../knowledge/knowledge_embedder.dart';
@@ -36,6 +37,7 @@ import '../../../retrieval/domain/date_check.dart';
 import '../../../retrieval/semantic_rerank.dart';
 import '../../../retrieval/overlap_prefill.dart';
 import '../../../../inference/engine/llama_engine.dart';
+import '../../../../inference/engine/litert_engine.dart';
 import '../../../retrieval/support_check.dart';
 import '../../../memory/domain/user_memory.dart';
 import '../../domain/message_deletion.dart';
@@ -253,7 +255,6 @@ abstract class _ChatBase extends Notifier<ChatState> {
   ChatMessage? get _lastLiveUser;
   ChatMessage? get _lastLiveAssistant;
   ChatMessage _fromRow(Message row);
-  Future<void> _supersede(ChatMessage m);
   Future<bool> send(
     String input, {
     bool insertUser = true,
@@ -338,12 +339,16 @@ class ChatNotifier extends _ChatBase
   @override
   ChatState build() {
     final engine = ref.read(llamaEngineProvider);
+    final fileEngines = ref.read(availableFileEnginesProvider);
     final remote = ref.read(remoteEngineProvider);
     final diffusion = ref.read(diffusionGemmaEngineProvider);
     ref.onDispose(() {
       _alive = false;
       _turns.dispose();
       engine.cancel();
+      for (final runtime in fileEngines) {
+        runtime.engine.cancel();
+      }
       remote.cancel();
       diffusion.cancel();
       unawaited(_temporaryDb?.close());
@@ -352,8 +357,31 @@ class ChatNotifier extends _ChatBase
     return const ChatState();
   }
 
-  void newChat({bool temporary = false, String? projectId}) {
-    if (state.isGenerating) return;
+  /// Resets to a new chat. False when the reset did not happen (a reply was
+  /// still generating, or another chat opened meanwhile): callers that act
+  /// on the new chat, a Goal above all, must not go on.
+  Future<bool> newChat({bool temporary = false, String? projectId}) async {
+    if (state.isGenerating) return false;
+    final revision = _navigation;
+    final confirmation = requestWebModeChange(
+      ref.container,
+      SettingsChange(newChat: true, projectId: projectId),
+    );
+    final allowWeb = confirmation == null || await confirmation;
+    if (!_alive || revision != _navigation || state.isGenerating) return false;
+    _resetChat(
+      temporary: temporary,
+      projectId: projectId,
+      overrides: allowWeb ? const {} : const {'webMode': 'off'},
+    );
+    return true;
+  }
+
+  void _resetChat({
+    bool temporary = false,
+    String? projectId,
+    Map<String, dynamic> overrides = const {},
+  }) {
     if (_temporaryDb != null) {
       unawaited(_temporaryDb!.close());
       _temporaryReady = TemporaryFiles.clear().catchError((Object _) {});
@@ -365,7 +393,7 @@ class ChatNotifier extends _ChatBase
     ref.read(newChatProjectProvider.notifier).state = projectId;
     _navigation++;
     state = ChatState(temporary: temporary);
-    ref.read(chatOverridesProvider.notifier).state = const {};
+    ref.read(chatOverridesProvider.notifier).state = overrides;
   }
 
   /// Chat-level setting overrides (roadmap P1.4): kept in memory for a chat
@@ -451,7 +479,7 @@ class ChatNotifier extends _ChatBase
 
   Future<void> openChat(String id) async {
     if (state.isGenerating) return;
-    if (_temporaryDb != null) newChat();
+    if (_temporaryDb != null) _resetChat();
     await ref.read(conversationWorkspaceProvider.notifier).ready;
     _projectId = ref.read(conversationWorkspaceProvider).memberships[id];
     final revision = ++_navigation;
@@ -496,7 +524,7 @@ class ChatNotifier extends _ChatBase
     await DeletionCleanup.deleteChat(ref.read(appDatabaseProvider), id);
     await ContextSummary.remove(id);
     await ref.read(conversationWorkspaceProvider.notifier).forget(id);
-    if (state.chatId == id) newChat();
+    if (state.chatId == id) await newChat();
   }
 
   @override
@@ -514,28 +542,6 @@ class ChatNotifier extends _ChatBase
     parentId: r.parentId,
     runJson: r.runJson,
   );
-
-  /// Marks a turn superseded in the database and in the visible list. The
-  /// record stays (roadmap CHAT-02: history is retained, never overwritten)
-  /// but leaves the model context and collapses in the UI.
-  @override
-  Future<void> _supersede(ChatMessage m, {String? branch}) async {
-    final status = 'superseded:${branch ?? const Uuid().v4()}:${m.status}';
-    await _setStatus(m, status);
-  }
-
-  Future<void> _setStatus(ChatMessage m, String status) async {
-    await _database.updateMessage(
-      m.id,
-      MessagesCompanion(status: drift.Value(status)),
-    );
-    state = state.copyWith(
-      messages: [
-        for (final x in state.messages)
-          x.id == m.id ? x.copyWith(status: status) : x,
-      ],
-    );
-  }
 
   /// Turns the model sees: not retained earlier versions, not comparison
   /// answers from another model.

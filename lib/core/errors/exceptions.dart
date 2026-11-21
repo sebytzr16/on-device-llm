@@ -41,6 +41,9 @@ String modelLoadErrorMessage(Object? error) {
   if (message.contains('OD_DFLASH_METADATA')) {
     return appStrings.desktopDFlashInvalid;
   }
+  if (message.contains('OD_IK_LOAD_FAILED')) {
+    return appStrings.ikLlamaLoadFailed;
+  }
   final lower = message.toLowerCase();
   if (lower.contains('unknown model architecture') ||
       lower.contains('unsupported model architecture') ||

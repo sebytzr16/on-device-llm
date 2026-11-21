@@ -20,7 +20,10 @@ class _Settings extends SettingsNotifier {
   }
 
   @override
-  Future<void> update(InferenceSettings next) async {
+  Future<void> update(
+    InferenceSettings next, {
+    bool requirePersistence = false,
+  }) async {
     state = next;
   }
 }

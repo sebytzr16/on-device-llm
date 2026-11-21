@@ -28,7 +28,7 @@ import '../../../settings/presentation/widgets/settings_labels.dart';
 import 'send_button.dart';
 import '../providers/chat_provider.dart';
 import '../../../settings/presentation/providers/effective_settings_provider.dart';
-import '../../../../core/design/app_dialog.dart';
+import '../../../settings/presentation/widgets/settings_widgets.dart';
 import '../../../../inference/engine/diffusiongemma_engine.dart';
 
 /// Bottom composer: model, preset, Think and web-mode pills sharing one
@@ -98,10 +98,22 @@ class ChatComposer extends ConsumerStatefulWidget {
 }
 
 class _ChatComposerState extends ConsumerState<ChatComposer> {
-  // One explanation per app run: the point is informed consent, not nagging.
-  static bool _webSearchExplained = false;
+  /// The notifier that started dictation here, so leaving the screen can stop
+  /// the microphone (`ref` is unusable in [dispose]).
+  VoiceNotifier? _dictation;
 
-  /// Local → Auto → Always → Local. Leaving Local asks for consent once per run.
+  @override
+  void dispose() {
+    // The chat screen owns the text controller and disposes it on the way out:
+    // a transcript arriving later must not be typed into it, and the mic must
+    // not stay open with nothing to write to (review 2026-11-20).
+    unawaited(_dictation?.stop());
+    super.dispose();
+  }
+
+  /// Local → Auto → Always → Local. Every step out of Local asks: each
+  /// Off → Auto/Always transition is where this chat's text starts leaving
+  /// the device, not just the first one in a run (audit 2026-11-20 P1-4).
   Future<void> _cycleWeb() async {
     final settings = ref.read(settingsProvider);
     final next = switch (settings.webMode) {
@@ -109,22 +121,17 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
       WebMode.auto => WebMode.always,
       WebMode.always => WebMode.off,
     };
-    // Consent is about leaving Local; auto -> always changes only how often.
-    if (settings.webMode == WebMode.off && !_webSearchExplained) {
-      final ok = await confirmAction(
-        context,
-        title: context.l10n.turnOnWebQuestion,
-        message: context.l10n.turnOnWebHint,
-        confirmLabel: context.l10n.turnOn,
-        cancelLabel: context.l10n.stayLocal,
-      );
-      if (ok != true || !mounted) return;
-      _webSearchExplained = true;
+    final changed = settings.copyWith(webMode: next);
+    if (!await confirmWebModeChange(
+      context,
+      ref,
+      SettingsChange(global: changed),
+    )) {
+      return;
     }
+    if (!mounted) return;
     AppHaptics.tick();
-    await ref
-        .read(settingsProvider.notifier)
-        .update(settings.copyWith(webMode: next));
+    await ref.read(settingsProvider.notifier).update(changed);
     if (mounted) {
       showIslandToast(
         context,
@@ -524,6 +531,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                           ? null
                           : () {
                               final n = ref.read(voiceProvider.notifier);
+                              _dictation = n;
                               if (voice.listening) {
                                 n.stop();
                                 return;
@@ -532,6 +540,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                               n.listen(
                                 onDeviceOnly: settings.voiceOnDeviceOnly,
                                 onText: (t) {
+                                  if (!mounted) return;
                                   widget.controller.text = before.isEmpty
                                       ? t
                                       : '$before $t';

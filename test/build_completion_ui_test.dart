@@ -7,13 +7,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ondevice_llm/core/theme/app_theme.dart';
+import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
 import 'package:ondevice_llm/features/settings/presentation/providers/settings_provider.dart';
 import 'package:ondevice_llm/features/settings/presentation/screens/inference_contract_page.dart';
 import 'package:ondevice_llm/features/settings/presentation/screens/scan_settings_page.dart';
 import 'package:ondevice_llm/features/hosting/host_discovery.dart';
 import 'package:ondevice_llm/features/hosting/presentation/nearby_hosts_page.dart';
 import 'package:ondevice_llm/l10n/app_localizations.dart';
-import 'chat_test.dart' show TestSettings;
+import 'chat_test.dart' show TestModels, TestSettings;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -51,7 +52,12 @@ void main() {
                 .setMockMethodCallHandler(HostDiscovery.channel, null),
           );
           final container = ProviderContainer(
-            overrides: [settingsProvider.overrideWith(TestSettings.new)],
+            overrides: [
+              settingsProvider.overrideWith(TestSettings.new),
+              // The settings page reads the active model (LiteRT or not), so
+              // it needs a model manager that does not open the database.
+              modelManagerProvider.overrideWith(TestModels.new),
+            ],
           );
           addTearDown(container.dispose);
           final home = switch (page) {

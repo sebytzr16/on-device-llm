@@ -172,21 +172,136 @@ if(APPLE)
 else()
   set(GGML_METAL OFF CACHE BOOL "" FORCE)
 endif()
-if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/include/llama.h")
+# The optional ik_llama.cpp engine builds the same bridge against another
+# llama.cpp fork (scripts/build-ik-llama.ps1). Its source tree is passed in and
+# never replaces native/llama.cpp, so the bundled engine cannot change.
+option(ODLLM_IK_LLAMA "Build the chat bridge against an ik_llama.cpp checkout" OFF)
+set(ODLLM_IK_LLAMA_SOURCE "" CACHE PATH "Existing ik_llama.cpp checkout, pinned by scripts/build-ik-llama.ps1")
+# A normal variable, never cached: a build tree can never keep pointing at a
+# fork after a later bundled configure.
+set(ODLLM_LLAMA_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp")
+if(ODLLM_IK_LLAMA)
+  if(NOT WIN32 OR ANDROID)
+    message(FATAL_ERROR "ODLLM_IK_LLAMA is a Windows x64 engine only")
+  endif()
+  if(NOT ODLLM_IK_LLAMA_SOURCE OR NOT EXISTS "${ODLLM_IK_LLAMA_SOURCE}/include/llama.h")
+    message(FATAL_ERROR "Pass -DODLLM_IK_LLAMA_SOURCE=<ik_llama.cpp checkout> (scripts/build-ik-llama.ps1 -Source)")
+  endif()
+  set(ODLLM_LLAMA_SOURCE "${ODLLM_IK_LLAMA_SOURCE}")
+  if(ODLLM_X64_COMPAT)
+    set(GGML_IQK_MUL_MAT OFF CACHE BOOL "" FORCE)
+  endif()
+endif()
+if(NOT EXISTS "${ODLLM_LLAMA_SOURCE}/include/llama.h")
+  if(ODLLM_IK_LLAMA)
+    message(FATAL_ERROR "The ik_llama.cpp checkout has no include/llama.h")
+  endif()
   message(FATAL_ERROR "Run scripts/bootstrap.ps1 or scripts/bootstrap.sh first")
 endif()
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/tools/mtmd/mtmd.h" ODLLM_MTMD_H)
-if(NOT ODLLM_MTMD_H MATCHES "weights_on_host")
-  message(FATAL_ERROR "llama.cpp lacks native/patches: run scripts/bootstrap.ps1 or scripts/bootstrap.sh")
+# The app's llama.cpp carries local patches (mtmd, fit, MTP). They belong to the
+# bundled engine only: an ik_llama.cpp checkout is built as it is, and its
+# differences are handled by native/src/ik_compat.inc.
+if(NOT ODLLM_IK_LLAMA)
+  file(READ "${ODLLM_LLAMA_SOURCE}/tools/mtmd/mtmd.h" ODLLM_MTMD_H)
+  if(NOT ODLLM_MTMD_H MATCHES "weights_on_host")
+    message(FATAL_ERROR "llama.cpp lacks native/patches: run scripts/bootstrap.ps1 or scripts/bootstrap.sh")
+  endif()
 endif()
-add_subdirectory(llama.cpp)
+if(ODLLM_IK_LLAMA)
+  # The fork's top-level build generates common/build-info.cpp in its source
+  # checkout. Configure the library subdirectories and generate that file here.
+  set(CMAKE_CXX_STANDARD 20)
+  set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+  set(GGML_LLAMAFILE ON)
+  if(MSVC)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+    add_compile_options(/utf-8 /bigobj)
+  endif()
+  find_package(Threads REQUIRED)
+  find_package(Git REQUIRED)
+  set(ik_git "${GIT_EXECUTABLE}" -c "safe.directory=${ODLLM_LLAMA_SOURCE}" -C "${ODLLM_LLAMA_SOURCE}")
+  execute_process(COMMAND ${ik_git} rev-parse --short HEAD OUTPUT_VARIABLE BUILD_COMMIT
+    OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+  execute_process(COMMAND ${ik_git} rev-list --count HEAD OUTPUT_VARIABLE BUILD_NUMBER
+    OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+  set(BUILD_COMPILER "${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION}")
+  set(BUILD_TARGET "${CMAKE_SYSTEM_NAME} ${CMAKE_SYSTEM_PROCESSOR}")
+  configure_file("${ODLLM_LLAMA_SOURCE}/common/build-info.cpp.in" "ik-build-info.cpp" @ONLY)
+  add_subdirectory("${ODLLM_LLAMA_SOURCE}/ggml" llama.cpp/ggml)
+  add_subdirectory("${ODLLM_LLAMA_SOURCE}/src" llama.cpp/src)
+  # Use the pinned fork's common target source list, with absolute paths back
+  # to the checkout. The list is parsed, not included: the fork's file resolves
+  # its relative paths against CMAKE_CURRENT_SOURCE_DIR and generates
+  # common/build-info.cpp inside the checkout, so including it would write into
+  # the read-only source tree (this project generates ik-build-info.cpp
+  # instead). Optional curl and llguidance dependencies remain off.
+  file(STRINGS "${ODLLM_LLAMA_SOURCE}/common/CMakeLists.txt" ik_common_lines)
+  set(ik_common_sources "")
+  set(ik_read_common OFF)
+  foreach(line IN LISTS ik_common_lines)
+    string(STRIP "${line}" line)
+    if(line MATCHES "^add_library\\([^ )]+ STATIC")
+      set(ik_read_common ON)
+    elseif(ik_read_common AND line STREQUAL ")")
+      break()
+    elseif(ik_read_common AND NOT line STREQUAL "reasoning-budget.cpp")
+      # sampling.cpp already includes reasoning-budget.cpp at this pin.
+      list(APPEND ik_common_sources "${ODLLM_LLAMA_SOURCE}/common/${line}")
+    endif()
+  endforeach()
+  if(NOT ik_common_sources)
+    message(FATAL_ERROR "Cannot locate the ik_llama common target source list")
+  endif()
+  # The parse is pinned to ik_llama.cpp 464613d7: a pin bump that reformats or
+  # extends the list must say so here, not fail later as a missing symbol.
+  set(ik_common_expected 53)
+  list(LENGTH ik_common_sources ik_common_count)
+  if(NOT ik_common_count EQUAL ik_common_expected)
+    message(FATAL_ERROR "The common target of ${ODLLM_LLAMA_SOURCE} lists ${ik_common_count} sources, "
+      "expected ${ik_common_expected} for pin 464613d7: update native/CMakeLists.txt for the new pin")
+  endif()
+  add_library(common STATIC ${ik_common_sources} "${CMAKE_CURRENT_BINARY_DIR}/ik-build-info.cpp")
+  target_include_directories(common PUBLIC "${ODLLM_LLAMA_SOURCE}/common" "${ODLLM_LLAMA_SOURCE}/vendor")
+  target_link_libraries(common PUBLIC llama Threads::Threads)
+else()
+  add_subdirectory(${ODLLM_LLAMA_SOURCE} llama.cpp)
+endif()
 if(APPLE)
   add_library(${ODLLM_LIBRARY_NAME} STATIC src/bridge.cpp)
 else()
   add_library(${ODLLM_LIBRARY_NAME} SHARED src/bridge.cpp)
 endif()
-target_include_directories(${ODLLM_LIBRARY_NAME} PRIVATE llama.cpp/include llama.cpp/ggml/include llama.cpp/vendor llama.cpp/common llama.cpp/tools/mtmd)
-target_link_libraries(${ODLLM_LIBRARY_NAME} PRIVATE llama-common mtmd llama)
+target_include_directories(${ODLLM_LIBRARY_NAME} PRIVATE
+  ${ODLLM_LLAMA_SOURCE}/include ${ODLLM_LLAMA_SOURCE}/ggml/include
+  ${ODLLM_LLAMA_SOURCE}/vendor ${ODLLM_LLAMA_SOURCE}/common)
+# The common helpers are `llama-common` in the bundled pin; older forks still
+# call the target `common`.
+if(TARGET llama-common)
+  target_link_libraries(${ODLLM_LIBRARY_NAME} PRIVATE llama-common)
+elseif(TARGET common)
+  target_link_libraries(${ODLLM_LIBRARY_NAME} PRIVATE common)
+else()
+  message(FATAL_ERROR "The engine source has no llama-common/common target")
+endif()
+target_link_libraries(${ODLLM_LIBRARY_NAME} PRIVATE llama)
+# libmtmd is the vision projector: the bundled llama.cpp has it, an ik_llama.cpp
+# checkout may not, and its descriptor declares vision unsupported.
+if(ODLLM_IK_LLAMA)
+  if(NOT TARGET mtmd)
+    add_subdirectory("${ODLLM_LLAMA_SOURCE}/examples/mtmd" ik-mtmd EXCLUDE_FROM_ALL)
+  endif()
+  target_include_directories(${ODLLM_LIBRARY_NAME} PRIVATE ${ODLLM_LLAMA_SOURCE}/examples/mtmd)
+  target_link_libraries(${ODLLM_LIBRARY_NAME} PRIVATE mtmd)
+elseif(TARGET mtmd)
+  target_include_directories(${ODLLM_LIBRARY_NAME} PRIVATE ${ODLLM_LLAMA_SOURCE}/tools/mtmd)
+  target_link_libraries(${ODLLM_LIBRARY_NAME} PRIVATE mtmd)
+else()
+  target_compile_definitions(${ODLLM_LIBRARY_NAME} PRIVATE OD_IK_NO_MTMD)
+endif()
+if(ODLLM_IK_LLAMA)
+  # bridge.cpp includes native/src/ik_compat.inc under this define only.
+  target_compile_definitions(${ODLLM_LIBRARY_NAME} PRIVATE OD_IK_LLAMA)
+endif()
 if(WIN32)
   # GetProcessMemoryInfo (peak and current working set).
   target_link_libraries(${ODLLM_LIBRARY_NAME} PRIVATE psapi)

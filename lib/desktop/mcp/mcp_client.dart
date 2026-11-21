@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ffi';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
+import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as p;
 
 import '../../core/platform/child_process_job.dart';
@@ -50,6 +53,57 @@ String _decodeLine(Uint8List bytes) {
   }
 }
 
+String executableApproval(String configDigest, String path, Digest digest) {
+  final identity = sha256.convert(
+    utf8.encode(jsonEncode([configDigest, path, '$digest'])),
+  );
+  return 'v2:$identity';
+}
+
+class _WindowsExecutableLease {
+  static final _kernel = DynamicLibrary.open('kernel32.dll');
+  static final _createFile = _kernel
+      .lookupFunction<
+        IntPtr Function(
+          Pointer<Utf16>,
+          Uint32,
+          Uint32,
+          Pointer<Void>,
+          Uint32,
+          Uint32,
+          IntPtr,
+        ),
+        int Function(Pointer<Utf16>, int, int, Pointer<Void>, int, int, int)
+      >('CreateFileW');
+  static final _close = _kernel
+      .lookupFunction<Int32 Function(IntPtr), int Function(int)>('CloseHandle');
+
+  static int acquire(String path) {
+    const genericRead = 0x80000000;
+    const shareRead = 0x1;
+    const openExisting = 3;
+    const normalFile = 0x80;
+    final name = path.toNativeUtf16(allocator: calloc);
+    try {
+      final handle = _createFile(
+        name,
+        genericRead,
+        shareRead,
+        nullptr,
+        openExisting,
+        normalFile,
+        0,
+      );
+      if (handle == -1) {
+        throw const McpException(McpProblem.denied);
+      }
+      return handle;
+    } finally {
+      calloc.free(name);
+    }
+  }
+}
+
 class StdioMcpTransport implements McpTransport {
   final Process _process;
   final _messages = StreamController<Map<String, dynamic>>();
@@ -84,6 +138,7 @@ class StdioMcpTransport implements McpTransport {
     void Function(String)? log,
     bool approved = false,
     Directory? workingDirectory,
+    bool Function(String path, Digest digest)? verifyLaunch,
   }) async {
     if (!approved || workingDirectory == null) {
       throw const McpException(McpProblem.denied);
@@ -104,16 +159,39 @@ class StdioMcpTransport implements McpTransport {
     if (Platform.isWindows) {
       validateWindowsBatchArgs(resolvedCommand, config.args);
     }
-    final process = await Process.start(
-      resolvedCommand,
-      config.args,
-      workingDirectory: workingDirectory.absolute.path,
-      includeParentEnvironment: false,
-      environment: launchEnvironment(
-        config.env,
-        workingDirectory.absolute.path,
-      ),
-    );
+    final launchPath = verifyLaunch == null
+        ? resolvedCommand
+        : await File(resolvedCommand).resolveSymbolicLinks();
+    // Windows app deployments hold this file open for read sharing only
+    // through Process.start, including while the approved bytes are hashed.
+    // On POSIX dart:io offers no exec-by-descriptor: the path is re-opened by
+    // the kernel, so a writer with access to the install directory could still
+    // replace the executable between the check and the start. That residue is
+    // inherent to launching by path; the digest still pins the reviewed build.
+    final lease = verifyLaunch != null && Platform.isWindows
+        ? _WindowsExecutableLease.acquire(launchPath)
+        : null;
+    final Process process;
+    try {
+      if (verifyLaunch != null) {
+        final digest = await sha256.bind(File(launchPath).openRead()).first;
+        if (!verifyLaunch(launchPath, digest)) {
+          throw const McpException(McpProblem.denied);
+        }
+      }
+      process = await Process.start(
+        launchPath,
+        config.args,
+        workingDirectory: workingDirectory.absolute.path,
+        includeParentEnvironment: false,
+        environment: launchEnvironment(
+          config.env,
+          workingDirectory.absolute.path,
+        ),
+      );
+    } finally {
+      if (lease != null) _WindowsExecutableLease._close(lease);
+    }
     ChildProcessJob.adopt(process);
     // Stderr is not logged by default (S11). Pass a logger only when
     // developer/debug logging is explicitly enabled.

@@ -12,6 +12,7 @@ import 'package:ondevice_llm/features/models/presentation/widgets/model_picker_s
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:ondevice_llm/features/settings/presentation/providers/settings_provider.dart';
 import 'package:ondevice_llm/inference/remote/remote_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'chat_test.dart' show TestModels, TestSettings, TestEngine;
 
 class Onboarded extends OnboardingNotifier {
@@ -22,6 +23,10 @@ class Onboarded extends OnboardingNotifier {
 }
 
 void main() {
+  // Leaving onboarding publishes "done" only after the flag is written (audit
+  // 08d-1), so Skip needs a preference store to land in chat.
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   Future<void> pumpApp(
     WidgetTester tester, {
     required bool onboarded,

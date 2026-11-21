@@ -35,6 +35,7 @@ class _Engine extends LlamaEngine {
     required String modelPath,
     required InferenceSettings settings,
     String? mmprojPath,
+    String engineId = 'llama.cpp',
     List<({String path, double scale})> adapters = const [],
     String? draftModelPath,
     bool memoryGuard = true,

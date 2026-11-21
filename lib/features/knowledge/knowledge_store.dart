@@ -614,8 +614,15 @@ class KnowledgeStore {
     } catch (_) {
       return lexical;
     }
-    // Move the O(N×D) vector scan off the UI isolate (audit A13).
-    final semantic = await _scanVectors(indexed, q, limit);
+    // Move the O(N×D) vector scan off the UI isolate (audit A13). A vector
+    // scan that blows up inside the isolate (a stale or shifted blob) must
+    // not escape search(): fall back to the lexical list.
+    List<(double, String)> semantic;
+    try {
+      semantic = await _scanVectors(indexed, q, limit);
+    } catch (_) {
+      return lexical;
+    }
     final byId = <String, KnowledgeChunk>{
       for (final (c, _) in lexical) c.id: c,
     };

@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import '../../inference/engine/text_engine.dart';
 import '../tools/domain/tool_spec.dart';
 import '../settings/domain/entities/inference_settings.dart';
@@ -147,6 +149,7 @@ class DeviceModelServer {
   String pairingSecret = PairingCode.secret();
   Timer? _pairTimer;
   bool _pairLocked = false;
+  bool _pairPersisting = false;
   String? _expiredCode, _expiredSecret;
   final void Function()? onPairingChanged;
 
@@ -154,7 +157,7 @@ class DeviceModelServer {
     _pairTimer?.cancel();
     if (pairCode == null || _server == null) return;
     _pairTimer = Timer(_pairing.expiresAt.difference(DateTime.now()), () {
-      _rotatePairing(expired: true);
+      if (!_pairPersisting) _rotatePairing(expired: true);
     });
   }
 
@@ -181,6 +184,28 @@ class DeviceModelServer {
   /// When [pairCode] stops being accepted.
   DateTime get pairExpiresAt => _pairing.expiresAt;
   bool get pairingLocked => _pairLocked;
+
+  /// Refuses typed pairing until the code expires. Guesses that never reached
+  /// the code count too, so a burst cannot leave the code redeemable.
+  void _lockPairing() {
+    if (_pairLocked) return;
+    _pairLocked = true;
+    onPairingUnavailable?.call(true);
+  }
+
+  /// A guess the reader lane refused still spends one of the five tries:
+  /// otherwise a burst of parallel guesses is only partly counted, the budget
+  /// never runs out, and the right code is still accepted afterwards.
+  void _chargeRefusedGuess(HttpRequest request) {
+    if (_pairLocked || _pairPersisting || pairCode == null) return;
+    if (_pairing.expired) return;
+    if (request.method != 'POST') return;
+    if (request.headers.value('X-Pairing-Mode') == 'qr') return;
+    final session = _pairing;
+    final reserved = session.reserve();
+    if (!reserved || session.locked) _lockPairing();
+  }
+
   final void Function(bool locked)? onPairingUnavailable;
   final bool Function()? isAvailable;
 
@@ -201,16 +226,24 @@ class DeviceModelServer {
   HostingTls? _tls;
   int? get tlsPort => _tlsServer?.port;
   final Set<Directory> _imageDirectories = {};
+  final _detachedSockets = <Socket>{};
   bool _busy = false;
   RequestQueue _queue = RequestQueue();
   final Duration bodyTimeout, generationTimeout;
   final Map<String, List<DateTime>> _clientRequests = {};
+  final Map<String, List<DateTime>> _clientFailures = {};
   final Map<String, int> _clientConnections = {};
   int _connections = 0;
   final _pairAdmission = _Admission(maxGlobal: 8, maxClient: 4, rate: 20);
+  final _preAuthAdmission = _Admission(maxGlobal: 8, maxClient: 4);
   final _controlAdmission = _Admission(maxGlobal: 8, maxClient: 4, rate: 60);
   static const maxClientConnections = 8;
   static const maxConnections = 16;
+  static const maxClientFailures = 10;
+  static const _maxFailureClients = 1024;
+
+  /// Longest one streaming write may wait for a peer that stopped reading.
+  static Duration writeTimeout = const Duration(seconds: 30);
 
   DeviceModelServer({
     required this._engine,
@@ -310,6 +343,9 @@ class DeviceModelServer {
   Future<void> _serve(HttpServer server) async {
     try {
       await for (final request in server) {
+        if (!identical(server, _server) && !identical(server, _tlsServer)) {
+          break;
+        }
         unawaited(_handle(request));
       }
     } catch (_) {
@@ -323,17 +359,28 @@ class DeviceModelServer {
   }
 
   Future<void> stop() async {
+    workspace?.closeAdmission();
     _pairTimer?.cancel();
-    final server = _server;
+    final server = _server, tls = _tlsServer;
     _server = null;
-    _queue.close();
-    await workspace?.dispose();
-    await server?.close(force: true);
-    await _tlsServer?.close(force: true);
     _tlsServer = null;
     _tls = null;
+    _queue.close();
+    // Close both listeners first: a workspace job that ignores cancellation
+    // must not keep the server answering after hosting reports stopped
+    // (audit 06a1-9).
+    final closing = [
+      if (server != null) server.close(force: true),
+      if (tls != null) tls.close(force: true),
+    ];
+    for (final socket in _detachedSockets) {
+      socket.destroy();
+    }
+    _detachedSockets.clear();
     if (_busy) engine.cancel();
     router?.cancelAll();
+    await Future.wait(closing);
+    await workspace?.dispose();
     vectors?.dispose();
     for (final directory in _imageDirectories.toList()) {
       await _removeImageDirectory(directory);
@@ -415,6 +462,25 @@ class DeviceModelServer {
     recent.add(now);
     return true;
   }
+
+  /// Charges one failed authentication to [key]; true means its own failure
+  /// budget is spent. The authenticated budget [_allowRequest] is never
+  /// charged for these, so a peer guessing tokens cannot lock out a paired
+  /// client that shares its address (VPN, proxy).
+  bool _recordFailure(String key) {
+    final now = DateTime.now();
+    final failures = (_clientFailures.remove(key) ?? [])
+      ..removeWhere((t) => now.difference(t) >= const Duration(minutes: 1));
+    if (failures.length < maxClientFailures) failures.add(now);
+    _clientFailures[key] = failures;
+    if (_clientFailures.length > _maxFailureClients) {
+      _clientFailures.remove(_clientFailures.keys.first);
+    }
+    return failures.length >= maxClientFailures;
+  }
+
+  @visibleForTesting
+  int debugAuthFailureCount(String key) => _clientFailures[key]?.length ?? 0;
 
   static String _prompt(Object? value) {
     if (value is String) return value;
@@ -1007,6 +1073,20 @@ class DeviceModelServer {
     final response = request.response;
     IOSink output = response;
     Socket? socket;
+    Future<Socket> detach() async {
+      final detached = await response.detachSocket(writeHeaders: false);
+      if (_server == null || !identical(queue, _queue)) {
+        detached.destroy();
+        throw const SocketException('The server stopped.');
+      }
+      _detachedSockets.add(detached);
+      return detached;
+    }
+
+    void releaseSocket(Socket detached) {
+      _detachedSockets.remove(detached);
+    }
+
     final abandoned = Completer<void>();
     var headersSent = false;
     void writeHeaders(int code, String type) {
@@ -1035,6 +1115,7 @@ class DeviceModelServer {
     _Admission? reservedLane;
     String? laneKey;
     var streaming = false, wantsStream = false, completion = false;
+    var workspaceHandled = false;
     // Whether this request holds an engine (released in the outer finally).
     var claimed = false;
     TextEngine? active;
@@ -1061,7 +1142,7 @@ class DeviceModelServer {
 
     var status = HttpStatus.ok;
     String? error;
-    Map<String, Object>? pairingRefusal;
+    Map<String, Object>? refusal;
     var usage = const _Usage();
     void refuse(int code, String message) {
       status = code;
@@ -1078,12 +1159,12 @@ class DeviceModelServer {
           'code': null,
         },
       };
-      if (socket == null && request.uri.path == pairPath) {
-        // HttpResponse otherwise drains unread input before sending headers.
-        // Detach below so a slow rejected peer receives the refusal immediately.
-        pairingRefusal = body;
-      } else if (socket == null) {
-        _json(response, code, body);
+      if (socket == null) {
+        // HttpResponse drains unread input before sending headers, so a peer
+        // that stalled its body would pin this admission slot. Detach in the
+        // finally block and write the refusal under a deadline instead
+        // (audit 06a1-2).
+        refusal = body;
       } else {
         writeHeaders(code, 'application/json; charset=utf-8');
         output.write(jsonEncode(body));
@@ -1122,6 +1203,9 @@ class DeviceModelServer {
         final key = clientLimitKey(remote);
         if (!_pairAdmission.acquire(key)) {
           response.persistentConnection = false;
+          // The reader lane bounds bodies, not tries: this guess still spends
+          // one of the five so twenty at once cannot outlast the budget.
+          _chargeRefusedGuess(request);
           refuse(HttpStatus.tooManyRequests, 'Pairing request limit reached.');
           return;
         }
@@ -1133,17 +1217,55 @@ class DeviceModelServer {
       String? authenticate(String token) {
         final device = pairedDevices.principal(token);
         if (device != null) return device;
-        if (pairedDevices.legacyEnabled && _sameToken(token, accessToken)) {
+        if (pairedDevices.legacyEnabled &&
+            token.length == accessToken.length &&
+            _sameToken(token, accessToken)) {
           return 'legacy';
         }
         if (remote.isLoopback == true &&
             localAccessToken != null &&
+            token.length == localAccessToken!.length &&
             _sameToken(token, localAccessToken!)) {
           return 'local';
         }
         return null;
       }
 
+      // The workspace control lane keeps its own budget so an approval or a
+      // cancel still works while every model slot is taken.
+      final limitKey = clientLimitKey(remote);
+      final control =
+          workspace != null &&
+          request.method == 'POST' &&
+          RegExp(
+            r'^/v1/workspace/jobs/[^/]+/(approval|cancel)$',
+          ).hasMatch(request.uri.path);
+      if (control) {
+        if (!_preAuthAdmission.acquire(limitKey)) {
+          refuse(
+            HttpStatus.tooManyRequests,
+            'Workspace authentication limit reached.',
+          );
+          return;
+        }
+        reservedLane = _preAuthAdmission;
+        laneKey = limitKey;
+      } else {
+        // Reserve before any body is read or workspace handler is entered.
+        // Model selection is inside JSON, so this bounds readers and parsed
+        // requests waiting on every model queue, without a slow body owning it.
+        if (_connections >= maxConnections ||
+            (_clientConnections[limitKey] ?? 0) >= maxClientConnections) {
+          refuse(
+            HttpStatus.tooManyRequests,
+            'Server connection limit reached.',
+          );
+          return;
+        }
+        _connections++;
+        _clientConnections[limitKey] = (_clientConnections[limitKey] ?? 0) + 1;
+        connectionKey = limitKey;
+      }
       final auth = request.headers.value(HttpHeaders.authorizationHeader);
       final bearer = auth != null && auth.startsWith('Bearer ')
           ? authenticate(auth.substring(7))
@@ -1155,6 +1277,16 @@ class DeviceModelServer {
               ? authenticate(apiKey)
               : null);
       if (principal == null) {
+        // Guessing tokens spends this address's own failure budget; the
+        // authenticated budget below is never charged for it, so a paired
+        // client behind the same address keeps working (audit 06a1-2).
+        if (_recordFailure(limitKey)) {
+          refuse(
+            HttpStatus.tooManyRequests,
+            'Too many failed attempts. Retry in a minute.',
+          );
+          return;
+        }
         refuse(HttpStatus.unauthorized, 'A valid access token is required.');
         return;
       }
@@ -1166,16 +1298,11 @@ class DeviceModelServer {
         );
         return;
       }
-      final limitKey = clientLimitKey(remote);
-      final control =
-          workspace != null &&
-          request.method == 'POST' &&
-          RegExp(
-            r'^/v1/workspace/jobs/[^/]+/(approval|cancel)$',
-          ).hasMatch(request.uri.path);
       if (control) {
+        _preAuthAdmission.release(limitKey);
+        reservedLane = null;
+        laneKey = null;
         if (!_controlAdmission.acquire(limitKey)) {
-          response.persistentConnection = false;
           refuse(
             HttpStatus.tooManyRequests,
             'Workspace control limit reached.',
@@ -1184,32 +1311,35 @@ class DeviceModelServer {
         }
         reservedLane = _controlAdmission;
         laneKey = limitKey;
-        await workspace!.handle(request, principal: principal);
+        workspaceHandled = true;
+        final code = await workspace!.handle(
+          request,
+          principal: principal,
+          detach: detach,
+          releaseSocket: releaseSocket,
+        );
+        // The API writes its own reply, so the serving log needs its code.
+        if (code != null) status = code;
         return;
       }
+      // Charged after authentication only, so failures cannot exhaust it.
       if (!_allowRequest(limitKey)) {
-        response.persistentConnection = false;
         refuse(
           HttpStatus.tooManyRequests,
           'Client request limit reached. Retry in a minute.',
         );
         return;
       }
-      // Reserve before any body is read or workspace handler is entered.
-      // Model selection is inside JSON, so this bounds readers and parsed
-      // requests waiting on every model queue, without a slow body owning it.
-      if (_connections >= maxConnections ||
-          (_clientConnections[limitKey] ?? 0) >= maxClientConnections) {
-        response.persistentConnection = false;
-        refuse(HttpStatus.tooManyRequests, 'Server connection limit reached.');
-        return;
-      }
-      _connections++;
-      _clientConnections[limitKey] = (_clientConnections[limitKey] ?? 0) + 1;
-      connectionKey = limitKey;
       if (workspace != null &&
           request.uri.path.startsWith('${WorkspaceApi.root}/')) {
-        await workspace!.handle(request, principal: principal);
+        workspaceHandled = true;
+        final code = await workspace!.handle(
+          request,
+          principal: principal,
+          detach: detach,
+          releaseSocket: releaseSocket,
+        );
+        if (code != null) status = code;
         return;
       }
       if (request.method == 'GET' && request.uri.path == modelsPath) {
@@ -1284,7 +1414,7 @@ class DeviceModelServer {
       // abandon work. Headers wait until the status is known.
       response.headers.chunkedTransferEncoding = false;
       response.persistentConnection = false;
-      final detached = await response.detachSocket(writeHeaders: false);
+      final detached = await detach();
       socket = detached;
       output = detached;
       detached.listen(
@@ -1472,7 +1602,7 @@ class DeviceModelServer {
                   'data: ${jsonEncode(chunk({'content': piece}))}\n\n',
                 );
               }
-              await output.flush();
+              await flushWithin(output, socket, writeTimeout);
             } else {
               result.write(piece);
             }
@@ -1664,15 +1794,13 @@ class DeviceModelServer {
         error = 'Stream interrupted.';
       }
     } finally {
-      if (pairingRefusal != null) {
+      if (refusal != null) {
         try {
-          socket = await response.detachSocket(writeHeaders: false);
-          output = socket;
-          writeHeaders(status, 'application/json; charset=utf-8');
-          output.write(jsonEncode(pairingRefusal));
-          await output.flush();
+          socket = await detach();
+          await writeDetachedJson(socket, request.method, status, refusal);
         } catch (_) {
-          // A disconnected pairing peer has nothing left to receive.
+          // A disconnected or stalled peer has nothing left to receive;
+          // [flushWithin] already destroyed the socket on timeout.
         }
       }
       if (streaming && error != null) {
@@ -1686,9 +1814,9 @@ class DeviceModelServer {
           } else {
             output.write('data: ${jsonEncode(failure)}\n\ndata: [DONE]\n\n');
           }
-          await output.flush();
+          await flushWithin(output, socket, writeTimeout);
         } catch (_) {
-          /* Peer already disconnected. */
+          /* Peer already disconnected or stalled; the socket is destroyed. */
         }
       }
       release();
@@ -1701,12 +1829,13 @@ class DeviceModelServer {
         }
       }
       if (imageDirectory != null) await _removeImageDirectory(imageDirectory);
-      try {
-        await output.close();
-      } catch (e, st) {
-        quietFailure('device_model_server:1704', e, st);
+      final detached = socket;
+      if (detached != null) {
+        await closeDetached(detached);
+        releaseSocket(detached);
+      } else if (refusal == null && !workspaceHandled) {
+        await closeAttached(response);
       }
-      socket?.destroy();
       if (laneKey != null) reservedLane!.release(laneKey);
       if (connectionKey != null) {
         _connections--;
@@ -1876,10 +2005,65 @@ class DeviceModelServer {
     }
   }
 
+  /// A streaming write waits at most [limit] for [output]: a peer that stops
+  /// reading (a zero receive window) would otherwise never let the handler's
+  /// `finally` run, keeping the model claimed and its queue slot taken for the
+  /// rest of the session (audit 06a1-1). On timeout the socket is destroyed so
+  /// the handler unwinds and releases everything.
+  static Future<void> flushWithin(
+    IOSink output,
+    Socket? socket,
+    Duration limit,
+  ) async {
+    try {
+      await output.flush().timeout(limit);
+    } on TimeoutException {
+      socket?.destroy();
+      throw TimeoutException('The client stopped reading the response.');
+    }
+  }
+
+  static Future<void> closeDetached(Socket socket) async {
+    try {
+      await socket.close().timeout(writeTimeout);
+    } catch (_) {
+      // The peer closed or the write deadline expired.
+    } finally {
+      socket.destroy();
+    }
+  }
+
+  /// Sends a JSON reply without waiting for any unread request bytes.
+  static Future<void> writeDetachedJson(
+    Socket socket,
+    String method,
+    int status,
+    Object? payload,
+  ) async {
+    final body = utf8.encode(jsonEncode(payload));
+    socket.write(
+      'HTTP/1.1 $status Response\r\nContent-Type: application/json; charset=utf-8\r\n'
+      'Content-Length: ${body.length}\r\nConnection: close\r\n'
+      'Cache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\n\r\n',
+    );
+    if (method != 'HEAD') socket.add(body);
+    await flushWithin(socket, socket, writeTimeout);
+  }
+
+  static Future<void> closeAttached(HttpResponse response) async {
+    try {
+      response.deadline = writeTimeout;
+      await response.close().timeout(writeTimeout);
+    } catch (_) {
+      // The response deadline destroys the connection if it cannot close.
+    }
+  }
+
   static Future<String> readBody(
     Stream<List<int>> request,
     Duration timeout, {
     int maxBytes = 24 * 1024 * 1024,
+    Future<void>? cancelled,
   }) async {
     final limitMessage = maxBytes == 24 * 1024 * 1024
         ? 'Request is larger than 24 MB.'
@@ -1890,13 +2074,18 @@ class DeviceModelServer {
     final bytes = BytesBuilder(copy: false);
     final iterator = StreamIterator(request);
     final clock = Stopwatch()..start();
+    final stopped = cancelled?.then<bool>((_) => false);
     try {
       while (true) {
         final left = timeout - clock.elapsed;
         if (left <= Duration.zero) {
           throw TimeoutException('Request body deadline reached.');
         }
-        if (!await iterator.moveNext().timeout(left)) break;
+        final next = iterator.moveNext();
+        if (!await (stopped == null ? next : Future.any([next, stopped]))
+            .timeout(left)) {
+          break;
+        }
         if (iterator.current.length > maxBytes - bytes.length) {
           throw FormatException(limitMessage);
         }
@@ -1917,9 +2106,10 @@ class DeviceModelServer {
       refuse(HttpStatus.notFound, 'Endpoint not found.');
       return;
     }
-    if (_pairing.expired) _rotatePairing(expired: true);
+    if (!_pairPersisting && _pairing.expired) _rotatePairing(expired: true);
     // QR clients explicitly opt into the bounded QR lane during typed lockout.
-    if (_pairLocked && request.headers.value('X-Pairing-Mode') != 'qr') {
+    final qrMode = request.headers.value('X-Pairing-Mode') == 'qr';
+    if (_pairLocked && !qrMode) {
       response.persistentConnection = false;
       refuse(
         HttpStatus.tooManyRequests,
@@ -1927,27 +2117,67 @@ class DeviceModelServer {
       );
       return;
     }
+    // A typed guess spends one of the five tries before its body arrives, so
+    // guesses sent at once cannot all pass the check above, and this request
+    // keeps its try even if the code locks while its body is still reading.
+    PairingSession? held;
+    if (!qrMode) {
+      final session = _pairing;
+      if (!session.reserve()) {
+        _lockPairing();
+        refuse(
+          HttpStatus.tooManyRequests,
+          'Too many wrong pairing codes. Wait for the code to expire.',
+        );
+        return;
+      }
+      held = session;
+    }
     final body = jsonDecode(
       await readBody(request, bodyTimeout, maxBytes: 4096),
     );
     // Snapshot only after the asynchronous read: expiry may rotate meanwhile.
-    if (_pairing.expired) _rotatePairing(expired: true);
+    if (!_pairPersisting && _pairing.expired) _rotatePairing(expired: true);
+    if (_pairPersisting) {
+      held?.unreserve();
+      refuse(HttpStatus.conflict, 'A pairing request is already being saved.');
+      return;
+    }
+    if (held != null && !identical(held, _pairing)) {
+      // The window rotated while this request read its body: the try belongs
+      // to the new one, which starts with an empty budget of its own.
+      final session = _pairing;
+      if (!session.reserve()) {
+        _lockPairing();
+        refuse(
+          HttpStatus.tooManyRequests,
+          'Too many wrong pairing codes. Wait for the code to expire.',
+        );
+        return;
+      }
+      held = session;
+    }
     final session = _pairing;
     final code = pairCode!;
     final qr = body is Map && body.containsKey('secret');
     final given = body is Map ? PairingCode.normalize('${body['code']}') : '';
+    if (qr && held != null) {
+      // A QR redemption is judged by its secret, not typed in: no try.
+      held.unreserve();
+      held = null;
+    }
     if (body is Map &&
         ((qr && body['secret'] == _expiredSecret) ||
             (!qr && given == _expiredCode))) {
+      held?.unreserve();
       refuse(
         HttpStatus.gone,
         'Pairing expired. Scan the new QR or enter the new code.',
       );
       return;
     }
-    if (!qr && (_pairLocked || !session.reserve())) {
-      _pairLocked = true;
-      onPairingUnavailable?.call(true);
+    if (!qr && held == null && (_pairLocked || !session.reserve())) {
+      _lockPairing();
       refuse(
         HttpStatus.tooManyRequests,
         'Too many wrong pairing codes. Wait for the code to expire.',
@@ -1960,24 +2190,32 @@ class DeviceModelServer {
               _sameToken(body['secret'] as String, pairingSecret)
         : _sameToken(given, code);
     if (!valid) {
-      if (!qr && session.locked) {
-        _pairLocked = true;
-        onPairingUnavailable?.call(true);
-      }
+      if (!qr && session.locked) _lockPairing();
       refuse(HttpStatus.unauthorized, 'Wrong pairing code or secret.');
       return;
     }
     if (!identical(session, _pairing) || !session.accept(reserved: !qr)) {
+      held?.unreserve();
       refuse(
         HttpStatus.gone,
         'Pairing expired or already used. Scan the new QR.',
       );
       return;
     }
-    _rotatePairing();
-    final token = await pairedDevices.issue(
-      request.connectionInfo?.remoteAddress.address ?? hostId,
-    );
+    _pairPersisting = true;
+    late final String token;
+    try {
+      token = await pairedDevices.issue(
+        request.connectionInfo?.remoteAddress.address ?? hostId,
+      );
+    } catch (_) {
+      session.release();
+      if (session.expired && _server != null) _rotatePairing(expired: true);
+      rethrow;
+    } finally {
+      _pairPersisting = false;
+    }
+    _rotatePairing(expired: session.expired);
     onDevicesChanged?.call();
     _json(response, HttpStatus.ok, {
       'key': token,
@@ -2038,27 +2276,27 @@ class _Usage {
 /// Independent bounded budgets keep public pairing and authenticated controls
 /// usable without allowing either lane to create unlimited body readers.
 class _Admission {
-  final int maxGlobal, maxClient, rate;
+  final int maxGlobal, maxClient;
+  final int? rate;
   final Map<String, List<DateTime>> _requests = {};
   final Map<String, int> _clients = {};
   int _active = 0;
-  _Admission({
-    required this.maxGlobal,
-    required this.maxClient,
-    required this.rate,
-  });
+  _Admission({required this.maxGlobal, required this.maxClient, this.rate});
 
   bool acquire(String key) {
-    final now = DateTime.now();
-    const window = Duration(minutes: 1);
-    _requests.removeWhere(
-      (_, times) => times.every((t) => now.difference(t) >= window),
-    );
-    final times = _requests.putIfAbsent(key, () => []);
-    times.removeWhere((t) => now.difference(t) >= window);
-    if (times.length >= rate) return false;
-    times.add(now);
     if (_active >= maxGlobal || (_clients[key] ?? 0) >= maxClient) return false;
+    final limit = rate;
+    if (limit != null) {
+      final now = DateTime.now();
+      const window = Duration(minutes: 1);
+      _requests.removeWhere(
+        (_, times) => times.every((t) => now.difference(t) >= window),
+      );
+      final times = _requests.putIfAbsent(key, () => []);
+      times.removeWhere((t) => now.difference(t) >= window);
+      if (times.length >= limit) return false;
+      times.add(now);
+    }
     _active++;
     _clients[key] = (_clients[key] ?? 0) + 1;
     return true;

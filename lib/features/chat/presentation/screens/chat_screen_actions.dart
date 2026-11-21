@@ -651,7 +651,7 @@ extension _ChatScreenActions on _ChatScreenState {
         }
         final TextEngine engine = settings.usesRemote
             ? ref.read(remoteEngineProvider)
-            : ref.read(llamaEngineProvider);
+            : ref.read(activeLocalEngineProvider);
         final fallback = model?.family.fallbackTemplate ?? '';
         // A temporary or unsaved chat keeps its drafts in memory (P1-21).
         final draftStore = DocumentDraftStore(
@@ -700,6 +700,9 @@ extension _ChatScreenActions on _ChatScreenState {
         await draftStore.save(documentKey, template.name, draft);
         if (!mounted) return;
         final editor = TextEditingController(text: draft);
+        // The route's exit transition keeps the dialog's field attached to
+        // this controller: wait exactly that long (zero with motion off).
+        final exit = context.motion.fade(AppMotion.fadeIn);
         Timer? autosave;
         String? saveError;
         void saveRevision() {
@@ -790,9 +793,12 @@ extension _ChatScreenActions on _ChatScreenState {
         autosave?.cancel();
         editor.removeListener(saveRevision);
         await draftStore.save(documentKey, template.name, editor.text);
+        await Future<void>.delayed(exit);
         editor.dispose();
-        if (saveError != null) throw StateError(saveError!);
+        // A cancelled dialog exports nothing, so a failed autosave of the
+        // abandoned draft must not surface as "Export failed".
         if (edited == null || !mounted) return;
+        if (saveError != null) throw StateError(saveError!);
         document = ChatDocument(
           title: document.title,
           chatId: chat.chatId,
@@ -867,17 +873,18 @@ extension _ChatScreenActions on _ChatScreenState {
         ],
       ),
     );
-    if (choice != null && mounted) _onMenu(choice);
+    if (choice != null && mounted) await _onMenu(choice);
   }
 
-  void _onMenu(String action) {
+  Future<void> _onMenu(String action) async {
     switch (action) {
       case 'export':
         unawaited(_exportSheet());
       case 'context-summary':
         unawaited(_contextSummary());
       case 'temporary':
-        ref.read(chatProvider.notifier).newChat(temporary: true);
+        await ref.read(chatProvider.notifier).newChat(temporary: true);
+        if (!mounted) return;
         unawaited(_switchDraft(null));
         showIslandToast(context, context.l10n.temporaryChatHint);
       case 'workspace':

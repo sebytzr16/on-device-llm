@@ -16,6 +16,7 @@ import 'features/chat/presentation/screens/chat_screen.dart';
 import 'features/models/presentation/screens/models_screen.dart';
 import 'features/onboarding/presentation/screens/onboarding_screen.dart';
 import 'features/settings/presentation/screens/settings_screen.dart';
+import 'features/settings/presentation/widgets/settings_widgets.dart';
 import 'features/voice/voice_models_provider.dart';
 
 /// Named routes. Chat is the home screen; the rest are pushed on top of it.
@@ -88,6 +89,7 @@ class OnDeviceLlmApp extends ConsumerWidget {
       AppTheme.overlayFor(AppTheme.palette(accent, dark: dark)),
     );
     return MaterialApp(
+      navigatorKey: webResearchNavigatorKey,
       title: 'OnDevice LLM',
       debugShowCheckedModeBanner: false,
       localizationsDelegates: AppLocalizations.localizationsDelegates,

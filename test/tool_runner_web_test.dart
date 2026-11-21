@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +17,7 @@ import 'package:ondevice_llm/features/chat/domain/research_recipes.dart';
 import 'package:ondevice_llm/features/tools/domain/tool_spec.dart';
 import 'package:ondevice_llm/features/tools/phone_actions.dart';
 import 'package:ondevice_llm/features/tools/tool_runner.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _Search extends DuckDuckGoScraper {
   final queries = <String>[];
@@ -99,6 +104,25 @@ class _Reader extends WebPageReader {
       finalUri: uri,
       fetchedAt: DateTime.utc(2026, 9, 19),
       publishedAt: DateTime.utc(2025, 1, 2),
+    );
+  }
+}
+
+/// Answers only after the tool's own deadline has passed.
+class _LateReader extends WebPageReader {
+  @override
+  Future<WebPage> read(
+    Uri uri, {
+    CancelToken? cancelToken,
+    Duration timeout = const Duration(seconds: 12),
+    String language = 'en-US,en;q=0.9',
+  }) async {
+    await Future<void>.delayed(const Duration(seconds: 40));
+    return WebPage(
+      title: 'Late page',
+      text: 'LATE_PAGE_TEXT',
+      finalUri: uri,
+      fetchedAt: DateTime.utc(2026, 9, 19),
     );
   }
 }
@@ -365,6 +389,32 @@ void main() {
     );
   });
 
+  testWidgets('a page that arrives after the timeout is not stored', (
+    tester,
+  ) async {
+    // Audit 05b-1: the timeout only abandons the future; the late page used
+    // to replace the source text the model and the citations had already.
+    const url = 'https://slow.example/page';
+    final runner = ToolRunner(
+      scraper: _Search(),
+      reader: _LateReader(),
+      settings: const InferenceSettings(
+        webMode: WebMode.auto,
+        toolsEnabled: true,
+      ),
+      userText: 'Read $url',
+    );
+    final pending = runner.run(_call('read_url', {'url': url}));
+    await tester.pump(ToolRunner.callTimeout + const Duration(seconds: 1));
+    final result = await pending;
+    expect(result.ok, isFalse);
+    expect(result.output, contains('took too long'));
+    expect(runner.sources, isEmpty);
+    // The abandoned request finishes later: it must not add its page then.
+    await tester.pump(const Duration(seconds: 30));
+    expect(runner.sources, isEmpty);
+  });
+
   test('web-only and actions-only turns never run an external tool', () async {
     for (final mode in ['web', 'actions']) {
       var ran = 0;
@@ -569,6 +619,58 @@ void main() {
     expect(names, contains('search_web'));
     expect(names.difference(ToolRunner.webTools), isEmpty);
   });
+
+  test(
+    'a revoked share stops a running job at its next document search',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final dir = await Directory.systemTemp.createTemp('odl_share_');
+      addTearDown(() => dir.delete(recursive: true));
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final store = KnowledgeStore(db, null, () async => dir);
+      await store.import(
+        collection: 'Manuals',
+        name: 'boiler.txt',
+        bytes: Uint8List.fromList(
+          utf8.encode(
+            'Boiler manual.\n'
+            '${'To reset the boiler after a lockout, hold the reset button for five seconds. ' * 20}',
+          ),
+        ),
+      );
+      var share = true;
+      final runner = ToolRunner(
+        scraper: _Search(),
+        reader: _Reader('Page'),
+        knowledge: store,
+        knowledgeAccess: () => share,
+        settings: const InferenceSettings(
+          toolsEnabled: true,
+          knowledgeCollection: 'Manuals',
+          toolDocuments: true,
+          remoteDocuments: true,
+        ),
+      );
+      const query = {'query': 'reset the boiler after a lockout'};
+      final before = await runner.run(_call('search_documents', query));
+      expect(before.output, contains('hold the reset button'));
+      // The host owner turns sharing off while the job is still running.
+      share = false;
+      expect(runner.documentsAllowed, isFalse);
+      expect(
+        runner.specs().map((s) => s.name),
+        isNot(contains('search_documents')),
+      );
+      final after = await runner.run(_call('search_documents', query));
+      expect(after.output, isNot(contains('hold the reset button')));
+      expect(after.output, isNot(contains('Passages from')));
+      // Turning it back on restores the tool for the same runner.
+      share = true;
+      final again = await runner.run(_call('search_documents', query));
+      expect(again.output, contains('hold the reset button'));
+    },
+  );
 
   test('a remote model gets Knowledge only with document sharing (P1-03)', () {
     final db = AppDatabase.forTesting(NativeDatabase.memory());

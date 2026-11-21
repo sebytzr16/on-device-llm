@@ -67,6 +67,15 @@ class _Adapters extends AdaptersNotifier {
   }
 }
 
+class _PendingAdapters extends AdaptersNotifier {
+  @override
+  AdaptersState build() {
+    // A manifest read that never finishes, like a very slow disk.
+    ready = Completer<void>().future;
+    return const AdaptersState();
+  }
+}
+
 class _AdapterEstimates extends _Engine {
   final requests = <List<({String path, double scale})>>[];
 
@@ -301,6 +310,47 @@ void main() {
     adapters.select('large.gguf', 1);
     await tester.pumpAndSettle();
     expect(estimator.requests, hasLength(3)); // Reuse this exact adapter set.
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the first estimate never waits for the adapters manifest', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(1400, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final estimator = _DraftEstimates();
+    final container = ProviderContainer(
+      overrides: [
+        settingsProvider.overrideWith(TestSettings.new),
+        modelManagerProvider.overrideWith(TestModels.new),
+        adaptersProvider.overrideWith(_PendingAdapters.new),
+        llamaEngineProvider.overrideWithValue(estimator),
+        llamaEstimatorProvider.overrideWithValue(estimator),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: DesktopTheme.of(AccentChoice.amber, dark: true),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showDesktopLoadSettings(context, testModel),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    // The estimate is asked at once; only a load waits for the manifest.
+    expect(estimator.draftTokens, hasLength(1));
     expect(tester.takeException(), isNull);
   });
 

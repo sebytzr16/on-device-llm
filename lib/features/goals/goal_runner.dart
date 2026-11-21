@@ -8,6 +8,7 @@ import 'goal_rules.dart';
 import 'goal_specialization.dart';
 import 'goal_criterion.dart';
 import 'goal_clarification.dart';
+import 'goal_watch.dart';
 
 export 'goal_rules.dart';
 export 'goal_specialization.dart';
@@ -1330,28 +1331,9 @@ class GoalRunner {
     return out;
   }
 
-  static final _tracking = RegExp(
-    r'^(?:utm_\w+|fbclid|gclid|dclid|msclkid|mc_cid|mc_eid|igshid|ref|ref_src)$',
-    caseSensitive: false,
-  );
-
   /// The page a URL names, for finding repeats: without the scheme, "www.",
   /// fragment, trailing slash and tracking parameters.
-  static String pageKey(String url) {
-    final u = Uri.tryParse(url.trim());
-    if (u == null || u.host.isEmpty) return url.trim();
-    var path = u.path;
-    while (path.endsWith('/')) {
-      path = path.substring(0, path.length - 1);
-    }
-    final query = [
-      for (final p in u.query.split('&'))
-        if (p.isNotEmpty && !_tracking.hasMatch(p.split('=').first)) p,
-    ]..sort();
-    return '${u.host.toLowerCase().replaceFirst(RegExp(r'^www\.'), '')}'
-        '${u.hasPort ? ':${u.port}' : ''}$path'
-        '${query.isEmpty ? '' : '?${query.join('&')}'}';
-  }
+  static String pageKey(String url) => GoalWatches.pageKey(url);
 
   static bool _samePage(GoalSource a, GoalSource b) =>
       a.url.trim().isEmpty || b.url.trim().isEmpty

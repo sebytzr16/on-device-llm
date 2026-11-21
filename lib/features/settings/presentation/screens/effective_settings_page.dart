@@ -23,12 +23,21 @@ class EffectiveSettingsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final r = ref.watch(effectiveSettingsProvider);
     final c = context.colors;
-    final engine = ref.watch(chatProvider.select((s) => s.metrics));
-    final running = engine['effectiveSettings'] is Map
-        ? Map<String, dynamic>.from(engine['effectiveSettings'] as Map)
+    final metrics = ref.watch(chatProvider.select((s) => s.metrics));
+    final running = metrics['effectiveSettings'] is Map
+        ? Map<String, dynamic>.from(metrics['effectiveSettings'] as Map)
         : const <String, dynamic>{};
     final json = r.effective.toJson();
-    final overridden = r.overriddenKeys;
+    final engine = r.effective.usesRemote
+        ? null
+        : ref.watch(activeModelEngineProvider);
+    final specs = SettingSpec.all.where(
+      (s) =>
+          s.available &&
+          (engine == null ? !s.modelOnly : s.usedBy(engine.capabilities)),
+    );
+    final keys = specs.map((s) => s.key).toSet();
+    final overridden = r.overriddenKeys.where(keys.contains).toList();
     return Scaffold(
       appBar: AppBar(
         title: Text(context.l10n.uiEffectiveSettingsPageEffectiveSettings),
@@ -69,17 +78,20 @@ class EffectiveSettingsPage extends ConsumerWidget {
                   ),
               ],
             ),
-            for (final group in SettingSpec.groups) ...[
-              SettingsSection(
-                label: settingGroupLabel(group, context.l10n),
-                children: [
-                  for (final spec in SettingSpec.visible.where(
-                    (s) => s.group == group,
-                  ))
-                    _row(context, spec, json[spec.key], r, running, c),
-                ],
+            if (engine != null &&
+                engine.capabilities.visibleSettingKeys != null)
+              SettingsNote(
+                context.l10n.engineUnusedSettings(engine.displayName),
               ),
-            ],
+            for (final group in SettingSpec.groups)
+              if (specs.any((s) => s.group == group))
+                SettingsSection(
+                  label: settingGroupLabel(group, context.l10n),
+                  children: [
+                    for (final spec in specs.where((s) => s.group == group))
+                      _row(context, spec, json[spec.key], r, running, c),
+                  ],
+                ),
           ],
         ),
       ),

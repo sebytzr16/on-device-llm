@@ -115,7 +115,12 @@ class AdaptersNotifier extends Notifier<AdaptersState> {
   static const manifestName = 'adapters.json';
   late Future<void> ready;
   bool _alive = true;
+  bool _loadFailed = false;
   Future<void> _writes = Future.value();
+
+  /// Whether the stored manifest is unreadable, i.e. [resetUnreadable] is the
+  /// way out (review #5).
+  bool get loadFailed => _loadFailed;
 
   @override
   AdaptersState build() {
@@ -130,7 +135,10 @@ class AdaptersNotifier extends Notifier<AdaptersState> {
   Future<void> _load() async {
     try {
       final f = await _manifest();
-      if (!await f.exists()) return;
+      if (!await f.exists()) {
+        _loadFailed = false;
+        return;
+      }
       final j = jsonDecode(await f.readAsString());
       if (j is! Map || !_alive) return;
       final adapters = <LoraAdapter>[];
@@ -162,17 +170,56 @@ class AdaptersNotifier extends Notifier<AdaptersState> {
         }
       }
       if (_alive) {
+        _loadFailed = false;
         state = state.copyWith(adapters: adapters, attachments: attachments);
       }
     } on MissingPluginException {
       // Platform channel not available (e.g. in tests); treat as empty manifest.
       if (_alive) state = const AdaptersState();
     } catch (e) {
+      // The stored manifest is still on disk, unread: saving from the empty
+      // state would erase it, so saves stay blocked until a reload works
+      // (audit 08c-1).
+      _loadFailed = true;
       if (_alive) state = state.copyWith(error: 'Adapter list unreadable: $e');
     }
   }
 
+  /// Retries the manifest read after a failure; saves unblock once it works.
+  Future<void> reload() {
+    ready = _load();
+    return ready;
+  }
+
+  /// Moves an unreadable manifest aside (the first copy is kept, as
+  /// PrefsRescue does) and starts from an empty list, so a corrupt file is not
+  /// a permanent dead end for import, attach and delete (review #5).
+  Future<void> resetUnreadable() async {
+    // A manifest that reads fine is never moved aside by a stray tap.
+    if (!_loadFailed) return;
+    final f = await _manifest();
+    try {
+      if (await f.exists()) {
+        final aside = File('${f.path}.unreadable');
+        if (await aside.exists()) {
+          await f.delete();
+        } else {
+          await f.rename(aside.path);
+        }
+      }
+    } catch (e) {
+      _loadFailed = true;
+      if (_alive) state = state.copyWith(error: 'Could not reset: $e');
+      rethrow;
+    }
+    _loadFailed = false;
+    if (_alive) state = const AdaptersState();
+  }
+
   Future<void> _save() async {
+    if (_loadFailed) {
+      throw StateError('The adapter list could not be read; reset it first.');
+    }
     final encoded = jsonEncode({
       'v': 1,
       'adapters': [for (final a in state.adapters) a.toJson()],
@@ -197,6 +244,9 @@ class AdaptersNotifier extends Notifier<AdaptersState> {
   /// Copies a LoRA GGUF into the models directory after checking its header
   /// through the bridge. Returns the adapter, or throws with the reason.
   Future<LoraAdapter> importFile(String path) async {
+    // The manifest may still be loading: saving before it lands would encode
+    // the empty pre-load state (audit 08c-1).
+    await ready;
     if (state.importing) throw StateError('An import is already running.');
     if (ref.read(sessionBusyProvider)) {
       throw StateError('Stop the current response before importing.');
@@ -259,6 +309,7 @@ class AdaptersNotifier extends Notifier<AdaptersState> {
   }
 
   Future<void> remove(String adapterId) async {
+    await ready;
     final a = state.byId(adapterId);
     if (a == null) return;
     if (ref.read(sessionBusyProvider)) {
@@ -297,6 +348,9 @@ class AdaptersNotifier extends Notifier<AdaptersState> {
   /// Attaches (or re-scales) an adapter on a model. The next load applies
   /// it; the engine reloads on its own when the configuration changed.
   Future<void> attach(String modelId, String adapterId, double scale) async {
+    // A save before the manifest lands would drop every other adapter and
+    // attachment (audit 08c-1).
+    await ready;
     final current = state.of(modelId).where((a) => a.adapterId != adapterId);
     state = state.copyWith(
       attachments: {
@@ -304,10 +358,11 @@ class AdaptersNotifier extends Notifier<AdaptersState> {
         modelId: [...current, AdapterAttachment(adapterId, scale.clamp(-2, 2))],
       },
     );
-    await _save();
+    await _saveReported();
   }
 
   Future<void> detach(String modelId, String adapterId) async {
+    await ready;
     final rest = state.of(modelId).where((a) => a.adapterId != adapterId);
     final next = Map<String, List<AdapterAttachment>>.from(state.attachments);
     if (rest.isEmpty) {
@@ -316,15 +371,39 @@ class AdaptersNotifier extends Notifier<AdaptersState> {
       next[modelId] = rest.toList();
     }
     state = state.copyWith(attachments: next);
-    await _save();
+    await _saveReported();
   }
+
+  /// A save the user triggered must be visible when it fails: the reason goes
+  /// into `state.error` (shown by the adapters page) as well as the throw the
+  /// caller reports (review #5).
+  Future<void> _saveReported() async {
+    try {
+      await _save();
+    } catch (e) {
+      if (_alive) {
+        state = state.copyWith(error: e is StateError ? e.message : '$e');
+      }
+      rethrow;
+    }
+  }
+
+  /// The attachments already known, for an estimate that must stay immediate.
+  /// A load uses [resolved] and never misses one: this snapshot may be empty
+  /// only because the manifest read has not landed yet, and the dialog that
+  /// shows the estimate re-runs it when the state does change.
+  Future<List<({String path, double scale})>> resolvedNow(
+    String modelId,
+  ) async => state.of(modelId).isEmpty
+      ? const <({String path, double scale})>[]
+      : resolved(modelId);
 
   /// File paths and scales the engine needs for [modelId].
   Future<List<({String path, double scale})>> resolved(String modelId) async {
-    // If no attachments are configured for this model, avoid the manifest
-    // load (which needs path_provider) and return immediately.
-    if (state.of(modelId).isEmpty) return const [];
+    // The manifest load is what fills the attachments map: an empty map before
+    // it lands means "not loaded yet", not "nothing attached" (audit 08c-2).
     await ready;
+    if (state.of(modelId).isEmpty) return const [];
     final out = <({String path, double scale})>[];
     for (final att in state.of(modelId)) {
       final a = state.byId(att.adapterId);

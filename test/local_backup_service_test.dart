@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ondevice_llm/data/local/database/app_database.dart';
+import 'package:ondevice_llm/core/storage/staging_cleanup.dart';
 import 'package:ondevice_llm/features/backup/local_backup_service.dart';
 import 'package:ondevice_llm/features/chat/domain/chat_draft_store.dart';
 import 'package:ondevice_llm/features/attachments/domain/attachment.dart';
@@ -24,6 +25,48 @@ class BackupPaths extends PathProviderPlatform {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'Android save picker is capped so a large archive is not read into RAM',
+    () async {
+      expect(
+        LocalBackupService.androidCanSaveFile(
+          LocalBackupService.androidSaveLimitBytes,
+        ),
+        isTrue,
+      );
+      expect(
+        LocalBackupService.androidCanSaveFile(
+          LocalBackupService.androidSaveLimitBytes + 1,
+        ),
+        isFalse,
+      );
+      // A backup may legally reach hundreds of MB: it must go through Share.
+      expect(LocalBackupService.androidCanSaveFile(600 * 1024 * 1024), isFalse);
+
+      // The save flow asks for the bytes only after the size check: an
+      // oversized archive is never read into memory (audit 08d-2).
+      var reads = 0;
+      Future<Uint8List> read() async {
+        reads++;
+        return Uint8List(8);
+      }
+
+      expect(
+        await LocalBackupService.androidPickerBytes(
+          LocalBackupService.androidSaveLimitBytes + 1,
+          read,
+        ),
+        isNull,
+      );
+      expect(reads, 0);
+      expect(
+        await LocalBackupService.androidPickerBytes(8, read),
+        hasLength(8),
+      );
+      expect(reads, 1);
+    },
+  );
 
   for (final streamed in [false, true]) {
     test(
@@ -242,4 +285,43 @@ void main() {
       },
     );
   }
+
+  test(
+    'a shared archive outlives share() and is swept at the next start',
+    () async {
+      final root = await Directory.systemTemp.createTemp('odllm-share-');
+      final originalProvider = PathProviderPlatform.instance;
+      final support = Directory(p.join(root.path, 'support'))..createSync();
+      PathProviderPlatform.instance = BackupPaths(support.path, root.path);
+      try {
+        final archive = File(p.join(support.path, 'backup-1.odllm'));
+        await archive.writeAsBytes([1, 2, 3]);
+
+        final shared = await LocalBackupService.stageForShare(archive);
+
+        // Gmail/Drive open the URI after share() returned: the bytes must
+        // still be readable then, and gone from the support root.
+        expect(await archive.exists(), isFalse);
+        expect(p.basename(shared.parent.path), startsWith('backup-working-'));
+        expect(await shared.readAsBytes(), [1, 2, 3]);
+
+        // The next export replaces the previous archive instead of piling up.
+        final next = File(p.join(support.path, 'backup-2.odllm'));
+        await next.writeAsBytes([4, 5]);
+        final sharedNext = await LocalBackupService.stageForShare(next);
+        expect(await shared.exists(), isFalse);
+        expect(await sharedNext.readAsBytes(), [4, 5]);
+
+        // The startup sweep removes what the recipient no longer needs.
+        await StagingCleanup.sweep(
+          support: () async => support,
+          temporary: Directory(p.join(root.path, 'tmp')),
+        );
+        expect(await sharedNext.parent.exists(), isFalse);
+      } finally {
+        PathProviderPlatform.instance = originalProvider;
+        await root.delete(recursive: true);
+      }
+    },
+  );
 }

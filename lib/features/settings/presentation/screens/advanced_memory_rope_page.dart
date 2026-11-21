@@ -14,7 +14,14 @@ class MemoryRopePage extends ConsumerWidget {
     final c = context.colors;
     final models = ref.watch(modelManagerProvider);
     final metrics = ref.watch(chatProvider.select((x) => x.metrics));
-    final downloaded = models.catalog.where((m) => m.isDownloaded).toList();
+    final registry = ref.watch(engineRegistryProvider);
+    final downloaded = models.catalog
+        .where(
+          (m) =>
+              m.isDownloaded &&
+              registry.descriptorFor(m).capabilities.ggufMetadata,
+        )
+        .toList();
     final draftIds = <String>['', for (final m in downloaded) m.id];
     final draftValue = draftIds.contains(s.draftModelId) ? s.draftModelId : '';
     final trained = (metrics['contextTrain'] as num?)?.toInt();

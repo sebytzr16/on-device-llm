@@ -10,6 +10,7 @@ import '../../../core/design/app_design.dart';
 import '../../settings/domain/entities/inference_settings.dart';
 import '../../../core/motion/motion.dart';
 import '../../settings/presentation/providers/effective_settings_provider.dart';
+import '../../settings/presentation/widgets/settings_widgets.dart';
 import '../../chat/presentation/providers/chat_provider.dart';
 
 /// Tool calling from the composer's "+" sheet (request, 2026-09-19): turn
@@ -22,14 +23,19 @@ class ToolsQuickPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final s = ref.watch(effectiveSettingsProvider).effective;
-    void update(InferenceSettings next) {
+    // The chat overrides [next] would save: what the cascade above may need
+    // to preview before the switch is stored.
+    Map<String, dynamic> overridesFor(InferenceSettings next) {
       final before = s.toJson(), after = next.toJson();
-      ref.read(chatProvider.notifier).setChatOverrides({
+      return {
         ...ref.read(chatOverridesProvider),
         for (final key in before.keys)
           if (before[key] != after[key]) key: after[key],
-      });
+      };
     }
+
+    void update(InferenceSettings next) =>
+        ref.read(chatProvider.notifier).setChatOverrides(overridesFor(next));
 
     final c = context.colors;
     final on = s.toolsEnabled;
@@ -75,13 +81,24 @@ class ToolsQuickPanel extends ConsumerWidget {
             onChanged: (v) => update(s.copyWith(toolCalculator: v)),
           ),
           // One switch for the web: this row and the globe button agree.
+          // Off to on is where this chat's text starts leaving the device,
+          // so it asks the globe button's question before saving.
           _ToolRow(
             keyName: 'quick-tool-web',
             label: context.l10n.uiToolsQuickPanelSearchWebReadUrlFindIn,
             hint: context.l10n.toolWebGlobeHint,
             value: s.webSearchEnabled && s.toolWeb,
-            onChanged: (v) =>
-                update(s.copyWith(webMode: webModeFor(s, v), toolWeb: true)),
+            onChanged: (v) async {
+              final next = s.copyWith(webMode: webModeFor(s, v), toolWeb: v);
+              if (!await confirmWebModeChange(
+                context,
+                ref,
+                SettingsChange(chat: overridesFor(next)),
+              )) {
+                return;
+              }
+              update(next);
+            },
           ),
           _ToolRow(
             keyName: 'quick-tool-documents',

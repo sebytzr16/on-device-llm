@@ -28,7 +28,7 @@ class BackgroundDownloads(context: Context, messenger: BinaryMessenger) {
                 when (call.method) {
                     "enqueue" -> {
                         val name = requireNotNull(call.argument<String>("fileName"))
-                        require(name == File(name).name && !name.contains('/') && !name.contains('\\') && listOf(".gguf", ".onnx", ".txt", ".tar.bz2").any { name.endsWith(it, true) })
+                        require(name == File(name).name && !name.contains('/') && !name.contains('\\') && listOf(".gguf", ".litertlm", ".onnx", ".txt", ".tar.bz2").any { name.endsWith(it, true) })
                         val url = requireNotNull(call.argument<String>("url"))
                         val uri = Uri.parse(url)
                         require(uri.scheme in listOf("http", "https") && !uri.host.isNullOrBlank())

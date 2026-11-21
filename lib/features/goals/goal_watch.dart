@@ -287,14 +287,28 @@ abstract final class GoalWatches {
     return out;
   }
 
+  static final _tracking = RegExp(
+    r'^(?:utm_\w+|fbclid|gclid|dclid|msclkid|mc_cid|mc_eid|igshid|ref|ref_src)$',
+    caseSensitive: false,
+  );
+
+  /// The page a URL names, for finding repeats: without the scheme, "www.",
+  /// fragment, trailing slash and tracking parameters, but with every other
+  /// query parameter, since two articles can share one path (audit 05a-5).
   static String pageKey(String url) {
     final u = Uri.tryParse(url.trim());
-    if (u == null || u.host.isEmpty) return url.trim().toLowerCase();
+    if (u == null || u.host.isEmpty) return url.trim();
     var path = u.path;
     while (path.endsWith('/')) {
       path = path.substring(0, path.length - 1);
     }
-    return '${u.host.toLowerCase().replaceFirst(RegExp(r'^www\.'), '')}$path';
+    final query = [
+      for (final p in u.query.split('&'))
+        if (p.isNotEmpty && !_tracking.hasMatch(p.split('=').first)) p,
+    ]..sort();
+    return '${u.host.toLowerCase().replaceFirst(RegExp(r'^www\.'), '')}'
+        '${u.hasPort ? ':${u.port}' : ''}$path'
+        '${query.isEmpty ? '' : '?${query.join('&')}'}';
   }
 
   static GoalWatchSnapshot snapshot(List<SearchResult> found, DateTime at) {
@@ -322,9 +336,20 @@ abstract final class GoalWatches {
     List<String> seen = const [],
   ]) {
     final known = {...seen, ...before.items.map((i) => i.key)};
+    // A "seen" key saved before the key kept its query (audit 05a-5) has no
+    // "?" and names only the host and path: a page under it is not new
+    // whatever its query, or an upgraded user gets one false alert per such
+    // page. (The pages of the last check are re-keyed from their URLs, so
+    // only the saved list can hold old-format keys.)
+    bool knownPage(String key) {
+      if (known.contains(key)) return true;
+      final query = key.indexOf('?');
+      return query > 0 && seen.contains(key.substring(0, query));
+    }
+
     final fresh = [
       for (final i in now.items)
-        if (!known.contains(i.key)) i,
+        if (!knownPage(i.key)) i,
     ];
     final figures = <GoalWatchFigureChange>[];
     for (final i in now.items) {

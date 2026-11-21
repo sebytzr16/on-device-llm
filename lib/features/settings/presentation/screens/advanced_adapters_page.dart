@@ -35,8 +35,19 @@ class AdaptersPage extends ConsumerWidget {
         ),
       ],
       children: [
-        if (a.error != null)
+        if (a.error != null) ...[
           SettingsNote(a.error!, tone: c.danger, icon: Icons.error_outline),
+          if (notifier.loadFailed)
+            SettingsGroup(
+              children: [
+                SettingsRow(
+                  leading: const Icon(Icons.restart_alt),
+                  title: Text(context.l10n.reset),
+                  onTap: () => _resetAdapters(context, notifier),
+                ),
+              ],
+            ),
+        ],
         if (a.importing) SettingsNote(context.l10n.adapterImporting),
         if (a.adapters.isEmpty)
           SettingsNote(context.l10n.adapterEmpty, icon: Icons.tune),
@@ -70,13 +81,60 @@ class AdaptersPage extends ConsumerWidget {
                       .of(m.id)
                       .where((x) => x.adapterId == ad.id)
                       .firstOrNull,
-                  onChanged: (scale) => scale == null
-                      ? notifier.detach(m.id, ad.id)
-                      : notifier.attach(m.id, ad.id, scale),
+                  onChanged: (scale) =>
+                      _updateAttachment(context, notifier, m.id, ad.id, scale),
                 ),
             ],
           ),
       ],
+    );
+  }
+}
+
+/// Moves an unreadable manifest aside and starts from an empty list; the only
+/// way out of the corrupt-manifest dead end (review #5).
+Future<void> _resetAdapters(
+  BuildContext context,
+  AdaptersNotifier notifier,
+) async {
+  try {
+    await notifier.resetUnreadable();
+  } catch (error) {
+    if (!context.mounted) return;
+    showIslandToast(
+      context,
+      error is StateError ? error.message : '$error',
+      tone: IslandTone.error,
+    );
+  }
+}
+
+/// Applies or removes an attachment. The save is awaited so a corrupt manifest
+/// reports its reason instead of an unhandled async error, and the tap offers
+/// the reset that unblocks import, attach and delete (review #5).
+Future<void> _updateAttachment(
+  BuildContext context,
+  AdaptersNotifier notifier,
+  String modelId,
+  String adapterId,
+  double? scale,
+) async {
+  try {
+    if (scale == null) {
+      await notifier.detach(modelId, adapterId);
+    } else {
+      await notifier.attach(modelId, adapterId, scale);
+    }
+  } catch (error) {
+    if (!context.mounted) return;
+    showIslandToast(
+      context,
+      error is StateError ? error.message : '$error',
+      tone: IslandTone.error,
+      action: IslandAction(
+        context.l10n.reset,
+        () => _resetAdapters(context, notifier),
+      ),
     );
   }
 }

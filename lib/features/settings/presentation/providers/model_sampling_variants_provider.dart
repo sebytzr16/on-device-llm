@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/storage/prefs_rescue.dart';
 import '../../domain/model_sampling_keys.dart';
 import '../../domain/settings_scope.dart';
+import 'effective_settings_provider.dart';
 import 'model_profiles_provider.dart';
 
 const _key = 'model_sampling_variants_v1';
@@ -148,11 +149,25 @@ class ModelSamplingVariantsNotifier
     final value = of(id);
     final variant = value.variants.where((v) => v.name == name).firstOrNull;
     if (name != null && variant == null) return;
-    await profiles.set(id, {
+    final next = {
       for (final e in profiles.of(id).entries)
         if (!desktopSamplingKeys.contains(e.key)) e.key: e.value,
       ...?variant?.values,
-    });
+    };
+    // A variant only carries sampling: the profile's own web research stays
+    // as it is. The one gate in front of web lookups is still asked whenever
+    // a web setting would change, but not otherwise: its cascade reads
+    // notifiers that need the database, which callers editing only variants
+    // do not have (review 2026-11-20 finding 40).
+    final current = profiles.of(id);
+    if (webLookupKeys.any((key) => next[key] != current[key])) {
+      final confirmation = requestWebModeChange(
+        ref.container,
+        SettingsChange(profileModelId: id, profile: next),
+      );
+      if (confirmation != null && !await confirmation) return;
+    }
+    await profiles.set(id, next);
     await _put(
       id,
       ModelSamplingVariants(variants: value.variants, active: name),

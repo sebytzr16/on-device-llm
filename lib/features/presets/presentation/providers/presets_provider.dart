@@ -88,7 +88,8 @@ class PresetsNotifier extends Notifier<PresetsState> {
     await _save();
   }
 
-  Future<Preset> create(Preset draft) async {
+  /// Creates and, unless [activate] is false, selects the preset.
+  Future<Preset> create(Preset draft, {bool activate = true}) async {
     final p = Preset(
       id: const Uuid().v4(),
       name: draft.name.trim().isEmpty ? 'Preset' : draft.name.trim(),
@@ -99,7 +100,10 @@ class PresetsNotifier extends Notifier<PresetsState> {
       webMode: draft.webMode,
       overrides: Map<String, dynamic>.of(draft.overrides),
     );
-    state = state.copyWith(presets: [...state.presets, p], activeId: p.id);
+    state = state.copyWith(
+      presets: [...state.presets, p],
+      activeId: activate ? p.id : null,
+    );
     await _save();
     return p;
   }
@@ -122,8 +126,9 @@ class PresetsNotifier extends Notifier<PresetsState> {
     await _save();
   }
 
-  /// A copy of a built-in the user can edit.
-  Future<Preset> duplicate(Preset source) => create(
+  /// A copy of a built-in the user can edit (activated unless [activate] is
+  /// false).
+  Future<Preset> duplicate(Preset source, {bool activate = true}) => create(
     Preset(
       id: '',
       name: '${source.name} (copy)',
@@ -134,6 +139,7 @@ class PresetsNotifier extends Notifier<PresetsState> {
       webMode: source.webMode,
       overrides: source.overrides,
     ),
+    activate: activate,
   );
 }
 

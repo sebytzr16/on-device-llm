@@ -18,13 +18,17 @@ import '../../../../core/platform/desktop_host.dart';
 import '../../../../core/providers/shared_providers.dart';
 import '../../../../data/local/database/app_database.dart';
 import '../../../../data/storage/download_manager.dart';
+import '../../../../desktop/engine_updater/engine_update_controller.dart';
 import '../../../../data/storage/download_jobs.dart';
 import '../../../../data/storage/model_storage.dart';
 import '../../../../data/storage/model_file_leases.dart';
 import '../../../../data/storage/model_folders.dart';
 import '../../../../data/storage/gguf_metadata.dart';
 import '../../../../data/storage/gguf_split.dart';
+import '../../../../inference/engine/engine_descriptor.dart';
+import '../../../../inference/engine/engine_registry_provider.dart';
 import '../../../../inference/engine/llama_engine.dart';
+import '../../../../inference/engine/text_engine.dart';
 import '../../../../inference/engine/diffusiongemma_engine.dart';
 import '../../../../inference/engine/ternary_backend.dart';
 import 'model_recommendations_provider.dart';
@@ -44,7 +48,22 @@ import '../../domain/entities/model_info.dart';
 import 'retired_model_names.dart';
 import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
+export '../../../../inference/engine/engine_registry_provider.dart'
+    show liteRtAvailableProvider;
+
 final _log = Logger('models');
+
+final activeLocalEngineProvider = Provider<TextEngine>((ref) {
+  final (loadedEngineId, model) = ref.watch(
+    modelManagerProvider.select((s) => (s.loadedEngineId, s.loadedModel)),
+  );
+  final engineId =
+      loadedEngineId ??
+      ref.watch(engineRegistryProvider).descriptorFor(model).id;
+  final provider = fileEngineProviders[engineId];
+  if (provider != null) return ref.watch(provider).engine;
+  return ref.watch(llamaEngineProvider);
+});
 
 /// The note for a load whose context the bridge shortened, to the model's
 /// trained length or to what fits in the memory free right now
@@ -80,7 +99,7 @@ class ModelManagerState {
   final List<ModelInfo> catalog;
   final Map<String, DownloadProgress> downloads;
   final String? loadedModelId, error;
-  final String? loadingModelId;
+  final String? loadingModelId, loadedEngineId;
   final double? loadProgress;
   final bool isLoadingModel, isImporting;
 
@@ -103,6 +122,7 @@ class ModelManagerState {
     this.catalog = const [],
     this.downloads = const {},
     this.loadedModelId,
+    this.loadedEngineId,
     this.loadingModelId,
     this.loadProgress,
     this.error,
@@ -132,6 +152,7 @@ class ModelManagerState {
     List<ModelInfo>? catalog,
     Map<String, DownloadProgress>? downloads,
     String? loadedModelId,
+    String? loadedEngineId,
     String? loadingModelId,
     bool clearLoadingModel = false,
     double? loadProgress,
@@ -150,6 +171,7 @@ class ModelManagerState {
     catalog: catalog ?? this.catalog,
     downloads: downloads ?? this.downloads,
     loadedModelId: clearLoaded ? null : loadedModelId ?? this.loadedModelId,
+    loadedEngineId: clearLoaded ? null : loadedEngineId ?? this.loadedEngineId,
     loadingModelId: clearLoadingModel
         ? null
         : loadingModelId ?? this.loadingModelId,
@@ -179,6 +201,10 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
   final _downloader = DownloadManager();
   final _projectorDownloads = <String, Future<void>>{};
   final _subscriptions = <String, StreamSubscription<DownloadProgress>>{};
+
+  /// Catalog ids cancelled while still locating or hashing their file: there
+  /// is no transfer to cancel yet, so [downloadModel] stops at its next await.
+  final _aborted = <String>{};
   StreamSubscription<double?>? _loadSubscription;
   Timer? _loadProgressTimer;
   bool _alive = true;
@@ -453,15 +479,16 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       if (name.toLowerCase().contains('mmproj')) continue;
       try {
         final parts = await ModelStorage.ggufFilesBeside(file.path);
+        final projector = projectors
+            .where((f) => stem(p.basename(f.path)) == stem(name))
+            .firstOrNull;
+        if (!await _canAdoptInPlace(parts, projector)) continue;
         var size = 0;
         for (final part in parts) {
           size += await part.length();
         }
         final metadata = await GgufMetadata.inspect(file.path);
         final hub = hubPrefix.firstMatch(name);
-        final projector = projectors
-            .where((f) => stem(p.basename(f.path)) == stem(name))
-            .firstOrNull;
         final info = ModelInfo(
           id: hub != null ? 'hf-${hub.group(1)}' : 'local-${stem(name)}',
           displayName: ModelQuantization.tidyName(
@@ -607,6 +634,8 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     void Function()? onLoadStart,
     bool vision = false,
   }) async {
+    // Any explicit load supersedes the selection before it, even one that is
+    // rejected below (Compare's restoration must not come back after it).
     _selectionRevision++;
     return _loadModel(
       info,
@@ -624,18 +653,111 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     void Function()? onLoadStart,
     bool vision = false,
     bool background = false,
+  }) {
+    // Only a load that really starts owns [_loadFuture]: a rejected duplicate
+    // must leave the running load's future in place, or the Stop after it
+    // registers no teardown and the next load races that teardown (M1).
+    var accepted = false;
+    final future = _runLoad(
+      info,
+      // A Stop bumps the epoch: the load it superseded may no longer write
+      // state, and the next load runs with the new one.
+      epoch: _loadEpoch,
+      forChat: forChat,
+      settings: settings,
+      onLoadStart: onLoadStart,
+      vision: vision,
+      background: background,
+      onAccepted: () => accepted = true,
+    );
+    if (accepted) _loadFuture = future;
+    return future.whenComplete(() {
+      if (identical(_loadFuture, future)) _loadFuture = null;
+    });
+  }
+
+  Future<void> _runLoad(
+    ModelInfo info, {
+    required int epoch,
+    bool forChat = false,
+    InferenceSettings? settings,
+    void Function()? onLoadStart,
+    bool vision = false,
+    bool background = false,
+    void Function()? onAccepted,
   }) async {
-    if (state.isLoadingModel || (ref.read(sessionBusyProvider) && !forChat)) {
-      throw StateError(
-        stringsFor(ref.read(settingsProvider).localeCode).modelStopSwitch,
-      );
+    final t = stringsFor(ref.read(settingsProvider).localeCode);
+    if (ref.read(sessionBusyProvider) && !forChat) {
+      throw ModelLoadException(t.modelStopSwitch);
     }
     if (!info.isDownloaded || info.localPath == null) {
-      throw StateError(
-        stringsFor(ref.read(settingsProvider).localeCode).modelDownloadFirst,
+      throw StateError(t.modelDownloadFirst);
+    }
+    final registry = ref.read(engineRegistryProvider);
+    final descriptor = registry.descriptorFor(info);
+    _requireEngine(descriptor, t);
+    final runtimeProvider = fileEngineProviders[descriptor.id];
+    final runtime = runtimeProvider == null ? null : ref.read(runtimeProvider);
+    // A Stop leaves the cancelled load freeing its native runtime in the
+    // background. The next Load waits for that teardown and then runs, so
+    // loading another model right after a Stop works (owner bug b).
+    final teardown = _loadTeardown;
+    if (teardown != null) {
+      _loadTeardown = null;
+    } else if (state.isLoadingModel || _loadFuture != null) {
+      throw ModelLoadException(t.modelLoadInProgress);
+    }
+    // This call starts a load: only now may it own the manager's future.
+    onAccepted?.call();
+    final revision = _selectionRevision;
+    // The UI shows the load at once, before the settings it needs have been
+    // read from storage, so the user sees it and Stop works from the first
+    // moment (owner OR-02). A send on the model the engine may already hold is
+    // left to the reuse check below, which must never show "loading" (audit
+    // P1-18).
+    final announce = state.loadedModelId != info.id;
+    if (announce) {
+      onLoadStart?.call();
+      state = state.copyWith(
+        isLoadingModel: true,
+        loadingModelId: info.id,
+        clearLoadProgress: true,
+        clearError: true,
       );
     }
-    final resolved =
+    // The settings layers load from storage when the app starts: the cascade
+    // below must read them loaded, or the model would be loaded with the
+    // defaults instead of the user's choices (settings audit 2026-11-20). A
+    // turn's own settings need none of them.
+    if (settings == null) {
+      await Future.wait([
+        ref.read(settingsProvider.notifier).ready,
+        ref.read(modelProfilesProvider.notifier).ready,
+        ref.read(presetsProvider.notifier).ready,
+        ref.read(chatModelPinsProvider.notifier).ready,
+      ]);
+      _checkLoadLive(epoch, revision, info.id);
+    }
+    // The silent start-up restore never asks and keeps web research off
+    // (review 2026-11-20 finding 2); a turn's own settings already carry the
+    // user's choice for it, so no question interrupts it (finding 3). Only a
+    // model switch the user asked for asks, and declining there means "stay
+    // local": the switch goes on with web research off instead of failing
+    // like a Stop (finding 1).
+    var localOnly = background;
+    if (!background && !forChat && settings == null) {
+      final confirmation = requestWebModeChange(
+        ref.container,
+        SettingsChange(loadedModel: info),
+      );
+      if (confirmation != null) {
+        localOnly = !await confirmation;
+        // A Stop (or a newer selection) while the question was open ends the
+        // load here, before any native work (owner OR-02).
+        _checkLoadLive(epoch, revision, info.id);
+      }
+    }
+    var resolved =
         settings ??
         resolveSettings(
           global: ref.read(settingsProvider),
@@ -653,20 +775,44 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
           },
           projectLabel: ref.read(currentProjectProvider)?.name ?? 'Project',
         ).effective;
+    if (localOnly) {
+      resolved = resolved.copyWith(
+        webMode: WebMode.off,
+        remoteWebResearch: false,
+      );
+    }
     // Every local send asks for its model: when the engine already holds
     // it with the same settings, nothing is loaded and the chat never
     // shows "loading" (audit P1-18, owner report OR-01).
+    final sameEngine =
+        state.loadedEngineId == null || state.loadedEngineId == descriptor.id;
+    if (runtime != null &&
+        sameEngine &&
+        state.loadedModelId == info.id &&
+        runtime.holdsLoad(info.localPath!, resolved)) {
+      return;
+    }
     ({String path, String config})? unchanged;
-    if (info.id != diffusionGemmaModelId && state.loadedModelId == info.id) {
+    if (runtime == null &&
+        sameEngine &&
+        teardown == null &&
+        info.id != diffusionGemmaModelId &&
+        state.loadedModelId == info.id) {
+      ({String path, String config})? plan;
       try {
-        final plan = await _plan(info, resolved, vision: vision);
-        if (state.loadedModelId == info.id &&
-            !state.isLoadingModel &&
-            ref.read(llamaEngineProvider).holdsLoad(plan.path, plan.config)) {
-          unchanged = (path: plan.path, config: plan.config);
-        }
+        final p = await _plan(info, resolved, vision: vision);
+        plan = (path: p.path, config: p.config);
       } catch (_) {
         // The full load below reports it.
+      }
+      // A Stop, a dispose or a newer selection during the plan ends this load
+      // before it touches the manager again.
+      _checkLoadLive(epoch, revision, info.id);
+      if (plan != null &&
+          state.loadedModelId == info.id &&
+          !state.isLoadingModel &&
+          ref.read(llamaEngineProvider).holdsLoad(plan.path, plan.config)) {
+        unchanged = plan;
       }
     }
     if (unchanged != null) {
@@ -674,6 +820,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       // server has its own engine. Reuse must also await that handoff
       // (owner P2-05 re-trace, 2026-11-01).
       await ref.read(engineHandoffProvider)?.call(info.id);
+      _checkLoadLive(epoch, revision, info.id);
       if (state.loadedModelId == info.id &&
           !state.isLoadingModel &&
           ref
@@ -682,37 +829,85 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         return;
       }
     }
-    if (state.isLoadingModel) {
-      throw StateError(
-        stringsFor(ref.read(settingsProvider).localeCode).modelStopSwitch,
+    if (!announce) {
+      // The model the engine may already hold was not reused: this load
+      // really starts, so it shows now (audit P1-18).
+      if (state.isLoadingModel) {
+        throw ModelLoadException(t.modelLoadInProgress);
+      }
+      onLoadStart?.call();
+      state = state.copyWith(
+        isLoadingModel: true,
+        loadingModelId: info.id,
+        clearLoadProgress: true,
+        clearError: true,
       );
     }
+    // This load really starts: only now is a Stop before it meaningless.
     _loadStopped = false;
-    onLoadStart?.call();
-    state = state.copyWith(
-      isLoadingModel: true,
-      loadingModelId: info.id,
-      clearLoadProgress: true,
-      clearError: true,
-    );
+    // Only this load may write state: a Stop, a dispose or a newer selection
+    // supersedes it.
+    bool current() => _alive && ref.mounted && epoch == _loadEpoch;
     try {
       _checkStopped();
+      if (teardown != null) {
+        // The stopped load is still releasing its runtime. The UI already
+        // shows this load, so only the engine has to wait for the teardown.
+        await teardown;
+        if (!_alive || !ref.mounted || epoch != _loadEpoch) {
+          throw const ModelLoadStopped();
+        }
+      }
       // A local server sharing this runtime keeps its model on its own.
       await ref.read(engineHandoffProvider)?.call(info.id);
+      _checkStopped();
       final engine = ref.read(llamaEngineProvider);
+      if (runtime != null) {
+        await engine.unload();
+        _checkStopped();
+        ref.read(diffusionGemmaEngineProvider).dispose();
+        _chatLoad = null;
+        _checkStopped();
+        for (final other in ref.read(availableFileEnginesProvider)) {
+          if (identical(runtime.engine, other.engine)) continue;
+          await other.unload();
+          _checkStopped();
+        }
+        await runtime.load(info.localPath!, resolved);
+        if (_loadStopped || !_alive || !ref.mounted) {
+          await runtime.unload();
+          _checkStopped();
+          return;
+        }
+        state = state.copyWith(
+          loadedModelId: info.id,
+          loadedEngineId: descriptor.id,
+          isLoadingModel: false,
+          clearLoadingModel: true,
+          clearLoadProgress: true,
+        );
+        unawaited(LastModelStore.remember(info.id));
+        return;
+      }
+      for (final other in ref.read(availableFileEnginesProvider)) {
+        await other.unload();
+        _checkStopped();
+      }
       if (info.id == diffusionGemmaModelId) {
         if (!DesktopHost.active || !Platform.isWindows) {
           throw UnsupportedError('DiffusionGemma requires Windows desktop.');
         }
         await engine.unload();
+        _checkStopped();
         // The host honours context, GPU layers, threads and seed; the rest
         // of the profile is disabled in its load settings (audit E23).
         await ref
             .read(diffusionGemmaEngineProvider)
             .loadModel(info.localPath!, settings: resolved);
-        if (_alive) {
+        if (current()) {
           state = state.copyWith(
             loadedModelId: info.id,
+            loadedEngineId: llamaCppEngine.id,
             isLoadingModel: false,
             clearLoadingModel: true,
             clearLoadProgress: true,
@@ -720,15 +915,15 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         }
         return;
       }
-      ref.read(diffusionGemmaEngineProvider).dispose();
       _checkStopped();
+      ref.read(diffusionGemmaEngineProvider).dispose();
       final loads = engine.loadCount;
       double? pendingProgress;
       _loadSubscription = engine.loadProgressChanges.listen((value) {
         pendingProgress = value;
         _loadProgressTimer ??= Timer(const Duration(milliseconds: 100), () {
           _loadProgressTimer = null;
-          if (_alive &&
+          if (current() &&
               state.isLoadingModel &&
               state.loadProgress != pendingProgress) {
             state = state.copyWith(
@@ -740,13 +935,20 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       });
       engine.loadStop = () => _loadStopped;
       try {
-        _chatLoad = await _loadOn(engine, info, resolved, vision: vision);
+        _chatLoad = await _loadOn(
+          engine,
+          info,
+          resolved,
+          vision: vision,
+          selectedEngine: descriptor,
+        );
       } finally {
-        engine.loadStop = null;
+        if (epoch == _loadEpoch) engine.loadStop = null;
       }
-      if (_alive) {
+      if (current()) {
         state = state.copyWith(
           loadedModelId: info.id,
+          loadedEngineId: descriptor.id,
           isLoadingModel: false,
           clearLoadingModel: true,
           clearLoadProgress: true,
@@ -766,10 +968,16 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         }
       }
     } catch (e, st) {
-      // A Stop is the user's choice, not an error to show.
-      final stopped = _loadStopped || e is ModelLoadStopped;
+      // A Stop is the user's choice, not an error to show. A load that a
+      // Stop superseded is idle already: it must not touch the state the
+      // next load owns. A load failure is not that choice, even after a Stop:
+      // a runtime the engine could not free must reach the caller (E3).
+      final superseded = epoch != _loadEpoch;
+      final stopped =
+          e is ModelLoadStopped ||
+          ((superseded || _loadStopped) && e is! ModelLoadException);
       final memory = stopped ? null : _memoryError(e);
-      if (_alive) {
+      if (current()) {
         state = state.copyWith(
           isLoadingModel: false,
           clearLoadingModel: true,
@@ -787,8 +995,10 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       }
       rethrow;
     } finally {
-      _loadStopped = false;
-      _stopLoadProgress();
+      if (epoch == _loadEpoch) {
+        _loadStopped = false;
+        _stopLoadProgress();
+      }
     }
   }
 
@@ -920,21 +1130,87 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
 
   bool _loadStopped = false;
 
+  /// The load in flight, so a Stop and the load that follows it can wait for
+  /// the cancelled load's native teardown instead of colliding with it.
+  Future<void>? _loadFuture;
+
+  /// A Stop's teardown: the cancelled load freeing the runtime it left
+  /// behind. The next Load waits for it (owner bugs a and b).
+  Future<void>? _loadTeardown;
+
+  /// Bumped by every Stop: a load that a Stop superseded may no longer write
+  /// state, and the loads started after it run with the new value.
+  int _loadEpoch = 0;
+
   /// The one explanation that a ternary model runs on the processor with
   /// Vulkan; later loads in this session stay quiet.
   bool _ternaryCpuNoticed = false;
 
   void _checkStopped() {
-    if (_loadStopped) throw const ModelLoadStopped();
+    if (_loadStopped || !ref.mounted) throw const ModelLoadStopped();
+  }
+
+  /// Whether this load may still touch the manager: it must not have been
+  /// disposed (a test overlay keeps [_alive] set when its container goes) and
+  /// no Stop or newer selection may have superseded it (owner OR-02). A load
+  /// that already showed itself clears that state, so a superseded load never
+  /// leaves the UI spinning.
+  void _checkLoadLive(int epoch, int revision, String modelId) {
+    if (!_alive || !ref.mounted || epoch != _loadEpoch) {
+      throw const ModelLoadStopped();
+    }
+    if (revision == _selectionRevision) return;
+    if (state.isLoadingModel && state.loadingModelId == modelId) {
+      state = state.copyWith(
+        isLoadingModel: false,
+        clearLoadingModel: true,
+        clearLoadProgress: true,
+      );
+    }
+    throw const ModelLoadStopped();
   }
 
   /// Stops the chat's model load at any step: before the file is read, while
   /// llama.cpp loads it (its progress callback cancels), or right after
   /// (audit P1-19, owner request OR-02). The chat is left with no model.
+  ///
+  /// The user is back at idle at once: the state is cleared here, and the
+  /// runtime the cancelled load leaves behind is freed in the background.
+  /// The next Load waits for that teardown (owner bugs a and b).
   void stopLoad() {
-    if (!state.isLoadingModel) return;
+    if (!state.isLoadingModel && _loadFuture == null) return;
+    if (_loadTeardown != null) return; // Already stopping.
     _loadStopped = true;
+    _loadEpoch++;
+    _stopLoadProgress();
+    if (_alive) {
+      state = state.copyWith(
+        isLoadingModel: false,
+        clearLoadingModel: true,
+        clearLoadProgress: true,
+        clearLoaded: true,
+      );
+    }
+    // The turn that started this load is over: a model may be picked again
+    // right away instead of hitting the "stop the current response" guard.
+    ref.read(sessionBusyProvider.notifier).state = false;
     ref.read(llamaEngineProvider).cancel();
+    for (final runtime in ref.read(availableFileEnginesProvider)) {
+      runtime.engine.cancel();
+    }
+    final pending = _loadFuture;
+    if (pending != null) {
+      final teardown = pending.then<void>(
+        (_) {},
+        onError: (Object _, StackTrace _) {},
+      );
+      _loadTeardown = teardown;
+      unawaited(
+        teardown.whenComplete(() {
+          if (identical(_loadTeardown, teardown)) _loadTeardown = null;
+        }),
+      );
+    }
   }
 
   ChatLoad? _chatLoad;
@@ -950,12 +1226,31 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         : null;
   }
 
+  void _requireEngine(EngineDescriptor engine, AppLocalizations t) {
+    if (!ref.read(engineRegistryProvider).isAvailable(engine)) {
+      throw UnsupportedError(
+        engine.id == liteRtLmEngine.id
+            ? t.liteRtAndroidOnly
+            : t.engineUnavailable(engine.displayName),
+      );
+    }
+  }
+
   Future<ChatLoad> _loadOn(
     LlamaEngine engine,
     ModelInfo info,
     InferenceSettings resolved, {
     bool vision = false,
+    EngineDescriptor? selectedEngine,
   }) async {
+    final descriptor =
+        selectedEngine ?? ref.read(engineRegistryProvider).descriptorFor(info);
+    if (descriptor.id != llamaCppEngine.id &&
+        descriptor.id != ikLlamaCppEngine.id) {
+      throw UnsupportedError(
+        '${descriptor.displayName} models run on their own engine.',
+      );
+    }
     final plan = await _plan(info, resolved, vision: vision);
     if (plan.ternaryCpu) {
       _log.info(
@@ -963,14 +1258,28 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         'loading with 0 GPU layers on the CPU',
       );
     }
-    await engine.loadModel(
-      modelPath: plan.path,
-      settings: plan.load.settings,
-      mmprojPath: plan.load.mmprojPath,
-      adapters: plan.adapters,
-      draftModelPath: plan.load.draftModelPath,
-      memoryGuard: !_loadAnyway.contains(info.id),
-    );
+    try {
+      await engine.loadModel(
+        modelPath: plan.path,
+        settings: plan.load.settings,
+        engineId: descriptor.id,
+        mmprojPath: plan.load.mmprojPath,
+        adapters: plan.adapters,
+        draftModelPath: plan.load.draftModelPath,
+        memoryGuard: !_loadAnyway.contains(info.id),
+      );
+    } catch (e, st) {
+      // The ik_llama.cpp crash guard may have reverted the pack: re-read the
+      // installed set so the registry stops offering an engine that can no
+      // longer open its DLLs.
+      if (descriptor.id == ikLlamaEngineId && _alive && ref.mounted) {
+        unawaited(ref.read(engineUpdateProvider.notifier).noteIkLoadFailure());
+      }
+      Error.throwWithStackTrace(e, st);
+    }
+    // The manager may be gone by now (a disposed container): the caller
+    // writes no state then, and no notice may touch the ref.
+    if (!_alive || !ref.mounted) return plan.load;
     if (plan.ternaryCpu && plan.backend == 'vulkan' && !_ternaryCpuNoticed) {
       // Once: a send that reuses the loaded model never gets here, so this
       // is not repeated per turn, and the long sentence needs time to read.
@@ -1029,7 +1338,16 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     InferenceSettings resolved, {
     bool vision = false,
   }) async {
-    final projector = info.projector ?? visionProjectors[info.id];
+    final engine = ref.read(engineRegistryProvider).descriptorFor(info);
+    // An engine without draft support (ik_llama.cpp) keeps its normal
+    // decoding: the profile's speculation mode never reaches it.
+    if (!engine.capabilities.loadKeys.contains('speculationMode') &&
+        (resolved.speculationMode != 'off' || resolved.mtp)) {
+      resolved = resolved.copyWith(speculationMode: 'off', mtp: false);
+    }
+    final projector = engine.capabilities.vision
+        ? (info.projector ?? visionProjectors[info.id])
+        : null;
     final draft = resolved.speculationMode == 'off'
         ? null
         : await draftPathFor(info, resolved.draftModelId);
@@ -1110,7 +1428,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
             state.vision.contains(info.id) &&
             resolved.visionEnabled &&
             (vision || keep)
-        ? (await ModelStorage.modelFile(projector.fileName)).path
+        ? (await _projectorFile(info, projector)).path
         : null;
     final adapters = await ref
         .read(adaptersProvider.notifier)
@@ -1128,6 +1446,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       adapters: adapters,
       config: LlamaEngine.loadConfig(
         settings: settings,
+        engineId: engine.id,
         mmprojPath: mmproj,
         adapters: adapters,
         draftModelPath: draft,
@@ -1162,6 +1481,12 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     if (info.id == diffusionGemmaModelId) {
       throw UnsupportedError(
         'DiffusionGemma runs in desktop chat only; local server hosting is unavailable.',
+      );
+    }
+    final descriptor = ref.read(engineRegistryProvider).descriptorFor(info);
+    if (!descriptor.capabilities.hosting) {
+      throw UnsupportedError(
+        '${descriptor.displayName} does not support hosting.',
       );
     }
     if (!info.isDownloaded || info.localPath == null) {
@@ -1234,7 +1559,14 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       return path != mtpOff && await File(path).exists() ? path : null;
     }
     final draft = state.catalog.where((m) => m.id == draftModelId).firstOrNull;
-    if (draft == null || !draft.isDownloaded || draft.localPath == null) {
+    if (draft == null ||
+        !ref
+            .read(engineRegistryProvider)
+            .descriptorFor(draft)
+            .capabilities
+            .ggufMetadata ||
+        !draft.isDownloaded ||
+        draft.localPath == null) {
       return null;
     }
     return await File(draft.localPath!).exists() ? draft.localPath : null;
@@ -1312,7 +1644,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     final unloading = unloadModel();
     final revision = _selectionRevision;
     await unloading;
-    if (state.loadedModelId != null || ref.read(llamaEngineProvider).isLoaded) {
+    if (state.loadedModelId != null || _runtimeLoaded) {
       return null;
     }
     return () async {
@@ -1321,7 +1653,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
           revision != _selectionRevision ||
           state.loadedModelId != null ||
           state.isLoadingModel ||
-          ref.read(llamaEngineProvider).isLoaded ||
+          _runtimeLoaded ||
           ref.read(settingsProvider).remoteEnabled ||
           ref.read(sessionBusyProvider)) {
         return;
@@ -1335,7 +1667,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
             revision != _selectionRevision ||
             state.loadedModelId != null ||
             state.isLoadingModel ||
-            ref.read(llamaEngineProvider).isLoaded ||
+            _runtimeLoaded ||
             ref.read(settingsProvider).remoteEnabled ||
             ref.read(sessionBusyProvider)) {
           return;
@@ -1358,6 +1690,12 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
   /// loads it again.
   /// [ownsBusy]: the caller set the session busy itself (a tuning run) and
   /// unloads between its own loads.
+  bool get _runtimeLoaded =>
+      ref.read(llamaEngineProvider).isLoaded ||
+      ref
+          .read(availableFileEnginesProvider)
+          .any((runtime) => runtime.isLoaded());
+
   Future<void>? _unloading;
 
   Future<void> unloadModel({bool ownsBusy = false}) {
@@ -1369,16 +1707,21 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
 
   Future<void> _unloadModel({required bool ownsBusy}) async {
     try {
+      final engine = ref.read(llamaEngineProvider);
       if (state.isLoadingModel) {
+        // Eject during a load stops it first, then frees its runtime below
+        // instead of leaving an error behind.
         stopLoad();
-        throw const InferenceException(
-          'Model loading is stopping. Retry Eject shortly.',
-        );
+      }
+      final teardown = _loadTeardown;
+      if (teardown != null) {
+        _loadTeardown = null;
+        // Bounded: a stuck teardown must not hang Eject.
+        await teardown.timeout(engine.stopTimeout, onTimeout: () {});
       }
       if (!ownsBusy && ref.read(sessionBusyProvider)) {
         ref.read(chatProvider.notifier).cancel();
       }
-      final engine = ref.read(llamaEngineProvider);
       await engine.stopAndWait();
       // Shared hosting moves away before its weights are freed.
       await ref
@@ -1387,13 +1730,16 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
           .timeout(engine.stopTimeout);
       await ref.read(helperRunnerProvider).unload().timeout(engine.stopTimeout);
       await engine.unload();
+      for (final runtime in ref.read(availableFileEnginesProvider)) {
+        await runtime.unload();
+      }
       ref.read(diffusionGemmaEngineProvider).dispose();
       if (_alive) state = state.copyWith(clearLoaded: true);
     } catch (e) {
       if (_alive) {
         state = state.copyWith(
           error: modelLoadErrorMessage(e),
-          clearLoaded: !ref.read(llamaEngineProvider).isLoaded,
+          clearLoaded: !_runtimeLoaded,
         );
       }
     }
@@ -1410,6 +1756,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
 
   Future<void> downloadModel(ModelInfo info) async {
     if (_subscriptions.containsKey(info.id)) return;
+    _aborted.remove(info.id);
     if (info.isDownloaded) {
       if (info.projector != null) await downloadVision(info);
       return;
@@ -1425,10 +1772,12 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     });
     try {
       final existing = await ModelStorage.modelFile(info.fileName);
+      if (_cancelledWhilePreparing(info.id)) return;
       final finished =
           info.parts.isEmpty &&
           await existing.exists() &&
           await existing.length() == info.sizeBytes;
+      if (_cancelledWhilePreparing(info.id)) return;
       if (finished && _alive) {
         // Hashing a finished multi-GB file takes minutes: say so.
         state = state.copyWith(
@@ -1458,7 +1807,9 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         if (info.projector != null) await downloadVision(info);
         return;
       }
+      if (_cancelledWhilePreparing(info.id)) return;
       await DownloadJobs.add(info.id);
+      if (_cancelledWhilePreparing(info.id)) return;
       if (info.parts.isNotEmpty) {
         await _downloader.downloadFiles(modelId: info.id, files: info.parts);
       } else {
@@ -1480,6 +1831,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         state = state.copyWith(error: '$e');
       }
     } finally {
+      _aborted.remove(info.id);
       await _subscriptions.remove(info.id)?.cancel();
       if (_alive) {
         state = state.copyWith(
@@ -1488,6 +1840,10 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       }
     }
   }
+
+  /// True once the user cancelled [id] while its file was still being located
+  /// or hashed: no `CancelToken` exists yet, so the resolve stops here.
+  bool _cancelledWhilePreparing(String id) => _aborted.remove(id);
 
   Future<void> pauseDownload(String id) async {
     await DownloadJobs.remove(id);
@@ -1499,6 +1855,14 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
   }
 
   Future<void> cancelDownload(String id) async {
+    // Still locating or hashing: no CancelToken exists yet, so flag the
+    // resolve (it must not start the transfer afterwards) and drop the row.
+    if (state.preparing.contains(id)) {
+      _aborted.add(id);
+      if (_alive) {
+        state = state.copyWith(preparing: {...state.preparing}..remove(id));
+      }
+    }
     await pauseDownload(id);
     final modelId = id.replaceFirst(RegExp(r':vision$'), '');
     final model = state.catalog.where((m) => m.id == modelId).firstOrNull;
@@ -1527,14 +1891,22 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
   Future<void> refreshVision() async {
     final ready = <String>{};
     final rows = await ref.read(appDatabaseProvider).allModels();
-    final projectors = {
-      ...visionProjectors,
-      for (final row in rows)
-        if (_fromRow(row).projector != null) row.id: _fromRow(row).projector!,
+    // A row's own projector wins over a catalog one, and an in-place import's
+    // projector sits beside the weights it recorded (audit 2026-11-20 P1-3).
+    final projectors = <String, (ModelInfo?, VisionProjector)>{
+      for (final e in visionProjectors.entries) e.key: (null, e.value),
     };
+    for (final row in rows) {
+      final info = _fromRow(row);
+      if (info.projector == null) continue;
+      projectors[row.id] = (info, info.projector!);
+    }
     for (final e in projectors.entries) {
-      final f = await ModelStorage.modelFile(e.value.fileName);
-      if (await f.exists() && await f.length() == e.value.sizeBytes) {
+      final (info, projector) = e.value;
+      final f = info == null
+          ? await ModelStorage.modelFile(projector.fileName)
+          : await _projectorFile(info, projector);
+      if (await f.exists() && await f.length() == projector.sizeBytes) {
         ready.add(e.key);
       }
     }
@@ -1768,7 +2140,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     if (projector == null) return;
     if (state.loadedModelId == info.id) await unloadModel();
     final guard = _guardModelPaths([
-      (await ModelStorage.modelFile(projector.fileName)).path,
+      (await _projectorFile(info, projector)).path,
     ]);
     try {
       await _deleteVisionFiles(info);
@@ -1777,20 +2149,50 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     }
   }
 
+  /// The projector file a row really uses. An in-place import keeps its
+  /// projector beside the weights it recorded, even in a managed subfolder;
+  /// resolving the bare name again would search the models root instead and
+  /// could hit a same-named file of another model (audit 2026-11-20 P1-3).
+  Future<File> _projectorFile(ModelInfo info, VisionProjector projector) async {
+    final weights = info.localPath;
+    if (weights != null) {
+      final beside = File(p.join(p.dirname(weights), projector.fileName));
+      // Local imports record an adjacent projector without a download URL.
+      if (projector.downloadUrl.isEmpty || await beside.exists()) return beside;
+    }
+    return ModelStorage.modelFile(projector.fileName);
+  }
+
   Future<void> _deleteVisionFiles(ModelInfo info) async {
     final projector = info.projector ?? visionProjectors[info.id];
     if (projector == null) return;
     await DownloadJobs.remove(ModelManagerState.visionKey(info.id));
-    final others = await ref.read(appDatabaseProvider).allModels();
-    if (!others.any(
-      (row) =>
-          row.id != info.id &&
-          (_fromRow(row).projector ?? visionProjectors[row.id])?.fileName ==
-              projector.fileName &&
-          (row.isDownloaded || row.projectorJson != null),
-    )) {
-      await ModelStorage.delete(projector.fileName);
-      await ModelStorage.deletePartial(projector.fileName);
+    final file = await _projectorFile(info, projector);
+    final partial = File('${file.path}.part');
+    final canonical =
+        await _canonicalPath(file.path) ?? await _canonicalPath(partial.path);
+    final rows = await ref.read(appDatabaseProvider).allModels();
+    // Another row using this very projector file keeps it; a same-named
+    // file in another folder is a different file (audit 2026-11-20 P1-3).
+    var shared = false;
+    for (final row in rows) {
+      if (row.id == info.id) continue;
+      if (!row.isDownloaded && row.projectorJson == null) continue;
+      final other = _fromRow(row);
+      final their = other.projector ?? visionProjectors[other.id];
+      if (their == null) continue;
+      final theirsPath = (await _projectorFile(other, their)).path;
+      final theirs =
+          await _canonicalPath(theirsPath) ??
+          await _canonicalPath('$theirsPath.part');
+      if (canonical != null && theirs != null && p.equals(canonical, theirs)) {
+        shared = true;
+        break;
+      }
+    }
+    if (!shared) {
+      await _deleteManagedFile(file);
+      await _deleteManagedFile(partial);
     }
     await refreshVision();
   }
@@ -1832,6 +2234,14 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         (projectors.length == 1 ? projectors.single : null);
   }
 
+  Future<bool> _canAdoptInPlace(List<File> weights, File? projector) async {
+    if (!DesktopHost.active) return false;
+    for (final file in [...weights, ?projector]) {
+      if (!await _isManagedModelPath(file.path)) return false;
+    }
+    return true;
+  }
+
   Future<void> importFile(String path, ModelFamily family) async {
     while (_fileOperation != null) {
       await _fileOperation!.future;
@@ -1841,9 +2251,18 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     state = state.copyWith(isImporting: true, clearError: true);
     File? partial;
     try {
-      final sources = await ModelStorage.ggufFilesBeside(path);
+      final descriptor =
+          ref.read(engineRegistryProvider).forPath(path) ?? llamaCppEngine;
+      final gguf = descriptor.capabilities.ggufMetadata;
+      _requireEngine(
+        descriptor,
+        stringsFor(ref.read(settingsProvider).localeCode),
+      );
+      final sources = gguf
+          ? await ModelStorage.ggufFilesBeside(path)
+          : [File(path)];
       path = sources.first.path;
-      final metadata = await GgufMetadata.inspect(path);
+      final metadata = gguf ? await GgufMetadata.inspect(path) : null;
       final hashes = <String>[];
       var totalSize = 0;
       for (final source in sources) {
@@ -1852,21 +2271,25 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       }
       final hash = hashes.first;
       var id = 'local-${hash.substring(0, 20)}';
-      final split = GgufSplit.parse(p.basename(path));
-      final names = split == null
-          ? ['$id.gguf']
+      final split = gguf ? GgufSplit.parse(p.basename(path)) : null;
+      // Import an already-local file in place when it lives inside a models
+      // folder the app manages (no copy, no rehash); otherwise copy it into
+      // the models folder as before (audit E20).
+      final source = gguf ? projectorBeside(path) : null;
+      final inPlace = await _canAdoptInPlace(sources, source);
+      // An in-place file keeps its own name, so deleting the row later finds
+      // the file it points at; only a copy gets the model's id as its name
+      // (audit 2026-11-20 P1-3).
+      final names = inPlace
+          ? [for (final part in sources) p.basename(part.path)]
+          : split == null
+          ? [gguf ? '$id.gguf' : '$id${p.extension(path).toLowerCase()}']
           : [
               for (var i = 1; i <= sources.length; i++)
                 split.name(i, prefix: id),
             ];
       final name = names.first;
-      // Import an already-local file in place when it lives inside a models
-      // folder the app manages (no copy, no rehash); otherwise copy it into
-      // the models folder as before (audit E20).
-      final inPlace =
-          DesktopHost.active &&
-          await _isManagedModelsFolder(sources.first.parent);
-      String? destinationPath;
+      final String destinationPath;
       if (!inPlace) {
         final destination = await ModelStorage.modelFile(name);
         final destinations = [
@@ -1921,7 +2344,6 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       // A vision model's projector is copied along, so photos work. When
       // importing in place, the projector beside the source is used in place.
       VisionProjector? projector;
-      final source = projectorBeside(path);
       if (source != null) {
         if (inPlace) {
           projector = VisionProjector(
@@ -1931,7 +2353,9 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
             sizeBytes: await source.length(),
           );
         } else {
-          final file = await ModelStorage.modelFile('$id-mmproj.gguf');
+          final file = File(
+            p.join(p.dirname(destinationPath), '$id-mmproj.gguf'),
+          );
           if (!await file.exists()) {
             partial = File('${file.path}.part');
             await source.copy(partial.path);
@@ -1946,27 +2370,30 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
           );
         }
       }
+      final parameterCount = metadata?.parameterCount;
+      final modelName = metadata?.name?.trim();
+      final quantization = _quantizationFromFileType(metadata?.fileType);
       final info = ModelInfo(
         id: id,
-        displayName: metadata.name?.trim().isNotEmpty == true
-            ? metadata.name!.trim()
+        displayName: modelName != null && modelName.isNotEmpty
+            ? modelName
             : p.basenameWithoutExtension(split?.displayName ?? path),
         fileName: name,
         sizeBytes: totalSize,
-        family: _familyFromArchitecture(metadata.architecture) ?? family,
+        family: _familyFromArchitecture(metadata?.architecture) ?? family,
         // The header's file type, else the source name (Q8_K_P, MXFP4).
-        quantization:
-            _quantizationFromFileType(metadata.fileType) !=
-                ModelQuantization.unknown
-            ? _quantizationFromFileType(metadata.fileType)
-            : ModelQuantization.of(p.basename(path)),
-        parameterCountB:
-            metadata.parameterCount == null ||
-                metadata.parameterCount! < 500000000
+        quantization: quantization == ModelQuantization.unknown
+            ? ModelQuantization.of(p.basename(path))
+            : quantization,
+        parameterCountB: parameterCount == null || parameterCount < 500000000
             ? null
-            : (metadata.parameterCount! / 1000000000).round(),
+            : (parameterCount / 1000000000).round(),
         sha256: hash,
-        license: 'Imported file · check publisher license',
+        license: descriptor.id == liteRtLmEngine.id
+            ? stringsFor(
+                ref.read(settingsProvider).localeCode,
+              ).liteRtImportedLicense
+            : 'Imported file · check publisher license',
         projector: projector,
       );
       await save(info, localPath: destinationPath);
@@ -2018,14 +2445,41 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         move: move,
         onProgress: onProgress,
         updatePaths: (paths) async {
-          await db.transaction(() async {
-            for (final entry in paths.entries) {
-              await (db.update(db.models)
-                    ..where((m) => m.localPath.equals(entry.key)))
-                  .write(ModelsCompanion(localPath: drift.Value(entry.value)));
+          Future<void> apply(Map<String, String> moved) async {
+            await db.transaction(() async {
+              for (final entry in moved.entries) {
+                final companion = ModelsCompanion(
+                  localPath: drift.Value(entry.value),
+                );
+                await (db.update(db.models)
+                      ..where((m) => m.localPath.equals(entry.key)))
+                    .write(companion);
+              }
+            });
+            await _moveHeadChoices(moved);
+          }
+
+          try {
+            await apply(paths);
+          } catch (e) {
+            // The database commits before the settings do: put the paths back
+            // before the folder change drops the copies they point at (audit
+            // 09-2).
+            try {
+              await apply({
+                for (final entry in paths.entries) entry.value: entry.key,
+              });
+            } catch (_) {
+              // The reverse write failed too: saved paths still point at the
+              // moved files, so the folder change must keep the copies
+              // (audit 09-2).
+              throw ModelFolderKeptCopiesException(e);
             }
-          });
-          await _moveHeadChoices(paths);
+            // The catalog is back on the originals, so the folder did not
+            // change: report the failed save instead of swallowing it
+            // (audit 09-2).
+            throw StateError('The model paths could not be saved: $e');
+          }
         },
       );
       _autoMtpCache.clear();
@@ -2050,15 +2504,24 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     final settings = ref.read(settingsProvider);
     final global = follow(settings.draftModelId);
     if (global != null) {
+      // Checked persistence: the folder move deletes the originals once this
+      // returns, so a swallowed write would leave the saved head pointing at
+      // a deleted file (audit 09-2).
       await ref
           .read(settingsProvider.notifier)
-          .update(settings.copyWith(draftModelId: global));
+          .update(
+            settings.copyWith(draftModelId: global),
+            requirePersistence: true,
+          );
     }
     final profiles = ref.read(modelProfilesProvider.notifier);
     for (final entry in ref.read(modelProfilesProvider).entries) {
       final head = follow(entry.value['draftModelId']);
       if (head != null) {
-        await profiles.set(entry.key, {...entry.value, 'draftModelId': head});
+        await profiles.set(entry.key, {
+          ...entry.value,
+          'draftModelId': head,
+        }, requirePersistence: true);
       }
     }
   }
@@ -2113,6 +2576,33 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         ).modelFilesInUse,
       );
 
+  /// Whether the file at [path] may be deleted with its row: it must really
+  /// sit in a models folder the app manages, links resolved, so a junction
+  /// cannot reach a file outside the library. Phones keep models only in the
+  /// app's own folder (audit 2026-11-20 P1-3).
+  Future<void> _deleteManagedFile(File file) async {
+    if (await file.exists() &&
+        (!DesktopHost.active || await _isManagedModelPath(file.path))) {
+      await file.delete();
+    }
+  }
+
+  /// Deletes the files a model row points at: the recorded path plus its split
+  /// parts and download leftovers. Resolving [ModelInfo.fileName] again would
+  /// leave an in-place import in a managed subfolder behind and could delete
+  /// a same-named file under another models root (audit 2026-11-20 P1-3).
+  Future<void> _deleteModelFiles(ModelInfo info) async {
+    final path =
+        info.localPath ?? (await ModelStorage.modelFile(info.fileName)).path;
+    final dir = p.dirname(path);
+    for (final name
+        in GgufSplit.parse(p.basename(path))?.names ?? [p.basename(path)]) {
+      for (final target in ['$name.part', name]) {
+        await _deleteManagedFile(File(p.join(dir, target)));
+      }
+    }
+  }
+
   Future<void> deleteModel(ModelInfo info) async {
     if (ref.read(sessionBusyProvider) ||
         state.isLoadingModel ||
@@ -2123,11 +2613,19 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     }
     if (state.loadedModelId == info.id) await unloadModel();
     final projector = info.projector ?? visionProjectors[info.id];
+    final localPath = info.localPath;
+    final projectorFile = projector == null
+        ? null
+        : await _projectorFile(info, projector);
     final paths = <String>[
-      (await ModelStorage.modelFile(info.fileName)).path,
-      if (info.localPath != null) info.localPath!,
-      if (projector != null)
-        (await ModelStorage.modelFile(projector.fileName)).path,
+      // Lease the file the row uses. A basename lookup for a row that has a
+      // path would lease an unrelated same-named file in another folder
+      // (audit 2026-11-20 P2-3).
+      if (localPath != null)
+        localPath
+      else
+        (await ModelStorage.modelFile(info.fileName)).path,
+      if (projectorFile != null) projectorFile.path,
     ];
     final guard = _guardModelPaths(paths);
     try {
@@ -2136,8 +2634,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
           .remember(info.id, info.displayName);
       await pauseDownload(info.id);
       await _deleteVisionFiles(info);
-      await ModelStorage.deletePartial(info.fileName);
-      await ModelStorage.delete(info.fileName);
+      await _deleteModelFiles(info);
       final db = ref.read(appDatabaseProvider);
       // Only the bundled catalog keeps an "available to download" row; a model
       // the user added by link, Hub search or import is gone for good.
@@ -2197,17 +2694,34 @@ List<String> _mtpSearchRoots() {
   return [if (home != null) p.join(home, '.lmstudio', 'models')];
 }
 
-/// Whether [dir] sits inside one of the desktop models folders the app
+/// [path] with links resolved, so a junction inside a models folder shows
+/// where it really points. Null means the location could not be verified.
+Future<String?> _canonicalPath(String path) async {
+  try {
+    // A folder must be resolved as one: on Windows resolving a folder link
+    // through File fails on the link type.
+    if (await FileSystemEntity.isDirectory(path)) {
+      return await Directory(path).resolveSymbolicLinks();
+    }
+    return await File(path).resolveSymbolicLinks();
+  } on FileSystemException {
+    return null;
+  }
+}
+
+/// Whether [path] sits inside one of the desktop models folders the app
 /// manages (current root or an older retained root), so an already-local
 /// file can be imported in place instead of copied and rehashed (audit E20).
-Future<bool> _isManagedModelsFolder(Directory dir) async {
-  if (!DesktopHost.active) return false;
+/// Links are resolved first: a junction inside a managed folder that points
+/// outside it must not make the app treat the user's file as its own (audit
+/// 2026-11-20 P1-3).
+Future<bool> _isManagedModelPath(String path) async {
+  final normalized = await _canonicalPath(path);
+  if (normalized == null) return false;
   final folders = await ModelStorage.desktopFolders();
-  final roots = folders.roots;
-  final normalized = p.normalize(p.absolute(dir.path));
-  for (final root in roots) {
-    final absRoot = p.normalize(p.absolute(root));
-    if (p.isWithin(absRoot, normalized) || p.equals(absRoot, normalized)) {
+  for (final root in folders.roots) {
+    final absRoot = await _canonicalPath(root);
+    if (absRoot != null && p.isWithin(absRoot, normalized)) {
       return true;
     }
   }

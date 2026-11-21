@@ -442,6 +442,10 @@ your own computer and use it from your phone too.
     Settings > About. One request asks the public GitHub Releases API for the
     latest release; it sends no account or device identifier, only a generic
     `OnDeviceLLM` User-Agent.
+  - **Engine packs on Windows.** Once a day the app asks the public GitHub
+    Releases API for a newer signed engine pack and downloads it if there is
+    one (no account or device identifier). Turn it off in Settings > Engine
+    updates.
   - **A remote connection** you configure yourself. Messages, plus any
     images, documents and web evidence you allow, go to that server only.
     API keys are stored in the system keystore and never exported.
@@ -651,8 +655,8 @@ connections are separate settings that you turn on yourself.
   as fast or faster. The NPU is not used.
 - **French and Spanish need a native-speaker review.**
 - **The update check is manual.** In Settings > About, **Check for updates**
-  asks GitHub for the latest release and links to it; the app never checks on
-  its own. On GitHub, choose **Watch → Custom → Releases** to be notified.
+  asks GitHub for the latest release and links to it; the app never checks for app updates on
+  its own (only signed engine packs on Windows, see above). On GitHub, choose **Watch → Custom → Releases** to be notified.
 
 ## FAQ
 

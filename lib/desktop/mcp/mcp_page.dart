@@ -20,14 +20,15 @@ Future<McpConsent> confirmMcpCall(
   BuildContext context,
   String server,
   String tool,
-  String arguments,
-) async {
+  String arguments, {
+  bool hosted = false,
+}) async {
   final t = context.l10n;
   return await showAppDialog<McpConsent>(
         context: context,
         barrierDismissible: false,
         builder: (dialog) => AlertDialog(
-          title: Text(t.mcpConfirm),
+          title: Text(hosted ? t.workspaceApprovalTitle : t.mcpConfirm),
           content: SizedBox(
             width: 640,
             child: SingleChildScrollView(
@@ -49,10 +50,11 @@ Future<McpConsent> confirmMcpCall(
               onPressed: () => Navigator.pop(dialog, McpConsent.deny),
               child: Text(t.mcpDeny),
             ),
-            OutlinedButton(
-              onPressed: () => Navigator.pop(dialog, McpConsent.always),
-              child: Text(t.mcpAlways),
-            ),
+            if (!hosted)
+              OutlinedButton(
+                onPressed: () => Navigator.pop(dialog, McpConsent.always),
+                child: Text(t.mcpAlways),
+              ),
             FilledButton(
               onPressed: () => Navigator.pop(dialog, McpConsent.once),
               child: Text(t.mcpOnce),

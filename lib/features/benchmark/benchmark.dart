@@ -7,6 +7,7 @@ import '../../core/constants/app_constants.dart';
 import '../../core/device/thermal.dart';
 import '../optimize/benchmark_receipt.dart';
 import '../../core/providers/shared_providers.dart';
+import '../../inference/engine/engine_registry_provider.dart';
 import '../../inference/engine/text_engine.dart';
 import '../knowledge/knowledge_store.dart';
 import '../models/domain/entities/model_info.dart';
@@ -465,10 +466,20 @@ class BenchmarkNotifier extends Notifier<BenchmarkState> {
   }
 
   Future<BenchmarkResult?> run(ModelInfo model) async {
+    final engineDescriptor = ref
+        .read(engineRegistryProvider)
+        .descriptorFor(model);
+    if (!engineDescriptor.capabilities.benchmark) return null;
     if (state.running != null || ref.read(sessionBusyProvider)) {
       throw StateError('Wait for the current response or benchmark.');
     }
     await ready;
+    // Two callers can pass the guard above while this one awaits the load
+    // (double tap, phone + desktop entry points): re-check once it is safe to
+    // take the running lock (audit 08c-7).
+    if (state.running != null || ref.read(sessionBusyProvider)) {
+      throw StateError('Wait for the current response or benchmark.');
+    }
     state = state.copyWith(running: model.id, clearError: true);
     ref.read(sessionBusyProvider.notifier).state = true;
     try {

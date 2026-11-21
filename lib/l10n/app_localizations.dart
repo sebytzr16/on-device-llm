@@ -3346,6 +3346,24 @@ abstract class AppLocalizations {
   /// **'The server also stops when the phone reports severe heat. The screen stays on while it runs.'**
   String get hostLowBatteryHint;
 
+  /// No description provided for @hostShareDocuments.
+  ///
+  /// In en, this message translates to:
+  /// **'Share documents with paired devices'**
+  String get hostShareDocuments;
+
+  /// No description provided for @hostShareDocumentsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Paired devices can search the documents on this device. Off by default.'**
+  String get hostShareDocumentsHint;
+
+  /// No description provided for @hostShareDocumentsConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Paired devices will be able to read and search every document in your knowledge collection. Turn on?'**
+  String get hostShareDocumentsConfirm;
+
   /// No description provided for @commonOff.
   ///
   /// In en, this message translates to:
@@ -3544,6 +3562,12 @@ abstract class AppLocalizations {
   /// **'No pin: use the selected model'**
   String get chatPinNone;
 
+  /// No description provided for @chatPinStaysLocal.
+  ///
+  /// In en, this message translates to:
+  /// **'Pinned. Web research stays off for this chat.'**
+  String get chatPinStaysLocal;
+
   /// No description provided for @chatPinned.
   ///
   /// In en, this message translates to:
@@ -3723,6 +3747,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Backup exceeds the safety limit.'**
   String get backupTooLarge;
+
+  /// No description provided for @backupTooLargeForFileSave.
+  ///
+  /// In en, this message translates to:
+  /// **'This backup is too large to save through the Android file picker. Use Share instead.'**
+  String get backupTooLargeForFileSave;
 
   /// No description provided for @backupVerifiedNotice.
   ///
@@ -12123,6 +12153,48 @@ abstract class AppLocalizations {
   /// **'Could not reload the model after Optimize. Try loading it again.'**
   String get optimizeReloadError;
 
+  /// No description provided for @optimizeBusyGenerating.
+  ///
+  /// In en, this message translates to:
+  /// **'A reply is still being written. Stop it or wait for it to finish, then run Optimize again.'**
+  String get optimizeBusyGenerating;
+
+  /// No description provided for @optimizeBusyLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'A model is loading. Wait for it to finish, then run Optimize again.'**
+  String get optimizeBusyLoading;
+
+  /// No description provided for @optimizeBusyOther.
+  ///
+  /// In en, this message translates to:
+  /// **'Another task is using the model. Wait for it to finish, then run Optimize again.'**
+  String get optimizeBusyOther;
+
+  /// No description provided for @optimizeBusyRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Optimize is already running for this model.'**
+  String get optimizeBusyRunning;
+
+  /// No description provided for @optimizeMemoryRam.
+  ///
+  /// In en, this message translates to:
+  /// **'Free RAM is too small for this model or a safe setup. Close other apps or use a smaller model.'**
+  String get optimizeMemoryRam;
+
+  /// No description provided for @optimizeMemoryVram.
+  ///
+  /// In en, this message translates to:
+  /// **'Free graphics memory is too small for this model or a safe setup. Lower the GPU layers or use a smaller model.'**
+  String get optimizeMemoryVram;
+
+  /// No description provided for @desktopOptimizeKeptUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'These settings cannot be saved on this device, so the current settings were kept.'**
+  String get desktopOptimizeKeptUnsupported;
+
   /// No description provided for @tuneReceipt.
   ///
   /// In en, this message translates to:
@@ -13210,6 +13282,12 @@ abstract class AppLocalizations {
   /// **'Stop the current response before switching models.'**
   String get modelStopSwitch;
 
+  /// No description provided for @modelLoadInProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'A model is already loading. Wait for it to finish, or stop it.'**
+  String get modelLoadInProgress;
+
   /// No description provided for @modelStopUnload.
   ///
   /// In en, this message translates to:
@@ -13833,6 +13911,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Paused'**
   String get modelDownloadPaused;
+
+  /// No description provided for @downloadPreparing.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing…'**
+  String get downloadPreparing;
 
   /// No description provided for @sidebarCollapse.
   ///
@@ -17029,11 +17113,161 @@ abstract class AppLocalizations {
   /// **'The downloaded engine failed to load twice, so the built-in engine is in use again.'**
   String get engineUpdateReverted;
 
+  /// No description provided for @engineUpdateUnverified.
+  ///
+  /// In en, this message translates to:
+  /// **'The downloaded engine pack could not be verified, so the built-in engine is in use. Install it again from Settings → Engines.'**
+  String get engineUpdateUnverified;
+
   /// No description provided for @engineUpdateNoGitHub.
   ///
   /// In en, this message translates to:
   /// **'GitHub could not be reached.'**
   String get engineUpdateNoGitHub;
+
+  /// No description provided for @liteRtBackend.
+  ///
+  /// In en, this message translates to:
+  /// **'LiteRT backend'**
+  String get liteRtBackend;
+
+  /// No description provided for @liteRtBackendAuto.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto (GPU with CPU fallback)'**
+  String get liteRtBackendAuto;
+
+  /// No description provided for @liteRtBackendGpu.
+  ///
+  /// In en, this message translates to:
+  /// **'GPU (OpenCL)'**
+  String get liteRtBackendGpu;
+
+  /// No description provided for @liteRtBackendCpu.
+  ///
+  /// In en, this message translates to:
+  /// **'CPU'**
+  String get liteRtBackendCpu;
+
+  /// No description provided for @liteRtUnusedSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Not used by LiteRT models'**
+  String get liteRtUnusedSettings;
+
+  /// No description provided for @engineUnusedSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Not used by {engine} models'**
+  String engineUnusedSettings(String engine);
+
+  /// No description provided for @engineUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'{engine} is unavailable on this device.'**
+  String engineUnavailable(String engine);
+
+  /// No description provided for @engineToolsUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Tools are unavailable with {engine} models.'**
+  String engineToolsUnavailable(String engine);
+
+  /// No description provided for @liteRtToolsUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Tools are unavailable with LiteRT models.'**
+  String get liteRtToolsUnavailable;
+
+  /// No description provided for @liteRtAndroidOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'LiteRT models require Android.'**
+  String get liteRtAndroidOnly;
+
+  /// No description provided for @liteRtHelperLoadFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'Load this LiteRT model and wait for chat to finish before using it with a helper.'**
+  String get liteRtHelperLoadFirst;
+
+  /// No description provided for @liteRtImportModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Import a model'**
+  String get liteRtImportModel;
+
+  /// No description provided for @liteRtImportHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a .gguf or .litertlm model file.'**
+  String get liteRtImportHint;
+
+  /// No description provided for @liteRtImportedLicense.
+  ///
+  /// In en, this message translates to:
+  /// **'Imported file · check publisher license'**
+  String get liteRtImportedLicense;
+
+  /// No description provided for @liteRtNotLoaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Load a LiteRT model first.'**
+  String get liteRtNotLoaded;
+
+  /// No description provided for @liteRtBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'The LiteRT model is busy.'**
+  String get liteRtBusy;
+
+  /// No description provided for @liteRtInvalidModelFilename.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a single model filename.'**
+  String get liteRtInvalidModelFilename;
+
+  /// Shown when the optional ik_llama.cpp engine pack DLLs fail to load.
+  ///
+  /// In en, this message translates to:
+  /// **'ik_llama.cpp could not be loaded. Reinstall its engine pack in Settings, or switch this model back to llama.cpp.'**
+  String get ikLlamaLoadFailed;
+
+  /// Model details label for the engine that runs this model file.
+  ///
+  /// In en, this message translates to:
+  /// **'Engine'**
+  String get modelEngine;
+
+  /// Model details hint for an optional engine whose pack is not installed.
+  ///
+  /// In en, this message translates to:
+  /// **'Install in Settings → Engines'**
+  String get modelEngineUnavailable;
+
+  /// Settings row title for the optional ik_llama.cpp engine pack.
+  ///
+  /// In en, this message translates to:
+  /// **'ik_llama.cpp engine pack'**
+  String get engineUpdateIkTitle;
+
+  /// Settings row hint for the optional ik_llama.cpp engine pack.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional second engine, installed only for the models you assign to it. llama.cpp stays the default.'**
+  String get engineUpdateIkHint;
+
+  /// Settings row subtitle showing the installed ik_llama.cpp pack tag.
+  ///
+  /// In en, this message translates to:
+  /// **'Installed pack: {tag}'**
+  String engineUpdateIkInstalled(String tag);
+
+  /// Shown when the ik_llama.cpp crash guard disabled its engine pack.
+  ///
+  /// In en, this message translates to:
+  /// **'The ik_llama.cpp engine pack failed to load twice and was disabled. Reinstall it in Settings → Engines, or switch those models back to llama.cpp.'**
+  String get ikEnginePackReverted;
 }
 
 class _AppLocalizationsDelegate

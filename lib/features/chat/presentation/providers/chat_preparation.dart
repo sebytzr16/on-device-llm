@@ -80,6 +80,22 @@ extension _ChatPreparation on ChatNotifier {
     if (t.localOnly && settings.usesRemote) {
       settings = settings.copyWith(remoteEnabled: false);
     }
+    if (!settings.usesRemote) {
+      final capabilities = _chatRef
+          .read(engineRegistryProvider)
+          .descriptorFor(candidate)
+          .capabilities;
+      if (!capabilities.grammar &&
+          settings.responseFormat == ResponseFormat.gbnf) {
+        settings = settings.copyWith(
+          responseFormat: ResponseFormat.text,
+          grammar: '',
+        );
+      }
+      if (!capabilities.tools) {
+        settings = settings.copyWith(toolsEnabled: false, toolActions: false);
+      }
+    }
     if (saverReason != null) {
       _chatState = _chatState.copyWith(
         notice: BatterySaver.notice(saverReason, _t),
@@ -168,6 +184,7 @@ extension _ChatPreparation on ChatNotifier {
                   m.attachments.any((a) => a.isImage),
             ),
       );
+      if (!diffusion) t.engine = _chatRef.read(activeLocalEngineProvider);
       t.stage('loadMs');
       _chatState = _chatState.copyWith(
         isLoadingModel: false,
@@ -224,8 +241,11 @@ extension _ChatPreparation on ChatNotifier {
     final db = _database;
     final id = _chatState.chatId ?? const Uuid().v4();
     final now = DateTime.now();
+    final storedRows = await db.getMessages(id);
+    final storedIds = {for (final row in storedRows) row.id};
     // Ancestry: a new question continues the last live turn; a
     // re-asked question (edit) is a sibling of the one it replaces.
+    // A response shown after a failed save may have no row to link to.
     final user = !insertUser && _lastLiveUser != null
         ? _lastLiveUser!
         : ChatMessage(
@@ -236,20 +256,21 @@ extension _ChatPreparation on ChatNotifier {
             attachments: attachments,
             parentId:
                 parentId ??
-                _chatState.messages.where(ChatNotifier.isLive).lastOrNull?.id,
+                _chatState.messages
+                    .where(
+                      (m) => ChatNotifier.isLive(m) && storedIds.contains(m.id),
+                    )
+                    .lastOrNull
+                    ?.id,
           );
     // The assistant row takes sequence + 1: after a new question, after
     // the existing last row, or (resuming) its own original slot.
-    final storedRows = await db.getMessages(id);
     final lastSequence = storedRows.fold(
       -1,
       (n, r) => r.sequence > n ? r.sequence : n,
     );
     final sequence = resume != null
-        ? (await db.getMessages(
-                id,
-              )).firstWhere((r) => r.id == resume.id).sequence -
-              1
+        ? storedRows.firstWhere((r) => r.id == resume.id).sequence - 1
         : insertUser
         ? lastSequence + 1
         : lastSequence;

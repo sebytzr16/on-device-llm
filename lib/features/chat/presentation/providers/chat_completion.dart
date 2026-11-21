@@ -363,6 +363,14 @@ extension _ChatCompletion on ChatNotifier {
       });
     } catch (e) {
       t.failure = _t.chatErrorSave('$e');
+      // Keep the unsaved text visible so the user can copy it.
+      _chatState = _chatState.copyWith(
+        messages: [
+          ..._chatState.messages,
+          msg.status == 'complete' ? msg.copyWith(status: 'error') : msg,
+        ],
+      );
+      return;
     }
     _chatState = _chatState.copyWith(
       messages: [..._chatState.messages, msg],

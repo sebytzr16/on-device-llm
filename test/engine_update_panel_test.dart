@@ -63,6 +63,34 @@ void main() {
     expect(fixed.updates, 1);
   });
 
+  testWidgets('an unverified pack shows the reinstall notice', (tester) async {
+    await _pump(
+      tester,
+      const EngineUpdateView(
+        phase: EngineUpdatePhase.upToDate,
+        unverified: true,
+      ),
+    );
+    expect(find.textContaining('could not be verified'), findsOneWidget);
+    expect(find.textContaining('Settings → Engines'), findsOneWidget);
+  });
+
+  testWidgets('an unverified pack keeps the way back and removal', (
+    tester,
+  ) async {
+    // The pack is on disk but its manifest no longer verifies: the rows must
+    // stay so its several hundred MB can be removed (P2-1).
+    await _pump(
+      tester,
+      const EngineUpdateView(
+        phase: EngineUpdatePhase.upToDate,
+        unverified: true,
+      ),
+    );
+    expect(find.byKey(const Key('engine-update-use-built-in')), findsOneWidget);
+    expect(find.byKey(const Key('engine-update-remove')), findsOneWidget);
+  });
+
   testWidgets('a pack in use offers the way back and removal', (tester) async {
     await _pump(
       tester,

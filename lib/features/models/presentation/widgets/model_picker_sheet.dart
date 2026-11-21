@@ -17,6 +17,7 @@ import '../../domain/entities/model_catalog.dart';
 import 'model_tags.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/island/status_island.dart';
+import '../../../../core/widgets/stop_load_button.dart';
 
 /// Bottom sheet listing downloaded models and the saved remote connections.
 /// Tapping a model loads it (and turns the remote off); tapping a
@@ -179,9 +180,17 @@ class _PickerSheetState extends ConsumerState<_PickerSheet> {
                           child: const LinearProgressIndicator(minHeight: 3),
                         ),
                         const SizedBox(height: AppDesign.xs),
-                        Text(
-                          context.l10n.loadingModel,
-                          style: context.text.mono,
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                context.l10n.loadingModel,
+                                style: context.text.mono,
+                              ),
+                            ),
+                            // A load can be stopped at any moment (OR-02).
+                            const StopLoadButton(),
+                          ],
                         ),
                       ],
                       const SizedBox(height: AppDesign.md),

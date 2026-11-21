@@ -11,9 +11,11 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/design/app_design.dart';
 import '../../../../core/l10n/l10n.dart';
+import '../../../settings/presentation/providers/effective_settings_provider.dart';
 import '../../../settings/presentation/providers/model_profiles_provider.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../settings/presentation/setting_labels.dart';
+import '../../../settings/presentation/widgets/settings_widgets.dart';
 import '../../domain/entities/model_info.dart';
 import '../../domain/model_config_card.dart';
 import '../providers/model_manager_provider.dart';
@@ -221,10 +223,29 @@ Future<bool> showConfigCardPreview(
       },
     ),
   );
-  if (applied != true || target == null) return false;
-  await ref.read(modelProfilesProvider.notifier).set(target!.id, card.settings);
+  if (applied != true) return false;
+  final destination = target;
+  if (destination == null) return false;
+  if (!context.mounted) return false;
+  final current = ref.read(modelProfilesProvider)[destination.id] ?? const {};
+  // A card replaces the profile: an explicit web research choice survives it
+  // unless the card carries one, and Off → Auto/Always still asks first
+  // (audit 2026-11-20 P1-4).
+  final settings = <String, dynamic>{
+    ...card.settings,
+    if (!card.settings.containsKey('webMode') && current['webMode'] != null)
+      'webMode': current['webMode'],
+  };
+  if (!await confirmWebModeChange(
+    context,
+    ref,
+    SettingsChange(profileModelId: destination.id, profile: settings),
+  )) {
+    return false;
+  }
+  await ref.read(modelProfilesProvider.notifier).set(destination.id, settings);
   if (context.mounted) {
-    _say(context, context.l10n.configApplied(target!.displayName));
+    _say(context, context.l10n.configApplied(destination.displayName));
   }
   return true;
 }

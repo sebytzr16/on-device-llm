@@ -441,6 +441,62 @@ void main() {
       expect(loads, ['a']);
     });
 
+    test('unload never frees a slot whose load is still running', () async {
+      final gate = Completer<void>();
+      final p = pool(onLoad: (_) => gate.future);
+      addTearDown(() async {
+        if (!gate.isCompleted) gate.complete();
+        await p.close();
+      });
+      final acquiring = p.acquire('a');
+      await Future<void>.delayed(Duration.zero);
+      await expectLater(
+        p.unload('a', wait: Duration.zero),
+        throwsA(isA<StateError>()),
+      );
+      expect(p.holds('a'), isTrue);
+      expect(engines['a']!.unloads, 0);
+      expect(engines['a']!.disposed, isFalse);
+      gate.complete();
+      expect(await acquiring, same(engines['a']));
+      p.release('a');
+    });
+
+    test('unload leaves a slot its failed load already freed', () async {
+      final gate = Completer<void>();
+      final p = pool(onLoad: (_) => gate.future);
+      addTearDown(p.close);
+      final acquiring = p.acquire('a');
+      final failure = expectLater(acquiring, throwsA(isA<RouteRefusal>()));
+      await Future<void>.delayed(Duration.zero);
+      final unloading = p.unload('a');
+      // The load fails during the unload wait: one owner frees the engine.
+      gate.completeError(StateError('Out of memory.'));
+      await failure;
+      await unloading;
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(engines['a']!.unloads, 1);
+      expect(engines['a']!.disposed, isTrue);
+    });
+
+    test(
+      'close does not free an engine its failed load already freed',
+      () async {
+        final gate = Completer<void>();
+        final p = pool(onLoad: (_) => gate.future);
+        final acquiring = p.acquire('a');
+        final failure = expectLater(acquiring, throwsA(isA<RouteRefusal>()));
+        await Future<void>.delayed(Duration.zero);
+        final closing = p.close();
+        gate.completeError(StateError('Out of memory.'));
+        await failure;
+        await closing;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(engines['a']!.unloads, 1);
+        expect(engines['a']!.disposed, isTrue);
+      },
+    );
+
     test('close frees every copy', () async {
       final p = pool();
       await p.acquire('a');

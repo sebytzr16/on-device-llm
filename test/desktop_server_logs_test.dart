@@ -1,11 +1,17 @@
+import 'dart:io';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ondevice_llm/core/platform/desktop_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logging/logging.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+import 'package:ondevice_llm/core/l10n/l10n.dart';
 import 'package:ondevice_llm/core/logging/developer_logs.dart';
+import 'package:ondevice_llm/core/providers/shared_providers.dart';
 import 'package:ondevice_llm/desktop/desktop_theme.dart';
 import 'package:ondevice_llm/desktop/logs_page.dart';
 import 'package:ondevice_llm/desktop/server_page.dart';
@@ -13,8 +19,25 @@ import 'package:ondevice_llm/features/hosting/device_model_server.dart';
 import 'package:ondevice_llm/features/hosting/presentation/device_hosting_provider.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
+import 'package:ondevice_llm/features/settings/presentation/providers/settings_provider.dart';
 
 import 'advanced_pages_2_test.dart' show TestModels;
+import 'chat_test.dart' show TestEngine, TestSettings;
+
+/// A loaded, idle runtime, so start() reaches the host identity.
+class _LoadedEngine extends TestEngine {
+  @override
+  bool get isLoaded => true;
+  @override
+  bool get isBusy => false;
+}
+
+class _Paths extends PathProviderPlatform {
+  final String path;
+  _Paths(this.path);
+  @override
+  Future<String?> getApplicationSupportPath() async => path;
+}
 
 class FakeDesktopHost extends DeviceHostingNotifier {
   int starts = 0;
@@ -48,6 +71,13 @@ class FakeDesktopHost extends DeviceHostingNotifier {
     await stop();
   }
 
+  /// The page as it looks while the host identity is being replaced.
+  void resetInProgress() => state = const DeviceHostingState(
+    error: 'The host TLS identity is unavailable.',
+    tlsIdentityFailure: true,
+    resettingIdentity: true,
+  );
+
   void serve() => state = state.withServed(
     ServedRequest(
       at: DateTime(2026),
@@ -64,13 +94,27 @@ class FakeDesktopHost extends DeviceHostingNotifier {
 }
 
 Widget harness(Widget page, {ProviderContainer? container}) {
-  final app = MaterialApp(
-    theme: DesktopTheme.of(AccentChoice.amber, dark: true),
-    home: Scaffold(body: page),
+  // The page follows the Settings language, as the desktop shell does.
+  final app = Consumer(
+    builder: (context, ref, _) {
+      final localeCode = ref.watch(
+        settingsProvider.select((s) => s.localeCode),
+      );
+      return MaterialApp(
+        theme: DesktopTheme.of(AccentChoice.amber, dark: true),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: localeCode.isEmpty ? null : Locale(localeCode),
+        home: Scaffold(body: page),
+      );
+    },
   );
   return container != null
       ? UncontrolledProviderScope(container: container, child: app)
-      : ProviderScope(child: app);
+      : ProviderScope(
+          overrides: [settingsProvider.overrideWith(TestSettings.new)],
+          child: app,
+        );
 }
 
 void main() {
@@ -92,6 +136,7 @@ void main() {
       overrides: [
         deviceHostingProvider.overrideWith(FakeDesktopHost.new),
         modelManagerProvider.overrideWith(TestModels.new),
+        settingsProvider.overrideWith(TestSettings.new),
       ],
     );
     addTearDown(container.dispose);
@@ -191,6 +236,91 @@ void main() {
   testWidgets('server fits a narrow desktop panel', (tester) async {
     await server(tester, width: 600);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a TLS failure keeps Reset identity after a language change', (
+    tester,
+  ) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    // Real file I/O runs outside fake async: syncing it keeps the widget test
+    // from waiting forever on a future no pump can complete.
+    final dir = Directory.systemTemp.createTempSync('tls-failure');
+    final previousPaths = PathProviderPlatform.instance;
+    PathProviderPlatform.instance = _Paths(dir.path);
+    // A pin whose identity is missing: the host identity is unavailable.
+    File('${dir.path}/hosting-tls.fingerprint').writeAsStringSync('pin');
+    addTearDown(() async {
+      PathProviderPlatform.instance = previousPaths;
+      await dir.delete(recursive: true);
+    });
+    tester.view.physicalSize = const Size(1300, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final container = ProviderContainer(
+      overrides: [
+        llamaEngineProvider.overrideWithValue(_LoadedEngine()),
+        modelManagerProvider.overrideWith(TestModels.new),
+        settingsProvider.overrideWith(TestSettings.new),
+      ],
+    );
+    addTearDown(container.dispose);
+    final settings = container.read(settingsProvider.notifier);
+    final hosting = container.read(deviceHostingProvider.notifier);
+    await container.read(desktopPreferencesProvider.notifier).ready;
+    await tester.pumpWidget(
+      harness(const DesktopServerPage(), container: container),
+    );
+    await tester.pumpAndSettle();
+    // The real start fails on the host identity while the app is French.
+    await tester.runAsync(() async {
+      await settings.update(
+        container.read(settingsProvider).copyWith(localeCode: 'fr'),
+      );
+      await hosting.start(port: 8787, lan: true);
+    });
+    await tester.pumpAndSettle();
+    final french = stringsFor('fr').hostTlsIdentityError;
+    final frenchReset = stringsFor('fr').hostResetIdentity;
+    final view = container.read(deviceHostingProvider);
+    expect(view.tlsIdentityFailure, isTrue);
+    expect(view.error, french);
+    expect(find.text(french), findsOneWidget);
+    // The page itself is French while the settings say so.
+    expect(find.text(frenchReset), findsOneWidget);
+    expect(find.text('Reset identity'), findsNothing);
+    // The message stays French when the page asks for English; the only way
+    // out stays on screen instead of being hidden by the text comparison.
+    await tester.runAsync(() async {
+      await settings.update(
+        container.read(settingsProvider).copyWith(localeCode: 'en'),
+      );
+    });
+    await tester.pump();
+    expect(find.text(french), findsOneWidget);
+    expect(find.text('Reset identity'), findsOneWidget);
+    expect(find.text(frenchReset), findsNothing);
+  });
+
+  testWidgets('Start and Reset wait for an identity reset to finish', (
+    tester,
+  ) async {
+    final container = await server(tester);
+    final host =
+        container.read(deviceHostingProvider.notifier) as FakeDesktopHost;
+    host.resetInProgress();
+    await tester.pumpAndSettle();
+    final start = find.ancestor(
+      of: find.text('Start server'),
+      matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
+    );
+    // The notifier refuses a start during the reset: the page must say so
+    // instead of accepting a click that does nothing.
+    expect(tester.widget<ButtonStyleButton>(start).onPressed, isNull);
+    final reset = find.ancestor(
+      of: find.text('Reset identity'),
+      matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
+    );
+    expect(tester.widget<ButtonStyleButton>(reset).onPressed, isNull);
   });
 
   test('request ring keeps the newest 200 entries', () {

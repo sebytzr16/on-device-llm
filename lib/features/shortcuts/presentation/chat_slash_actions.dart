@@ -62,7 +62,7 @@ Future<void> runChatAction(
   try {
     switch (command) {
       case 'clear':
-        ref.read(chatProvider.notifier).newChat();
+        await ref.read(chatProvider.notifier).newChat();
       case 'model':
         await showModelPickerSheet(context);
       case 'tools':
@@ -147,7 +147,7 @@ Future<void> _compact(BuildContext context, WidgetRef ref) async {
       ? ref.read(remoteEngineProvider)
       : model?.id == diffusionGemmaModelId
       ? ref.read(diffusionGemmaEngineProvider)
-      : ref.read(llamaEngineProvider);
+      : ref.read(activeLocalEngineProvider);
   final editor = TextEditingController();
   ref.read(sessionBusyProvider.notifier).state = true;
   final future = const ContextCompactor().summarize(

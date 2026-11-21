@@ -56,7 +56,7 @@ extension _ChatSend on ChatNotifier {
     if (_naming case final naming?) {
       // A late title gives way to the next turn; it is tried again later.
       _namingStopped = true;
-      _chatRef.read(llamaEngineProvider).cancel();
+      _chatRef.read(activeLocalEngineProvider).cancel();
       await naming;
     }
     if (_chatState.isGenerating ||
@@ -67,12 +67,16 @@ extension _ChatSend on ChatNotifier {
     }
     _chatRef.read(helperJobsProvider.notifier).dismiss();
     final localEngine = _chatRef.read(llamaEngineProvider);
+    final fileEngines = _chatRef.read(availableFileEnginesProvider);
     final remoteEngine = _chatRef.read(remoteEngineProvider);
     final diffusionEngine = _chatRef.read(diffusionGemmaEngineProvider);
     final models = _chatRef.read(modelManagerProvider.notifier);
     final lease = _turns.begin(() {
       models.stopLoad();
       localEngine.cancel();
+      for (final runtime in fileEngines) {
+        runtime.engine.cancel();
+      }
       diffusionEngine.cancel();
       remoteEngine.cancel();
     });

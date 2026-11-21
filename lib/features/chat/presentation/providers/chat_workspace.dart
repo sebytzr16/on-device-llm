@@ -11,15 +11,31 @@ mixin _ChatWorkspace on _ChatBase {
     final collection = project?.collection.trim() ?? '';
     if (collection.isEmpty) return;
     await ref.read(settingsProvider.notifier).ready;
+    await ref.read(presetsProvider.notifier).ready;
+    await ref.read(modelProfilesProvider.notifier).ready;
     final db = ref.read(appDatabaseProvider);
-    final override = jsonEncode({'knowledgeCollection': collection});
+    // Every layer that can name the collection, decoded and sanitized the
+    // way the resolver reads it: a chat, a preset or a model profile that
+    // still resolves to it keeps the documents alive (review 2026-11-20).
+    bool names(Map<String, dynamic> overrides) =>
+        overrides['knowledgeCollection'] == collection;
     final usedElsewhere =
         workspace.projects.any(
           (p) => p.id != id && p.collection.trim() == collection,
         ) ||
         ref.read(settingsProvider).knowledgeCollection == collection ||
+        ref
+            .read(presetsProvider)
+            .presets
+            .any((p) => names(SettingsResolver.sanitize(p.toOverrides()))) ||
+        ref
+            .read(modelProfilesProvider)
+            .values
+            .any((p) => names(SettingsResolver.sanitize(p))) ||
+        // Decoded, not a substring: a chat keeps other override keys next to
+        // `knowledgeCollection`, so the encoded form is not a stable needle.
         (await db.select(db.chats).get()).any(
-          (c) => c.overridesJson.contains(override),
+          (c) => names(ChatNotifier.overridesOf(c)),
         );
     if (usedElsewhere) return;
     await DeletionCleanup.deleteKnowledgeCollection(db, collection);
@@ -81,8 +97,8 @@ mixin _ChatWorkspace on _ChatBase {
     await _startAnswer(t, prompt);
     state = state.copyWith(notice: _t.workspaceWorking);
     final requestId = t.assistantId;
-    final uploads = <Map<String, Object>>[];
-    if (!await client.hasRetainedJob(settings, requestId)) {
+    Future<List<Map<String, Object>>> prepareUploads() async {
+      final uploads = <Map<String, Object>>[];
       for (var index = 0; index < recent.length; index++) {
         for (final attachment in recent[index].attachments) {
           if (attachment.isImage
@@ -90,7 +106,10 @@ mixin _ChatWorkspace on _ChatBase {
               : !settings.remoteDocuments) {
             continue;
           }
-          if (_cancelled) return;
+          // Stop during the upload phase: hand back what was prepared. The
+          // cancelled token aborts the job POST, so run() exits quietly and
+          // the turn is recorded as stopped, not failed.
+          if (_cancelled) return uploads;
           state = state.copyWith(
             notice: _t.workspaceUploading(attachment.name),
           );
@@ -98,19 +117,22 @@ mixin _ChatWorkspace on _ChatBase {
             settings,
             attachment.path,
             attachment.name,
+            batch: requestId,
             cancel: _retrievalCancel,
           );
           uploads.add({'uploadId': id, 'message': index + 1});
         }
       }
+      return uploads;
     }
+
     String? failure;
     try {
       await client.run(
         settings: settings,
         requestId: requestId,
         messages: messages,
-        uploads: uploads,
+        prepareUploads: prepareUploads,
         cancel: _retrievalCancel,
         webOnly: !t.userTools,
         phoneActions: !DesktopHost.active && settings.toolActions,

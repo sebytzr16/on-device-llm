@@ -275,8 +275,7 @@ class ModelFileProgress extends StatelessWidget {
           [
             '${(fraction * 100).toStringAsFixed(1)} %',
             '${bytesLabel(received)} / ${bytesLabel(total)}',
-            if (bytesPerSecond != null)
-              '${bytesLabel(bytesPerSecond!.round())}/s',
+            if (bytesPerSecond != null) speedLabel(bytesPerSecond!),
           ].join(' · '),
           style: context.text.monoStrong,
         ),

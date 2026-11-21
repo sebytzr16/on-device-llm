@@ -1,7 +1,12 @@
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:crypto/crypto.dart';
 import 'package:ffi/ffi.dart';
+import 'package:path/path.dart' as p;
 import '../../desktop/engine_files.dart';
+import '../engine/engine_descriptor.dart';
 
 /// Version of the Dart-to-bridge surface: every export and signature the app
 /// binds. An engine pack declares the same number, so a mismatched pack is
@@ -53,9 +58,19 @@ abstract class EnginePackLoader {
   /// Folder holding the active pack's DLLs, or null for the bundled engine.
   String? activePackDir();
 
+  /// Folder whose DLLs match an authenticated installed manifest.
+  String? verifiedPackDir();
+
+  /// The signed manifest's SHA-256 for [name] of the verified pack [dir], or
+  /// null when that pack does not list the file. The loader re-hashes a pack
+  /// bridge against it while holding a no-write/no-delete lock on the file.
+  String? expectedFileSha256(String dir, String name);
+
   /// Called before a load from the pack and after it succeeded again: two
-  /// loads that never finished revert to the bundled engine.
-  void markLoadStarted();
+  /// loads that never finished revert to the bundled engine. Returns false
+  /// when the attempt could not be recorded: the load must then refuse the
+  /// pack instead of running unguarded.
+  bool markLoadStarted();
   void markLoadSucceeded();
 }
 
@@ -67,15 +82,27 @@ class EnginePackLoadGuard {
   bool selected = false;
   EnginePackLoadGuard(this.loader);
 
+  /// Records the attempt; throws when the crash state could not be written,
+  /// so the caller refuses the pack for this load instead of running it with
+  /// a crash guard that cannot notice a crash loop.
+  void _markStarted() {
+    if (!loader.markLoadStarted()) {
+      throw StateError(
+        'The engine pack crash guard could not record this load; '
+        'refusing the pack for this load',
+      );
+    }
+  }
+
   void beforeOpen() {
     if (_prepared) return;
-    loader.markLoadStarted();
+    _markStarted();
     _prepared = true;
   }
 
   void beforeModelLoad() {
     if (!selected) return;
-    if (!_prepared) loader.markLoadStarted();
+    if (!_prepared) _markStarted();
     _prepared = false;
   }
 
@@ -113,11 +140,14 @@ class LlamaBindings {
 
   /// [windowsBackend] ('cuda' or 'vulkan') tries that bridge first: each
   /// Windows bridge carries only its own GPU backend.
+  /// [engineId] picks the engine whose pack the DLLs come from; llama.cpp's
+  /// bundled DLLs are never used for another engine.
   /// [libraryPath] reopens a worker's already selected library without probing.
   LlamaBindings({
     String? windowsBackend,
     String cpuVariant = 'auto',
     String? libraryPath,
+    String engineId = llamaCppEngineId,
     // Probe/control bindings must not count as unfinished model loads.
     bool modelLoad = false,
   }) {
@@ -126,7 +156,7 @@ class LlamaBindings {
         : Platform.isAndroid
         ? _openAndroid()
         : Platform.isWindows
-        ? _openWindows(windowsBackend, cpuVariant, modelLoad)
+        ? _openWindows(windowsBackend, cpuVariant, modelLoad, engineId)
         : _process();
     final version = lib.lookupFunction<Int32 Function(), int Function()>(
       'od_version',
@@ -258,48 +288,122 @@ class LlamaBindings {
     // Assign only after success: `library` is final and a failed variant
     // must not claim it.
     final path = Platform.isWindows ? windowsBridgePath(name) : name;
-    final lib = DynamicLibrary.open(path);
+    final lib = Platform.isWindows
+        ? WindowsBridgeLoader.reopen(path)
+        : DynamicLibrary.open(path);
     library = path;
     return lib;
   }
 
   /// Installed by the engine updater; null on Android and in tests, where
-  /// only the bundled DLLs exist.
+  /// only the bundled DLLs exist. [ikEnginePack] is the optional ik_llama.cpp
+  /// pack: it lives in its own folder and has no bundled fallback.
   static EnginePackLoader? enginePack;
+  static EnginePackLoader? ikEnginePack;
+
+  /// The signed manifest's digest for the pack bridge [name] of [dir]. A file
+  /// the manifest does not list has none: the open refuses it instead of
+  /// mapping an unverified pack file (P1-1). Bundled DLLs never get here.
+  static String packBridgeSha256(
+    EnginePackLoader? pack,
+    String dir,
+    String name,
+  ) {
+    final digest = pack?.expectedFileSha256(dir, name);
+    if (digest == null) {
+      throw StateError(
+        '$name is not listed in the signed manifest of the engine pack '
+        '$dir; refusing to load it unverified',
+      );
+    }
+    return digest;
+  }
 
   /// CUDA, then hardware Vulkan, then CPU. Overrides try only that GPU.
   DynamicLibrary _openWindows(
     String? preferred,
     String cpuVariant,
     bool modelLoad,
+    String engineId,
   ) {
-    final pack = enginePack;
-    final packDir = pack?.activePackDir();
+    final ik = engineId == ikLlamaEngineId;
+    final pack = ik ? ikEnginePack : enginePack;
+    final packDir = pack?.verifiedPackDir();
+    if (ik && packDir == null) {
+      throw StateError(
+        'OD_IK_LOAD_FAILED: the ik_llama.cpp engine pack is not installed',
+      );
+    }
     if (packDir != null) _packLoadGuard = EnginePackLoadGuard(pack!);
-    final selected = openWindowsLibrary<DynamicLibrary>(
-      skipped: skipped,
-      preferred: preferred,
-      cpuVariant: cpuVariant,
-      packDir: packDir,
-      packCudaMajor: pack?.cudaMajor,
-      unavailablePackFiles: pack?.unavailableFiles ?? const [],
-      open: (name) {
-        // Only actual pack attempts count. Known-unavailable GPU variants
-        // may use bundled DLLs without penalizing the pack's crash guard.
-        if (modelLoad && packDir != null && name.startsWith(packDir)) {
-          _packLoadGuard!.beforeOpen();
-        }
-        return DynamicLibrary.open(name);
-      },
-      checkEngineFiles: EngineFiles.besideExecutable().checkVariant,
-      gpuDeviceCount: (lib) =>
-          lib.lookupFunction<Int32 Function(), int Function()>(
-            'od_gpu_device_count',
-          )(),
-    );
+    int? isa;
+    var probedIsa = false;
+    int? readIsa() {
+      if (!probedIsa) {
+        probedIsa = true;
+        isa = _windowsIsaIn(
+          modelLoad ? packDir : null,
+          allowBundled: !modelLoad || !ik,
+          // The probe maps the pack's own compat bridge, so it is a pack
+          // attempt of this model load for every engine (P3-4). The callback
+          // only runs when the pack copy exists.
+          beforePackOpen: () => _packLoadGuard!.beforeOpen(),
+          expectedSha256: !modelLoad || packDir == null
+              ? null
+              : pack?.expectedFileSha256(packDir, 'ondevice_llm_compat.dll'),
+        );
+      }
+      return isa;
+    }
+
+    final ({String name, DynamicLibrary handle}) selected;
+    try {
+      selected = openWindowsLibrary<DynamicLibrary>(
+        skipped: skipped,
+        preferred: preferred,
+        cpuVariant: cpuVariant,
+        packDir: packDir,
+        hasAvx2: () =>
+            _processorFeaturePresent(40) != 0 && (readIsa() ?? 1) & 1 != 0,
+        hasAvx512: () =>
+            _processorFeaturePresent(41) != 0 && (readIsa() ?? 2) & 2 != 0,
+        packCudaMajor: packDir == null ? null : pack?.cudaMajor,
+        unavailablePackFiles: pack?.unavailableFiles ?? const [],
+        // Another engine's pack is the only source of its bridge: a failed
+        // open is reported, never answered with llama.cpp's DLLs.
+        allowBundledFallback: !ik,
+        open: (name) {
+          // Only actual pack attempts count. Known-unavailable GPU variants
+          // may use bundled DLLs without penalizing the pack's crash guard.
+          final dir = packDir;
+          if (dir != null && p.windows.equals(p.windows.dirname(name), dir)) {
+            if (modelLoad) _packLoadGuard!.beforeOpen();
+            // A pack file the signed manifest does not list has no digest and
+            // is refused here instead of being mapped unverified (P1-1).
+            return WindowsBridgeLoader.open(
+              name,
+              expectedSha256: packBridgeSha256(
+                pack,
+                dir,
+                p.windows.basename(name),
+              ),
+            );
+          }
+          return WindowsBridgeLoader.open(name);
+        },
+        checkEngineFiles: EngineFiles.besideExecutable().checkVariant,
+        gpuDeviceCount: (lib) =>
+            lib.lookupFunction<Int32 Function(), int Function()>(
+              'od_gpu_device_count',
+            )(),
+      );
+    } on StateError catch (e) {
+      if (!ik) rethrow;
+      throw StateError('OD_IK_LOAD_FAILED: ${e.message}');
+    }
     // A bundled fallback leaves the failed pack attempt counted.
     _packLoadGuard?.selected =
-        packDir != null && selected.name.startsWith(packDir);
+        packDir != null &&
+        p.windows.equals(p.windows.dirname(selected.name), packDir);
     library = selected.name;
     return selected.handle;
   }
@@ -315,45 +419,54 @@ class LlamaBindings {
     return null;
   }
 
-  /// Windows checks both CPU support and OS AVX state management.
-  static bool windowsHasAvx2() {
-    final present = DynamicLibrary.open('kernel32.dll')
-        .lookupFunction<Int32 Function(Uint32), int Function(int)>(
-          'IsProcessorFeaturePresent',
-        );
-    // PF_AVX2_INSTRUCTIONS_AVAILABLE, then FMA/F16C/BMI2 too.
-    return present(40) != 0 && (_windowsIsa ?? 1) & 1 != 0;
-  }
-
-  static bool windowsHasAvx512() {
-    final present = DynamicLibrary.open('kernel32.dll')
-        .lookupFunction<Int32 Function(Uint32), int Function(int)>(
-          'IsProcessorFeaturePresent',
-        );
-    // PF_AVX512F_INSTRUCTIONS_AVAILABLE, then CD/BW/DQ/VL too.
-    return present(41) != 0 && (_windowsIsa ?? 2) & 2 != 0;
-  }
-
-  /// od_cpu_isa from the SSE4.2 bridge (safe on any x86-64 CPU): Windows'
-  /// own flags cover AVX2 and AVX-512F only, while the bridges also use
-  /// FMA, F16C, BMI2 and AVX-512 CD/BW/DQ/VL (audit 2026-11-16 AUD-003).
-  /// Null when the bridge or its export is missing: the OS flags decide.
-  static final int? _windowsIsa = () {
-    try {
-      final dir = enginePack?.activePackDir();
-      final path = dir == null ? null : '$dir\\ondevice_llm_compat.dll';
-      final lib = DynamicLibrary.open(
-        path != null && File(path).existsSync()
-            ? path
-            : windowsBridgePath('ondevice_llm_compat.dll'),
+  static final _processorFeaturePresent = WindowsBridgeLoader._kernel32
+      .lookupFunction<Int32 Function(Uint32), int Function(int)>(
+        'IsProcessorFeaturePresent',
       );
-      return lib.lookupFunction<Int32 Function(), int Function()>(
-        'od_cpu_isa',
-      )();
+
+  /// Windows flags cover AVX2 and AVX-512F. The compat bridge also checks
+  /// FMA, F16C, BMI2 and AVX-512 CD/BW/DQ/VL.
+  static bool windowsHasAvx2() =>
+      _processorFeaturePresent(40) != 0 && (windowsProbeIsa() ?? 1) & 1 != 0;
+
+  static bool windowsHasAvx512() =>
+      _processorFeaturePresent(41) != 0 && (windowsProbeIsa() ?? 2) & 2 != 0;
+
+  /// Standalone hardware probes use the bundled compat bridge. Model loads
+  /// probe pack bridges in the crash-accounted path above.
+  static int? windowsProbeIsa({int Function(String)? readIsa}) =>
+      _windowsIsaIn(null, readIsa: readIsa);
+
+  static int? _windowsIsaIn(
+    String? packDir, {
+    bool allowBundled = true,
+    void Function()? beforePackOpen,
+    String? expectedSha256,
+    int Function(String)? readIsa,
+  }) {
+    const compat = 'ondevice_llm_compat.dll';
+    final path = packDir == null ? null : p.windows.join(packDir, compat);
+    try {
+      final String bridge;
+      if (path != null && File(path).existsSync()) {
+        // A pack copy the signed manifest does not list has no digest: it is
+        // never opened unverified (P1-1).
+        if (expectedSha256 == null) return null;
+        beforePackOpen?.call();
+        bridge = path;
+      } else {
+        if (!allowBundled) return null;
+        bridge = windowsBridgePath(compat);
+      }
+      if (readIsa != null) return readIsa(bridge);
+      return WindowsBridgeLoader.open(
+        bridge,
+        expectedSha256: bridge == path ? expectedSha256 : null,
+      ).lookupFunction<Int32 Function(), int Function()>('od_cpu_isa')();
     } catch (_) {
       return null;
     }
-  }();
+  }
 
   static String? windowsCpuOf(String? library) => switch (_fileName(library)) {
     'ondevice_llm_avx512.dll' => 'avx512',
@@ -380,6 +493,8 @@ class LlamaBindings {
   /// [packDir] is the folder of an installed engine pack: its DLLs are tried
   /// before the bundled ones, and their hashes were verified at install so the
   /// damage check applies only to the bundled files.
+  /// [allowBundledFallback] false makes the pack the only source, for an
+  /// engine that has no bundled copy.
   static ({String name, T handle}) openWindowsLibrary<T>({
     required List<String> skipped,
     required T Function(String) open,
@@ -392,6 +507,7 @@ class LlamaBindings {
     String cpuVariant = 'auto',
     String? preferred,
     String? packDir,
+    bool allowBundledFallback = true,
     String? executableDirectory,
     int? packCudaMajor,
     List<String> unavailablePackFiles = const [],
@@ -445,9 +561,15 @@ class LlamaBindings {
           return (bridge: (name: path, handle: open(path)), failure: null);
         } catch (e) {
           skipped.add(
-            '$name: engine pack copy failed ($e); using the bundled copy',
+            allowBundledFallback
+                ? '$name: engine pack copy failed ($e); using the bundled copy'
+                : '$name: engine pack copy failed ($e)',
           );
         }
+      }
+      if (!allowBundledFallback) {
+        skipped.add('$name: the engine pack does not provide it');
+        return (bridge: null, failure: null);
       }
       final damaged =
           checkEngineFiles?.call(name) ?? const <EngineFileResult>[];
@@ -648,4 +770,216 @@ class LlamaBindings {
   void Function(int)? cancelSession;
   double Function(int)? loadProgress;
   void Function(Pointer<Void>)? resetCancel;
+}
+
+/// Restricted Windows loads for both bridge selection and the ISA probe.
+///
+/// A pack bridge is never opened with `DynamicLibrary.open` directly: that
+/// bypasses the restricted search path, and the loader must be able to lock
+/// and re-hash the file first. Always go through [open].
+abstract final class WindowsBridgeLoader {
+  static const _searchDllLoadDir = 0x00000100;
+  static const _searchApplicationDir = 0x00000200;
+  static const _searchSystem32 = 0x00000800;
+
+  static const _genericRead = 0x80000000;
+  // Only readers may open the file: no writer and no deleter.
+  static const _fileShareRead = 0x00000001;
+  static const _openExisting = 3;
+  static const _fileAttributeNormal = 0x80;
+
+  // kernel32.dll is a Windows Known DLL.
+  static final _kernel32 = DynamicLibrary.open('kernel32.dll');
+  static final _loadLibraryEx = _kernel32
+      .lookupFunction<
+        Pointer<Void> Function(Pointer<Utf16>, Pointer<Void>, Uint32),
+        Pointer<Void> Function(Pointer<Utf16>, Pointer<Void>, int)
+      >('LoadLibraryExW');
+  static final _freeLibrary = _kernel32
+      .lookupFunction<
+        Int32 Function(Pointer<Void>),
+        int Function(Pointer<Void>)
+      >('FreeLibrary');
+  static final _getModuleHandleEx = _kernel32
+      .lookupFunction<
+        Int32 Function(Uint32, Pointer<Utf16>, Pointer<Pointer<Void>>),
+        int Function(int, Pointer<Utf16>, Pointer<Pointer<Void>>)
+      >('GetModuleHandleExW');
+  // CreateFileW and CloseHandle hand back and take a HANDLE; IntPtr keeps the
+  // INVALID_HANDLE_VALUE (-1) comparison signed and portable.
+  static final _createFile = _kernel32
+      .lookupFunction<
+        IntPtr Function(
+          Pointer<Utf16>,
+          Uint32,
+          Uint32,
+          Pointer<Void>,
+          Uint32,
+          Uint32,
+          Pointer<Void>,
+        ),
+        int Function(
+          Pointer<Utf16>,
+          int,
+          int,
+          Pointer<Void>,
+          int,
+          int,
+          Pointer<Void>,
+        )
+      >('CreateFileW');
+  static final _closeHandle = _kernel32
+      .lookupFunction<Int32 Function(IntPtr), int Function(int)>('CloseHandle');
+
+  /// Loads [path]. A pack bridge passes the SHA-256 its signed manifest lists:
+  /// the file is then opened with a read-only share mode that denies every
+  /// writer and deleter, hashed again while that lock is held, and only then
+  /// mapped, so nothing can be swapped between the check and the load.
+  static DynamicLibrary open(String path, {String? expectedSha256}) =>
+      openRestricted(
+        path,
+        expectedSha256: expectedSha256,
+        preload: (name, flags) => _loadLibraryEx(name, nullptr, flags),
+        bind: DynamicLibrary.open,
+        release: _freeLibrary,
+      );
+
+  /// A side/control worker may reuse an already mapped verified pack bridge.
+  /// A fresh open is allowed only for a bridge beside the application.
+  static DynamicLibrary reopen(String path) {
+    if (p.windows.equals(
+      p.windows.dirname(path),
+      File(Platform.resolvedExecutable).parent.path,
+    )) {
+      return open(path);
+    }
+    _requireAbsolute(path);
+    final name = path.toNativeUtf16();
+    final module = calloc<Pointer<Void>>();
+    try {
+      if (_getModuleHandleEx(0, name, module) == 0) {
+        throw ArgumentError.value(path, 'path', 'Bridge is not already mapped');
+      }
+      try {
+        return DynamicLibrary.open(path);
+      } finally {
+        _freeLibrary(module.value);
+      }
+    } finally {
+      calloc.free(module);
+      calloc.free(name);
+    }
+  }
+
+  static void _requireAbsolute(String path) {
+    if (!p.windows.isAbsolute(path) || p.windows.rootPrefix(path).length < 3) {
+      throw ArgumentError.value(
+        path,
+        'path',
+        'Expected a fully qualified bridge path',
+      );
+    }
+  }
+
+  static T openRestricted<T>(
+    String path, {
+    required Pointer<Void> Function(Pointer<Utf16>, int) preload,
+    required T Function(String) bind,
+    required int Function(Pointer<Void>) release,
+    String? expectedSha256,
+    int Function(String)? lockForRead,
+    void Function(int)? unlock,
+  }) {
+    _requireAbsolute(path);
+    final wanted = expectedSha256?.toLowerCase();
+    var lock = 0;
+    if (wanted != null) {
+      lock = (lockForRead ?? _lockForRead)(path);
+      if (lock == _invalidHandle) {
+        throw StateError('The engine pack bridge $path could not be locked');
+      }
+    }
+    final name = path.toNativeUtf16();
+    try {
+      if (wanted != null && _sha256FileSync(path) != wanted) {
+        throw StateError(
+          'The engine pack bridge $path changed after it was verified',
+        );
+      }
+      final module = preload(
+        name,
+        // A downloaded pack's directory can contain substituted dependencies.
+        (wanted == null ? _searchDllLoadDir : 0) |
+            _searchApplicationDir |
+            _searchSystem32,
+      );
+      if (module == nullptr) throw StateError('Windows could not load $path');
+      try {
+        return bind(path);
+      } finally {
+        release(module);
+      }
+    } finally {
+      calloc.free(name);
+      // Held until the module is mapped and bound: a writer that got through
+      // earlier is blocked here for the whole check-and-load window.
+      if (lock != 0 && lock != _invalidHandle) (unlock ?? _releaseLock)(lock);
+    }
+  }
+
+  static const _invalidHandle = -1;
+
+  /// Opens [path] with read access and FILE_SHARE_READ only: every other
+  /// handle that asks to write or delete fails until [unlock] closes it.
+  static int _lockForRead(String path) {
+    final name = path.toNativeUtf16();
+    try {
+      return _createFile(
+        name,
+        _genericRead,
+        _fileShareRead,
+        nullptr,
+        _openExisting,
+        _fileAttributeNormal,
+        nullptr,
+      );
+    } finally {
+      calloc.free(name);
+    }
+  }
+
+  static void _releaseLock(int handle) => _closeHandle(handle);
+
+  /// Streams a file through SHA-256 so a large bridge is not one Dart buffer.
+  static String _sha256FileSync(String path) {
+    final output = _DigestSink();
+    final sink = sha256.startChunkedConversion(output);
+    final input = File(path).openSync();
+    try {
+      final buffer = Uint8List(1 << 20);
+      while (true) {
+        final read = input.readIntoSync(buffer);
+        if (read <= 0) break;
+        sink.add(
+          read == buffer.length
+              ? buffer
+              : Uint8List.sublistView(buffer, 0, read),
+        );
+      }
+    } finally {
+      input.closeSync();
+    }
+    sink.close();
+    return output.value!.toString();
+  }
+}
+
+class _DigestSink implements Sink<Digest> {
+  Digest? value;
+
+  @override
+  void add(Digest data) => value = data;
+
+  @override
+  void close() {}
 }

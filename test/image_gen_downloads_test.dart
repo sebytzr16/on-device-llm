@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ondevice_llm/core/platform/desktop_host.dart';
 import 'package:ondevice_llm/data/network/hugging_face.dart';
@@ -82,6 +83,44 @@ class _PackDownloader extends DownloadManager {
   Future<void> pause(String id) async {
     if (!stopped.isCompleted) stopped.complete();
   }
+
+  @override
+  void dispose() {
+    unawaited(controller.close());
+    super.dispose();
+  }
+}
+
+/// A downloader that holds the first transfer open, so another model's cancel
+/// can be checked against a live partial file.
+class _HeldDownloader extends DownloadManager {
+  final controller = StreamController<DownloadProgress>.broadcast();
+  final started = Completer<void>();
+  final release = Completer<void>();
+
+  @override
+  Stream<DownloadProgress> progressStream(String id) => controller.stream;
+
+  @override
+  Future<void> download({
+    required String modelId,
+    required String url,
+    required String fileName,
+    required String expectedSha256,
+    required int expectedSize,
+  }) async {
+    final file = await ModelStorage.modelFile(fileName);
+    await File('${file.path}.part').writeAsBytes([1, 2, 3]);
+    if (!started.isCompleted) started.complete();
+    await release.future;
+    throw DioException(
+      requestOptions: RequestOptions(),
+      type: DioExceptionType.cancel,
+    );
+  }
+
+  @override
+  Future<void> pause(String id) async {}
 
   @override
   void dispose() {
@@ -177,6 +216,56 @@ void main() {
         model.files.first.fileName,
         model.files.first.fileName,
       ]);
+    },
+  );
+
+  test(
+    'cancel keeps a shared companion another model is downloading',
+    () async {
+      final downloader = _HeldDownloader();
+      final container = ProviderContainer(
+        overrides: [
+          imageGenDownloadManagerProvider.overrideWithValue(downloader),
+        ],
+      );
+      addTearDown(container.dispose);
+      ImageGenModel importOf(String fileName) => importedImageGenModel(
+        repo: 'owner/qwen-image-2.1-GGUF',
+        revision: 'main',
+        file: HfFile(name: fileName, size: 1000, sha256: ''),
+        license: '',
+        mode: ImageGenMode.image,
+      );
+      final runningImport = importOf('qwen-image-2.1-Q8_0.gguf');
+      final cancelledImport = importOf('qwen-image-2.1-Q4_K.gguf');
+      final imports = container.read(imageGenImportsProvider.notifier);
+      await imports.ready;
+      await imports.add(runningImport);
+      await imports.add(cancelledImport);
+      final running = resolveImageGenCompanions(runningImport);
+      final cancelled = resolveImageGenCompanions(cancelledImport);
+      final notifier = container.read(imageGenDownloadsProvider.notifier);
+      final job = notifier.download(running);
+      await downloader.started.future;
+      // Both quants share the catalog's VAE: the first model is writing it.
+      final vae = await ModelStorage.modelFile(
+        running.file(ImageGenRole.vae)!.fileName,
+      );
+      expect(cancelled.file(ImageGenRole.vae)!.fileName, p.basename(vae.path));
+      await File('${vae.path}.part').writeAsBytes([1, 2, 3]);
+      // The cancelled model's own component is only its partial.
+      final own = await ModelStorage.modelFile(
+        cancelled.file(ImageGenRole.diffusion)!.fileName,
+      );
+      await File('${own.path}.part').writeAsBytes([4]);
+
+      await notifier.cancel(cancelled);
+
+      // The live transfer's shared partial survives the cancel (audit 08c-12).
+      expect(await File('${vae.path}.part').exists(), isTrue);
+      expect(await File('${own.path}.part').exists(), isFalse);
+      downloader.release.complete();
+      await job;
     },
   );
 

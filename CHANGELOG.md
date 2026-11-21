@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.8.0 - 2026-11-21
+
+### Engine
+- Groundwork for ik_llama.cpp as a second engine on Windows (signed packs, chosen per model); the pack itself ships in a later update
+- Engine packs are checked again at every load: only files named in the signed manifest are used, a pack can never replace a newer signed build, bridge libraries load only from trusted folders, and a pack that fails twice is rolled back and set aside
+- Load and Stop: Stop works at once while a model is still loading, the next Load waits for the old model to close, and a load that leaves an engine behind says so
+
+### Android
+- LiteRT-LM engine (issue #10): .litertlm models with streaming, Stop and photo input; settings show only what the engine supports, and helpers and hosting leave those models alone
+
+### PC and phone
+- Local server page: "Share documents with paired devices", off by default; the older pairing token never gets documents, and turning it off stops document use at the next search
+- Downloads: speed and time left in the pop-up, preparing rows can be cancelled, no "NaN%" for an unknown size, and cancelling one image model no longer deletes a paused download's shared part
+- Backup: a large archive is no longer read into memory on the phone (it goes through the share sheet), a dismissed share leaves no copy behind, and a restore checks the staged file first
+- Changing the models folder no longer loses models when a later settings write fails
+- Files of an unknown type are saved with a .bin name instead of failing
+- Reading aloud resumes at the sentence where it stopped, also after switching voices; a broken ZIM file no longer closes the archive that is open; locked chat photos appear once you unlock
+- Stopping the Local server releases its network name and answers waiting requests instead of leaving them hanging
+- Memory estimate uses the last model scan instead of waiting for a reload
+
+### Chat
+- Drafts survive a crash: the newest saved draft comes back, and one unreadable attachment no longer empties the composer
+- Undo after deleting turns refuses when the chat has changed, and a failed Edit puts the turns back and says why
+- DOCX export tables open correctly in Word; a failed answer no longer breaks the next turn
+
+### Speed
+- Optimize: one time limit for the whole run, a failed sample no longer stops it, your own settings come back afterwards, only measured settings are saved, and it never loads past the real memory budget
+- Engines report benchmark and Optimize support separately, so a model can be speed-tested even when it cannot be auto-tuned
+
+### Security
+- MCP: turning a server on uses the settings you reviewed, and saving the page keeps the servers that are already running
+- Hosted workspaces: uploads belong to the device that sent them and expire, documents need the host's permission, and custom request headers are hidden by default
+- Engine pack signatures, file hashes and revisions are re-checked on every load, and a rejected pack is never used
+
 ## 1.7.0 - 2026-11-18
 
 ### Engine

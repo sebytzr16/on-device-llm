@@ -49,10 +49,10 @@ class _LiveAnswer extends ConsumerWidget {
   }
 }
 
-class _LoadingModelRow extends StatelessWidget {
+class _LoadingModelRow extends ConsumerWidget {
   const _LoadingModelRow();
   @override
-  Widget build(BuildContext context) => Padding(
+  Widget build(BuildContext context, WidgetRef ref) => Padding(
     padding: const EdgeInsets.symmetric(
       horizontal: AppSpace.lg,
       vertical: AppSpace.lg,
@@ -70,6 +70,8 @@ class _LoadingModelRow extends StatelessWidget {
             style: context.text.mono.copyWith(color: context.colors.textMuted),
           ),
         ),
+        // A load can be stopped at any moment (owner request OR-02).
+        const StopLoadButton(),
       ],
     ),
   );
@@ -144,20 +146,21 @@ class _ChatOverridesPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final overrides = ref.watch(chatOverridesProvider);
-    final inherited = resolveSettings(
-      global: ref.watch(settingsProvider),
-      defaults: ref.read(settingsProvider.notifier).defaults,
-      profiles: ref.watch(modelProfilesProvider),
-      preset: ref.watch(presetsProvider).active,
-      chat: const {},
-      recommendations: ref.watch(modelRecommendationsProvider),
-      model: ref.watch(modelManagerProvider).loadedModel,
-    ).effective;
+    final model = ref.watch(modelManagerProvider).loadedModel;
     return OverridesPage(
       title: context.l10n.chatSettingsMenu,
       scopeLabel: context.l10n.thisChatSection,
       overrides: overrides,
-      inherited: inherited,
+      // What this chat inherits is the cascade for the model the send path
+      // really uses (a pinned or fallback model, not only the loaded one),
+      // audit 2026-11-20 P1-4.
+      inherited: ref.watch(chatInheritedSettingsProvider),
+      change: (o) => SettingsChange(chat: o),
+      // The runtime honours only some of these controls (no Min-P, seed or
+      // stop sequences), so the chat scope shows the same list as its model.
+      engine: model == null
+          ? null
+          : ref.watch(engineRegistryProvider).descriptorFor(model),
       onChanged: (o) => ref.read(chatProvider.notifier).setChatOverrides(o),
     );
   }

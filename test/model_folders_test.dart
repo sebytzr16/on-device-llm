@@ -102,6 +102,33 @@ void main() {
   );
 
   test(
+    'an unconfirmed rollback keeps the copies saved paths may point at',
+    () async {
+      final file = await File(
+        p.join(original.path, 'model.gguf'),
+      ).writeAsString('model');
+      await expectLater(
+        folders.change(
+          target,
+          move: true,
+          updatePaths: (_) async => throw ModelFolderKeptCopiesException(
+            StateError('rollback failed'),
+          ),
+        ),
+        throwsStateError,
+      );
+      // The catalog or the settings could not be rolled back: both the
+      // originals and the copied files stay (audit 09-2).
+      expect(await file.readAsString(), 'model');
+      expect(
+        await File(p.join(target.path, 'model.gguf')).readAsString(),
+        'model',
+      );
+      expect(folders.current.path, original.path);
+    },
+  );
+
+  test(
     'space, writability and conflicting file failures preserve source data',
     () async {
       final file = await File(

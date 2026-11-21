@@ -21,7 +21,10 @@ class _Settings extends SettingsNotifier {
   }
 
   @override
-  Future<void> update(InferenceSettings next) async => state = next;
+  Future<void> update(
+    InferenceSettings next, {
+    bool requirePersistence = false,
+  }) async => state = next;
 }
 
 String _release(String tag) => jsonEncode({'tag_name': tag});

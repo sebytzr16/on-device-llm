@@ -20,6 +20,7 @@ import '../../desktop/engine_updater/engine_updater.dart';
 import '../../features/settings/domain/entities/inference_settings.dart';
 import '../../features/tools/domain/tool_spec.dart';
 import '../ffi/llama_bindings.dart';
+import 'engine_descriptor.dart';
 import 'text_engine.dart';
 import '../../core/l10n/l10n.dart';
 import 'package:ondevice_llm/core/logging/quiet_failure.dart';
@@ -243,10 +244,15 @@ class LlamaEngine implements TextEngine {
     });
   }
 
+  /// How often the engine had to give up on a worker. A load that spans one of
+  /// these raises a load error instead of pretending it was a clean Stop.
+  int _retirements = 0;
+
   // Never free an in-flight FFI context or release its file leases. Retire
   // the worker cooperatively, detach its events, and refuse new native work
   // until onExit confirms that its cleanup has finished.
   void _retireGeneration() {
+    _retirements++;
     _clearGenerationTimers();
     _cancelNative();
     _commands?.send({'type': 'dispose'});
@@ -263,7 +269,29 @@ class LlamaEngine implements TextEngine {
     _output = null;
     _busy = false;
     _setPrefill(null);
+    // A retired worker never answers: every pending call must end, or
+    // _occupied stays true and no load can ever start again in this process
+    // (owner bug c).
+    _failPending(
+      const ModelLoadException(
+        'The native engine stopped before the operation finished.',
+      ),
+    );
     _notifyIdle();
+  }
+
+  /// Completes and drops every pending native call.
+  void _failPending(Object error) {
+    _preview?.completeError(error);
+    _preview = null;
+    _probe?.completeError(error);
+    _probe = null;
+    _embed?.completeError(error);
+    _embed = null;
+    _adapter?.completeError(error);
+    _adapter = null;
+    _operation?.completeError(error);
+    _operation = null;
   }
 
   Future<void> stopAndWait() async {
@@ -271,7 +299,9 @@ class LlamaEngine implements TextEngine {
     try {
       await _waitIdle().timeout(stopTimeout);
     } on TimeoutException {
-      if (_busy) _retireGeneration();
+      // A generation or a load that ignores the Stop must not keep the
+      // engine busy for the rest of the process.
+      if (_busy || _operation != null) _retireGeneration();
       if (_occupied) {
         throw const InferenceException(
           'The native engine did not stop in time.',
@@ -405,6 +435,9 @@ class LlamaEngine implements TextEngine {
       _replyAdmission?.call();
       _replyAdmission = null;
     }
+    // Nothing is pending any more: a Stop no longer has anything to retire.
+    _stopWatchdog?.cancel();
+    _stopWatchdog = null;
     _idle?.complete();
     _idle = null;
   }
@@ -509,38 +542,110 @@ class LlamaEngine implements TextEngine {
     ];
     final leases = _fileLeases;
     final previous = List<ModelFileLease>.of(leases);
-    leases.add(
-      ModelFileLeases.instance.acquire([
-        for (final file in files)
-          for (final name
-              in GgufSplit.parse(p.basename(file))?.names ?? [p.basename(file)])
-            p.join(p.dirname(file), name),
-      ], owner: 'llama.cpp'),
-    );
+    final lease = ModelFileLeases.instance.acquire([
+      for (final file in files)
+        for (final name
+            in GgufSplit.parse(p.basename(file))?.names ?? [p.basename(file)])
+          p.join(p.dirname(file), name),
+    ], owner: 'llama.cpp');
+    leases.add(lease);
     final op = Completer<void>();
     _operation = op;
     _loading = true;
+    final retirements = _retirements;
     _send({'type': 'load', 'path': path, 'settings': config});
-    if (loadStop?.call() ?? false) cancel();
+    if (_stoppedLoad()) cancel();
+    // Set when a late Stop finished the load but its runtime stayed mapped:
+    // that is a load error, not the silent Stop the UI would report (E3).
+    var unfreed = false;
     try {
       await op.future;
-      for (final lease in previous) {
-        lease.release();
-        leases.remove(lease);
+      // llama.cpp can finish before the Stop reaches it. Free what the load
+      // built instead of keeping its weights mapped behind an idle UI, and
+      // report the Stop the user asked for (owner bug a).
+      if (_stoppedLoad()) {
+        if (await _abandonLoad()) {
+          _dropLease(lease, leases);
+          throw const ModelLoadStopped();
+        }
+        // The worker kept the runtime: say so instead of reporting a Stop
+        // over a model that is still mapped (E3).
+        unfreed = true;
+        throw const ModelLoadException(
+          'The stopped load could not free the native engine.',
+        );
+      }
+      for (final old in previous) {
+        old.release();
+        leases.remove(old);
       }
     } catch (e) {
-      // A failed load may retain partially mapped weights. Wait for native
-      // unload before making either the old or new files mutable again.
-      try {
-        await unload();
-      } catch (_) {
-        /* The exit handler retains ownership. */
-      }
-      if (loadStop?.call() ?? false) throw const ModelLoadStopped();
+      if (e is ModelLoadStopped) rethrow;
+      // The Stop's unfreed runtime is already the error to report; a second
+      // teardown attempt would only add another stop timeout.
+      if (unfreed) rethrow;
+      // Read the Stop before freeing: the unload posts a command and with it
+      // clears the cancel flag, so a load the native side aborted would look
+      // like a failure instead of the Stop it is (owner bugs a and c).
+      final stopped = _stoppedLoad();
+      // A worker the engine had to give up on is a load error, not a Stop;
+      // it is read before the cleanup below may retire one.
+      final gaveUp = _retirements != retirements;
+      // A failed load may retain partially mapped weights. Free them before
+      // making either the old or new files mutable again.
+      final freed = await _abandonLoad();
+      if (freed) _dropLease(lease, leases);
+      // A Stop the engine could answer is the user's choice, not an error to
+      // show (owner bug c).
+      if (stopped && freed && !gaveUp) throw const ModelLoadStopped();
       throw ModelLoadException(modelLoadErrorMessage(e));
     } finally {
       _stopLoadProgress();
     }
+  }
+
+  /// Whether the user stopped the load this engine is running: the manager's
+  /// flag, or the cancel that Stop sent (which a late completion must honour
+  /// even when the flag has already moved on to the next load).
+  bool _stoppedLoad() => _cancelRequested || (loadStop?.call() ?? false);
+
+  /// Frees the runtime a stopped or failed load left behind, without making
+  /// the user wait for a native teardown that lags behind. Returns whether the
+  /// runtime is really gone: when the worker was retired or has exited, its
+  /// exit handler keeps the weights and file leases until it has finished, so
+  /// those are reported as still owned instead of swallowed (owner bug c).
+  Future<bool> _abandonLoad() async {
+    if (_commands != null) {
+      try {
+        await unload();
+        return true;
+      } catch (e, st) {
+        _log.warning('Freeing a stopped model load failed', e, st);
+        // A runtime this engine cannot unload must not keep the model files
+        // and the engine for the rest of the process: retire the worker,
+        // whose exit frees both (owner bug c).
+        if (_commands != null) _retireGeneration();
+      }
+    }
+    // The worker is gone or on its way out: its exit handler frees the
+    // runtime and releases the file leases, so wait for it rather than call
+    // the load freed while the files are still held.
+    final exit = _workerExit?.future;
+    if (exit == null) return true;
+    try {
+      await exit.timeout(stopTimeout);
+      return true;
+    } on TimeoutException {
+      _log.warning('The native worker did not exit within $stopTimeout');
+      return false;
+    }
+  }
+
+  /// Drops one load's file lease once its runtime is gone, even when the list
+  /// that held it has already been replaced (owner bug c).
+  void _dropLease(ModelFileLease lease, List<ModelFileLease> leases) {
+    lease.release();
+    leases.remove(lease);
   }
 
   bool get isLoaded => _loadedPath != null;
@@ -812,6 +917,7 @@ class LlamaEngine implements TextEngine {
   Future<void> loadModel({
     required String modelPath,
     required InferenceSettings settings,
+    String engineId = llamaCppEngineId,
     String? mmprojPath,
     List<({String path, double scale})> adapters = const [],
     String? draftModelPath,
@@ -828,6 +934,7 @@ class LlamaEngine implements TextEngine {
       settings: _speculationStalled
           ? settings.copyWith(speculationMode: 'off', mtp: false)
           : settings,
+      engineId: engineId,
       mmprojPath: mmprojPath,
       adapters: adapters,
       draftModelPath: draftModelPath,
@@ -893,6 +1000,7 @@ class LlamaEngine implements TextEngine {
   /// The settings JSON od_load and od_estimate read.
   static String loadConfig({
     required InferenceSettings settings,
+    String engineId = llamaCppEngineId,
     String? mmprojPath,
     List<({String path, double scale})> adapters = const [],
     String? draftModelPath,
@@ -901,7 +1009,11 @@ class LlamaEngine implements TextEngine {
         (settings.speculationMode == 'draft' ||
             settings.speculationMode == 'dflash') &&
         (draftModelPath == null || draftModelPath.isEmpty);
-    return jsonEncode({
+    final config = <String, Object?>{
+      // Which engine's pack the worker opens. llama.cpp is the default on
+      // every platform; ik_llama.cpp is used only when a model or profile
+      // picked it. The bridge ignores a key it does not know.
+      'engine': engineId,
       if (missingDraft)
         'speculationFallback':
             'Selected draft model is missing. Using normal decoding.',
@@ -956,7 +1068,19 @@ class LlamaEngine implements TextEngine {
           settings.speculationMode == 'mtp' ||
           (settings.speculationMode == 'auto' && settings.mtp),
       'chatTemplate': settings.chatTemplate,
-    });
+    };
+    final engine = engineById(engineId);
+    if (engine != null && engine.id != llamaCppEngineId) {
+      // A profile saved for llama.cpp must not hand its MoE cache, SWA-full,
+      // vision or draft controls to another engine: those keys are dropped,
+      // not merely hidden, so the bridge keeps its own defaults.
+      final allowed = engine.capabilities.loadKeys;
+      config.removeWhere(
+        (key, _) =>
+            !allowed.contains(key) && !_configStructuralKeys.contains(key),
+      );
+    }
+    return jsonEncode(config);
   }
 
   /// The load config for an embedder or reranker (audit E22). [placement] is
@@ -1380,7 +1504,24 @@ class LlamaEngine implements TextEngine {
   /// load is a plain reload (model residency, roadmap §5.2).
   Future<void> unload() async {
     if (_busy) await stopAndWait();
-    await closeSide().timeout(stopTimeout);
+    final side = _side;
+    try {
+      await closeSide().timeout(stopTimeout);
+    } on TimeoutException {
+      // A helper stuck in its native close must not skip the rest of the
+      // unload: the model would stay mapped behind an idle UI and the next
+      // load would fight the old client. Stop its streams and free the model
+      // anyway; the client finishes closing on its own (audit 07 row 3).
+      _log.warning(
+        'The helper client did not close within $stopTimeout; '
+        'unloading the model anyway',
+      );
+      // Only the helper is cancelled: od_cancel_session is reset when a
+      // session opens, so cancelling it here would abort the next generation.
+      for (final id in sideMetrics.keys.toList()) {
+        side?.cancel(id);
+      }
+    }
     if (_priming != null) await _stopPriming();
     if (_commands == null) return;
     if (_occupied) {
@@ -1417,7 +1558,9 @@ class LlamaEngine implements TextEngine {
     // a big model right after its load; retiring it after [stopTimeout]
     // dropped the model under the next turn ("Load a model" on Regenerate
     // after loading Qwen 3.6 35B, 2026-11-17). Only a real stall retires it.
-    if (_busy) {
+    // A load that ignores the Stop is such a stall too: its pending call must
+    // end instead of leaving the engine busy for the rest of the process.
+    if (_busy || _operation != null) {
       _stopWatchdog ??= Timer(
         _priming != null ? tokenTimeout : stopTimeout,
         _retireGeneration,
@@ -1473,26 +1616,50 @@ class LlamaEngine implements TextEngine {
   }
 }
 
+/// Keys of [LlamaEngine.loadConfig] that are not load settings: they route
+/// the worker or carry already computed values, so they stay for every engine.
+const _configStructuralKeys = {
+  'engine',
+  'speculationFallback',
+  'effectiveThreads',
+  'threadsAuto',
+  'effectiveBatchThreads',
+  'effectiveBatchSize',
+  'effectiveMicroBatchSize',
+  'mmproj',
+  'loraAdapters',
+};
+
 /// Explicit Windows backend choice; each bridge carries one GPU backend.
-({String? backend, String cpuVariant}) nativeLibraryChoice(
+({String? backend, String cpuVariant, String engine}) nativeLibraryChoice(
   String settings, {
   required bool windows,
 }) {
   final config = jsonDecode(settings) as Map;
   final backend = config['backend'];
+  final engine = config['engine'];
   return (
     backend: windows && const ['cpu', 'cuda', 'vulkan'].contains(backend)
         ? backend as String
         : null,
     cpuVariant: config['cpuVariant'] as String? ?? 'auto',
+    engine: engine is String && engine.isNotEmpty ? engine : llamaCppEngineId,
   );
 }
 
 /// Re-read the active pack for every load, including a switch to built-in.
-(String?, String, String?) nativeLibraryChoiceKey({
+(String?, String, String, String?) nativeLibraryChoiceKey({
   String? backend,
   required String cpuVariant,
-}) => (backend, cpuVariant, LlamaBindings.enginePack?.activePackDir());
+  String engine = llamaCppEngineId,
+}) => (
+  backend,
+  cpuVariant,
+  engine,
+  engine == ikLlamaEngineId
+      ? LlamaBindings.ikEnginePack?.activePackDir()
+      : LlamaBindings.enginePack?.activePackDir(),
+);
 
 void _worker(List<Object?> args) {
   final events = args[0] as SendPort;
@@ -1507,9 +1674,10 @@ void _worker(List<Object?> args) {
   final commands = ReceivePort();
   events.send(commands.sendPort);
   LlamaBindings? api;
-  (String?, String, String?)? bridgeChoice;
+  (String?, String, String, String?)? bridgeChoice;
   Pointer<Void> handle = nullptr;
   bool running = false, cancelled = false, disposing = false;
+  var preparingPack = false;
   // Engine info plus which bridge library variant this process loaded (GPU-01).
   Map<String, dynamic> info() {
     final value =
@@ -1529,6 +1697,16 @@ void _worker(List<Object?> args) {
     commands.close();
   }
 
+  Future<void> preparePack(String engineId) async {
+    if (packRoot == null) return;
+    preparingPack = true;
+    try {
+      await EngineUpdater.prepareIsolatePack(engineId);
+    } finally {
+      preparingPack = false;
+    }
+  }
+
   commands.listen((dynamic message) async {
     final m = message as Map;
     void send(Map<String, Object?> e) =>
@@ -1543,13 +1721,17 @@ void _worker(List<Object?> args) {
       if (!running) clean();
       return;
     }
-    if (running) {
+    if (running || preparingPack) {
       send({'type': 'error', 'message': 'Native worker is busy.'});
       return;
     }
     if (m['type'] == 'probe') {
       try {
-        api ??= LlamaBindings();
+        if (api == null) {
+          await preparePack(llamaCppEngineId);
+          if (disposing) return;
+          api = LlamaBindings();
+        }
         if (handle == nullptr) {
           final opts = options.toNativeUtf8();
           try {
@@ -1576,9 +1758,12 @@ void _worker(List<Object?> args) {
           m['settings'] as String,
           windows: Platform.isWindows,
         );
+        await preparePack(choice.engine);
+        if (disposing) return;
         scratch = LlamaBindings(
           windowsBackend: choice.backend,
           cpuVariant: choice.cpuVariant,
+          engineId: choice.engine,
         );
         final estimate = scratch.estimate;
         if (estimate == null) {
@@ -1627,7 +1812,11 @@ void _worker(List<Object?> args) {
     }
     if (m['type'] == 'adapter') {
       try {
-        api ??= LlamaBindings();
+        if (api == null) {
+          await preparePack(llamaCppEngineId);
+          if (disposing) return;
+          api = LlamaBindings();
+        }
         if (handle == nullptr) {
           final opts = options.toNativeUtf8();
           try {
@@ -1669,12 +1858,24 @@ void _worker(List<Object?> args) {
       );
       final want = selection.backend;
       final cpuVariant = selection.cpuVariant;
+      if (m['type'] == 'load') {
+        await preparePack(selection.engine);
+        if (disposing) return;
+      }
       final choice = nativeLibraryChoiceKey(
         backend: want,
         cpuVariant: cpuVariant,
+        engine: selection.engine,
       );
-      if (m['type'] == 'load' && api != null && bridgeChoice != choice) {
-        // Recreate when the backend, CPU variant or active pack changes.
+      final pack = selection.engine == ikLlamaEngineId
+          ? LlamaBindings.ikEnginePack
+          : LlamaBindings.enginePack;
+      final reusingPack = api != null && choice.$4 != null;
+      if (m['type'] == 'load' &&
+          api != null &&
+          (bridgeChoice != choice ||
+              (reusingPack && pack?.verifiedPackDir() == null))) {
+        // Recreate when the backend, CPU variant, engine or active pack changes.
         if (handle != nullptr) api!.destroy(handle);
         handle = nullptr;
         api = null;
@@ -1682,6 +1883,7 @@ void _worker(List<Object?> args) {
       api ??= LlamaBindings(
         windowsBackend: want,
         cpuVariant: cpuVariant,
+        engineId: selection.engine,
         modelLoad: m['type'] == 'load',
       );
       if (m['type'] == 'load') {
@@ -1861,10 +2063,6 @@ void _worker(List<Object?> args) {
   });
 }
 
-/// Rewrites a model's own reasoning markers (Gemma 4: `<|channel>thought` …
-/// `<channel|>`) to the canonical `<think>` … `</think>` pair the rest of the
-/// app understands. Tags may arrive split across pieces, so a tail no longer
-/// than the longest tag is held back until it cannot be a tag prefix.
 /// One embedding input with photos or recordings (ABI 7): paths readable by
 /// the native side (JPEG/PNG/BMP/GIF; 16 kHz WAV, MP3 or FLAC), plus an
 /// optional text embedded jointly with them.
@@ -1875,11 +2073,11 @@ class EmbedItem {
   Map<String, Object> toJson() => {'text': text, 'media': media};
 }
 
+/// Converts model-specific reasoning tags, holding only a possible tag prefix.
 class ThinkingTagNormalizer extends StreamTransformerBase<String, String> {
   static const openTag = '<think>';
   static const closeTag = '</think>';
   final _replacements = <String, String>{};
-  int _hold = 0;
 
   void configure({required String startTag, required List<String> endTags}) {
     _replacements.clear();
@@ -1889,8 +2087,6 @@ class ThinkingTagNormalizer extends StreamTransformerBase<String, String> {
     for (final end in endTags) {
       if (end.isNotEmpty && end != closeTag) _replacements[end] = closeTag;
     }
-    _hold = _replacements.keys.fold(0, (m, k) => k.length > m ? k.length : m);
-    if (_hold > 0) _hold -= 1;
   }
 
   @override
@@ -1920,7 +2116,16 @@ class ThinkingTagNormalizer extends StreamTransformerBase<String, String> {
             sink.add(text.substring(0, at) + _replacements[tag]!);
             text = text.substring(at + tag.length);
           }
-          var cut = text.length - _hold;
+          var keep = 0;
+          for (final tag in _replacements.keys) {
+            for (var n = math.min(tag.length - 1, text.length); n > keep; n--) {
+              if (text.endsWith(tag.substring(0, n))) {
+                keep = n;
+                break;
+              }
+            }
+          }
+          var cut = text.length - keep;
           // Never split an emoji's surrogate pair across two pieces (P3-04).
           if (cut > 0 && (text.codeUnitAt(cut - 1) & 0xFC00) == 0xD800) cut--;
           if (cut > 0) {

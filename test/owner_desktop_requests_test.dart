@@ -8,11 +8,13 @@ import 'package:ondevice_llm/desktop/desktop_app.dart';
 import 'package:ondevice_llm/desktop/sidebar.dart';
 import 'package:ondevice_llm/features/chat/presentation/providers/chat_provider.dart';
 import 'package:ondevice_llm/features/models/domain/entities/model_info.dart';
+import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
 import 'package:ondevice_llm/features/models/presentation/screens/model_details_page.dart';
 import 'package:ondevice_llm/features/settings/presentation/providers/model_profiles_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/desktop_chat_harness.dart';
+import 'chat_test.dart' show TestModels;
 
 void main() {
   testWidgets(
@@ -83,7 +85,13 @@ void main() {
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.reset);
         SharedPreferences.setMockInitialValues({});
-        final container = ProviderContainer();
+        final container = ProviderContainer(
+          overrides: [
+            // The details page reads the loaded model from the manager, which
+            // would otherwise open the app database in build().
+            modelManagerProvider.overrideWith(TestModels.new),
+          ],
+        );
         addTearDown(container.dispose);
         await container.read(modelProfilesProvider.notifier).ready;
         await tester.pumpWidget(

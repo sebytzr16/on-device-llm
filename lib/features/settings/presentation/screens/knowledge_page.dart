@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../inference/engine/engine_registry_provider.dart';
 import '../../../../core/storage/device_encryption.dart';
 import '../../../../core/design/app_design.dart';
 import '../../../../data/local/database/app_database.dart';
@@ -77,7 +78,10 @@ class _KnowledgePageState extends ConsumerState<KnowledgePage> {
           ),
           caption: (photo) async {
             final model = ref.read(modelManagerProvider).loadedModel;
-            if (model == null) return null;
+            final engine = ref
+                .read(engineRegistryProvider)
+                .descriptorFor(model);
+            if (model == null || !engine.capabilities.ggufMetadata) return null;
             return KnowledgeGrounding.caption(
               photo,
               ref.read(llamaEngineProvider),

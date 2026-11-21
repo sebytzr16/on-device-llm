@@ -76,17 +76,6 @@ class _UnfitEstimator extends _Estimator {
   };
 }
 
-class _FailEstimator extends _Estimator {
-  @override
-  Future<Map<String, dynamic>> estimate({
-    required String modelPath,
-    required InferenceSettings settings,
-    String? mmprojPath,
-    List<({String path, double scale})> adapters = const [],
-    String? draftModelPath,
-  }) async => throw StateError('Estimator failed');
-}
-
 class _IosEstimator extends _Estimator {
   @override
   Future<Map<String, dynamic>> estimate({
@@ -200,6 +189,23 @@ class _ChangingEngine extends _Engine {
       settings.nGpuLayers > 3 ? 'changed answer' : 'same answer';
 }
 
+/// Every generation fails: nothing can be measured, so the run reports a
+/// measurement error instead of saving anything.
+class _BrokenEngine extends _Engine {
+  @override
+  Stream<String> generate({
+    required List<Map<String, Object>> messages,
+    required String fallbackTemplate,
+    required InferenceSettings settings,
+    String assistantPrefix = '',
+    List<ToolSpec> tools = const [],
+    String toolChoice = 'auto',
+  }) async* {
+    calls++;
+    throw StateError('engine unavailable');
+  }
+}
+
 class _RateRunner implements TuneRunner {
   final double rate;
   _RateRunner(this.rate);
@@ -288,15 +294,34 @@ void main() {
     expect(mtp.map((s) => s.draftMaxTokens), contains(3));
   });
 
-  test('optimization refuses incomplete memory estimates', () async {
-    await expectLater(
-      pcOptimizationDefaults(
+  test(
+    'optimization falls back when the estimate has no memory numbers',
+    () async {
+      final plan = await pcOptimizationPlan(
         current: _stale,
         defaults: const InferenceSettings(),
         estimate: (_) async => {'layers': 24},
-      ),
-      throwsStateError,
+      );
+      expect(plan.unfit, isNull);
+      expect(plan.settings.nGpuLayers, lessThanOrEqualTo(24));
+      expect(plan.settings.temperature, _stale.temperature);
+    },
+  );
+
+  test('optimization names the short memory when nothing fits', () async {
+    final plan = await pcOptimizationPlan(
+      current: _stale,
+      defaults: const InferenceSettings(),
+      estimate: (s) async => {
+        ..._estimate(s),
+        'ramNeedMb': 64000,
+        'ramAvailableMb': 8192,
+        'ramTotalMb': 8192,
+      },
     );
+    expect(plan.unfit, OptimizeUnfit.ram);
+    expect(plan.settings.nGpuLayers, 0);
+    expect(plan.settings.temperature, _stale.temperature);
   });
 
   test('Optimize accepts harmless divergence but rejects unrelated answers', () {
@@ -428,7 +453,13 @@ void main() {
           expect(profile.containsKey('speculationMode'), isFalse);
           expect(await c.read(optimizedModelsProvider.future), {testModel.id});
         } else {
-          expect(c.read(provider).failure, OptimizeFailure.measurement);
+          // A usable estimate that places every setup over budget is not
+          // measured anyway: nothing is loaded over budget, and the section
+          // names the short memory.
+          final state = c.read(provider);
+          expect(state.failed, isFalse);
+          expect(state.unfit, OptimizeUnfit.ram);
+          expect(state.saved, isFalse);
           expect(engine.calls, 0);
           expect(receipts, isEmpty);
         }
@@ -566,15 +597,17 @@ void main() {
     test('controller transitions and persistence: $outcome', () async {
       DesktopHost.active = true;
       addTearDown(() => DesktopHost.active = false);
-      final engine = outcome == 'kept' ? _ChangingEngine() : _Engine();
+      final engine = switch (outcome) {
+        'kept' => _ChangingEngine(),
+        'failed' => _BrokenEngine(),
+        _ => _Engine(),
+      };
       if (outcome == 'cancelled') engine.gate = Completer<void>();
       final c = ProviderContainer(
         overrides: [
           settingsProvider.overrideWith(_Settings.new),
           modelManagerProvider.overrideWith(_Models.new),
-          llamaEstimatorProvider.overrideWithValue(
-            outcome == 'failed' ? _FailEstimator() : _Estimator(),
-          ),
+          llamaEstimatorProvider.overrideWithValue(_Estimator()),
           modelSpeedEngineProvider.overrideWithValue(engine),
           optimizeMobileProvider.overrideWithValue(false),
         ],
@@ -605,8 +638,26 @@ void main() {
       expect(result.kept != null, outcome == 'kept');
       expect(c.read(sessionBusyProvider), isFalse);
       final loads = (c.read(modelManagerProvider.notifier) as _Models).loads;
-      expect(loads, isNotEmpty);
-      if (outcome != 'saved') expect(loads.last.toJson(), _stale.toJson());
+      // A run cancelled before its first sample never loads the model: a
+      // cancel must not start a multi-gigabyte load.
+      if (outcome != 'cancelled') expect(loads, isNotEmpty);
+      // Benchmarks force temperature 0 and no prompt cache; a load with the
+      // user's own sampling is the restore of the chat's model. A kept or
+      // failed run must not leave the last measured setup loaded, a saved run
+      // keeps the winner (the new profile), and a cancel loaded nothing.
+      final restores = loads
+          .where((s) => s.promptCache && s.temperature == _stale.temperature)
+          .toList();
+      if (outcome == 'saved') {
+        final profile = c.read(modelProfilesProvider.notifier).of(testModel.id);
+        expect(loads.last.nGpuLayers, profile['nGpuLayers']);
+        expect(loads.last.kvCacheType.name, profile['kvCacheType']);
+      } else if (outcome == 'kept' || outcome == 'failed') {
+        expect(restores, hasLength(1));
+        expect(restores.single.nGpuLayers, _stale.nGpuLayers);
+      } else {
+        expect(loads, isEmpty);
+      }
       expect(
         await c.read(optimizedModelsProvider.future),
         outcome == 'saved' || outcome == 'kept' ? {testModel.id} : isEmpty,

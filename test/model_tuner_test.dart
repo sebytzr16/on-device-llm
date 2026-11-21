@@ -273,7 +273,11 @@ void main() {
         TuneBenchmarkRun.estimateFits({...estimate, 'ramNeedMb': 7500}, s),
         false,
       );
-      expect(TuneBenchmarkRun.estimateFits({}, s), false);
+      // Missing numbers are unknown, not a refusal: the load decides and the
+      // measurement skips what really fails (an estimate without data used
+      // to mark every setup as over budget, so nothing was ever measured).
+      expect(TuneBenchmarkRun.estimateFits({}, s), true);
+      expect(TuneBenchmarkRun.estimateFits({'layers': 24}, s), true);
     },
   );
   test(

@@ -20,6 +20,7 @@ import '../../../../core/island/status_island.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/motion/motion.dart';
 import '../../../../core/widgets/safe_markdown.dart';
+import '../../../../core/widgets/stop_load_button.dart';
 import '../../../attachments/data/attachment_store.dart';
 import '../../../attachments/domain/attachment.dart';
 import '../../../attachments/presentation/attachment_picker.dart';
@@ -35,12 +36,9 @@ import '../../../models/domain/entities/model_info.dart';
 import '../../../models/domain/model_config_card.dart';
 import '../../../models/presentation/widgets/config_card_flow.dart';
 import '../../../models/presentation/providers/model_manager_provider.dart';
-import '../../../models/presentation/providers/model_recommendations_provider.dart';
 import '../../../models/presentation/providers/retired_model_names.dart';
-import '../../../presets/presentation/providers/presets_provider.dart';
 import '../../../settings/presentation/providers/effective_settings_provider.dart';
 import '../../../shortcuts/prompt_shortcuts_provider.dart';
-import '../../../settings/presentation/providers/model_profiles_provider.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../settings/presentation/screens/overrides_page.dart';
 import '../../../settings/presentation/widgets/metrics_sheet.dart';
@@ -56,6 +54,7 @@ import 'conversation_workspace_page.dart';
 import '../../domain/export/chat_document.dart';
 import '../../domain/export/document_draft_service.dart';
 import '../../domain/export/document_draft_store.dart';
+import '../../../../inference/engine/engine_registry_provider.dart';
 import '../../../../inference/engine/text_engine.dart';
 import '../../../../core/providers/shared_providers.dart';
 import '../../../../inference/engine/diffusiongemma_engine.dart';
@@ -172,7 +171,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Future<void> _newChat() async {
-    ref.read(chatProvider.notifier).newChat();
+    final reset = await ref.read(chatProvider.notifier).newChat();
+    if (!reset || !mounted) return;
     await _switchDraft(null);
   }
 
@@ -597,6 +597,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Future<void> _attach({String? source, BuildContext? from}) async {
+    // A LiteRT chat has no tools, so its sheet does not offer them.
+    final noTools =
+        !ref.read(settingsProvider).usesRemote &&
+        ref.read(activeModelEngineProvider)?.capabilities.tools == false;
     final picked = await pickAttachments(
       context,
       source: source,
@@ -613,7 +617,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           },
         ),
       ],
-      below: const [ToolsQuickPanel()],
+      below: noTools ? const [] : const [ToolsQuickPanel()],
     );
     if (mounted && picked.isNotEmpty) {
       if (ref.read(chatProvider).temporary) {
@@ -773,6 +777,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     models.loadedModel)
                 ?.id ==
             diffusionGemmaModelId;
+    final engine = remoteActive ? null : ref.watch(activeModelEngineProvider);
     final webAllowed =
         !diffusion &&
         ref.watch(
@@ -1132,6 +1137,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             padding: EdgeInsets.symmetric(horizontal: AppSpace.md),
             child: HelperLivePanel(),
           ),
+          if (engine != null && !engine.capabilities.tools)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpace.md),
+              child: Text(
+                context.l10n.engineToolsUnavailable(engine.displayName),
+                style: context.text.small,
+              ),
+            ),
           ChatComposer(
             controller: _input,
             focusNode: _inputFocus,

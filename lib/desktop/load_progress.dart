@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/design/app_design.dart';
 import '../core/l10n/l10n.dart';
+import '../core/widgets/stop_load_button.dart';
 import '../data/storage/download_manager.dart';
 import '../features/models/presentation/providers/model_manager_provider.dart';
 import '../features/models/presentation/widgets/model_tags.dart';
@@ -79,14 +80,7 @@ class ModelLoadProgress extends ConsumerWidget {
               ),
             ),
             // Any moment of a load can be stopped (owner request OR-02).
-            IconButton(
-              tooltip: context.l10n.stopLoading,
-              visualDensity: VisualDensity.compact,
-              iconSize: 16,
-              icon: const Icon(Icons.stop_circle_outlined),
-              onPressed: () =>
-                  ref.read(modelManagerProvider.notifier).stopLoad(),
-            ),
+            const StopLoadButton(),
           ],
         ),
         const SizedBox(height: 6),

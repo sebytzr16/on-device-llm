@@ -24,17 +24,20 @@ OD_API int32_t od_cpu_isa(void);
 // Backends that compile kernels (OpenCL) persist them under cacheDir; empty
 // disables the cache. owner tags the runtime with the window that made it.
 OD_API void * od_create(const char * options);
+// Closes the handle to new calls and waits for calls already using it.
 OD_API void od_destroy(void * handle);
 // Frees the models of every runtime created with that owner and refuses
 // further work on them: an Android window closed while the process lives
 // on. Callable from any thread; returns how many models were freed.
 OD_API int32_t od_release_owner(int64_t owner);
 // Thread-safe cancellation by stable session id; stale ids are harmless.
-// These additive ABI 6 exports never access a runtime from the calling thread.
+// Session cancellation stays available during load, step and destroy.
 OD_API int64_t od_session_id(void * handle);
 OD_API void od_cancel_session(int64_t session);
 OD_API void od_reset_cancel(void * handle);
 OD_API int32_t od_cancelled(void * handle);
+// Runtime string results remain valid until the same function is called again
+// on the same thread. Copy them before returning to an asynchronous caller.
 OD_API const char * od_error(void * handle);
 // Includes embeddedChatTemplate and supportsDFlash, also before model load.
 OD_API const char * od_info(void * handle);
@@ -69,6 +72,7 @@ OD_API void * od_side_open(void * handle, const char * options);
 // 0 admitted, 1 retry after live work drains, -1 invalid request (owner, 2026-11-02).
 OD_API int32_t od_side_submit(void * side, int32_t seq, const char * request);
 // JSON events with token bytes, done and per-sequence metrics; valid until the next side call.
+// Reasoning delimiters in the token bytes are normalized to <think> and </think>.
 OD_API const char * od_side_step(void * side);
 OD_API void od_side_cancel(void * side, int32_t seq);
 OD_API void od_side_close(void * side);

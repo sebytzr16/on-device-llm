@@ -182,4 +182,102 @@ void main() {
     expect(job.cancel.isCancelled, isTrue);
     expect((await job.events().toList()).single['type'], 'cancelled');
   });
+
+  for (final terminal in ['done', 'failed', 'cancelled']) {
+    test('a full journal still replays a bounded $terminal event', () async {
+      const budget = 320;
+      final jobs = WorkspaceJobs(maxActive: 1, maxRetainedBytes: budget);
+      addTearDown(jobs.dispose);
+      final job = jobs.submit(
+        requestId: terminal,
+        fingerprint: terminal,
+        run: (job) async {
+          job.emit('text', {'text': 'x' * 20});
+          expect(job.terminal, isFalse);
+          job.emit(terminal, {'reason': 'x' * budget});
+        },
+      );
+      await job.execution;
+      final events = await job.events().toList();
+      expect(events.map((event) => event['type']), [
+        'queued',
+        'text',
+        terminal,
+      ]);
+      expect(events.last['data'], isEmpty);
+      expect(job.terminal, isTrue);
+      expect(jobs.retainedBytes, job.retainedBytes);
+      expect(jobs.retainedBytes, lessThanOrEqualTo(budget));
+    });
+  }
+
+  test('retained journals share one byte budget', () async {
+    const budget = 8000;
+    final jobs = WorkspaceJobs(maxActive: 1, maxRetainedBytes: budget);
+    addTearDown(jobs.dispose);
+    Future<WorkspaceJob> finish(String requestId) async {
+      final job = jobs.submit(
+        requestId: requestId,
+        fingerprint: requestId,
+        run: (job) async {
+          job.emit('text', {'text': 'x' * 6000});
+          job.emit('done');
+        },
+      );
+      await job.execution;
+      expect(jobs.retainedBytes, lessThanOrEqualTo(budget));
+      return job;
+    }
+
+    final first = await finish('1');
+    final second = await finish('2');
+    // The total is enforced on every append, not on admission: the oldest
+    // terminal journal makes room instead of both being retained.
+    expect(jobs[first.id], isNull);
+    expect(jobs[second.id], isNotNull);
+    final third = await finish('3');
+    expect(jobs[third.id], isNotNull);
+    expect(jobs.retainedBytes, lessThanOrEqualTo(budget));
+  });
+
+  test('concurrent journals stay inside the aggregate budget', () async {
+    const budget = 20000;
+    final jobs = WorkspaceJobs(maxActive: 3, maxRetainedBytes: budget);
+    addTearDown(jobs.dispose);
+    // Fill most of the budget with finished journals first.
+    for (var i = 0; i < 3; i++) {
+      final old = jobs.submit(
+        requestId: 'old$i',
+        fingerprint: 'old$i',
+        run: (job) async {
+          job.emit('text', {'text': 'x' * 6000});
+          job.emit('done');
+        },
+      );
+      await old.execution;
+      expect(jobs.retainedBytes, lessThanOrEqualTo(budget));
+    }
+    final started = <WorkspaceJob>[];
+    for (var i = 0; i < 3; i++) {
+      started.add(
+        jobs.submit(
+          requestId: 'new$i',
+          fingerprint: 'new$i',
+          run: (job) async {
+            for (var n = 0; n < 10 && !job.terminal; n++) {
+              job.emit('text', {'text': 'x' * 3000});
+              await Future<void>.delayed(Duration.zero);
+              expect(jobs.retainedBytes, lessThanOrEqualTo(budget));
+            }
+            job.emit('done');
+          },
+        ),
+      );
+      expect(jobs.retainedBytes, lessThanOrEqualTo(budget));
+    }
+    await Future.wait([for (final job in started) job.execution]);
+    // Whatever each job did, the shared budget, not the job count, caps it.
+    expect(jobs.retainedBytes, lessThanOrEqualTo(budget));
+    expect(jobs.retainedBytes, greaterThan(0));
+  });
 }

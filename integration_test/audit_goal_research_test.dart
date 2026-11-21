@@ -53,7 +53,10 @@ class _Settings extends SettingsNotifier {
   }
 
   @override
-  Future<void> update(InferenceSettings next) async => state = next;
+  Future<void> update(
+    InferenceSettings next, {
+    bool requirePersistence = false,
+  }) async => state = next;
 }
 
 class _Models extends ModelManagerNotifier {
@@ -95,6 +98,7 @@ class _Engine extends LlamaEngine {
     required String modelPath,
     required InferenceSettings settings,
     String? mmprojPath,
+    String engineId = 'llama.cpp',
     List<({String path, double scale})> adapters = const [],
     String? draftModelPath,
     bool memoryGuard = true,

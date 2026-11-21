@@ -9,6 +9,7 @@ import '../../../../core/l10n/l10n.dart';
 import '../../../../core/platform/desktop_host.dart';
 import '../../../../inference/remote/remote_provider.dart';
 import '../providers/settings_provider.dart';
+import '../providers/effective_settings_provider.dart';
 import '../widgets/settings_widgets.dart';
 import 'remote_profile_page.dart';
 import 'scan_connection_page.dart';
@@ -517,7 +518,20 @@ class RemoteServerPage extends ConsumerWidget {
                         .uiRemoteServerPageTheAppSearchesDuckDuckGoAndReads,
                   ),
                   value: s.remoteWebResearch,
-                  onChanged: (v) => n.update(s.copyWith(remoteWebResearch: v)),
+                  onChanged: (v) async {
+                    final next = s.copyWith(remoteWebResearch: v);
+                    if (!await confirmWebModeChange(
+                          context,
+                          ref,
+                          SettingsChange(global: next),
+                        ) ||
+                        !context.mounted) {
+                      return;
+                    }
+                    await n.update(
+                      ref.read(settingsProvider).copyWith(remoteWebResearch: v),
+                    );
+                  },
                 ),
                 SettingsSwitchRow(
                   secondary: const Icon(Icons.image_outlined),

@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show BuildContext;
 import 'package:path/path.dart' as p;
 import '../../core/l10n/l10n.dart';
+import '../../core/logging/quiet_failure.dart';
 import '../../core/storage/app_directories.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -729,11 +730,31 @@ abstract final class PhoneActions {
     }
   }
 
+  /// Clears the clear-text copies earlier shares left behind. A share keeps
+  /// its copy for the target app, which opens the file after the chooser
+  /// returns (audit 05b-3), so the sweeps run at app start and before the
+  /// next share; a share no app took is removed at once in [launch].
+  static Future<void> sweepSharedCopies() async {
+    try {
+      final temp = await getTemporaryDirectory();
+      await for (final e in temp.list()) {
+        if (p.basename(e.path).startsWith('shared-goal-')) {
+          await e.delete(recursive: true);
+        }
+      }
+    } on FileSystemException catch (e, st) {
+      quietFailure('phone_actions:sweepSharedCopies', e, st);
+    }
+  }
+
   /// Opens the phone's app for [a] (or the share sheet for a file). False
   /// when no app on the phone can do it.
   static Future<bool> launch(PhoneAction a) async {
     if (a.kind == 'save_file') {
       final file = await writeFile(a);
+      // Copies from earlier shares go first: this share must not delete the
+      // file it is about to hand over, and the next one sweeps up after it.
+      await sweepSharedCopies();
       final temporary = await (await getTemporaryDirectory()).createTemp(
         'shared-goal-',
       );
@@ -746,8 +767,14 @@ abstract final class PhoneActions {
         await SharePlus.instance.share(
           ShareParams(files: [XFile(clear.path)], subject: a.fileName),
         );
-      } finally {
-        await temporary.delete(recursive: true);
+      } catch (_) {
+        // No app took the file: the decrypted copy must not stay behind.
+        try {
+          await temporary.delete(recursive: true);
+        } on FileSystemException catch (e, st) {
+          quietFailure('phone_actions:shareFailed', e, st);
+        }
+        rethrow;
       }
       return true;
     }

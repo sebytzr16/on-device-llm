@@ -3,10 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/data/storage/gguf_metadata.dart';
 import 'package:ondevice_llm/features/models/domain/entities/model_info.dart';
+import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
 import 'package:ondevice_llm/features/models/presentation/widgets/model_card.dart';
 import 'package:ondevice_llm/features/models/presentation/widgets/model_capabilities.dart';
 import 'package:ondevice_llm/features/settings/presentation/providers/model_profiles_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'chat_test.dart' show TestModels;
 
 void main() {
   testWidgets('clicking a downloaded model opens files metadata and profile', (
@@ -24,6 +27,9 @@ void main() {
           ),
         ),
         modelDeviceMemoryProvider.overrideWith((ref) async => null),
+        // The details page reads the loaded model from the manager, which
+        // would otherwise open the app database in build().
+        modelManagerProvider.overrideWith(TestModels.new),
       ],
     );
     addTearDown(container.dispose);

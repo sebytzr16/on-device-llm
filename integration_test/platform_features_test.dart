@@ -271,8 +271,13 @@ void main() {
     );
     final server = await HttpServer.bind(InternetAddress.anyIPv4, 0);
     final watch = Stopwatch()..start();
+    final owner = Object();
     try {
-      await HostDiscovery.advertise(server.port);
+      await HostDiscovery.advertise(
+        server.port,
+        owner: owner,
+        isCurrent: () => true,
+      );
       final hosts = await HostDiscovery.browse().timeout(
         const Duration(seconds: 12),
       );
@@ -286,7 +291,7 @@ void main() {
         'PLATFORM_DISCOVERY_OK hosts=${hosts.length} elapsedMs=${watch.elapsedMilliseconds}',
       );
     } finally {
-      await HostDiscovery.stop();
+      await HostDiscovery.stop(owner);
       await server.close(force: true);
     }
   }, timeout: const Timeout(Duration(seconds: 30)));

@@ -4,9 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/design/app_design.dart';
 import '../../../core/design/app_sheet.dart';
 import '../../settings/domain/entities/inference_settings.dart';
+import '../../settings/presentation/providers/effective_settings_provider.dart';
 import '../../settings/presentation/providers/settings_provider.dart';
 import '../../settings/presentation/screens/overrides_page.dart';
 import '../../settings/presentation/widgets/settings_labels.dart';
+import '../../settings/presentation/widgets/settings_widgets.dart';
 import '../domain/preset.dart';
 import 'providers/presets_provider.dart';
 import '../../../core/l10n/l10n.dart';
@@ -42,7 +44,15 @@ class _PresetSheet extends ConsumerWidget {
           key: const Key('preset-new'),
           onPressed: () async {
             final draft = await showPresetEditor(context);
-            if (draft != null) await n.create(draft);
+            if (draft == null || !context.mounted) return;
+            // Saving a preset activates it: ask before that turns web on,
+            // and keep the current one when the user stays local.
+            final allow = await confirmWebModeChange(
+              context,
+              ref,
+              SettingsChange(preset: draft),
+            );
+            await n.create(draft, activate: allow);
           },
           icon: const Icon(Icons.add, size: 18),
           label: Text(context.l10n.newLabel),
@@ -76,7 +86,22 @@ class _PresetSheet extends ConsumerWidget {
                             context,
                             existing: p,
                           );
-                          if (edited != null) await n.update(edited);
+                          if (edited == null || !context.mounted) return;
+                          // Editing the active preset changes the next
+                          // message now: ask before web turns on, and keep
+                          // its mode when the user stays local.
+                          var next = edited;
+                          if (!await confirmWebModeChange(
+                            context,
+                            ref,
+                            SettingsChange(preset: edited, editingPreset: true),
+                          )) {
+                            next = edited.copyWith(
+                              webMode: p.webMode,
+                              clearWebMode: p.webMode == null,
+                            );
+                          }
+                          await n.update(next);
                         case 'overrides':
                           if (context.mounted) {
                             await Navigator.push(
@@ -97,6 +122,10 @@ class _PresetSheet extends ConsumerWidget {
                                             ?.overrides ??
                                         p.overrides,
                                     inherited: ref.watch(settingsProvider),
+                                    change: (o) => SettingsChange(
+                                      preset: p.copyWith(overrides: o),
+                                      editingPreset: true,
+                                    ),
                                     onChanged: (o) =>
                                         n.update(p.copyWith(overrides: o)),
                                   ),
@@ -105,8 +134,30 @@ class _PresetSheet extends ConsumerWidget {
                             );
                           }
                         case 'copy':
-                          await n.duplicate(p);
+                          // A copy activates too: ask before its web mode
+                          // switches the next message to research, and stay
+                          // on the current preset when the user declines.
+                          final allowed = await confirmWebModeChange(
+                            context,
+                            ref,
+                            SettingsChange(preset: p),
+                          );
+                          await n.duplicate(p, activate: allowed);
                         case 'delete':
+                          // Removing the active preset reveals what it hid,
+                          // which can be an inherited Auto or Always: ask
+                          // before the mode changes (audit 2026-11-20 P1-4).
+                          if (!await confirmWebModeChange(
+                            context,
+                            ref,
+                            SettingsChange(
+                              preset: state.activeId == p.id
+                                  ? Preset.general
+                                  : state.active,
+                            ),
+                          )) {
+                            return;
+                          }
                           await n.remove(p.id);
                       }
                     },
@@ -139,6 +190,15 @@ class _PresetSheet extends ConsumerWidget {
                     ],
                   ),
                   onTap: () async {
+                    // A preset can turn web research on for the next message:
+                    // ask the globe button's question before activating it.
+                    if (!await confirmWebModeChange(
+                      context,
+                      ref,
+                      SettingsChange(preset: p),
+                    )) {
+                      return;
+                    }
                     await n.activate(p.id);
                     if (context.mounted) Navigator.pop(context);
                   },

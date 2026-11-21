@@ -23,6 +23,9 @@ import 'desktop/desktop_window.dart';
 import 'desktop/engine_updater/engine_update_controller.dart';
 import 'features/backup/local_backup_service.dart';
 import 'features/goals/goal_watch_background.dart';
+import 'features/tools/phone_actions.dart';
+import 'features/settings/presentation/providers/effective_settings_provider.dart';
+import 'features/settings/presentation/widgets/settings_widgets.dart';
 
 /// Retained by AOT for Android's scheduled watch JobService.
 @pragma('vm:entry-point')
@@ -76,6 +79,16 @@ Future<Widget> _initialize(bool desktop) async {
     } catch (error, stack) {
       Logger('main').warning('Staging cleanup failed', error, stack);
     }
+    if (!desktop) {
+      // A share keeps its clear-text copy for the target app, which may
+      // open it after the chooser returns; a copy the last run left behind
+      // must not outlive it (audit 05b-3).
+      try {
+        await PhoneActions.sweepSharedCopies();
+      } catch (error, stack) {
+        Logger('main').warning('Shared copy sweep failed', error, stack);
+      }
+    }
     final encryption = DeviceEncryption.instance;
     final databaseFile = File(
       p.join((await appDataDirectory()).path, 'ondevice_llm.sqlite'),
@@ -104,13 +117,18 @@ Future<Widget> _initialize(bool desktop) async {
     if (desktop) {
       // A downloaded engine pack is used from the very first model load.
       try {
-        await engineUpdater.prepare();
+        await prepareEngineUpdaters();
       } catch (e) {
         Logger('EngineUpdates').warning('Engine packs not prepared', e);
       }
     }
     return ProviderScope(
-      overrides: [appDatabaseProvider.overrideWithValue(db)],
+      overrides: [
+        appDatabaseProvider.overrideWithValue(db),
+        webResearchConfirmationProvider.overrideWithValue(
+          confirmWebResearchFromNavigator,
+        ),
+      ],
       child: desktop ? const DesktopApp() : const OnDeviceLlmApp(),
     );
   } catch (error, stack) {

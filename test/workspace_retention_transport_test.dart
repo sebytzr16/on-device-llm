@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ondevice_llm/features/hosting/device_model_server.dart';
@@ -97,6 +100,103 @@ void main() {
           .toSet();
       expect(completed, hasLength(4));
       expect(events.any((event) => event['type'] == 'cancelled'), isFalse);
+    },
+  );
+
+  test(
+    'a lost retained job is reposted with freshly uploaded attachments',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      const token = '0123456789abcdef0123456789abcdef';
+      late final WorkspaceApi api;
+      var uploadsReceived = 0;
+      api = WorkspaceApi(
+        capabilities: const [],
+        run: (job, input) async {
+          final references = input['uploads'] as List;
+          final id = (references.single as Map)['uploadId'] as String;
+          final file = api.uploads[id]!.file;
+          expect(await file.readAsString(), 'attachment text');
+          uploadsReceived++;
+          job.emit('answer', {'text': 'Fresh answer'});
+        },
+      );
+      final server = DeviceModelServer(
+        engine: FakeEngine(),
+        settings: () => const InferenceSettings(),
+        modelId: 'server-model',
+        fallbackTemplate: '',
+        accessToken: token,
+        workspace: api,
+      );
+      await server.start();
+      addTearDown(server.stop);
+      final client = WorkspaceClient();
+      addTearDown(client.dispose);
+      final connection = InferenceSettings(
+        remoteEnabled: true,
+        remoteProfiles: [
+          RemoteProfile(
+            id: 'pc',
+            name: 'PC',
+            providerId: 'custom',
+            baseUrl: 'http://127.0.0.1:${server.port}/v1/',
+            model: 'server-model',
+          ),
+        ],
+        remoteProfileId: 'pc',
+        remoteApiKeys: const {'pc': token},
+      );
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'workspace_jobs_v1',
+        jsonEncode({
+          '${connection.remoteBaseUrl}:retry-lost-job': 'job-the-host-forgot',
+        }),
+      );
+      final events = <Map<String, dynamic>>[];
+      final directory = await Directory.systemTemp.createTemp(
+        'workspace-repost-',
+      );
+      final attachment = await File(
+        '${directory.path}/note.txt',
+      ).writeAsString('attachment text');
+      addTearDown(() async {
+        await attachment.delete();
+        await directory.delete();
+      });
+      var prepared = 0;
+      // The host restarted, so its 404 must not fail every retry of this message.
+      await client.run(
+        settings: connection,
+        requestId: 'retry-lost-job',
+        messages: [
+          {'role': 'user', 'content': 'Retry me'},
+        ],
+        prepareUploads: () async {
+          prepared++;
+          final id = await client.upload(
+            connection,
+            attachment.path,
+            'note.txt',
+          );
+          return [
+            {'uploadId': id, 'message': 0},
+          ];
+        },
+        event: events.add,
+        approve: (_, _) async => true,
+      );
+      expect(events.last['type'], 'done');
+      expect(prepared, 1);
+      expect(uploadsReceived, 1);
+      expect(
+        events
+            .where((event) => event['type'] == 'answer')
+            .single['data']['text'],
+        'Fresh answer',
+      );
+      expect(jsonDecode(prefs.getString('workspace_jobs_v1') ?? '{}'), isEmpty);
     },
   );
 }

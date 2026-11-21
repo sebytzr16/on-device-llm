@@ -74,10 +74,12 @@ void main() {
     'permission storage stores a digest, not a copy of env secrets',
     () async {
       const secret = 'mcp-env-secret-value';
+      final executable = File('${directory.path}/fixture.exe')
+        ..writeAsStringSync('fixture');
       final raw = jsonEncode({
         'mcpServers': {
           'fixture': {
-            'command': 'fixture',
+            'command': executable.path,
             'env': {'TOKEN': secret},
           },
         },

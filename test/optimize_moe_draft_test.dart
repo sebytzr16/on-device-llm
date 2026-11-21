@@ -50,6 +50,19 @@ void main() {
     );
   });
 
+  test(
+    'a failing estimate yields no placements instead of failing the run',
+    () async {
+      expect(
+        await moeExpertPlacements(
+          best,
+          estimate: (s) async => throw StateError('no bridge'),
+        ),
+        isEmpty,
+      );
+    },
+  );
+
   test('a picked draft model is measured with and without', () {
     final setups = pcOptimizationSetups(
       best,

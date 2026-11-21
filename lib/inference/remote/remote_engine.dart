@@ -15,7 +15,6 @@ import '../engine/text_engine.dart';
 import 'remote_provider.dart';
 import 'remote_usage.dart';
 import '../../core/l10n/l10n.dart';
-import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 
 /// A model the remote provider offers.
 class RemoteModel {
@@ -61,6 +60,9 @@ class RemoteServerReport {
 /// blocks on Anthropic, `thought` parts on Gemini) is re-emitted inside
 /// `<think>` tags so the rest of the app treats it like on-device thinking.
 final _log = Logger('remote');
+
+/// Provider-supplied finish values that may reach the log unchanged.
+const _loggedFinishes = {'eog', 'length', 'tool_calls', 'cancelled'};
 
 class RemoteEngine implements TextEngine {
   final Dio _dio;
@@ -250,6 +252,52 @@ class RemoteEngine implements TextEngine {
     };
   }
 
+  /// Provider bodies and connection errors can echo the credential that was
+  /// sent (some services quote the rejected key). Custom header values are
+  /// treated as secrets unless the header has a public protocol purpose.
+  static String redactSecrets(String text, InferenceSettings settings) {
+    final profile = settings.activeRemoteProfile;
+    final secrets = <String>{settings.remoteApiKey};
+    void addHeaders(Map<String, String>? headers) {
+      if (headers == null) return;
+      for (final entry in headers.entries) {
+        // Public protocol fields and values too short to be a credential are
+        // kept: redacting them would shred the provider's own error message.
+        if (_publicProtocolHeaders.contains(entry.key.toLowerCase())) continue;
+        if (entry.value.length < 4) continue;
+        secrets.add(entry.value);
+      }
+    }
+
+    addHeaders(profile?.headers);
+    addHeaders(settings.remoteHeaders[profile?.id]);
+    final ordered = secrets.where((secret) => secret.isNotEmpty).toList()
+      ..sort((a, b) => b.length.compareTo(a.length));
+    if (ordered.isEmpty) return text;
+    return text.replaceAll(
+      RegExp(ordered.map(RegExp.escape).join('|')),
+      '[redacted]',
+    );
+  }
+
+  static const _publicProtocolHeaders = {
+    'anthropic-version',
+    'anthropic-beta',
+    'openai-beta',
+    'x-api-version',
+    'accept',
+    'content-type',
+    'user-agent',
+  };
+
+  static InferenceException _redact(
+    InferenceException error,
+    InferenceSettings settings,
+  ) {
+    final message = redactSecrets(error.message, settings);
+    return message == error.message ? error : InferenceException(message);
+  }
+
   static InferenceException _explain(Object e, Uri base) {
     if (e is RemoteLimitReached) return InferenceException(e.message);
     final t = appStrings;
@@ -424,7 +472,7 @@ class RemoteEngine implements TextEngine {
           ];
       }
     } catch (e) {
-      throw _explain(e, base);
+      throw _redact(_explain(e, base), s);
     }
   }
 
@@ -644,8 +692,8 @@ class RemoteEngine implements TextEngine {
       try {
         final v = jsonDecode(arguments);
         if (v is Map) return Map<String, dynamic>.from(v);
-      } catch (e, st) {
-        quietFailure('remote_engine:655', e, st);
+      } on FormatException {
+        _log.fine('Provider returned invalid tool argument JSON');
       }
     }
     return const {};
@@ -830,9 +878,7 @@ class RemoteEngine implements TextEngine {
     _cancel = cancel;
     final controller = StreamController<String>(onCancel: cancel.cancel);
     final started = DateTime.now();
-    _log.info(
-      '${provider.name} request to ${base.host}, model ${profile.model}',
-    );
+    _log.info('Remote generation requested');
     DateTime? first, last, answered;
     var tokens = 0;
     int? promptTokens, completionTokens;
@@ -1299,18 +1345,25 @@ class RemoteEngine implements TextEngine {
           finish = 'tool_calls';
         }
         done();
+        final finished = '${metrics['finishReason']}';
         _log.info(
           '${provider.name} answered: ${metrics['tokens']} tokens, '
-          'first token ${metrics['firstTokenMs']} ms, finish ${metrics['finishReason']}',
+          'first token ${metrics['firstTokenMs']} ms, finish '
+          '${_loggedFinishes.contains(finished) ? finished : 'other'}',
         );
-      } catch (e, stack) {
+      } catch (e) {
         calls.clear();
         done();
         if (!cancel.isCancelled) {
-          final error = e is InferenceException
+          final thrown = e is InferenceException
               ? e
               : _explain(await _withBody(e), base);
-          _log.warning('${provider.name} request failed', error, stack);
+          final error = _redact(thrown, settings);
+          final status = e is DioException ? e.response?.statusCode : null;
+          final detail = status != null && status >= 100 && status <= 599
+              ? ' (HTTP $status)'
+              : '';
+          _log.warning('Remote generation failed$detail');
           controller.addError(error);
         }
       } finally {
@@ -1352,8 +1405,8 @@ class RemoteEngine implements TextEngine {
           .join()
           .timeout(const Duration(seconds: 5));
       e.response!.data = text;
-    } catch (e, st) {
-      quietFailure('remote_engine:1361', e, st);
+    } catch (_) {
+      _log.fine('Could not read provider error body');
     }
     return e;
   }

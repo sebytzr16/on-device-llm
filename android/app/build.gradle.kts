@@ -139,6 +139,8 @@ flutter {
 }
 
 dependencies {
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.19.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     // Same bundled Latin recognizer as before, without the legacy plugin.
     implementation("com.google.mlkit:text-recognition:16.0.1")
 }

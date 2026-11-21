@@ -24,7 +24,7 @@ extension _ChatTools on ChatNotifier {
     bool primeOnly = false,
   }) {
     ToolRunner? offered;
-    if (engine is DiffusionGemmaEngine) {
+    if (engine is DiffusionGemmaEngine || engine is LiteRtEngine) {
       return (runner: null, tools: const [], native: false, clock: false);
     }
     // Typed tools (roadmap P2): offered only when enabled and only those

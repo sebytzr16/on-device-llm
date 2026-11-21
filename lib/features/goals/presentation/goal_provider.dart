@@ -127,8 +127,13 @@ class GoalNotifier extends Notifier<GoalProgress?> {
     return true;
   }
 
-  Future<void> start(GoalSpec spec) {
-    if (ref.read(chatProvider).isGenerating || _runner != null) {
+  Future<void> start(GoalSpec spec) async {
+    if (ref.read(chatProvider).isGenerating ||
+        _runner != null ||
+        // A Goal runs in a new chat: starting it in the chat the user was
+        // reading (the reset was abandoned) would mix the two (review
+        // 2026-11-20 finding 19).
+        !await ref.read(chatProvider.notifier).newChat()) {
       return _save(
         GoalProgress(
           spec: spec,
@@ -141,7 +146,6 @@ class GoalNotifier extends Notifier<GoalProgress?> {
     }
     _goalChatId = null;
     _archivedId = null;
-    ref.read(chatProvider.notifier).newChat();
     // The names are fixed when the goal starts, so a resumed goal keeps
     // the same subject lock.
     return _run(

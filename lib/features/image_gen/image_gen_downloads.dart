@@ -340,14 +340,19 @@ class ImageGenDownloadsNotifier extends Notifier<ImageGenDownloadsState> {
       );
       return;
     }
-    await _maintenance;
-    if (!_alive) return;
-    if (!_active.add(model.id)) return;
-    _stopping.remove(model.id);
     final finished = Completer<void>();
-    _finished[model.id] = finished;
+    // Admission shares the maintenance lock with cancel's partial cleanup: a
+    // download admitted first keeps its shared `.part` alive (audit 08c-12).
+    final admitted = await _maintain(() async {
+      if (!_alive || _active.contains(model.id)) return false;
+      _active.add(model.id);
+      _stopping.remove(model.id);
+      _finished[model.id] = finished;
+      _set(model, const ImageGenModelState(ImageGenModelStatus.downloading));
+      return true;
+    });
+    if (!admitted) return;
     var done = 0;
-    _set(model, const ImageGenModelState(ImageGenModelStatus.downloading));
     try {
       await DownloadJobs.add(model.downloadKey);
       for (final f in model.files) {
@@ -422,12 +427,26 @@ class ImageGenDownloadsNotifier extends Notifier<ImageGenDownloadsState> {
 
   Future<void> cancel(ImageGenModel model) async {
     model = resolveImageGenCompanions(model);
+    await ref.read(imageGenImportsProvider.notifier).ready;
     await pause(model);
     await DownloadJobs.remove(model.downloadKey);
-    for (final f in model.files) {
-      await ModelStorage.deletePartial(f.fileName);
-      await DownloadHistory.cancelled('${model.downloadKey}:${f.fileName}');
-    }
+    await _maintain(() async {
+      // Snapshot and delete under the admission lock: quants of one model
+      // share the VAE and text encoder, so a component another model was
+      // already downloading keeps its partial file (audit 08c-12).
+      final shared = {
+        for (final other in imageGenManagedModels(
+          ref.read(imageGenImportsProvider),
+        ))
+          if (other.id != model.id && _active.contains(other.id))
+            ...other.files.map((f) => f.fileName),
+      };
+      for (final f in model.files) {
+        if (shared.contains(f.fileName)) continue;
+        await ModelStorage.deletePartial(f.fileName);
+        await DownloadHistory.cancelled('${model.downloadKey}:${f.fileName}');
+      }
+    });
     _set(model, await _missingState(model));
   }
 

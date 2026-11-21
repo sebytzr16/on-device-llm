@@ -45,6 +45,20 @@ final _log = Logger('tools');
 /// Defaults to false for production: only metadata (name/status/timing/counts) is logged.
 bool _verboseToolLogging = false;
 
+/// One call's deadline. The runner gives up on a call whose future is still
+/// running at its timeout; that abandoned future must not write its late
+/// page or source into the turn afterwards (audit 05b-1).
+class _CallDeadline {
+  bool _passed = false;
+
+  void expire() => _passed = true;
+
+  /// Throws once the call was given up on, before anything is stored.
+  void check() {
+    if (_passed) throw TimeoutException('The tool took too long.');
+  }
+}
+
 class ToolRunner {
   static const maxSearchChars = 4000;
   static const maxResultChars = 6000;
@@ -72,6 +86,11 @@ class ToolRunner {
   final DuckDuckGoScraper scraper;
   final WebPageReader reader;
   final KnowledgeStore? knowledge;
+
+  /// Live re-check before any knowledge lookup: the collection's owner
+  /// can revoke access while this job is still running (hosted workspace).
+  /// Null keeps the static settings. A denied call degrades to "no results".
+  final bool Function()? knowledgeAccess;
   final InferenceSettings settings;
   final CancelToken? cancel;
   final bool remote;
@@ -141,6 +160,7 @@ class ToolRunner {
     required this.reader,
     required this.settings,
     this.knowledge,
+    this.knowledgeAccess,
     this.cancel,
     this.remote = false,
     this.helperOwnsDeadline = false,
@@ -181,7 +201,8 @@ class ToolRunner {
       settings.toolDocuments &&
       (!remote || settings.remoteDocuments) &&
       settings.knowledgeCollection.isNotEmpty &&
-      knowledge != null;
+      knowledge != null &&
+      (knowledgeAccess?.call() ?? true);
   bool get calculatorAllowed => settings.toolCalculator;
 
   /// The tools the model may call this turn.
@@ -439,9 +460,15 @@ class ToolRunner {
       _record(result, order);
       return result;
     }
-    call = ToolAliases.normalize(call);
+    call = ToolAliases.normalize(
+      call,
+      // A phone offers no project folder: search_files there still means the
+      // knowledge collection, as before the project tools kept the name.
+      projectTools: projectFiles != null,
+    );
     final clock = Stopwatch()..start();
     final order = ++_callCount;
+    final deadline = _CallDeadline();
     _log.info(
       'Tool ${call.name} ${_verboseToolLogging ? _brief(call.arguments) : ''}',
     );
@@ -452,15 +479,17 @@ class ToolRunner {
         throw StateError('Tool "${call.name}" is not available in this chat.');
       }
       output = helperOwnsDeadline && call.name == 'ask_helper'
-          ? await _dispatch(call)
-          : await _dispatch(call).timeout(
+          ? await _dispatch(call, deadline)
+          : await _dispatch(call, deadline).timeout(
               call.name == 'ask_helper'
                   ? helperTimeout
                   : call.name == 'generate_image' || call.name == 'edit_image'
                   ? imageTimeout
                   : callTimeout,
-              onTimeout: () =>
-                  throw TimeoutException('The tool took too long.'),
+              onTimeout: () {
+                deadline.expire();
+                throw TimeoutException('The tool took too long.');
+              },
             );
     } catch (e) {
       ok = false;
@@ -595,7 +624,7 @@ class ToolRunner {
     }
   }
 
-  Future<String> _dispatch(ToolCall call) async {
+  Future<String> _dispatch(ToolCall call, _CallDeadline deadline) async {
     final a = call.args;
     switch (call.name) {
       case 'recall':
@@ -615,15 +644,22 @@ class ToolRunner {
           ),
         );
       case 'search_news':
-        return _searchNews(_optional(a, 'topic') ?? _optional(a, 'query'));
+        return _searchNews(
+          _optional(a, 'topic') ?? _optional(a, 'query'),
+          deadline,
+        );
       case 'search_web':
-        return _searchWeb(_string(a, 'query'));
+        return _searchWeb(_string(a, 'query'), deadline);
       case 'read_url':
-        return _readUrl(_string(a, 'url'), query: _optional(a, 'query'));
+        return _readUrl(
+          _string(a, 'url'),
+          query: _optional(a, 'query'),
+          deadline: deadline,
+        );
       case 'find_in_page':
-        return _findInPage(_string(a, 'url'), _string(a, 'query'));
+        return _findInPage(_string(a, 'url'), _string(a, 'query'), deadline);
       case 'search_documents':
-        return _searchDocuments(_string(a, 'query'));
+        return _searchDocuments(_string(a, 'query'), deadline);
       case 'calculator':
         final expression = _string(a, 'expression');
         final v = Calculator.evaluate(expression);
@@ -700,7 +736,7 @@ class ToolRunner {
 
   /// The latest stories for [topic] (or the top stories), numbered as
   /// sources: publisher, time and summary are evidence in their own right.
-  Future<String> _searchNews(String? topic) async {
+  Future<String> _searchNews(String? topic, _CallDeadline deadline) async {
     final desk = newsDesk!;
     final clean = topic?.trim() ?? '';
     final general =
@@ -724,6 +760,7 @@ class ToolRunner {
       maxItems: remote ? 14 : 8,
       maxArticles: general ? 0 : 1,
     );
+    deadline.check();
     if (briefing.isEmpty) {
       return 'No recent news found${general ? '' : ' about "$clean"'}. Try search_web.';
     }
@@ -758,7 +795,7 @@ class ToolRunner {
       ? '${d.inHours} h ago'
       : '${d.inDays} days ago';
 
-  Future<String> _searchWeb(String query) async {
+  Future<String> _searchWeb(String query, _CallDeadline deadline) async {
     _lastQuery = query;
     final results = await scraper.search(
       query,
@@ -767,6 +804,7 @@ class ToolRunner {
       localeCode: settings.localeCode,
       dateFilter: RetrievalPlan.searchDateFilter(query),
     );
+    deadline.check();
     if (results.isEmpty) return 'No results for "$query".';
     final ads = results.where((r) => r.sponsored).toList();
     for (final ad in ads) {
@@ -821,7 +859,7 @@ class ToolRunner {
     // answered from them without reading a page (audit 2026-10-20), where
     // the app's own search reads several pages at once.
     final read = remote
-        ? await _readTop(query, listed.take(remoteAutoRead).toList())
+        ? await _readTop(query, listed.take(remoteAutoRead).toList(), deadline)
         : '';
     if (read.isNotEmpty) {
       b
@@ -837,15 +875,20 @@ class ToolRunner {
 
   /// The best passages of [results]' pages, read at once within
   /// [autoReadTimeout]; a page that fails or is late is left out.
-  Future<String> _readTop(String query, List<SearchResult> results) async {
+  Future<String> _readTop(
+    String query,
+    List<SearchResult> results,
+    _CallDeadline deadline,
+  ) async {
     if (results.isEmpty) return '';
     final pages = await Future.wait([
       for (final r in results)
-        _page(r.url)
+        _page(r.url, deadline)
             .then<WebPage?>((p) => p)
             .timeout(autoReadTimeout, onTimeout: () => null)
             .catchError((Object _) => null),
     ]);
+    deadline.check();
     final b = StringBuffer();
     for (var i = 0; i < results.length; i++) {
       final page = pages[i];
@@ -887,7 +930,7 @@ class ToolRunner {
     return b.toString();
   }
 
-  Future<WebPage> _page(String url) async {
+  Future<WebPage> _page(String url, _CallDeadline deadline) async {
     final uri = Uri.tryParse(url.trim());
     if (uri == null || !uri.hasScheme) {
       throw const FormatException('Give an absolute http(s) URL.');
@@ -910,6 +953,9 @@ class ToolRunner {
         DuckDuckGoScraper.regionFor(settings.localeCode),
       ),
     );
+    // The call this page was read for may already have timed out: its text
+    // is not stored for a turn that never saw it (audit 05b-1).
+    deadline.check();
     _pages[uri.toString()] = page;
     _readKeys.add(_exact(page.finalUri.toString()));
     final n = _sourceIndex(
@@ -932,8 +978,12 @@ class ToolRunner {
     return page;
   }
 
-  Future<String> _readUrl(String url, {String? query}) async {
-    final page = await _page(url);
+  Future<String> _readUrl(
+    String url, {
+    String? query,
+    required _CallDeadline deadline,
+  }) async {
+    final page = await _page(url, deadline);
     final n = _sourceIndex(url, () => throw StateError('unreachable'));
     final head =
         '[$n] ${page.title} — ${page.finalUri}\nRead ${page.fetchedAt.toUtc().toIso8601String()}'
@@ -984,8 +1034,12 @@ class ToolRunner {
     return b.toString();
   }
 
-  Future<String> _findInPage(String url, String query) async {
-    final page = await _page(url);
+  Future<String> _findInPage(
+    String url,
+    String query,
+    _CallDeadline deadline,
+  ) async {
+    final page = await _page(url, deadline);
     final n = _sourceIndex(url, () => throw StateError('unreachable'));
     final chunks = EvidenceRanker.chunk(page.text, sourceIndex: n - 1);
     final ranked = EvidenceRanker.rank(
@@ -1023,12 +1077,18 @@ class ToolRunner {
     return b.toString();
   }
 
-  Future<String> _searchDocuments(String query) async {
+  Future<String> _searchDocuments(String query, _CallDeadline deadline) async {
+    // A running hosted job whose owner just turned sharing off must not read
+    // the collection any more: same answer as an empty collection.
+    if (!documentsAllowed) {
+      return 'No passages in "${settings.knowledgeCollection}" match "$query".';
+    }
     final hits = await knowledge!.search(
       settings.knowledgeCollection,
       query,
       maxPassages: settings.evidencePassages,
     );
+    deadline.check();
     if (hits.isEmpty) {
       return 'No passages in "${settings.knowledgeCollection}" match "$query".';
     }

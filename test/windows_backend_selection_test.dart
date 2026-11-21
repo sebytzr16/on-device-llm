@@ -1,5 +1,11 @@
+import 'dart:ffi';
+import 'dart:io';
+
+import 'package:crypto/crypto.dart';
+import 'package:ffi/ffi.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/inference/ffi/llama_bindings.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   const cpu = 'ondevice_llm.dll';
@@ -48,6 +54,149 @@ void main() {
       return devices;
     },
   ).name.split(RegExp(r'[\\/]')).last;
+
+  test('Windows bridge load requires a restricted absolute preload', () {
+    const bridge = r'C:\verified\ondevice_llm.dll';
+    final module = Pointer<Void>.fromAddress(1);
+    final calls = <String>[];
+    String load(String path, {bool missingDependency = false}) =>
+        WindowsBridgeLoader.openRestricted(
+          path,
+          preload: (name, flags) {
+            calls.add('preload');
+            expect(name.toDartString(), bridge);
+            expect(flags, 0x100 | 0x200 | 0x800);
+            return missingDependency ? nullptr : module;
+          },
+          bind: (path) {
+            calls.add('bind');
+            return path;
+          },
+          release: (handle) {
+            calls.add('release');
+            expect(handle, module);
+            return 1;
+          },
+        );
+
+    expect(() => load(cpu), throwsArgumentError);
+    expect(calls, isEmpty);
+    expect(() => load(bridge, missingDependency: true), throwsStateError);
+    expect(calls, ['preload']);
+    calls.clear();
+    expect(load(bridge), bridge);
+    expect(calls, ['preload', 'bind', 'release']);
+  });
+
+  test('reopen refuses an absolute path that is not already mapped', () {
+    if (!Platform.isWindows) return;
+    final temp = Directory.systemTemp.createTempSync('od-reopen');
+    addTearDown(() => temp.deleteSync(recursive: true));
+    expect(
+      () => WindowsBridgeLoader.reopen(p.join(temp.path, 'not-mapped.dll')),
+      throwsArgumentError,
+    );
+  });
+
+  test('reopen reuses an already mapped bridge outside the app dir', () {
+    if (!Platform.isWindows) return;
+    final system = Platform.environment['SystemRoot'] ?? r'C:\Windows';
+    final kernel = p.join(system, 'System32', 'kernel32.dll');
+    WindowsBridgeLoader.open(kernel);
+    expect(WindowsBridgeLoader.reopen(kernel), isA<DynamicLibrary>());
+  });
+
+  test(
+    'a verified bridge is write-locked and re-hashed before it is mapped',
+    () {
+      if (!Platform.isWindows) return;
+      final temp = Directory.systemTemp.createTempSync('od-verify');
+      addTearDown(() => temp.deleteSync(recursive: true));
+      final bridge = File(p.join(temp.path, 'ondevice_llm.dll'))
+        ..writeAsBytesSync([1, 2, 3, 4]);
+      final digest = sha256.convert(bridge.readAsBytesSync()).toString();
+      final module = Pointer<Void>.fromAddress(1);
+      final calls = <String>[];
+
+      final loaded = WindowsBridgeLoader.openRestricted<String>(
+        bridge.path,
+        expectedSha256: digest,
+        // While the handle is held, the hash is already checked and the module
+        // is not mapped yet: no writer or deleter may get in.
+        preload: (name, flags) {
+          calls.add('preload');
+          expect(flags, 0x200 | 0x800);
+          expect(
+            () => bridge.writeAsBytesSync([9]),
+            throwsA(isA<FileSystemException>()),
+          );
+          expect(
+            () => bridge.deleteSync(),
+            throwsA(isA<FileSystemException>()),
+          );
+          return module;
+        },
+        bind: (path) {
+          calls.add('bind');
+          return path;
+        },
+        release: (handle) {
+          calls.add('release');
+          expect(handle, module);
+          return 1;
+        },
+      );
+      expect(loaded, bridge.path);
+      expect(calls, ['preload', 'bind', 'release']);
+      // The lock is gone once the load returned.
+      bridge.writeAsBytesSync([5]);
+
+      calls.clear();
+      expect(
+        () => WindowsBridgeLoader.openRestricted<String>(
+          bridge.path,
+          expectedSha256: 'a' * 64,
+          preload: (_, _) {
+            calls.add('preload');
+            return module;
+          },
+          bind: (path) => path,
+          release: (_) => 1,
+        ),
+        throwsStateError,
+      );
+      expect(calls, isEmpty);
+    },
+  );
+
+  test(
+    'standalone ISA probes use the bundled bridge with both packs installed',
+    () {
+      final saved = LlamaBindings.enginePack;
+      final savedIk = LlamaBindings.ikEnginePack;
+      final defaultPack = _RecordingPack();
+      final ik = _RecordingPack();
+      LlamaBindings.enginePack = defaultPack;
+      LlamaBindings.ikEnginePack = ik;
+      addTearDown(() {
+        LlamaBindings.enginePack = saved;
+        LlamaBindings.ikEnginePack = savedIk;
+      });
+      final opened = <String>[];
+      expect(
+        LlamaBindings.windowsProbeIsa(
+          readIsa: (path) {
+            opened.add(path);
+            return 3;
+          },
+        ),
+        3,
+      );
+      expect(defaultPack.lookups, 0);
+      expect(ik.lookups, 0);
+      expect(opened, [LlamaBindings.windowsBridgePath(compat)]);
+    },
+  );
 
   test(
     'bundled fallback uses its absolute path with a same-name pack mapped',
@@ -246,4 +395,35 @@ void main() {
     expect(() => select(avx2: false, failures: {compat}), throwsStateError);
     expect(opened, [compat]);
   });
+}
+
+class _RecordingPack implements EnginePackLoader {
+  int lookups = 0;
+
+  @override
+  String? get rootPath => r'C:\engines\ik_llama';
+
+  @override
+  String? activePackDir() {
+    lookups++;
+    return r'C:\engines\ik_llama\ik-1234567';
+  }
+
+  @override
+  String? verifiedPackDir() => activePackDir();
+
+  @override
+  String? expectedFileSha256(String dir, String name) => null;
+
+  @override
+  int? get cudaMajor => null;
+
+  @override
+  List<String> get unavailableFiles => const [];
+
+  @override
+  bool markLoadStarted() => true;
+
+  @override
+  void markLoadSucceeded() {}
 }

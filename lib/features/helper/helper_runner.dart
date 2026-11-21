@@ -11,10 +11,14 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
 
+import '../../core/l10n/l10n.dart';
 import '../../core/platform/desktop_host.dart';
 import '../../core/platform/device_info.dart';
 import '../../core/providers/shared_providers.dart';
 import '../../core/utils/priority_work_queue.dart';
+import '../../inference/engine/engine_registry.dart';
+import '../../inference/engine/engine_descriptor.dart';
+import '../../inference/engine/engine_registry_provider.dart';
 import '../../inference/engine/llama_engine.dart';
 import '../../inference/engine/text_engine.dart';
 import '../../inference/remote/remote_engine.dart';
@@ -51,6 +55,8 @@ class HelperUnavailable implements Exception {
 class HelperRunner {
   final LlamaEngine engine;
   final LlamaEngine chatEngine;
+  final ({TextEngine engine, void Function() release})? Function(ModelInfo)?
+  acquireSharedChat;
   final LlamaEngine Function()? extraEngine;
   final int lanes;
   final bool shareChat;
@@ -62,6 +68,11 @@ class HelperRunner {
   final List<ModelInfo> Function() catalog;
   final String? Function() loadedModelId;
   final InferenceSettings Function(ModelInfo) settingsFor;
+  final EngineHelperMode Function(ModelInfo) helperMode;
+
+  /// The engine a helper model must be loaded with: the model's own choice,
+  /// so a lane never runs on llama.cpp behind an ik_llama.cpp assignment.
+  final String Function(ModelInfo) engineIdFor;
   final Future<DeviceMemory?> Function() memory;
   final bool Function() desktop;
   final bool Function() localChat;
@@ -84,6 +95,7 @@ class HelperRunner {
   final bool Function()? keepWarm;
   int _turns = 0;
   InferenceSettings? _residentSettings;
+  String? _residentEngine;
   Timer? _idleTimer;
   String? _modelId;
   bool _disposed = false;
@@ -95,6 +107,9 @@ class HelperRunner {
     required this.catalog,
     required this.loadedModelId,
     required this.settingsFor,
+    this.helperMode = _defaultHelperMode,
+    this.engineIdFor = _defaultEngineId,
+    this.acquireSharedChat,
     this.publish,
     this.loadedChanged,
     PriorityWorkQueue? loadQueue,
@@ -112,6 +127,12 @@ class HelperRunner {
     this.timeout = const Duration(seconds: 90),
     this.loadTimeout = const Duration(seconds: 120),
   }) : _loads = loadQueue ?? PriorityWorkQueue();
+
+  static EngineHelperMode _defaultHelperMode(ModelInfo model) =>
+      defaultEngineRegistry.descriptorFor(model).capabilities.helpers;
+
+  static String _defaultEngineId(ModelInfo model) =>
+      defaultEngineRegistry.descriptorFor(model).id;
 
   static bool _desktop() => DesktopHost.active;
   static bool _localChat() => true;
@@ -133,9 +154,11 @@ class HelperRunner {
         catalog: catalog,
         loadedModelId: loadedModelId,
         settingsFor: settingsFor,
+        helperMode: helperMode,
         publish: publish,
         loadedChanged: _emitLoaded,
         loadQueue: _loads,
+        engineIdFor: engineIdFor,
         keepWarm: () => _turns > 0,
         memory: memory,
         desktop: desktop,
@@ -333,6 +356,12 @@ class HelperRunner {
   String _resolve(String modelId) {
     if (modelId != sameAsChat) return modelId;
     final loaded = loadedModelId();
+    if (loaded != null &&
+        catalog().any(
+          (m) => m.id == loaded && helperMode(m) == EngineHelperMode.sharedChat,
+        )) {
+      return loaded;
+    }
     if (loaded == null || !chatEngine.isLoaded) {
       throw const HelperUnavailable('no chat model is loaded');
     }
@@ -365,6 +394,14 @@ class HelperRunner {
     final remote = _remoteSettings(modelId, agentSettings);
     if (remote != null) return _remoteName(remote);
     modelId = _resolve(modelId);
+    final model = catalog().where((m) => m.id == modelId).firstOrNull;
+    if (model != null) {
+      final mode = helperMode(model);
+      if (mode == EngineHelperMode.unavailable) {
+        throw const HelperUnavailable('the engine does not support helpers');
+      }
+      if (mode == EngineHelperMode.sharedChat) return model.displayName;
+    }
     final sideGpu = _usesSharedGpu(modelId);
     final placement = sideGpu
         ? const InferenceSettings()
@@ -415,6 +452,42 @@ class HelperRunner {
       }
     }
     modelId = _resolve(modelId);
+    final model = catalog().where((m) => m.id == modelId).firstOrNull;
+    final mode = model == null ? null : helperMode(model);
+    if (mode == EngineHelperMode.unavailable) {
+      throw const HelperUnavailable('the engine does not support helpers');
+    }
+    if (model != null && mode == EngineHelperMode.sharedChat) {
+      final lease = acquireSharedChat?.call(model);
+      if (lease == null) {
+        throw HelperUnavailable(
+          stringsFor(
+            (agentSettings ?? settingsFor(model)).localeCode,
+          ).liteRtHelperLoadFirst,
+        );
+      }
+      final settings = agentSettings ?? settingsFor(model);
+      try {
+        return await _runHere(
+          sharedChat: lease.engine,
+          sideGpu: false,
+          placement: settings,
+          modelId: modelId,
+          task: task,
+          input: input,
+          messageId: messageId,
+          maxTokens: maxTokens,
+          jobTimeout: settings.agentTimeoutSeconds <= 0
+              ? null
+              : Duration(seconds: settings.agentTimeoutSeconds.clamp(1, 86400)),
+          webTools: webTools,
+          approveWeb: approveWeb,
+          cancel: cancel,
+        );
+      } finally {
+        lease.release();
+      }
+    }
     final sideGpu = _usesSharedGpu(modelId);
     final reuse =
         !sideGpu &&
@@ -459,6 +532,7 @@ class HelperRunner {
   /// Jobs queue in arrival order. Cancellation also applies while queued.
   Future<HelperReply> _runHere({
     InferenceSettings? remoteSettings,
+    TextEngine? sharedChat,
     PriorityWorkQueue? workQueue,
     required Duration? jobTimeout,
     required bool sideGpu,
@@ -485,6 +559,7 @@ class HelperRunner {
     // A desktop agent model batches all its jobs on one resident copy, like the chat model's side batch (owner, 2026-11-02).
     final ownSide =
         remoteSettings == null &&
+        sharedChat == null &&
         batchOwnModel &&
         desktop() &&
         !sideGpu &&
@@ -592,7 +667,8 @@ class HelperRunner {
       }
       // On the chat's own engine the job answers only once it has settled:
       // the chat's next round would find it busy.
-      if ((side || !identical(running, chatEngine)) && !reply.isCompleted) {
+      if ((side || (sharedChat == null && !identical(running, chatEngine))) &&
+          !reply.isCompleted) {
         reply.completeError(stopped!);
       }
     }
@@ -662,6 +738,7 @@ class HelperRunner {
         if (stopped != null) throw stopped!;
         final reuse =
             remoteSettings == null &&
+            sharedChat == null &&
             !sideGpu &&
             shareChat &&
             loadedModelId() == modelId &&
@@ -670,7 +747,9 @@ class HelperRunner {
           remoteClient = remoteEngine?.call() ?? RemoteEngine();
         }
         final TextEngine target =
-            remoteClient ?? (sideGpu || reuse ? chatEngine : engine);
+            remoteClient ??
+            sharedChat ??
+            (sideGpu || reuse ? chatEngine : engine);
         // A chat generation owns its context until the stream has ended.
         if (!side && target is LlamaEngine && target.isBusy) {
           throw const HelperUnavailable('model is busy');
@@ -695,8 +774,13 @@ class HelperRunner {
           }
         }
         Future<void> ensureLoaded() async {
+          // Only reached on the local path, where the guard above has already
+          // refused a missing model.
+          final helperModel = model!;
+          final engineId = engineIdFor(helperModel);
           if (_modelId != modelId ||
               !engine.isLoaded ||
+              _residentEngine != engineId ||
               _residentSettings?.backend != placement.backend ||
               _residentSettings?.contextSize != settings.contextSize) {
             await _release();
@@ -704,7 +788,7 @@ class HelperRunner {
               // Read now: the cached device facts predate the chat's load.
               final available = await memory();
               final fileBytes = await file.length();
-              final bytes = model!.sizeBytes > fileBytes
+              final bytes = helperModel.sizeBytes > fileBytes
                   ? model.sizeBytes
                   : fileBytes;
               if (available == null ||
@@ -729,10 +813,11 @@ class HelperRunner {
                 await engine.loadModel(
                   modelPath: file.path,
                   settings: settings,
+                  engineId: engineId,
                 );
               } catch (error, stack) {
                 _log.warning(
-                  '$id: loading ${model!.displayName} failed',
+                  '$id: loading ${helperModel.displayName} failed',
                   error,
                   stack,
                 );
@@ -749,22 +834,27 @@ class HelperRunner {
             timer = null;
             loadMs = loading.elapsedMilliseconds;
             _log.info(
-              '$id: loaded ${model!.displayName} in $loadMs ms '
+              '$id: loaded ${helperModel.displayName} in $loadMs ms '
               '(${engine.metrics['backend']}, ${(engine.metrics['effectiveSettings'] as Map?)?['gpuLayers']} GPU layers)',
             );
             _residentSettings = settings;
+            _residentEngine = engineId;
             _modelId = modelId;
             _emitLoaded();
           }
         }
 
-        if (remoteSettings == null && !reuse && !sideGpu) {
+        if (remoteSettings == null &&
+            sharedChat == null &&
+            !reuse &&
+            !sideGpu) {
           // Batched jobs run beside each other, so only their loads queue.
           await (ownSide ? _queue.submit(ensureLoaded) : ensureLoaded());
         }
         if (stopped != null) throw stopped!;
         if (_disposed) throw const HelperUnavailable('helper is disposed');
         if (remoteSettings == null &&
+            sharedChat == null &&
             !reuse &&
             !sideGpu &&
             _residentSettings != null) {
@@ -953,6 +1043,7 @@ class HelperRunner {
     if (engine.isLoaded) await engine.unload();
     _modelId = null;
     _residentSettings = null;
+    _residentEngine = null;
     _emitLoaded();
   }
 
@@ -1002,6 +1093,30 @@ final helperRunnerProvider = Provider<HelperRunner>((ref) {
     // Background helpers must not occupy the main model context (owner, 2026-11-02).
     shareChat: false,
     chatEngine: ref.watch(llamaEngineProvider),
+    helperMode: (model) => ref
+        .read(engineRegistryProvider)
+        .descriptorFor(model)
+        .capabilities
+        .helpers,
+    engineIdFor: (model) =>
+        ref.read(engineRegistryProvider).descriptorFor(model).id,
+    acquireSharedChat: (model) {
+      final state = ref.read(modelManagerProvider);
+      if (state.loadedModelId != model.id ||
+          state.isLoadingModel ||
+          ref.read(sessionBusyProvider)) {
+        return null;
+      }
+      final engine = ref.read(activeLocalEngineProvider);
+      final busy = ref.read(sessionBusyProvider.notifier);
+      busy.state = true;
+      return (
+        engine: engine,
+        release: () {
+          if (ref.mounted) busy.state = false;
+        },
+      );
+    },
     catalog: () => ref.read(modelManagerProvider).catalog,
     loadedModelId: () => ref.read(modelManagerProvider).loadedModelId,
     settingsFor: (model) {

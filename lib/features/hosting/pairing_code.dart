@@ -195,6 +195,14 @@ class PairingSession {
     return true;
   }
 
+  void release() => _used = false;
+
+  /// Gives back a reservation this request made but did not use, so a request
+  /// refused before it could judge a code does not spend a try.
+  void unreserve() {
+    if (_failures > 0) _failures--;
+  }
+
   bool accept({bool reserved = true}) {
     if (_used || expired) return false;
     _used = true;

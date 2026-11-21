@@ -17,6 +17,10 @@ class _Samples extends Fake implements TuneBenchmarkRun {
   @override
   bool get cancelled => false;
 
+  // The shared run deadline never expires in these samples.
+  @override
+  bool get outOfTime => false;
+
   @override
   Future<bool> fits(TuneSettings settings) async => true;
 
@@ -141,7 +145,9 @@ void main() {
           report.steps.single.decision,
           changesOutput ? TuneDecision.changesOutput : TuneDecision.noise,
         );
-        expect(samples.seen.length, 12);
+        // A sample that changes the answer is retried once before it counts:
+        // 6 drift rounds, 3 pairs and 3 retries.
+        expect(samples.seen.length, changesOutput ? 15 : 12);
       },
     );
   }

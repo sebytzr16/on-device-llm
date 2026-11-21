@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import '../../../../core/platform/desktop_host.dart';
 import 'model_info.dart';
 export 'model_info.dart' show VisionProjector;
@@ -351,6 +353,45 @@ const qwen36_35b = ModelInfo(
   quantization: ModelQuantization.q4_k_m,
 );
 
+const liteRtCatalog = <ModelInfo>[
+  ModelInfo(
+    id: 'gemma4-e2b-litert',
+    displayName: 'Gemma 4 E2B · LiteRT',
+    fileName: 'gemma-4-E2B-it.litertlm',
+    downloadUrl:
+        'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it.litertlm',
+    sha256: '181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c',
+    sizeBytes: 2588147712,
+    family: ModelFamily.gemma,
+    quantization: ModelQuantization.unknown,
+    license: 'Apache-2.0',
+  ),
+  ModelInfo(
+    id: 'gemma4-e4b-litert',
+    displayName: 'Gemma 4 E4B · LiteRT',
+    fileName: 'gemma-4-E4B-it.litertlm',
+    downloadUrl:
+        'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/gemma-4-E4B-it.litertlm',
+    sha256: '0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0',
+    sizeBytes: 3659530240,
+    family: ModelFamily.gemma,
+    quantization: ModelQuantization.unknown,
+    license: 'Apache-2.0',
+  ),
+  ModelInfo(
+    id: 'qwen3-0.6b-litert',
+    displayName: 'Qwen3 0.6B · LiteRT',
+    fileName: 'Qwen3-0.6B.litertlm',
+    downloadUrl:
+        'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/e6687177e00897731e7716267eebd4eba0dde7c2/Qwen3-0.6B.litertlm',
+    sha256: 'c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108',
+    sizeBytes: 613722264,
+    family: ModelFamily.qwen,
+    quantization: ModelQuantization.unknown,
+    license: 'Apache-2.0',
+  ),
+];
+
 const bundledCatalog = <ModelInfo>[
   lfm3,
   ModelInfo(
@@ -416,6 +457,7 @@ const bundledCatalog = <ModelInfo>[
     quantization: ModelQuantization.iq4_nl,
     license: 'Apache-2.0',
   ),
+  ...liteRtCatalog,
 ];
 
 /// Catalog ids that shipped in earlier builds and were dropped. Their rows
@@ -541,5 +583,8 @@ const desktopCatalog = <ModelInfo>[
 
 /// The catalog this device offers: the phone list, or [desktopCatalog] alone
 /// on the desktop.
-List<ModelInfo> get catalogModels =>
-    DesktopHost.active ? desktopCatalog : bundledCatalog;
+List<ModelInfo> get catalogModels => DesktopHost.active
+    ? desktopCatalog
+    : Platform.isAndroid
+    ? bundledCatalog
+    : bundledCatalog.where((model) => !model.isLiteRt).toList();

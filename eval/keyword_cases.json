@@ -754,7 +754,7 @@
   },
   {
    "name": "search_files",
-   "tool": "search_documents"
+   "tool": "search_files"
   },
   {
    "name": "knowledge_search",

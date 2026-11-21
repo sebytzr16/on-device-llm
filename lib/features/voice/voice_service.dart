@@ -82,6 +82,10 @@ class VoiceNotifier extends Notifier<VoiceState> {
   /// Kokoro read-out: character offset in _spokenText for pause/resume.
   int _kokoroOffset = 0;
 
+  /// Which engine is reading _spokenText, so resumeSpeaking() restarts the
+  /// same one (the system voice and Kokoro pause at different offsets).
+  bool _usingKokoro = false;
+
   /// Bounded utterances preserve every character and break at sentences.
   static List<String> chunks(String text, {int limit = 3000}) {
     if (limit < 32) throw ArgumentError.value(limit, 'limit');
@@ -561,6 +565,7 @@ class VoiceNotifier extends Notifier<VoiceState> {
     await _kokoro?.stop();
     _rate = rate ?? 0.5 * ref.read(settingsProvider).readingSpeed;
     if (_naturalSpeaking()) {
+      _usingKokoro = true;
       _spokenText = text;
       _kokoroOffset = 0;
       state = state.copyWith(
@@ -574,6 +579,7 @@ class VoiceNotifier extends Notifier<VoiceState> {
     }
     _spokenText = text;
     _position = 0;
+    _usingKokoro = false;
     _rate = rate ?? 0.5 * ref.read(settingsProvider).readingSpeed;
     state = state.copyWith(
       speaking: true,
@@ -683,9 +689,15 @@ class VoiceNotifier extends Notifier<VoiceState> {
         if (!_alive || epoch != _speechEpoch) return;
         // The system voice takes over from the current offset.
         _speechEpoch++;
+        _usingKokoro = false;
         unawaited(speaker.stop());
         final from = stripSoundTags(_spokenText.substring(_kokoroOffset));
         _spokenText = from;
+        // _read() starts at _position, which still holds the system voice's
+        // offset in the text read before this message: without the reset the
+        // fallback skips the start of what is left (audit 08b-11).
+        _position = 0;
+        _chunkStart = 0;
         _kokoroOffset = 0;
         unawaited(_initTts().then((_) => _read()));
       };
@@ -709,7 +721,13 @@ class VoiceNotifier extends Notifier<VoiceState> {
     if (!state.paused || _spokenText.isEmpty) return;
     state = state.copyWith(speaking: true, paused: false);
     _speechEpoch++;
-    _readKokoro();
+    // Resume with the engine that read the text: the system voice keeps
+    // _position, Kokoro keeps _kokoroOffset (audit 08b-10).
+    if (_usingKokoro) {
+      _readKokoro();
+    } else {
+      unawaited(_read());
+    }
   }
 
   Future<void> stopSpeaking() async {

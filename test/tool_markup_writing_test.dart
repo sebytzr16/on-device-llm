@@ -57,6 +57,21 @@ void main() {
     );
   });
 
+  test('Qwen JSON strings can contain the closing tag while streaming', () {
+    const intro = 'Before. ';
+    const call =
+        r'<tool_call>{"name":"create_file","arguments":{"text":"quote: \" backslash: \\ </tool_call> hidden"}}';
+    const end = '</tool_call>';
+    for (var i = 0; i <= call.length + end.length; i++) {
+      expect(ToolMarkup.visible(intro + (call + end).substring(0, i)), intro);
+    }
+    expect(ToolMarkup.writing(intro + call), 'create_file');
+    expect(ToolMarkup.writing(intro + call + end), isNull);
+    final complete = '$intro$call${end}After.';
+    expect(ToolMarkup.visible(complete), 'Before. After.');
+    expect(ToolMarkup.strip(complete), 'Before. After.');
+  });
+
   test('Gemma 4 call', () {
     expect(ToolMarkup.writing('<|tool_call>call:read_url{url:'), 'read_url');
     expect(

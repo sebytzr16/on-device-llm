@@ -43,6 +43,14 @@ class DiscoveredHost {
 /// Discovery shares a local endpoint only, never pairing keys or chat data.
 class HostDiscovery {
   static const channel = MethodChannel('ondevice_llm/discovery');
+  static Object? _owner;
+  static Future<void> _operations = Future.value();
+
+  static Future<void> _serialize(Future<void> Function() action) {
+    final next = _operations.then((_) => action());
+    _operations = next.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return next;
+  }
 
   /// Browsing for hosts (the phone apps).
   static bool get supported => Platform.isAndroid || Platform.isIOS;
@@ -53,20 +61,35 @@ class HostDiscovery {
 
   /// [address] is the LAN address phones should use (Windows only; the
   /// phone's resolver picks its own).
-  static Future<void> advertise(int port, {String? address}) {
+  static Future<void> advertise(
+    int port, {
+    String? address,
+    required Object owner,
+    required bool Function() isCurrent,
+  }) => _serialize(() async {
+    if (!isCurrent()) return;
+    _owner = owner;
     if (Platform.isWindows) {
-      return WindowsMdns.advertise(
+      await WindowsMdns.advertise(
         name: 'OnDevice LLM on ${Platform.localHostname}',
         address: address ?? '',
         port: port,
+        isCurrent: isCurrent,
       );
+    } else {
+      await channel.invokeMethod<void>('advertise', {'port': port});
     }
-    return channel.invokeMethod<void>('advertise', {'port': port});
-  }
+  });
 
-  static Future<void> stop() => Platform.isWindows
-      ? WindowsMdns.stop()
-      : channel.invokeMethod<void>('stop');
+  static Future<void> stop(Object owner) => _serialize(() async {
+    if (!identical(_owner, owner)) return;
+    _owner = null;
+    if (Platform.isWindows) {
+      await WindowsMdns.stop();
+    } else {
+      await channel.invokeMethod<void>('stop');
+    }
+  });
   static Future<List<DiscoveredHost>> browse() async {
     final result =
         await channel.invokeListMethod<dynamic>('browse') ?? const [];

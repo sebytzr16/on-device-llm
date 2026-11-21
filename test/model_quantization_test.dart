@@ -56,5 +56,13 @@ void main() {
       expect(bytesLabel(1073741824 * 3 ~/ 2), '1.50 GB');
       expect(wholePercentLabel(0.479), '47%');
     });
+
+    test('a slow rate reads in KB/s, not 0.0 MB/s', () {
+      expect(speedLabel(1048576 * 12.3), '12.3 MB/s');
+      expect(speedLabel(1048576), '1.0 MB/s');
+      expect(speedLabel(153600), '150 KB/s');
+      expect(speedLabel(1024), '1 KB/s');
+      expect(speedLabel(0), '0 KB/s');
+    });
   });
 }

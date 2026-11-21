@@ -66,6 +66,7 @@ class _Engine extends TestEngine {
     required String modelPath,
     required InferenceSettings settings,
     String? mmprojPath,
+    String engineId = 'llama.cpp',
     List<({String path, double scale})> adapters = const [],
     String? draftModelPath,
     bool memoryGuard = true,
@@ -276,7 +277,7 @@ void main() {
           name: 'Science',
           instructions: 'Keep explanations brief.',
         );
-    container.read(chatProvider.notifier).newChat(projectId: 'science');
+    await container.read(chatProvider.notifier).newChat(projectId: 'science');
     await container
         .read(settingsProvider.notifier)
         .update(container.read(settingsProvider).copyWith(memoryEnabled: true));

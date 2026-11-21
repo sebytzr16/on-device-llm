@@ -1862,6 +1862,18 @@ class AppLocalizationsEs extends AppLocalizations {
       'El servidor también se detiene cuando el teléfono informa de un calor intenso. La pantalla permanece encendida mientras se ejecuta.';
 
   @override
+  String get hostShareDocuments =>
+      'Compartir documentos con los dispositivos vinculados';
+
+  @override
+  String get hostShareDocumentsHint =>
+      'Los dispositivos vinculados pueden buscar entre los documentos de este dispositivo. Desactivado de forma predeterminada.';
+
+  @override
+  String get hostShareDocumentsConfirm =>
+      'Los dispositivos vinculados podrán leer y buscar en todos los documentos de tu colección de conocimiento. ¿Activar?';
+
+  @override
   String get commonOff => 'Apagado';
 
   @override
@@ -1983,6 +1995,10 @@ class AppLocalizationsEs extends AppLocalizations {
   String get chatPinNone => 'Sin pin: usar el modelo seleccionado';
 
   @override
+  String get chatPinStaysLocal =>
+      'Fijado. La búsqueda web queda desactivada en este chat.';
+
+  @override
   String chatPinned(String model) {
     return '📌$model';
   }
@@ -2092,6 +2108,10 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get backupTooLarge => 'La copia supera el límite de seguridad.';
+
+  @override
+  String get backupTooLargeForFileSave =>
+      'Esta copia es demasiado grande para el selector de archivos de Android. Use Compartir en su lugar.';
 
   @override
   String get backupVerifiedNotice =>
@@ -7164,6 +7184,34 @@ class AppLocalizationsEs extends AppLocalizations {
       'No se pudo volver a cargar el modelo tras la optimización. Intenta cargarlo de nuevo.';
 
   @override
+  String get optimizeBusyGenerating =>
+      'Todavía se está escribiendo una respuesta. Detenla o espera a que termine y vuelve a ejecutar la optimización.';
+
+  @override
+  String get optimizeBusyLoading =>
+      'Se está cargando un modelo. Espera a que termine y vuelve a ejecutar la optimización.';
+
+  @override
+  String get optimizeBusyOther =>
+      'Otra tarea está usando el modelo. Espera a que termine y vuelve a ejecutar la optimización.';
+
+  @override
+  String get optimizeBusyRunning =>
+      'La optimización ya se está ejecutando para este modelo.';
+
+  @override
+  String get optimizeMemoryRam =>
+      'La RAM libre es insuficiente para este modelo o para una configuración segura. Cierra otras aplicaciones o usa un modelo más pequeño.';
+
+  @override
+  String get optimizeMemoryVram =>
+      'La memoria gráfica libre es insuficiente para este modelo o para una configuración segura. Reduce las capas de GPU o usa un modelo más pequeño.';
+
+  @override
+  String get desktopOptimizeKeptUnsupported =>
+      'Estos ajustes no se pueden guardar en este dispositivo, así que se mantuvo la configuración actual.';
+
+  @override
   String tuneReceipt(Object date) {
     return 'Recibo de medición · $date';
   }
@@ -7824,6 +7872,10 @@ class AppLocalizationsEs extends AppLocalizations {
       'Detén la respuesta actual antes de cambiar de modelo.';
 
   @override
+  String get modelLoadInProgress =>
+      'Ya se está cargando un modelo. Espera a que termine o detenlo.';
+
+  @override
   String get modelStopUnload =>
       'Detén la respuesta actual antes de descargar el modelo de la memoria.';
 
@@ -8220,6 +8272,9 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get modelDownloadPaused => 'En pausa';
+
+  @override
+  String get downloadPreparing => 'Preparando…';
 
   @override
   String get sidebarCollapse => 'Contraer la navegación';
@@ -10285,5 +10340,97 @@ class AppLocalizationsEs extends AppLocalizations {
       'El motor descargado no se cargó dos veces, así que se vuelve a usar el motor integrado.';
 
   @override
+  String get engineUpdateUnverified =>
+      'No se pudo verificar el paquete de motor descargado, así que se usa el motor integrado. Vuelve a instalarlo desde Ajustes → Motores.';
+
+  @override
   String get engineUpdateNoGitHub => 'No se pudo conectar con GitHub.';
+
+  @override
+  String get liteRtBackend => 'Motor LiteRT';
+
+  @override
+  String get liteRtBackendAuto => 'Auto (GPU con alternativa en CPU)';
+
+  @override
+  String get liteRtBackendGpu => 'GPU (OpenCL)';
+
+  @override
+  String get liteRtBackendCpu => 'CPU';
+
+  @override
+  String get liteRtUnusedSettings => 'Los modelos LiteRT no usan estos ajustes';
+
+  @override
+  String engineUnusedSettings(String engine) {
+    return 'Los modelos de $engine no usan estos ajustes';
+  }
+
+  @override
+  String engineUnavailable(String engine) {
+    return '$engine no está disponible en este dispositivo.';
+  }
+
+  @override
+  String engineToolsUnavailable(String engine) {
+    return 'Las herramientas no están disponibles con los modelos de $engine.';
+  }
+
+  @override
+  String get liteRtToolsUnavailable =>
+      'Las herramientas no están disponibles con los modelos LiteRT.';
+
+  @override
+  String get liteRtAndroidOnly => 'Los modelos LiteRT requieren Android.';
+
+  @override
+  String get liteRtHelperLoadFirst =>
+      'Carga este modelo LiteRT y espera a que termine la respuesta antes de usarlo con un asistente.';
+
+  @override
+  String get liteRtImportModel => 'Importar un modelo';
+
+  @override
+  String get liteRtImportHint =>
+      'Elige un archivo de modelo .gguf o .litertlm.';
+
+  @override
+  String get liteRtImportedLicense =>
+      'Archivo importado · consulta la licencia del editor';
+
+  @override
+  String get liteRtNotLoaded => 'Carga primero un modelo LiteRT.';
+
+  @override
+  String get liteRtBusy => 'El modelo LiteRT está ocupado.';
+
+  @override
+  String get liteRtInvalidModelFilename =>
+      'Elige un único nombre de archivo de modelo.';
+
+  @override
+  String get ikLlamaLoadFailed =>
+      'No se pudo cargar ik_llama.cpp. Reinstala su paquete de motor en Ajustes o vuelve a usar llama.cpp con este modelo.';
+
+  @override
+  String get modelEngine => 'Motor';
+
+  @override
+  String get modelEngineUnavailable => 'Instálalo en Ajustes → Motores';
+
+  @override
+  String get engineUpdateIkTitle => 'Paquete de motor ik_llama.cpp';
+
+  @override
+  String get engineUpdateIkHint =>
+      'Segundo motor opcional, instalado solo para los modelos que le asignes. llama.cpp sigue siendo el predeterminado.';
+
+  @override
+  String engineUpdateIkInstalled(String tag) {
+    return 'Paquete instalado: $tag';
+  }
+
+  @override
+  String get ikEnginePackReverted =>
+      'El paquete de motor ik_llama.cpp no se pudo cargar dos veces y se ha desactivado. Reinstálalo en Ajustes → Motores o vuelve a usar llama.cpp con esos modelos.';
 }

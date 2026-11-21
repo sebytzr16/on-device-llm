@@ -45,12 +45,14 @@ import '../features/models/domain/entities/model_catalog.dart';
 import '../features/models/domain/entities/model_info.dart';
 import '../features/models/presentation/providers/model_manager_provider.dart';
 import '../features/models/presentation/providers/retired_model_names.dart';
+import '../features/presets/domain/preset.dart';
 import '../features/presets/presentation/providers/presets_provider.dart';
 import '../features/settings/domain/entities/inference_settings.dart';
 import '../features/settings/presentation/providers/effective_settings_provider.dart';
 import '../features/settings/presentation/providers/model_profiles_provider.dart';
 import '../features/settings/presentation/providers/settings_provider.dart';
 import '../features/settings/presentation/widgets/settings_labels.dart';
+import '../features/settings/presentation/widgets/settings_widgets.dart';
 import '../features/shortcuts/prompt_shortcuts_provider.dart';
 import '../features/tools/presentation/tools_quick_panel.dart';
 import '../features/voice/voice_service.dart';
@@ -902,7 +904,6 @@ class _ComposerState extends ConsumerState<_Composer> {
   }
 
   final _pending = <Attachment>[];
-  static bool _webExplained = false;
 
   Future<void> _send() async {
     if (ref.read(chatProvider).isGenerating) return;
@@ -1049,7 +1050,9 @@ class _ComposerState extends ConsumerState<_Composer> {
     unawaited(AttachmentStore.delete(a));
   }
 
-  /// Local → Auto → Always → Local; leaving Local asks once per run.
+  /// Local → Auto → Always → Local. Every step out of Local asks first:
+  /// each Off → Auto/Always transition is where this chat's text starts
+  /// leaving the device (audit 2026-11-20 P1-4).
   Future<void> _cycleWeb() async {
     final settings = ref.read(settingsProvider);
     final next = switch (settings.webMode) {
@@ -1057,20 +1060,26 @@ class _ComposerState extends ConsumerState<_Composer> {
       WebMode.auto => WebMode.always,
       WebMode.always => WebMode.off,
     };
-    if (settings.webMode == WebMode.off && !_webExplained) {
-      final ok = await confirmAction(
-        context,
-        title: context.l10n.turnOnWebQuestion,
-        message: context.l10n.turnOnWebHint,
-        confirmLabel: context.l10n.turnOn,
-        cancelLabel: context.l10n.stayLocal,
-      );
-      if (ok != true || !mounted) return;
-      _webExplained = true;
+    final changed = settings.copyWith(webMode: next);
+    if (!await confirmWebModeChange(
+      context,
+      ref,
+      SettingsChange(global: changed),
+    )) {
+      return;
     }
-    await ref
-        .read(settingsProvider.notifier)
-        .update(settings.copyWith(webMode: next));
+    if (!mounted) return;
+    await ref.read(settingsProvider.notifier).update(changed);
+  }
+
+  /// Picks a preset, asking first when that turns web research on for the
+  /// next message (audit 2026-11-20 P1-4).
+  Future<void> _activatePreset(Preset p) async {
+    if (!await confirmWebModeChange(context, ref, SettingsChange(preset: p))) {
+      return;
+    }
+    if (!mounted) return;
+    await ref.read(presetsProvider.notifier).activate(p.id);
   }
 
   /// Off → Low → Medium → High → Off, for this chat only.
@@ -1102,7 +1111,7 @@ class _ComposerState extends ConsumerState<_Composer> {
   Future<void> _openConversation() async {
     final chat = ref.read(chatProvider);
     if (!chat.isGenerating && chat.messages.isNotEmpty) {
-      ref.read(chatProvider.notifier).newChat();
+      await ref.read(chatProvider.notifier).newChat();
     }
     if (!mounted) return;
     await Navigator.of(context).push(
@@ -1329,9 +1338,7 @@ class _ComposerState extends ConsumerState<_Composer> {
                                                 color: c.accent,
                                               )
                                             : null,
-                                        onPressed: () => ref
-                                            .read(presetsProvider.notifier)
-                                            .activate(p.id),
+                                        onPressed: () => _activatePreset(p),
                                         child: Text(p.name),
                                       ),
                                   ],

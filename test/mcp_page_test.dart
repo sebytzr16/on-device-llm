@@ -83,9 +83,18 @@ void main() {
       registry.dispose();
       await dir.delete(recursive: true);
     });
+    // The registry approves an executable by hashing the file its command
+    // names (security audit 2026-11-20): the fixture must be a real file at an
+    // absolute path, or enabling it is refused and its connector never starts.
+    final executable = File('${dir.path}${Platform.pathSeparator}fixture-exe');
+    await tester.runAsync(() => executable.writeAsString('fixture'));
     await tester.runAsync(
       () => registry.saveConfig(
-        '{"mcpServers":{"fixture":{"command":"preinstalled"}}}',
+        jsonEncode({
+          'mcpServers': {
+            'fixture': {'command': executable.path},
+          },
+        }),
       ),
     );
     await tester.pumpWidget(

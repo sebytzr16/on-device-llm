@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/design/app_design.dart';
 import '../../core/l10n/l10n.dart';
 import '../../core/motion/motion.dart';
-import '../../core/providers/shared_providers.dart';
 import '../../inference/engine/llama_engine.dart';
 import '../chat/presentation/providers/chat_model_pins.dart';
 import '../chat/presentation/providers/chat_provider.dart';
@@ -599,7 +598,10 @@ class _SessionWiring implements ConversationWiring {
   ModelManagerState get models => _screen.ref.read(modelManagerProvider);
 
   @override
-  LlamaEngine get engine => _screen.ref.read(llamaEngineProvider);
+  LlamaEngine? get engine {
+    final active = _screen.ref.read(activeLocalEngineProvider);
+    return active is LlamaEngine ? active : null;
+  }
 
   @override
   ModelManagerNotifier get modelManager =>

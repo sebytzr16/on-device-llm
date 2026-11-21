@@ -183,6 +183,35 @@ void main() {
     );
   });
 
+  test(
+    'a second run started in the same frame is refused instead of overlapping',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      final engine = TestEngine();
+      final container = ProviderContainer(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          llamaEngineProvider.overrideWithValue(engine),
+          settingsProvider.overrideWith(TestSettings.new),
+          modelManagerProvider.overrideWith(TestModels.new),
+        ],
+      );
+      addTearDown(() async {
+        container.dispose();
+        await db.close();
+      });
+      final notifier = container.read(benchmarkProvider.notifier);
+      // The first run is still waiting for the stored history when the second
+      // caller (double tap, phone and desktop entries) passes the same guard.
+      final first = notifier.run(testModel);
+      await expectLater(notifier.run(testModel), throwsStateError);
+      expect(await first, isNotNull);
+      expect(container.read(benchmarkProvider).running, isNull);
+      expect(container.read(sessionBusyProvider), isFalse);
+    },
+  );
+
   test('median and thermal summary', () {
     expect(median([]), 0);
     expect(median([3, 1, 2]), 2);

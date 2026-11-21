@@ -23,6 +23,7 @@ import '../core/platform/desktop_preferences.dart';
 import 'launch_arguments.dart';
 import 'keyboard_shortcuts.dart';
 import 'chat_tools.dart';
+import '../features/settings/presentation/widgets/settings_widgets.dart';
 import 'desktop_theme.dart';
 import 'engine_updater/engine_update_controller.dart';
 import 'inspector_panel.dart';
@@ -30,6 +31,7 @@ import 'models_page.dart';
 import 'compare_page.dart';
 import 'server_page.dart';
 import 'logs_page.dart';
+import '../features/tools/domain/tool_spec.dart';
 import 'mcp/mcp_page.dart';
 import 'mcp/mcp_registry.dart';
 import 'image_gen_page.dart';
@@ -89,6 +91,7 @@ class DesktopApp extends ConsumerWidget {
     final textScale = ref.watch(settingsProvider.select((s) => s.textScale));
     final motion = ref.watch(settingsProvider.select((s) => s.motion));
     return MaterialApp(
+      navigatorKey: webResearchNavigatorKey,
       title: 'OnDevice LLM',
       debugShowCheckedModeBanner: false,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -162,15 +165,23 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       }
     });
     _mcp = ref.read(mcpRegistryProvider);
-    _mcp.confirm = (server, call) {
+    Future<McpConsent> confirm(
+      String server,
+      ToolCall call, {
+      bool hosted = false,
+    }) {
       if (!mounted) return Future.value(McpConsent.deny);
       return confirmMcpCall(
         context,
         server,
         call.name,
         const JsonEncoder.withIndent('  ').convert(call.args),
+        hosted: hosted,
       );
-    };
+    }
+
+    _mcp.confirm = confirm;
+    _mcp.confirmHosted = (server, call) => confirm(server, call, hosted: true);
     _launchArguments = DesktopLaunchArguments((path) async {
       _show(DesktopSection.models);
       await importDesktopModel(context, ref, path);
@@ -217,6 +228,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   @override
   void dispose() {
     _mcp.confirm = null;
+    _mcp.confirmHosted = null;
     _launchArguments.dispose();
     FocusManager.instance.removeListener(_keepShortcutsLive);
     _shellFocus.dispose();
@@ -228,8 +240,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   void _show(DesktopSection s) =>
       ref.read(desktopSectionProvider.notifier).show(s);
 
-  void _newChat() {
-    ref.read(chatProvider.notifier).newChat();
+  Future<void> _newChat() async {
+    final reset = await ref.read(chatProvider.notifier).newChat();
+    if (!reset || !mounted) return;
     _show(DesktopSection.chat);
     _composerFocus.requestFocus();
   }

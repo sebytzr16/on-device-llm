@@ -8,6 +8,7 @@ import '../../../../core/l10n/l10n.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../data/storage/download_history.dart';
 import '../../../../data/storage/download_manager.dart';
+import '../../../../desktop/load_progress.dart';
 import '../../../image_gen/image_gen_downloads.dart';
 import '../../../image_gen/image_gen_imports.dart';
 import '../../../image_gen/image_gen_model_widgets.dart';
@@ -19,6 +20,18 @@ bool activeDownload(DownloadProgress p) => const {
   DownloadStatus.downloading,
   DownloadStatus.verifying,
 }.contains(p.status);
+
+/// Catalog ids still locating or hashing their file, with no progress row of
+/// their own yet: the pop-up shows them so a tapped download appears at once.
+List<String> preparingDownloads(ModelManagerState state) => state.preparing
+    .where(
+      (id) => !state.downloads.values.any(
+        (p) =>
+            (p.modelId == id || p.modelId == ModelManagerState.visionKey(id)) &&
+            activeDownload(p),
+      ),
+    )
+    .toList();
 
 final downloadHistoryProvider = StreamProvider<List<DownloadRecord>>((ref) {
   final controller = StreamController<List<DownloadRecord>>();
@@ -59,14 +72,11 @@ class DownloadsButton extends ConsumerWidget {
         .values
         .where((m) => m.status == ImageGenModelStatus.downloading)
         .length;
+    final models = ref.watch(modelManagerProvider);
     final active =
         imageActive +
-        ref
-            .watch(modelManagerProvider)
-            .downloads
-            .values
-            .where(activeDownload)
-            .length;
+        models.downloads.values.where(activeDownload).length +
+        preparingDownloads(models).length;
     if (onlyWhenActive && active == 0) return const SizedBox.shrink();
     final icon = Badge(
       isLabelVisible: active > 0,
@@ -134,6 +144,16 @@ class DownloadCenter extends ConsumerWidget {
     }
   }
 
+  Future<void> _cancel(BuildContext context, WidgetRef ref, String id) async {
+    try {
+      await ref.read(modelManagerProvider.notifier).cancelDownload(id);
+    } catch (e) {
+      if (context.mounted) {
+        showIslandToast(context, '$e', tone: IslandTone.error);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.l10n;
@@ -149,10 +169,11 @@ class DownloadCenter extends ConsumerWidget {
           s.status != ImageGenModelStatus.ready && s.paused;
     }).toList();
     final history = ref.watch(downloadHistoryProvider);
-    String nameFor(DownloadProgress p) {
-      final id = p.modelId.replaceFirst(RegExp(r':vision$'), '');
+    final preparing = preparingDownloads(state);
+    String nameForId(String rawId) {
+      final id = rawId.replaceFirst(RegExp(r':vision$'), '');
       return state.catalog.where((m) => m.id == id).firstOrNull?.displayName ??
-          p.modelId;
+          rawId;
     }
 
     String result(String value) => switch (value) {
@@ -169,6 +190,8 @@ class DownloadCenter extends ConsumerWidget {
       );
       final label = result(row.result);
       if (model == null) return label;
+      // An unknown size cannot give a percent: the divide would show NaN%.
+      if (row.result != 'completed' && model.sizeBytes <= 0) return label;
       final percent = row.result == 'completed'
           ? 100.0
           : (imageState.of(model).received / model.sizeBytes * 100).clamp(
@@ -196,44 +219,37 @@ class DownloadCenter extends ConsumerWidget {
             children: [
               for (final model in imageActive)
                 ImageGenDownloadRow(model: model),
-              if (active.isEmpty && imageActive.isEmpty)
+              if (active.isEmpty && preparing.isEmpty && imageActive.isEmpty)
                 Text(t.modelNoDownloads, style: context.text.small),
-              for (final p in active)
+              for (final id in preparing)
                 ListTile(
-                  title: Text(nameFor(p)),
+                  title: Text(nameForId(id)),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      LinearProgressIndicator(
-                        value: p.status == DownloadStatus.verifying
-                            ? null
-                            : p.fraction,
-                      ),
+                      const LinearProgressIndicator(),
                       Text(
-                        p.status == DownloadStatus.verifying
-                            ? t.verifyingSha
-                            : '${bytesLabel(p.received)} / ${bytesLabel(p.total)}',
+                        t.downloadPreparing,
+                        style: context.text.small.copyWith(
+                          color: context.colors.textMuted,
+                        ),
                       ),
                     ],
                   ),
                   trailing: IconButton(
                     tooltip: t.cancel,
                     icon: const Icon(Icons.cancel_outlined),
-                    onPressed: () async {
-                      try {
-                        await ref
-                            .read(modelManagerProvider.notifier)
-                            .cancelDownload(p.modelId);
-                      } catch (e) {
-                        if (context.mounted) {
-                          showIslandToast(
-                            context,
-                            '$e',
-                            tone: IslandTone.error,
-                          );
-                        }
-                      }
-                    },
+                    onPressed: () => _cancel(context, ref, id),
+                  ),
+                ),
+              for (final p in active)
+                ListTile(
+                  title: Text(nameForId(p.modelId)),
+                  subtitle: DownloadProgressBar(p),
+                  trailing: IconButton(
+                    tooltip: t.cancel,
+                    icon: const Icon(Icons.cancel_outlined),
+                    onPressed: () => _cancel(context, ref, p.modelId),
                   ),
                 ),
               const SizedBox(height: 24),

@@ -14,6 +14,7 @@ import 'package:ondevice_llm/features/models/domain/entities/model_info.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:ondevice_llm/features/settings/presentation/providers/settings_provider.dart';
+import 'package:ondevice_llm/features/settings/presentation/widgets/settings_widgets.dart';
 
 import 'advanced_pages_2_test.dart' show TestModels, TestSettings;
 
@@ -63,6 +64,16 @@ class PairedHost extends RunningHost {
     revoked = id;
     state = state.copyWith(pairedDevices: []);
   }
+}
+
+/// The setup page while the host identity is being replaced.
+class ResettingHost extends DeviceHostingNotifier {
+  @override
+  DeviceHostingState build() => const DeviceHostingState(
+    error: 'The host TLS identity is unavailable.',
+    tlsIdentityFailure: true,
+    resettingIdentity: true,
+  );
 }
 
 /// Records the models loaded from the page.
@@ -138,6 +149,43 @@ void main() {
       ),
     );
     expect(start.onPressed, isNull);
+  });
+
+  testWidgets('setup: Start and Rotate wait for an identity reset', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith(TestSettings.new),
+          modelManagerProvider.overrideWith(TestModels.new),
+          deviceHostingProvider.overrideWith(ResettingHost.new),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.dark,
+          home: const DeviceHostingPage(),
+        ),
+      ),
+    );
+    await tester.pump();
+    // The notifier refuses a start during the reset: the button must show it.
+    final start = tester.widget<FilledButton>(
+      find.ancestor(
+        of: find.text('Start server'),
+        matching: find.byWidgetPredicate((w) => w is FilledButton),
+      ),
+    );
+    expect(start.onPressed, isNull);
+    final rotate = tester.widget<SettingsRow>(
+      find.ancestor(
+        of: find.text('Rotate access token'),
+        matching: find.byWidgetPredicate((w) => w is SettingsRow),
+      ),
+    );
+    expect(rotate.onTap, isNull);
   });
 
   testWidgets('running: live numbers, QR pairing and a masked token', (

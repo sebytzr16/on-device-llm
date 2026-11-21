@@ -51,7 +51,7 @@ Future<void> _run() async {
   try {
     for (final item in questions) {
       final chat = container.read(chatProvider.notifier);
-      chat.newChat();
+      await chat.newChat();
       final clock = Stopwatch()..start();
       _log('QUALITY_PROGRESS', {'question': item['id'], 'stage': 'start'});
       final accepted = await chat.send(item['q'] as String);

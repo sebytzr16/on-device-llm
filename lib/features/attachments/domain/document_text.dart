@@ -103,6 +103,9 @@ class DocumentText {
 
   static const _htmlExtensions = {'.html', '.htm', '.xhtml', '.mhtml'};
 
+  static bool supportsTextSuffix(String suffix) =>
+      _plainExtensions.containsKey(suffix) || _htmlExtensions.contains(suffix);
+
   /// Extracts [bytes] named [name]. [pdfText] renders PDF pages to text on
   /// the platform; when null, PDFs are refused with a clear message.
   /// [cancelled] is checked before expensive operations and between pages.

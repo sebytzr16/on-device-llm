@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:logging/logging.dart';
 import 'package:ondevice_llm/core/errors/exceptions.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:ondevice_llm/inference/remote/remote_engine.dart';
@@ -745,6 +746,155 @@ void main() {
         ),
       ),
     );
+  });
+
+  test(
+    'echoed short credentials is redacted from the notice and the log',
+    () async {
+      final records = <String>[];
+      Logger.root.level = Level.ALL;
+      final subscription = Logger.root.onRecord.listen(
+        (record) => records.add('${record.message} ${record.error ?? ''}'),
+      );
+      addTearDown(subscription.cancel);
+      addTearDown(() => Logger.root.level = Level.INFO);
+      final dio = Dio()
+        ..httpClientAdapter = _Adapter(
+          (_) => ResponseBody.fromString(
+            '{"error":{"message":"Echoed values: q1v / z2xy","code":401}}',
+            401,
+          ),
+        );
+      await expectLater(
+        engineWith(dio)
+            .generate(
+              messages: const [
+                {'role': 'user', 'content': 'hi'},
+              ],
+              fallbackTemplate: '',
+              settings: hosted('gemini', model: 'gemini-2.5-flash').copyWith(
+                remoteApiKeys: {'p': 'q1v'},
+                remoteHeaders: {
+                  'p': {'x-secret': 'z2xy'},
+                },
+              ),
+            )
+            .join(),
+        throwsA(
+          isA<InferenceException>()
+              .having(
+                (e) => e.message,
+                'message',
+                isNot(anyOf(contains('q1v'), contains('z2xy'))),
+              )
+              .having((e) => e.message, 'message', contains('[redacted]')),
+        ),
+      );
+      expect(
+        records.join('\n'),
+        isNot(
+          anyOf(contains('q1v'), contains('z2xy'), contains('Echoed values')),
+        ),
+      );
+    },
+  );
+
+  test('only public protocol headers are exempt from redaction', () {
+    const settings = InferenceSettings(
+      remoteEnabled: true,
+      remoteProfiles: [
+        RemoteProfile(
+          id: 'p',
+          name: 'Cloud',
+          providerId: 'anthropic',
+          baseUrl: 'https://example.invalid/v1/',
+          model: 'm',
+          headers: {'Anthropic-Version': '2023-06-01', 'X-Title': 'q1xy'},
+        ),
+      ],
+      remoteProfileId: 'p',
+      remoteApiKeys: {'p': 'sk-live-key-123456'},
+      remoteHeaders: {
+        'p': {'X-Other': 'z2xy'},
+      },
+    );
+    expect(
+      RemoteEngine.redactSecrets('2023-06-01 rejected q1xy and z2xy', settings),
+      '2023-06-01 rejected [redacted] and [redacted]',
+    );
+    expect(
+      RemoteEngine.redactSecrets('key sk-live-key-123456 failed', settings),
+      'key [redacted] failed',
+    );
+  });
+
+  test('short header values never shred the provider error', () {
+    const settings = InferenceSettings(
+      remoteEnabled: true,
+      remoteProfiles: [
+        RemoteProfile(
+          id: 'p',
+          name: 'Cloud',
+          providerId: 'custom',
+          baseUrl: 'https://example.invalid/v1/',
+          model: 'm',
+          headers: {'X-Foo': '1'},
+        ),
+      ],
+      remoteProfileId: 'p',
+      remoteApiKeys: {'p': 'sk-live-key-123456'},
+      remoteHeaders: {
+        'p': {
+          'X-Api-Version': '2023-06-01',
+          'OpenAI-Beta': 'assistants=v2',
+          'Accept': 'application/json',
+          'User-Agent': 'ondevice/1.0',
+        },
+      },
+    );
+    expect(
+      RemoteEngine.redactSecrets('model m1 failed in 2026', settings),
+      'model m1 failed in 2026',
+    );
+    expect(
+      RemoteEngine.redactSecrets(
+        '2023-06-01 rejected assistants=v2 for application/json on ondevice/1.0',
+        settings,
+      ),
+      '2023-06-01 rejected assistants=v2 for application/json on ondevice/1.0',
+    );
+    expect(
+      RemoteEngine.redactSecrets('key sk-live-key-123456 failed', settings),
+      'key [redacted] failed',
+    );
+  });
+
+  test('an unknown provider finish value is logged as other', () async {
+    final records = <String>[];
+    Logger.root.level = Level.ALL;
+    final subscription = Logger.root.onRecord.listen(
+      (record) => records.add('${record.message} ${record.error ?? ''}'),
+    );
+    addTearDown(subscription.cancel);
+    addTearDown(() => Logger.root.level = Level.INFO);
+    final dio = Dio()
+      ..httpClientAdapter = _Adapter(
+        (_) => ResponseBody.fromString(
+          'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"INJECTED-FINISH"}]}\n',
+          200,
+        ),
+      );
+    await engineWith(dio)
+        .generate(
+          messages: const [
+            {'role': 'user', 'content': 'hi'},
+          ],
+          fallbackTemplate: '',
+          settings: hosted('gemini', model: 'gemini-2.5-flash'),
+        )
+        .drain<void>();
+    expect(records.join('\n'), contains('finish other'));
+    expect(records.join('\n'), isNot(contains('INJECTED-FINISH')));
   });
 
   test('Gemini: Think off maps to each thinking-off knob', () async {

@@ -11,6 +11,7 @@ import 'package:ondevice_llm/features/models/presentation/providers/model_manage
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:ondevice_llm/features/settings/presentation/providers/settings_provider.dart';
 import 'package:ondevice_llm/features/settings/presentation/providers/model_profiles_provider.dart';
+import 'package:ondevice_llm/features/settings/presentation/providers/effective_settings_provider.dart';
 import 'package:ondevice_llm/features/presets/presentation/providers/presets_provider.dart';
 import 'package:ondevice_llm/features/chat/presentation/providers/chat_provider.dart';
 import 'chat_test.dart' show testModel, TestEngine;
@@ -193,6 +194,42 @@ void main() {
       expect(c.read(modelManagerProvider).loadedModelId, 'manual');
     },
   );
+
+  test('the startup restore never asks and keeps web research off', () async {
+    var prompts = 0;
+    final engine = TestEngine();
+    c.dispose();
+    c = ProviderContainer(
+      overrides: [
+        appDatabaseProvider.overrideWithValue(db),
+        adaptersProvider.overrideWith(_Adapters.new),
+        modelManagerProvider.overrideWith(_Models.new),
+        settingsProvider.overrideWith(_Settings.new),
+        modelProfilesProvider.overrideWith(_Profiles.new),
+        presetsProvider.overrideWith(_Presets.new),
+        chatProvider.overrideWith(_Chat.new),
+        llamaEngineProvider.overrideWithValue(engine),
+        webResearchConfirmationProvider.overrideWithValue(() async {
+          prompts++;
+          return false;
+        }),
+      ],
+    );
+    manager = c.read(modelManagerProvider.notifier) as _Models;
+    settings = c.read(settingsProvider.notifier) as _Settings;
+    profiles = c.read(modelProfilesProvider.notifier) as _Profiles;
+    presets = c.read(presetsProvider.notifier) as _Presets;
+    settings.useCpu();
+    ready();
+    // The restored model's profile turns web research on: the silent
+    // start-up load must not ask with no user action and stays local
+    // (review 2026-11-20 finding 2).
+    await profiles.set(testModel.id, {'webMode': 'auto'});
+    await manager.restoreLastModel();
+    expect(prompts, 0);
+    expect(engine.loadedWith?.webMode, WebMode.off);
+    expect(c.read(modelManagerProvider).loadedModelId, testModel.id);
+  });
 
   test(
     'Compare reloads the previous chat model through its normal loader',

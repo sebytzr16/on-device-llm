@@ -26,7 +26,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
   AppDatabase.forTesting(super.executor);
 
-  static const currentSchemaVersion = 17;
+  static const currentSchemaVersion = 18;
   @override
   int get schemaVersion => currentSchemaVersion;
 
@@ -36,10 +36,7 @@ class AppDatabase extends _$AppDatabase {
       await m.createAll();
       await createCompareHistory();
       // North Star §6.5: unique (chatId, sequence).
-      await customStatement(
-        'CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_chat_seq '
-        'ON messages (chat_id, sequence);',
-      );
+      await createMessageSequenceIndex();
     },
     onUpgrade: (m, from, to) async {
       // v2: attachments on messages. Existing rows read back as "[]".
@@ -94,6 +91,10 @@ class AppDatabase extends _$AppDatabase {
       if (from < 15) await m.addColumn(models, models.projectorJson);
       if (from < 16) await m.addColumn(models, models.partsJson);
       if (from < 17) await createCompareHistory();
+      // v18: one message per (chat, sequence). Databases written before v17
+      // never got the index, and older ones can still hold colliding turns
+      // (audit 09-1), so every upgrade below v18 repairs them.
+      if (from < 18) await createMessageSequenceIndex();
       // v14: the web page cache is gone.
       if (from < 14) await customStatement('DROP TABLE IF EXISTS web_pages;');
     },
@@ -110,6 +111,45 @@ class AppDatabase extends _$AppDatabase {
     'CREATE TABLE IF NOT EXISTS compare_history ('
     'id TEXT PRIMARY KEY, created_at INTEGER NOT NULL, payload TEXT NOT NULL)',
   );
+
+  /// North Star §6.5: one message per (chat, sequence). Rows written before
+  /// v18 can collide, so their sequence numbers are renumbered in place --
+  /// ids, text and parent links stay -- and the unique index goes on in the
+  /// same transaction (audit 09-1). No message row is ever deleted.
+  Future<void> createMessageSequenceIndex() => transaction(() async {
+    // The repair runs on fresh installs too, where it finds nothing to fix.
+    // Only the chats that can collide are touched and a window function ranks
+    // them in one pass: a correlated count(*) per row would scan every message
+    // of the chat again, which turns the v18 upgrade into a startup hang on
+    // 30-50k message histories (audit 09-1). The mapping is built from the
+    // untouched rows before anything moves, and `rid` is the temp table's
+    // primary key so the update looks each row up instead of scanning the map.
+    await customStatement('DROP TABLE IF EXISTS temp.seq_fix;');
+    await customStatement(
+      'CREATE TEMP TABLE seq_fix (rid INTEGER PRIMARY KEY, seq INTEGER NOT NULL);',
+    );
+    await customStatement(
+      'INSERT INTO seq_fix (rid, seq) '
+      'SELECT rowid, ROW_NUMBER() OVER ('
+      'PARTITION BY chat_id ORDER BY sequence, rowid) - 1 '
+      'FROM messages WHERE chat_id IN ('
+      'SELECT chat_id FROM messages '
+      'GROUP BY chat_id, sequence HAVING count(*) > 1);',
+    );
+    // A stale unique index would reject the transient collisions of the
+    // renumbering; it is recreated below.
+    await customStatement('DROP INDEX IF EXISTS idx_messages_chat_seq;');
+    await customStatement(
+      'UPDATE messages SET sequence = '
+      '(SELECT seq FROM temp.seq_fix WHERE rid = messages.rowid) '
+      'WHERE rowid IN (SELECT rid FROM temp.seq_fix);',
+    );
+    await customStatement('DROP TABLE temp.seq_fix;');
+    await customStatement(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_chat_seq '
+      'ON messages (chat_id, sequence);',
+    );
+  });
 
   /// Whether full-text search over messages is available (FTS5 compiled
   /// into this SQLite). Without it search falls back to LIKE on titles.

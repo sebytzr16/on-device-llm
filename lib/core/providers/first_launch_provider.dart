@@ -14,21 +14,27 @@ class OnboardingNotifier extends AsyncNotifier<bool> {
   /// Completes onboarding with explicit finishing state and checked persistence.
   /// Returns true if persisted successfully, false if the write failed.
   /// The caller should offer retry or continue-for-this-session on false.
+  ///
+  /// The app root watches this provider and replaces the onboarding screen the
+  /// moment it turns true, so it is only published after the write succeeded:
+  /// a transient true would unmount the screen before it can offer Retry
+  /// (audit 08d-1).
   Future<bool> complete() async {
-    state = const AsyncData(true);
     try {
       final prefs = await SharedPreferences.getInstance();
       final ok = await prefs.setBool(_kOnboardingDone, true);
-      if (!ok) {
-        state = const AsyncData(false);
-        return false;
-      }
+      if (!ok) return false;
+      state = const AsyncData(true);
       return true;
     } catch (_) {
-      state = const AsyncData(false);
       return false;
     }
   }
+
+  /// "Continue for this session": finishes onboarding for this run only, when
+  /// the write keeps failing. Nothing is persisted, so the next start asks
+  /// again (audit 08d-1).
+  void completeForSession() => state = const AsyncData(true);
 }
 
 final onboardingDoneProvider = AsyncNotifierProvider<OnboardingNotifier, bool>(

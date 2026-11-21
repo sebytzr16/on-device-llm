@@ -124,6 +124,7 @@
              libraries from apps that do not declare them. required=false keeps the
              app installable on devices without a driver; the native backend then
              falls back to the CPU. -->
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
         <uses-native-library android:name="libOpenCL.so" android:required="false" />
         <!-- No-server rule: ML Kit (OCR, QR scanning) bundles Google's
              Clearcut usage logging. Unregistering its only upload backend

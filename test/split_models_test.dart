@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -9,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/core/platform/desktop_host.dart';
 import 'package:ondevice_llm/data/local/database/app_database.dart';
 import 'package:ondevice_llm/data/network/hugging_face.dart';
+import 'package:ondevice_llm/data/storage/model_file_leases.dart';
 import 'package:ondevice_llm/data/storage/model_storage.dart';
 import 'package:ondevice_llm/features/models/domain/entities/model_info.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_recommendations_provider.dart';
@@ -29,6 +31,25 @@ class _Paths extends PathProviderPlatform {
 class _Recommendations extends ModelRecommendationsNotifier {
   @override
   Future<void> learnFromFile(ModelInfo m, {bool force = false}) async {}
+}
+
+class _UnresolvableDirectory implements Directory {
+  final Directory directory;
+  _UnresolvableDirectory(this.directory);
+
+  @override
+  String get path => directory.path;
+
+  @override
+  Future<Directory> create({bool recursive = false}) =>
+      directory.create(recursive: recursive);
+
+  @override
+  Future<String> resolveSymbolicLinks() async =>
+      throw FileSystemException('Cannot resolve models root', path);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 void main() {
@@ -135,10 +156,11 @@ void main() {
   );
 
   test(
-    'importing a file already inside the managed models folder stays in place',
+    'importing a file inside a managed models subfolder stays in place',
     () async {
+      final sub = await Directory(p.join(models.path, 'sub')).create();
       final single = await File(
-        p.join(models.path, 'single.gguf'),
+        p.join(sub.path, 'single.gguf'),
       ).writeAsBytes(bytes(1));
       final notifier = await manager();
       await notifier.importFile(single.path, ModelFamily.qwen);
@@ -147,14 +169,55 @@ void main() {
       final row = (await db.allModels()).singleWhere(
         (r) => r.id.startsWith('local-'),
       );
-      // In place: localPath is the original file, nothing copied or renamed.
+      // In place: localPath is the original file, its own name is kept
+      // (audit 2026-11-20 P1-3), and nothing is copied or renamed.
       expect(row.localPath, single.path);
-      expect(row.fileName, 'local-$hash.gguf');
+      expect(row.fileName, 'single.gguf');
       expect(await File(single.path).exists(), true);
       expect(
         await File(p.join(models.path, 'local-$hash.gguf')).exists(),
         false,
       );
+      // Remove deletes the file the row points at, not the same-named file
+      // a basename lookup would pick under the models root.
+      final decoy = await File(
+        p.join(models.path, 'single.gguf'),
+      ).writeAsBytes(bytes(2));
+      await Future<void>.delayed(Duration.zero);
+      final info = container
+          .read(modelManagerProvider)
+          .catalog
+          .singleWhere((r) => r.id == row.id);
+      await notifier.deleteModel(info);
+      expect(await File(single.path).exists(), false);
+      expect(await decoy.exists(), true);
+      expect(await db.getModel(row.id), isNull);
+    },
+  );
+
+  test(
+    'an in-place split import keeps the real part names and deletes them',
+    () async {
+      final sources = await weights(models);
+      final notifier = await manager();
+      await notifier.importFile(sources[1].path, ModelFamily.qwen);
+      expect(container.read(modelManagerProvider).error, isNull);
+      final row = (await db.allModels()).singleWhere(
+        (r) => r.id.startsWith('local-'),
+      );
+      // The row names the file it points at, part one of the real set.
+      expect(row.fileName, 'model-Q4_K_M-00001-of-00003.gguf');
+      expect(row.localPath, sources.first.path);
+      await Future<void>.delayed(Duration.zero);
+      final info = container
+          .read(modelManagerProvider)
+          .catalog
+          .singleWhere((r) => r.id == row.id);
+      await notifier.deleteModel(info);
+      for (final source in sources) {
+        expect(await source.exists(), false);
+      }
+      expect(await db.getModel(row.id), isNull);
     },
   );
 
@@ -201,6 +264,170 @@ void main() {
         rows.single.sizeBytes,
         bytes(1).length + bytes(2).length + bytes(3).length,
       );
+    },
+  );
+
+  test(
+    'deleting an in-place import keeps its own projector, not the one under the root',
+    () async {
+      final sub = await Directory(p.join(models.path, 'vision')).create();
+      final single = await File(
+        p.join(sub.path, 'vision-model.gguf'),
+      ).writeAsBytes(bytes(1));
+      final beside = await File(
+        p.join(sub.path, 'mmproj-vision-model.gguf'),
+      ).writeAsBytes(bytes(2));
+      // A same-named projector in the models root belongs to another model:
+      // it must survive, and the one beside the weights must go.
+      final decoy = await File(
+        p.join(models.path, 'mmproj-vision-model.gguf'),
+      ).writeAsBytes(bytes(3));
+      final notifier = await manager();
+      await notifier.importFile(single.path, ModelFamily.qwen);
+      expect(container.read(modelManagerProvider).error, isNull);
+      final row = (await db.allModels()).singleWhere(
+        (r) => r.id.startsWith('local-'),
+      );
+      expect(row.localPath, single.path);
+      final vision = VisionProjector.fromJson(jsonDecode(row.projectorJson!));
+      expect(vision.fileName, 'mmproj-vision-model.gguf');
+      await Future<void>.delayed(Duration.zero);
+      final info = container
+          .read(modelManagerProvider)
+          .catalog
+          .singleWhere((r) => r.id == row.id);
+      await notifier.deleteModel(info);
+      expect(await beside.exists(), false);
+      expect(await decoy.exists(), true);
+      expect(await single.exists(), false);
+      expect(await db.getModel(row.id), isNull);
+    },
+  );
+
+  test(
+    'a lease on a same-named file under the root does not block an in-place removal',
+    () async {
+      final sub = await Directory(p.join(models.path, 'pinned')).create();
+      final single = await File(
+        p.join(sub.path, 'pinned.gguf'),
+      ).writeAsBytes(bytes(1));
+      final notifier = await manager();
+      await notifier.importFile(single.path, ModelFamily.qwen);
+      expect(container.read(modelManagerProvider).error, isNull);
+      final row = (await db.allModels()).singleWhere(
+        (r) => r.id.startsWith('local-'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final info = container
+          .read(modelManagerProvider)
+          .catalog
+          .singleWhere((r) => r.id == row.id);
+      final decoy = await File(
+        p.join(models.path, 'pinned.gguf'),
+      ).writeAsBytes(bytes(2));
+      // The decoy is another model's file; leasing it must not protect (or
+      // block) the row that points inside the subfolder (audit 2026-11-20
+      // P2-3).
+      final lease = ModelFileLeases.instance.acquire([
+        decoy.path,
+      ], owner: 'server pool');
+      addTearDown(lease.release);
+      await notifier.deleteModel(info);
+      expect(await single.exists(), false);
+      expect(await decoy.exists(), true);
+    },
+  );
+
+  test(
+    'removing a missing imported projector keeps the same-named file',
+    () async {
+      final sub = await Directory(p.join(models.path, 'vision')).create();
+      final single = await File(
+        p.join(sub.path, 'vision.gguf'),
+      ).writeAsBytes(bytes(1));
+      final name = 'mmproj-vision.gguf';
+      final beside = await File(p.join(sub.path, name)).writeAsBytes(bytes(2));
+      final notifier = await manager();
+      await notifier.importFile(single.path, ModelFamily.qwen);
+      await beside.delete();
+      final decoy = await File(
+        p.join(models.path, name),
+      ).writeAsBytes(bytes(2));
+      final partial = await File('${beside.path}.part').writeAsBytes(bytes(3));
+      final row = (await db.allModels()).singleWhere(
+        (r) => r.localPath == single.path,
+      );
+      await Future<void>.delayed(Duration.zero);
+      final info = container
+          .read(modelManagerProvider)
+          .catalog
+          .singleWhere((m) => m.id == row.id);
+      await notifier.deleteModel(info);
+      expect(await decoy.exists(), isTrue);
+      expect(await partial.exists(), isFalse);
+      expect(await db.getModel(row.id), isNull);
+    },
+  );
+
+  test('an unresolvable managed root prevents adoption and deletion', () async {
+    final sub = await Directory(p.join(models.path, 'unverified')).create();
+    final single = await File(
+      p.join(sub.path, 'model.gguf'),
+    ).writeAsBytes(bytes(1));
+    final notifier = await manager();
+    final zone = Zone.current;
+    await IOOverrides.runZoned(
+      () async {
+        await notifier.importFile(single.path, ModelFamily.qwen);
+        expect(container.read(modelManagerProvider).error, isNull);
+        final row = (await db.allModels()).singleWhere(
+          (r) => r.id.startsWith('local-'),
+        );
+        expect(row.localPath, isNot(single.path));
+        expect(await File(row.localPath!).exists(), isTrue);
+        await notifier.deleteModel(
+          ModelInfo(
+            id: 'unverified',
+            displayName: 'Unverified',
+            fileName: 'model.gguf',
+            sizeBytes: bytes(1).length,
+            family: ModelFamily.qwen,
+            quantization: ModelQuantization.unknown,
+            isDownloaded: true,
+            localPath: single.path,
+          ),
+        );
+        expect(await single.exists(), isTrue);
+      },
+      createDirectory: (path) => p.equals(path, models.path)
+          ? _UnresolvableDirectory(models)
+          : zone.run(() => Directory(path)),
+    );
+  });
+
+  test(
+    'removing a row recorded outside the models folders keeps its file',
+    () async {
+      final outside = await File(
+        p.join(source.path, 'legacy.gguf'),
+      ).writeAsBytes(bytes(1));
+      final notifier = await manager();
+      // A row that points outside the library (an older import through a
+      // junction, say) must not let Remove delete the user's own file (audit
+      // 2026-11-20 P1-3).
+      await notifier.deleteModel(
+        ModelInfo(
+          id: 'legacy',
+          displayName: 'legacy',
+          fileName: 'legacy.gguf',
+          sizeBytes: bytes(1).length,
+          family: ModelFamily.qwen,
+          quantization: ModelQuantization.q4_k_m,
+          isDownloaded: true,
+          localPath: outside.path,
+        ),
+      );
+      expect(await outside.exists(), true);
     },
   );
 

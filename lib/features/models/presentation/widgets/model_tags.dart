@@ -46,8 +46,11 @@ String paramLabel(ModelInfo model) {
 
 String quantLabel(ModelInfo model) => model.quantLabel;
 
-String speedLabel(double bytesPerSecond) =>
-    '${(bytesPerSecond / 1048576).toStringAsFixed(1)} MB/s';
+/// Rates below 1 MB/s read in KB/s, so a slow start does not sit at
+/// "0.0 MB/s".
+String speedLabel(double bytesPerSecond) => bytesPerSecond < 1048576
+    ? '${(bytesPerSecond / 1024).toStringAsFixed(0)} KB/s'
+    : '${(bytesPerSecond / 1048576).toStringAsFixed(1)} MB/s';
 
 String percentLabel(double fraction) =>
     '${(fraction * 100).toStringAsFixed(1)}%';

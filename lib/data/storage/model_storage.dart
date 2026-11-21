@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/l10n/l10n.dart';
 import '../../core/platform/desktop_host.dart';
 import '../../core/platform/device_info.dart';
 import 'model_folders.dart';
@@ -27,11 +28,12 @@ class ModelStorage {
     }
   }
 
-  /// GGUF models plus the voice files (ONNX models, token lists and the
+  /// GGUF and LiteRT models, voice files (ONNX models, token lists and the
   /// Kokoro archive, which is unpacked next to them), and the safetensors
   /// VAEs and ESRGAN upscaler of the desktop image and video models.
   static const fileExtensions = [
     '.gguf',
+    '.litertlm',
     '.onnx',
     '.txt',
     '.tar.bz2',
@@ -81,7 +83,7 @@ class ModelStorage {
         fileName.contains('\\') ||
         fileName.contains('/') ||
         !fileExtensions.any(fileName.toLowerCase().endsWith)) {
-      throw const FormatException('Choose a single .gguf filename.');
+      throw FormatException(appStrings.liteRtInvalidModelFilename);
     }
     if (DesktopHost.active) {
       await modelsDir();

@@ -48,11 +48,11 @@ extension _ChatTitles on ChatNotifier {
           sourceMessageId: messageId,
         );
       } else if (modelLearningAllowed && needsExtraction && _spoken) {
-        final localEngine = t.localEngine;
+        final engine = t.engine;
         _memoryLater = (keep) async {
-          if (!keep()) return;
+          if (!keep() || !_stillHolds(engine, model)) return;
           final extracted = await _learn(
-            localEngine,
+            engine,
             model,
             settings,
             existing: facts,
@@ -109,16 +109,19 @@ extension _ChatTitles on ChatNotifier {
       );
     } else if (wantsTitle) {
       if (_spoken) {
-        final localEngine = t.localEngine;
-        _titleLater = (keep) => _nameChat(
-          localEngine,
-          model,
-          settings,
-          chatId: chatId,
-          question: input,
-          answer: said,
-          keep: keep,
-        );
+        final engine = t.engine;
+        _titleLater = (keep) {
+          if (!keep() || !_stillHolds(engine, model)) return Future.value();
+          return _nameChat(
+            engine,
+            model,
+            settings,
+            chatId: chatId,
+            question: input,
+            answer: said,
+            keep: keep,
+          );
+        };
       } else {
         _chatState = _chatState.copyWith(notice: _t.noticeNamingChat);
         await _nameChat(
@@ -134,6 +137,13 @@ extension _ChatTitles on ChatNotifier {
     }
     return learned;
   }
+
+  /// Whether [engine] is still the phone engine that holds [model]: a
+  /// deferred title or memory extraction must not reach a model loaded since
+  /// (a LiteRT turn's engine differs from llama.cpp's).
+  bool _stillHolds(TextEngine engine, ModelInfo model) =>
+      identical(_chatRef.read(activeLocalEngineProvider), engine) &&
+      _chatRef.read(modelManagerProvider).loadedModel?.id == model.id;
 
   /// Writes the title (and memory) a spoken turn left for later ([send]'s
   /// `spoken`), now that the answer has been heard. A new turn stops it; it is tried again

@@ -122,6 +122,53 @@ void main() {
     expect(ToolAliases.name('send_email'), 'send_email');
   });
 
+  test('a project file tool keeps its name (audit 05b-2)', () {
+    // ProjectFileTools offers search_files on the desktop; aliasing it to
+    // search_documents sent the call to the knowledge collection instead.
+    expect(
+      calls(
+        '```tool\n{"name": "search_files", "arguments": {"pattern": "TODO"}}\n```',
+      ),
+      want('search_files', {'pattern': 'TODO'}),
+    );
+    expect(
+      calls('<function=read_file>{"path": "lib/main.dart"}</function>'),
+      want('read_file', {'path': 'lib/main.dart'}),
+    );
+    expect(
+      calls('<|tool_call>call:list_files{glob:<|"|>*.md<|"|>}<tool_call|>'),
+      want('list_files', {'glob': '*.md'}),
+    );
+    // The later aliases still reach the knowledge collection.
+    expect(
+      calls(
+        '```tool\n{"name": "search_docs", "arguments": {"q": "manual"}}\n```',
+      ),
+      want('search_documents', {'q': 'manual', 'query': 'manual'}),
+    );
+  });
+
+  test('without a project folder search_files is a document search again', () {
+    // A phone (projectFiles null) offers no project tools: the call used to
+    // fall back to the knowledge collection, and still does.
+    expect(
+      ToolAliases.name('search_files', projectTools: false),
+      'search_documents',
+    );
+    final phone = ToolAliases.normalize(
+      const ToolCall(
+        id: 'p',
+        name: 'search_files',
+        arguments: '{"pattern": "TODO"}',
+      ),
+      projectTools: false,
+    );
+    expect(phone.name, 'search_documents');
+    expect(phone.args['query'], 'TODO');
+    // With a project folder the call stays the project tool.
+    expect(ToolAliases.name('search_files'), 'search_files');
+  });
+
   test('JSON that is not a call stays in the answer', () {
     const answer =
         'Here is the config:\n```json\n{"name": "my app", "version": 2}\n```';

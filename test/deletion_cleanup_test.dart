@@ -178,6 +178,24 @@ void main() {
     expect(await db.getMessages('c2'), hasLength(1));
   });
 
+  test('S13: Undo refuses a chat reordered after the delete', () async {
+    await chat('c1');
+    await message('c1', 'q1');
+    await message('c1', 'a1', sequence: 1);
+    await message('c1', 'q2', sequence: 2);
+    await message('c1', 'a2', sequence: 3);
+    final deletion = (await MessageDeletion.delete(db, 'c1', 'a2'))!;
+    // A branch restore reorders storage while Undo is still open: the old
+    // sequence of a2 is free, but restoring it would land it after a turn
+    // that used to come before it.
+    await db.updateMessage(
+      'a1',
+      const MessagesCompanion(sequence: drift.Value(5)),
+    );
+    expect(await deletion.undo(db), isFalse);
+    expect((await db.getMessages('c1')).map((r) => r.id), ['q1', 'q2', 'a1']);
+  });
+
   test('S13: a deleted turn keeps its files until Undo closes, then drops '
       'only the unreferenced ones', () async {
     await chat('c1');

@@ -13,6 +13,7 @@ import '../../features/attachments/data/attachment_store.dart';
 import '../../features/retrieval/news_desk.dart';
 import '../../features/zim/zim_wikipedia.dart';
 import '../../inference/engine/llama_engine.dart';
+import '../../inference/engine/litert_engine.dart';
 import '../../inference/engine/diffusiongemma_engine.dart';
 import '../../inference/remote/remote_engine.dart';
 import '../platform/device_info.dart';
@@ -22,6 +23,12 @@ final sessionBusyProvider = StateProvider<bool>((ref) => false);
 final diffusionGemmaEngineProvider = Provider<DiffusionGemmaEngine>((ref) {
   final engine = DiffusionGemmaEngine();
   ref.onDispose(engine.close);
+  return engine;
+});
+
+final liteRtEngineProvider = Provider<LiteRtEngine>((ref) {
+  final engine = LiteRtEngine();
+  ref.onDispose(engine.dispose);
   return engine;
 });
 

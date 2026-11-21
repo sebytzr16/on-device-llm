@@ -27,10 +27,16 @@ import '../../../core/platform/desktop_host.dart';
 /// A client may narrow a host permission but never raise one: web/MCP
 /// privileges stay what the host owner configured, and only known
 /// non-permission keys are accepted.
+///
+/// [principal] is the caller's identity from [WorkspaceApi.principalFor]:
+/// `local` (loopback), `legacy` (old shared token) or a paired device id.
+/// Host documents never reach the legacy token, and paired devices get them
+/// only while the host owner's sharing switch is on.
 InferenceSettings hostedWorkspaceSettings(
   InferenceSettings host,
-  Object? overrides,
-) {
+  Object? overrides, {
+  String? principal,
+}) {
   final merged = <String, dynamic>{...host.toJson()};
   final flags = {
     'toolsEnabled': host.toolsEnabled,
@@ -70,7 +76,21 @@ InferenceSettings hostedWorkspaceSettings(
       if (_workspaceOverrides.contains(key)) merged[key] = value;
     }
   }
-  return InferenceSettings.fromJson(merged).copyWith(remoteEnabled: false);
+  // The host switch is not a client setting: never let a submitted key (or a
+  // future entry in _workspaceOverrides) change it.
+  merged['hostShareDocuments'] = host.hostShareDocuments;
+  final paired =
+      principal != null && principal != 'local' && principal != 'legacy';
+  return InferenceSettings.fromJson(merged).copyWith(
+    remoteEnabled: false,
+    // Paired devices read the host's knowledge collection only when the
+    // host owner turned sharing on (loopback jobs keep their access, the
+    // legacy token never gets documents).
+    toolDocuments:
+        host.toolDocuments &&
+        merged['toolDocuments'] == true &&
+        (principal == 'local' || (paired && host.hostShareDocuments)),
+  );
 }
 
 /// Non-permission per-job settings; no `agent*` wildcard, so a future
@@ -102,6 +122,23 @@ int _webRank(AgentWebAccess access) => switch (access) {
   AgentWebAccess.alwaysAllow => 2,
 };
 
+/// Capabilities every workspace client negotiates. Host documents are
+/// advertised to the loopback principal and, when the host owner turns the
+/// hosting page's sharing switch on, to paired devices too; otherwise they
+/// must not offer a flow that cannot answer.
+const workspaceCapabilities = [
+  'server_execution',
+  'agents',
+  'tools',
+  'web',
+  'vision',
+  'uploads',
+  'activity',
+  'reconnect',
+  'approvals',
+];
+const workspaceLocalCapabilities = ['documents'];
+
 WorkspaceApi hostedWorkspace({
   required Ref ref,
   required int Function() port,
@@ -114,26 +151,20 @@ WorkspaceApi hostedWorkspace({
   late final WorkspaceApi api;
   api = WorkspaceApi(
     uploads: uploads,
-    capabilities: const [
-      'server_execution',
-      'agents',
-      'tools',
-      'web',
-      'vision',
-      'documents',
-      'uploads',
-      'activity',
-      'reconnect',
-      'approvals',
-    ],
+    capabilities: workspaceCapabilities,
+    localCapabilities: workspaceLocalCapabilities,
+    // Read per request so the capabilities answer follows the switch.
+    shareDocuments: () => hostSettings().hostShareDocuments,
     run: (job, input) async {
       final model =
           input['model'] is String && (input['model'] as String).isNotEmpty
           ? input['model'] as String
           : primaryModel;
+      final principal = api.principalFor(job);
       final settings = hostedWorkspaceSettings(
         hostSettings(),
         input['settings'],
+        principal: principal,
       );
       final files = <File>[];
       final client = RemoteEngine();
@@ -305,7 +336,18 @@ WorkspaceApi hostedWorkspace({
               PhoneActions.wanted(
                 '${messages.where((m) => m['role'] == 'user').lastOrNull?['content'] ?? ''}',
               ),
-          knowledge: ref.read(knowledgeStoreProvider),
+          knowledge: settings.toolDocuments
+              ? ref.read(knowledgeStoreProvider)
+              : null,
+          // Loopback keeps its access; every other job re-checks the live
+          // switch before each search, so turning sharing off ends a running
+          // paired job's document access at once.
+          knowledgeAccess: principal == 'local'
+              ? null
+              : () {
+                  final live = hostSettings();
+                  return live.hostShareDocuments && live.toolDocuments;
+                },
           newsDesk: ref.read(newsDeskProvider),
           externalTools: DesktopHost.active && settings.toolsEnabled
               ? ref.read(mcpRegistryProvider).specs
@@ -323,12 +365,7 @@ WorkspaceApi hostedWorkspace({
                           !job.cancel.isCancelled &&
                           !job.terminal &&
                           settings.toolsEnabled,
-                      confirmation: (server, call) async =>
-                          await job.approve(
-                            'MCP: $server / ${call.name}\n${call.jsonArguments}',
-                          )
-                          ? McpConsent.once
-                          : McpConsent.deny,
+                      requireHostConfirmation: true,
                     ),
           settings: settings,
           cancel: job.cancel,

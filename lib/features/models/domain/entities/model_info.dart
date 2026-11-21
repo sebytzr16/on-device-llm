@@ -192,13 +192,25 @@ class ModelInfo {
     this.downloadedAt,
   });
 
+  static bool isLiteRtFile(String path) =>
+      path.toLowerCase().endsWith('.litertlm');
+
+  bool get isLiteRt => isLiteRtFile(localPath ?? fileName);
+
+  /// Whether the model can take photos. A LiteRT-LM file names its own input
+  /// modalities when the runtime opens it (ModelInfo), so every LiteRT model
+  /// is offered vision and a text-only one loads without a vision backend;
+  /// the app must not keep its own list of which files can see.
+  bool get liteRtVision => isLiteRt;
+
   /// The quant to show: the file name's own tag (Q8_K_P, Q4_K_XL), else
   /// the member, else "GGUF".
-  String get quantLabel =>
-      ModelQuantization.tagOf(fileName) ??
-      (quantization == ModelQuantization.unknown
-          ? 'GGUF'
-          : quantization.name.toUpperCase());
+  String get quantLabel => isLiteRt
+      ? 'LiteRT'
+      : ModelQuantization.tagOf(fileName) ??
+            (quantization == ModelQuantization.unknown
+                ? 'GGUF'
+                : quantization.name.toUpperCase());
 
   String get sizeLabel {
     final gb = sizeBytes / (1024 * 1024 * 1024);

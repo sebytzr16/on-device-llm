@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import '../../core/logging/quiet_failure.dart';
 import '../../inference/engine/llama_engine.dart';
 import '../../inference/engine/text_engine.dart';
 import '../models/domain/entities/model_info.dart';
@@ -97,6 +98,9 @@ class _Slot {
   final LlamaEngine engine;
   Future<void>? loading;
   bool busy = false;
+
+  /// Set by whoever starts freeing [engine]: only one owner may free it.
+  bool freeing = false;
   DateTime lastUsed;
   _Slot(this.model, this.engine, this.lastUsed);
 }
@@ -229,8 +233,10 @@ class ModelPool implements ServedModelRouter {
     try {
       await load(slot.model, slot.engine);
     } catch (e) {
-      _slots.remove(slot.model.id);
-      unawaited(_free(slot.engine));
+      if (identical(_slots[slot.model.id], slot)) {
+        _slots.remove(slot.model.id);
+      }
+      unawaited(_free(slot));
       onChange?.call();
       throw RouteRefusal(
         HttpStatus.serviceUnavailable,
@@ -334,15 +340,27 @@ class ModelPool implements ServedModelRouter {
     while ((slot.busy || slot.loading != null) && clock.elapsed < wait) {
       await Future<void>.delayed(const Duration(milliseconds: 100));
     }
+    // A failed load during the wait already freed this slot and its engine;
+    // freeing it here too would free the same engine twice (audit 06a1-5).
+    if (!identical(_slots[id], slot)) return;
     if (slot.busy) {
       throw StateError('$id is still answering a request.');
     }
-    if (_slots[id] == slot) _slots.remove(id);
+    // Freeing a slot whose load is still running would pull the engine out
+    // from under it and make the load's catch free it a second time.
+    if (slot.loading != null) {
+      throw StateError('$id is still loading.');
+    }
+    _slots.remove(id);
     onChange?.call();
-    await _free(slot.engine);
+    await _free(slot);
   }
 
-  static Future<void> _free(LlamaEngine engine) async {
+  /// Frees [slot]'s engine once, whoever gets here first.
+  static Future<void> _free(_Slot slot) async {
+    if (slot.freeing) return;
+    slot.freeing = true;
+    final engine = slot.engine;
     final clock = Stopwatch()..start();
     while (engine.isBusy && clock.elapsed < const Duration(seconds: 30)) {
       await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -371,8 +389,33 @@ class ModelPool implements ServedModelRouter {
               clock.elapsed < const Duration(minutes: 2)) {
             await Future<void>.delayed(const Duration(milliseconds: 100));
           }
-          await _free(s.engine);
+          if (s.loading != null) {
+            // The load outlasted the wait: free the engine when it settles
+            // instead of pulling it out from under the load (audit 06a1-6).
+            unawaited(_freeWhenSettled(s));
+            return;
+          }
+          await _free(s);
         }(),
     ]);
+  }
+
+  /// Frees [slot] after its load settles; a failed load may already have.
+  static Future<void> _freeWhenSettled(_Slot slot) async {
+    final loading = slot.loading;
+    if (loading != null) {
+      try {
+        await loading;
+      } catch (_) {
+        // The load's own failure path frees the engine; [_free] avoids a
+        // second free.
+      }
+    }
+    try {
+      await _free(slot);
+    } catch (e, st) {
+      // Shutdown has already returned; report instead of failing unobserved.
+      quietFailure('model_pool:414', e, st);
+    }
   }
 }

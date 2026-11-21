@@ -1,3 +1,4 @@
+import '../../../../inference/engine/engine_registry_provider.dart';
 import '../../../optimize/optimize_controller.dart';
 import '../../../optimize/optimize_settings_row.dart';
 import 'package:flutter/material.dart';
@@ -12,8 +13,10 @@ import '../../../../core/design/app_sheet.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/utils/external_links.dart';
 import '../../../models/presentation/providers/model_manager_provider.dart';
+import '../../domain/setting_specs.dart';
 import '../../domain/entities/inference_settings.dart';
 import '../providers/settings_provider.dart';
+import '../setting_labels.dart';
 import '../widgets/settings_labels.dart';
 import '../widgets/settings_widgets.dart';
 import '../widgets/device_encryption_setting.dart';
@@ -65,6 +68,9 @@ class SettingsScreen extends ConsumerWidget {
     final c = context.colors;
     final pc = context.isDesktop;
     final whole = only == null;
+    final engine = s.usesRemote ? null : ref.watch(activeModelEngineProvider);
+    final capabilities = engine?.capabilities;
+    bool uses(String key) => SettingSpec.byKey(key)!.usedBy(capabilities);
 
     return Scaffold(
       appBar: AppBar(
@@ -140,7 +146,7 @@ class SettingsScreen extends ConsumerWidget {
                     title: Text(context.l10n.webResearch),
                     subtitle: Text(webModeLabel(s.webMode, context.l10n)),
                     trailing: const Icon(Icons.chevron_right, size: 20),
-                    onTap: () => _pickWebMode(context, s, n),
+                    onTap: () => _pickWebMode(context, ref, s, n),
                   ),
                   // The desktop panel gives these their own categories.
                   if (whole) ...[
@@ -427,46 +433,67 @@ class SettingsScreen extends ConsumerWidget {
                   style: context.text.small,
                 ),
               ),
+              if (engine != null && capabilities?.visibleSettingKeys != null)
+                SettingsNote(
+                  context.l10n.engineUnusedSettings(engine.displayName),
+                ),
               SettingsGroup(
                 children: [
-                  _DrillRow(
-                    icon: Icons.data_array,
-                    mono: true,
-                    title: context.l10n.contextAndBatch,
-                    summary: context.l10n.settingsContextBatchSummary(
-                      s.contextAuto
-                          ? context.l10n.webAuto
-                          : tokenCount(s.contextSize),
-                      s.batchSize == 0
-                          ? context.l10n.webAuto
-                          : '${s.batchSize}',
-                      s.promptCache
-                          ? context.l10n.summaryOn
-                          : context.l10n.summaryOff,
+                  if (capabilities?.loadKeys.contains('liteRtBackend') == true)
+                    _DrillRow(
+                      icon: Icons.developer_board,
+                      title: context.l10n.liteRtBackend,
+                      summary: nativeSettingOption(
+                        context.l10n,
+                        'liteRtBackend',
+                        ref
+                            .watch(effectiveSettingsProvider)
+                            .effective
+                            .liteRtBackend
+                            .name,
+                      )!,
+                      onTap: () => openActiveModelProfile(context, ref),
                     ),
-                    page: const ContextBatchPage(),
-                  ),
-                  _DrillRow(
-                    icon: Icons.developer_board,
-                    mono: true,
-                    title: context.l10n.hardware,
-                    summary: context.l10n.settingsHardwareSummary(
-                      backendShort(s.backend, context.l10n),
-                      s.nGpuLayers == 999
-                          ? 'all'
-                          : s.nGpuLayers == 1
-                          ? 'one'
-                          : '${s.nGpuLayers}',
-                      s.cpuThreads == 0
-                          ? context.l10n.webAuto
-                          : '${s.cpuThreads}',
-                      s.batchThreads == 0
-                          ? context.l10n.webAuto
-                          : '${s.batchThreads}',
-                      s.kvCacheType.name,
+                  if (uses('contextSize'))
+                    _DrillRow(
+                      icon: Icons.data_array,
+                      mono: true,
+                      title: context.l10n.contextAndBatch,
+                      summary: context.l10n.settingsContextBatchSummary(
+                        s.contextAuto
+                            ? context.l10n.webAuto
+                            : tokenCount(s.contextSize),
+                        s.batchSize == 0
+                            ? context.l10n.webAuto
+                            : '${s.batchSize}',
+                        s.promptCache
+                            ? context.l10n.summaryOn
+                            : context.l10n.summaryOff,
+                      ),
+                      page: const ContextBatchPage(),
                     ),
-                    page: const HardwarePage(),
-                  ),
+                  if (uses('backend'))
+                    _DrillRow(
+                      icon: Icons.developer_board,
+                      mono: true,
+                      title: context.l10n.hardware,
+                      summary: context.l10n.settingsHardwareSummary(
+                        backendShort(s.backend, context.l10n),
+                        s.nGpuLayers == 999
+                            ? 'all'
+                            : s.nGpuLayers == 1
+                            ? 'one'
+                            : '${s.nGpuLayers}',
+                        s.cpuThreads == 0
+                            ? context.l10n.webAuto
+                            : '${s.cpuThreads}',
+                        s.batchThreads == 0
+                            ? context.l10n.webAuto
+                            : '${s.batchThreads}',
+                        s.kvCacheType.name,
+                      ),
+                      page: const HardwarePage(),
+                    ),
                   _DrillRow(
                     icon: Icons.short_text_rounded,
                     mono: true,
@@ -510,69 +537,78 @@ class SettingsScreen extends ConsumerWidget {
                     ),
                     page: const ReasoningSearchPage(),
                   ),
-                  _DrillRow(
-                    icon: Icons.storage_outlined,
-                    mono: true,
-                    title: context.l10n.uiSettingsScreenMemoryRoPESpeculation,
-                    summary: context.l10n.settingsRopeSummary(
-                      s.kvCacheType.name,
-                      s.vCacheType?.name ?? context.l10n.summarySame,
-                      s.ropeScaling.name,
-                      s.draftModelId.isEmpty ? '' : context.l10n.summaryDraftOn,
+                  if (uses('ropeScaling'))
+                    _DrillRow(
+                      icon: Icons.storage_outlined,
+                      mono: true,
+                      title: context.l10n.uiSettingsScreenMemoryRoPESpeculation,
+                      summary: context.l10n.settingsRopeSummary(
+                        s.kvCacheType.name,
+                        s.vCacheType?.name ?? context.l10n.summarySame,
+                        s.ropeScaling.name,
+                        s.draftModelId.isEmpty
+                            ? ''
+                            : context.l10n.summaryDraftOn,
+                      ),
+                      page: const MemoryRopePage(),
                     ),
-                    page: const MemoryRopePage(),
-                  ),
-                  _DrillRow(
-                    icon: Icons.data_object,
-                    mono: true,
-                    title: context.l10n.uiSettingsScreenStructuredOutput,
-                    summary: switch (s.responseFormat) {
-                      ResponseFormat.text => context.l10n.outputFreeText,
-                      ResponseFormat.json => 'JSON',
-                      ResponseFormat.jsonSchema =>
-                        context.l10n.uiAdvancedStructuredOutputPageJSONSchema,
-                      ResponseFormat.gbnf =>
-                        context.l10n.uiAdvancedStructuredOutputPageGBNFGrammar,
-                    },
-                    page: const StructuredOutputPage(),
-                  ),
-                  _DrillRow(
-                    icon: Icons.handyman_outlined,
-                    mono: true,
-                    title: context.l10n.uiSettingsScreenTools,
-                    summary: s.toolsEnabled
-                        ? context.l10n.settingsToolsSummary(
-                            s.toolMaxRounds,
-                            s.toolCalculator
-                                ? context.l10n.summaryCalculator
-                                : '',
-                            s.toolWeb && s.webSearchEnabled
-                                ? context.l10n.summaryWeb
-                                : '',
-                            s.toolDocuments && s.knowledgeCollection.isNotEmpty
-                                ? context.l10n.summaryDocuments
-                                : '',
-                          )
-                        : context.l10n.settingsToolsOff,
-                    page: const ToolsPage(),
-                  ),
-                  _DrillRow(
-                    icon: Icons.extension_outlined,
-                    mono: true,
-                    title: context.l10n.uiSettingsScreenLoRAAdapters,
-                    summary: () {
-                      final a = ref.watch(adaptersProvider);
-                      final attached = a.attachments.values.fold<int>(
-                        0,
-                        (n, l) => n + l.length,
-                      );
-                      return context.l10n.settingsAdaptersSummary(
-                        a.adapters.length,
-                        attached,
-                      );
-                    }(),
-                    page: const AdaptersPage(),
-                  ),
+                  if (uses('responseFormat'))
+                    _DrillRow(
+                      icon: Icons.data_object,
+                      mono: true,
+                      title: context.l10n.uiSettingsScreenStructuredOutput,
+                      summary: switch (s.responseFormat) {
+                        ResponseFormat.text => context.l10n.outputFreeText,
+                        ResponseFormat.json => 'JSON',
+                        ResponseFormat.jsonSchema =>
+                          context.l10n.uiAdvancedStructuredOutputPageJSONSchema,
+                        ResponseFormat.gbnf =>
+                          context
+                              .l10n
+                              .uiAdvancedStructuredOutputPageGBNFGrammar,
+                      },
+                      page: const StructuredOutputPage(),
+                    ),
+                  if (capabilities?.tools != false)
+                    _DrillRow(
+                      icon: Icons.handyman_outlined,
+                      mono: true,
+                      title: context.l10n.uiSettingsScreenTools,
+                      summary: s.toolsEnabled
+                          ? context.l10n.settingsToolsSummary(
+                              s.toolMaxRounds,
+                              s.toolCalculator
+                                  ? context.l10n.summaryCalculator
+                                  : '',
+                              s.toolWeb && s.webSearchEnabled
+                                  ? context.l10n.summaryWeb
+                                  : '',
+                              s.toolDocuments &&
+                                      s.knowledgeCollection.isNotEmpty
+                                  ? context.l10n.summaryDocuments
+                                  : '',
+                            )
+                          : context.l10n.settingsToolsOff,
+                      page: const ToolsPage(),
+                    ),
+                  if (uses('backend'))
+                    _DrillRow(
+                      icon: Icons.extension_outlined,
+                      mono: true,
+                      title: context.l10n.uiSettingsScreenLoRAAdapters,
+                      summary: () {
+                        final a = ref.watch(adaptersProvider);
+                        final attached = a.attachments.values.fold<int>(
+                          0,
+                          (n, l) => n + l.length,
+                        );
+                        return context.l10n.settingsAdaptersSummary(
+                          a.adapters.length,
+                          attached,
+                        );
+                      }(),
+                      page: const AdaptersPage(),
+                    ),
                   _DrillRow(
                     icon: Icons.fact_check_outlined,
                     mono: true,
@@ -700,6 +736,7 @@ class SettingsScreen extends ConsumerWidget {
 
   Future<void> _pickWebMode(
     BuildContext context,
+    WidgetRef ref,
     InferenceSettings s,
     SettingsNotifier n,
   ) async {
@@ -731,10 +768,12 @@ class SettingsScreen extends ConsumerWidget {
       ),
     );
     if (picked == null || picked == s.webMode) return;
-    if (picked != WebMode.off &&
-        s.webMode == WebMode.off &&
-        context.mounted &&
-        !await _confirmWebSearch(context)) {
+    if (!context.mounted) return;
+    if (!await confirmWebModeChange(
+      context,
+      ref,
+      SettingsChange(global: s.copyWith(webMode: picked)),
+    )) {
       return;
     }
     await n.update(s.copyWith(webMode: picked));
@@ -749,18 +788,6 @@ class SettingsScreen extends ConsumerWidget {
       destructive: true,
     );
     if (ok == true) await n.reset();
-  }
-
-  /// Web search is the one feature that sends user text off the device, so
-  /// turning it on is an explicit, informed step.
-  Future<bool> _confirmWebSearch(BuildContext context) async {
-    final ok = await confirmAction(
-      context,
-      title: context.l10n.enableWebQuestion,
-      message: context.l10n.enableWebHint,
-      confirmLabel: context.l10n.enable,
-    );
-    return ok == true;
   }
 
   Future<void> _editSystemPrompt(
@@ -849,10 +876,20 @@ class _ActiveModelRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
     final m = ref.watch(modelManagerProvider.select((s) => s.loadedModel));
+    final capabilities = ref
+        .watch(engineRegistryProvider)
+        .descriptorFor(m)
+        .capabilities;
+    final backend = capabilities.loadKeys.contains('liteRtBackend')
+        ? ref.watch(activeLocalEngineProvider).metrics['backend'] as String?
+        : null;
     final tags = m == null
         ? null
         : [
             m.quantLabel,
+            if (backend != null)
+              nativeSettingOption(context.l10n, 'liteRtBackend', backend) ??
+                  backend,
             if (m.parameterCountB != null) '${m.parameterCountB}B',
             m.sizeLabel,
             m.family.name,

@@ -13,6 +13,7 @@ import 'package:ondevice_llm/desktop/title_bar.dart';
 import 'package:ondevice_llm/features/attachments/presentation/attachment_chips.dart';
 import 'package:ondevice_llm/features/chat/presentation/providers/chat_provider.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
+import 'package:ondevice_llm/features/presets/domain/preset.dart';
 import 'package:ondevice_llm/features/presets/presentation/providers/presets_provider.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:ondevice_llm/features/settings/presentation/providers/effective_settings_provider.dart';
@@ -198,10 +199,12 @@ void main() {
     );
     await tester.tap(find.text(t.webLocal));
     await tester.pumpAndSettle();
-    if (find.byType(AlertDialog).evaluate().isNotEmpty) {
-      await tester.tap(find.widgetWithText(FilledButton, t.turnOn));
-      await tester.pumpAndSettle();
-    }
+    // Leaving Local asks the shared web question every time: the old
+    // once-per-run flag skipped later Off → Auto steps (audit 2026-11-20
+    // P1-4).
+    expect(find.text(t.enableWebQuestion), findsOneWidget);
+    await tester.tap(find.text(t.enable));
+    await tester.pumpAndSettle();
     expect(container.read(settingsProvider).webMode, WebMode.auto);
     expect(find.text(t.webAuto), findsOneWidget);
     await tester.tap(find.text(t.webAuto));
@@ -211,6 +214,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(container.read(settingsProvider).webMode, WebMode.off);
     expect(find.text(t.webLocal), findsOneWidget);
+    // The second trip out of Local in the same run is asked about too.
+    await tester.tap(find.text(t.webLocal));
+    await tester.pumpAndSettle();
+    expect(find.text(t.enableWebQuestion), findsOneWidget);
+    await tester.tap(find.text(t.cancel));
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).webMode, WebMode.off);
     await tester.tap(find.byIcon(Icons.build_outlined));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('quick-tools-enabled')));
@@ -222,6 +232,50 @@ void main() {
     await tester.tap(find.byKey(const Key('quick-tools-enabled')));
     await tester.pumpAndSettle();
     expect(container.read(chatOverridesProvider)['toolsEnabled'], isFalse);
+  });
+
+  testWidgets('a composer preset that enables web research asks first', (
+    tester,
+  ) async {
+    await mount(tester);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(DesktopChatPane)),
+    );
+    final presets = container.read(presetsProvider.notifier);
+    await presets.ready;
+    final web = await presets.create(
+      const Preset(
+        id: '',
+        name: 'Web',
+        emoji: '🌐',
+        systemPrompt: '',
+        webMode: WebMode.auto,
+      ),
+      activate: false,
+    );
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).webMode, WebMode.off);
+    expect(container.read(presetsProvider).activeId, 'general');
+    // Picking a preset that turns web research on from the composer pill
+    // asks the globe button's question before it becomes the next message's
+    // (audit 2026-11-20 P1-4); the old code activated it silently.
+    await tester.tap(find.text('General'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(MenuItemButton, 'Web'));
+    await tester.pumpAndSettle();
+    expect(find.text(t.enableWebQuestion), findsOneWidget);
+    expect(container.read(presetsProvider).activeId, 'general');
+    await tester.tap(find.text(t.cancel));
+    await tester.pumpAndSettle();
+    expect(container.read(presetsProvider).activeId, 'general');
+    await tester.tap(find.text('General'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(MenuItemButton, 'Web'));
+    await tester.pumpAndSettle();
+    expect(find.text(t.enableWebQuestion), findsOneWidget);
+    await tester.tap(find.text(t.enable));
+    await tester.pumpAndSettle();
+    expect(container.read(presetsProvider).activeId, web.id);
   });
 
   testWidgets('model picker opens its model menu without loading a bridge', (

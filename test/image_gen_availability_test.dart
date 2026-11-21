@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ondevice_llm/core/l10n/l10n.dart';
 import 'package:ondevice_llm/data/network/hugging_face.dart';
+import 'package:ondevice_llm/data/storage/download_history.dart';
 import 'package:ondevice_llm/features/image_gen/domain/entities/image_gen_model.dart';
 import 'package:ondevice_llm/features/image_gen/image_gen_downloads.dart';
 import 'package:ondevice_llm/features/image_gen/image_gen_imports.dart';
@@ -44,6 +45,13 @@ class _Downloads extends ImageGenDownloadsNotifier {
 class _Models extends ModelManagerNotifier {
   @override
   ModelManagerState build() => const ModelManagerState();
+}
+
+class _Imports extends ImageGenImportsNotifier {
+  final List<ImageGenModel> models;
+  _Imports(this.models);
+  @override
+  List<ImageGenModel> build() => models;
 }
 
 void main() {
@@ -199,7 +207,7 @@ void main() {
       expect(find.text(first.displayName), findsOneWidget);
       expect(find.text(second.displayName), findsOneWidget);
       expect(find.textContaining('50.0 %'), findsOneWidget);
-      expect(find.textContaining('1 MB/s'), findsOneWidget);
+      expect(find.textContaining('1.0 MB/s'), findsOneWidget);
       await tester.tap(find.text('Pause'));
       expect(downloads.pausedId, first.id);
       await tester.tap(find.text('Resume'));
@@ -209,4 +217,45 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('a history row for a model of unknown size shows no percent', (
+    tester,
+  ) async {
+    final model = importedImageGenModel(
+      repo: 'owner/repo',
+      revision: 'main',
+      file: const HfFile(name: 'tiny-diffusion-Q4_0.gguf', size: 0, sha256: ''),
+      license: 'Apache-2.0',
+      mode: ImageGenMode.image,
+    );
+    final record = DownloadRecord(
+      attempt: 'zero-size',
+      modelId: model.downloadKey,
+      name: model.displayName,
+      result: 'paused',
+      size: 0,
+      date: DateTime(2026, 11, 20),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          // The row is the subject here: the history stream is handed to the
+          // page directly, so the test never waits on a preferences write or on
+          // a controller that may not emit before the test ends.
+          downloadHistoryProvider.overrideWith((ref) => Stream.value([record])),
+          imageGenImportsProvider.overrideWith(() => _Imports([model])),
+          imageGenDownloadsProvider.overrideWith(
+            () => _Downloads(const ImageGenDownloadsState({})),
+          ),
+          modelManagerProvider.overrideWith(_Models.new),
+        ],
+        child: const MaterialApp(home: Scaffold(body: DownloadCenter())),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(model.displayName), findsOneWidget);
+    expect(find.text('Paused'), findsOneWidget);
+    expect(find.textContaining('NaN'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }

@@ -1,3 +1,4 @@
+import '../../../../inference/engine/engine_registry_provider.dart';
 import '../screens/model_details_page.dart';
 import 'model_capabilities.dart';
 import 'package:flutter/material.dart';
@@ -92,6 +93,11 @@ class ModelCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final canBenchmark = ref
+        .watch(engineRegistryProvider)
+        .descriptorFor(model)
+        .capabilities
+        .benchmark;
     final c = context.colors;
     final status = progress?.status;
     final downloading =
@@ -319,15 +325,16 @@ class ModelCard extends ConsumerWidget {
               const SizedBox(height: AppSpace.xs),
               Row(
                 children: [
-                  Expanded(
-                    child: _QuietAction(
-                      key: Key('benchmark-${model.id}'),
-                      icon: Icons.speed_outlined,
-                      label: benchmarkSummary ?? context.l10n.benchmark,
-                      onPressed: busy ? null : onBenchmark,
+                  if (canBenchmark)
+                    Expanded(
+                      child: _QuietAction(
+                        key: Key('benchmark-${model.id}'),
+                        icon: Icons.speed_outlined,
+                        label: benchmarkSummary ?? context.l10n.benchmark,
+                        onPressed: busy ? null : onBenchmark,
+                      ),
                     ),
-                  ),
-                  BenchmarkHistoryButton(modelId: model.id),
+                  if (canBenchmark) BenchmarkHistoryButton(modelId: model.id),
                   if (onProfile != null)
                     Expanded(
                       child: _QuietAction(

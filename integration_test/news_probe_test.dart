@@ -55,7 +55,10 @@ class _Settings extends SettingsNotifier {
   }
 
   @override
-  Future<void> update(InferenceSettings next) async => state = next;
+  Future<void> update(
+    InferenceSettings next, {
+    bool requirePersistence = false,
+  }) async => state = next;
 }
 
 class _Models extends ModelManagerNotifier {
@@ -129,7 +132,7 @@ void main() {
     });
     for (final chat in questions) {
       final n = container.read(chatProvider.notifier);
-      n.newChat();
+      await n.newChat();
       for (final q in chat) {
         final notices = <String>[];
         final sub = container.listen(chatProvider, (_, next) {

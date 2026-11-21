@@ -86,7 +86,10 @@ class _Settings extends SettingsNotifier {
   }
 
   @override
-  Future<void> update(InferenceSettings next) async => state = next;
+  Future<void> update(
+    InferenceSettings next, {
+    bool requirePersistence = false,
+  }) async => state = next;
 }
 
 class _Models extends ModelManagerNotifier {
@@ -180,7 +183,7 @@ void main() {
       final unanswerable = item['unanswerable'] == true;
       SemanticRerank.lastTrim = null;
       final n = container.read(chatProvider.notifier);
-      n.newChat();
+      await n.newChat();
       final before = {...?frozen?.calls};
       final clock = Stopwatch()..start();
       final ok = await n.send(q);

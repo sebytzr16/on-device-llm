@@ -16,6 +16,19 @@ void main() {
     expect(InferenceSettings.fromJson(tuned.toJson()).toJson(), tuned.toJson());
     expect(tuned.effectiveGpuLayers, 0);
   });
+  test('document sharing with paired devices is off unless saved on', () {
+    expect(const InferenceSettings().hostShareDocuments, isFalse);
+    expect(InferenceSettings.fromJson({}).hostShareDocuments, isFalse);
+    final shared = const InferenceSettings().copyWith(hostShareDocuments: true);
+    expect(
+      InferenceSettings.fromJson(shared.toJson()).hostShareDocuments,
+      isTrue,
+    );
+    expect(
+      InferenceSettings.fromJson(shared.toJson()).toJson(),
+      shared.toJson(),
+    );
+  });
   test('invalid persisted settings cannot request unsafe allocations', () {
     final s = InferenceSettings.fromJson({
       'contextSize': -100,

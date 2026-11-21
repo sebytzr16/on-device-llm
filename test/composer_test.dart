@@ -8,6 +8,7 @@ import 'package:ondevice_llm/features/models/presentation/providers/model_manage
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:ondevice_llm/features/settings/presentation/providers/settings_provider.dart';
 import 'package:ondevice_llm/features/share/reader_actions.dart';
+import 'package:ondevice_llm/features/voice/voice_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'settings_widgets_test.dart' show TestModels, TestSettings;
@@ -95,6 +96,64 @@ void main() {
     expect(ReaderActions.linkIn('no link'), isNull);
   });
 
+  testWidgets('the globe asks every time it leaves Local, not once per run', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(412, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = TextEditingController();
+    addTearDown(controller.dispose);
+    final container = ProviderContainer(
+      overrides: [
+        settingsProvider.overrideWith(TestSettings.new),
+        modelManagerProvider.overrideWith(TestModels.new),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: AppTheme.dark,
+          home: Scaffold(
+            body: ChatComposer(
+              controller: controller,
+              busy: false,
+              canSend: true,
+              onSend: () {},
+              onStop: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    final dialog = find.text('Enable web search?');
+    // Local → Auto asks, then Auto → Always and Always → Local do not.
+    await tester.tap(find.byKey(const Key('web-pill')));
+    await tester.pumpAndSettle();
+    expect(dialog, findsOneWidget);
+    await tester.tap(find.text('Enable'));
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).webMode, WebMode.auto);
+    for (final expected in [WebMode.always, WebMode.off]) {
+      await tester.tap(find.byKey(const Key('web-pill')));
+      await tester.pumpAndSettle();
+      expect(container.read(settingsProvider).webMode, expected);
+    }
+    // Going Local again in the same run is a new Off → Auto step: the old
+    // once-per-run flag let it through without asking (audit 2026-11-20
+    // P1-4).
+    await tester.tap(find.byKey(const Key('web-pill')));
+    await tester.pumpAndSettle();
+    expect(dialog, findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).webMode, WebMode.off);
+  });
+
   testWidgets('a shared link offers reader actions, only with web on', (
     tester,
   ) async {
@@ -143,6 +202,78 @@ void main() {
       startsWith('Read this article and list its key points'),
     );
   });
+
+  testWidgets('leaving the screen stops the mic and drops a late transcript', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final voice = FakeVoice();
+    final controller = TextEditingController();
+    // The chat screen owns this controller and disposes it on the way out.
+    Widget build() => ProviderScope(
+      overrides: [
+        settingsProvider.overrideWith(TestSettings.new),
+        modelManagerProvider.overrideWith(TestModels.new),
+        voiceProvider.overrideWith(() => voice),
+      ],
+      child: MaterialApp(
+        theme: AppTheme.dark,
+        home: Scaffold(
+          body: ChatComposer(
+            controller: controller,
+            busy: false,
+            canSend: true,
+            onSend: () {},
+            onStop: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(build());
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('dictate')));
+    await tester.pump();
+    expect(voice.said, isNotNull, reason: 'dictation started');
+    expect(voice.stops, 0);
+
+    // The screen goes away while the recognizer keeps listening.
+    await tester.pumpWidget(const MaterialApp(home: Scaffold()));
+    await tester.pump();
+    expect(
+      voice.stops,
+      1,
+      reason: 'the mic must not stay open (review 2026-11-20)',
+    );
+    controller.dispose();
+
+    // A transcript that arrives afterwards is dropped instead of being typed
+    // into the disposed field.
+    expect(() => voice.said!('hello'), returnsNormally);
+  });
+}
+
+/// Records the callbacks and stops; it never opens a microphone.
+class FakeVoice extends VoiceNotifier {
+  int stops = 0;
+  ValueChanged<String>? said;
+  @override
+  VoiceState build() => const VoiceState();
+  @override
+  Future<void> listen({
+    required ValueChanged<String> onText,
+    ValueChanged<String>? onFinal,
+    bool onDeviceOnly = true,
+    String? localeId,
+  }) async {
+    said = onText;
+    state = state.copyWith(listening: true);
+  }
+
+  @override
+  Future<void> stop() async {
+    stops++;
+    state = state.copyWith(listening: false);
+  }
 }
 
 class WebSettings extends TestSettings {

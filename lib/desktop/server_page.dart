@@ -16,6 +16,7 @@ import '../features/hosting/presentation/device_hosting_provider.dart';
 import '../features/hosting/presentation/pool_options_provider.dart';
 import '../features/hosting/presentation/qr_view.dart';
 import '../features/models/presentation/providers/model_manager_provider.dart';
+import '../features/settings/presentation/providers/settings_provider.dart';
 import 'developer_widgets.dart';
 import '../core/platform/desktop_preferences.dart';
 import 'lan_check.dart';
@@ -28,6 +29,23 @@ class DesktopServerPage extends ConsumerStatefulWidget {
 }
 
 class _DesktopServerPageState extends ConsumerState<DesktopServerPage> {
+  /// Paired devices search this PC's knowledge collection only while this
+  /// switch is on. Turning it on asks first; turning it off needs no confirm.
+  Future<void> _setShareDocuments(bool value) async {
+    if (ref.read(settingsProvider).hostShareDocuments == value) return;
+    if (value) {
+      final confirmed = await confirmAction(
+        context,
+        title: context.l10n.hostShareDocuments,
+        message: context.l10n.hostShareDocumentsConfirm,
+        confirmLabel: context.l10n.hostShareDocuments,
+      );
+      if (!confirmed || !mounted) return;
+    }
+    final next = ref.read(settingsProvider).copyWith(hostShareDocuments: value);
+    await ref.read(settingsProvider.notifier).update(next);
+  }
+
   final _port = TextEditingController(text: '8787');
   bool _reveal = false;
   bool _changingToken = false;
@@ -73,7 +91,7 @@ class _DesktopServerPageState extends ConsumerState<DesktopServerPage> {
     final poolOptions = ref.watch(poolOptionsProvider);
     final port = int.tryParse(_port.text);
     final valid = port != null && port >= 1 && port <= 65535;
-    final busy = host.starting || _changingToken;
+    final busy = host.starting || _changingToken || host.resettingIdentity;
     final hasModel = models.loadedModel != null && !models.isLoadingModel;
     final endpoint = host.endpoint;
     final base = endpoint ?? 'http://localhost:${valid ? port : 8787}/v1/';
@@ -220,9 +238,7 @@ class _DesktopServerPageState extends ConsumerState<DesktopServerPage> {
         ),
       ],
     );
-    final tlsError = t.hostTlsIdentityError;
-    final showResetIdentity =
-        (host.error == tlsError) || (_actionError == tlsError);
+    final showResetIdentity = host.tlsIdentityFailure;
     if (host.error != null || _actionError != null) {
       controls.children.add(
         Column(
@@ -236,20 +252,22 @@ class _DesktopServerPageState extends ConsumerState<DesktopServerPage> {
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: OutlinedButton.icon(
-                  onPressed: () async {
-                    final confirmed = await confirmAction(
-                      context,
-                      title: t.hostResetIdentity,
-                      message: t.hostResetIdentityConfirm,
-                      confirmLabel: t.hostResetIdentity,
-                      destructive: true,
-                    );
-                    if (confirmed && context.mounted) {
-                      await ref
-                          .read(deviceHostingProvider.notifier)
-                          .resetHostIdentity();
-                    }
-                  },
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          final confirmed = await confirmAction(
+                            context,
+                            title: t.hostResetIdentity,
+                            message: t.hostResetIdentityConfirm,
+                            confirmLabel: t.hostResetIdentity,
+                            destructive: true,
+                          );
+                          if (confirmed && context.mounted) {
+                            await ref
+                                .read(deviceHostingProvider.notifier)
+                                .resetHostIdentity();
+                          }
+                        },
                   icon: const Icon(Icons.refresh),
                   label: Text(t.hostResetIdentity),
                   style: OutlinedButton.styleFrom(
@@ -592,6 +610,26 @@ class _DesktopServerPageState extends ConsumerState<DesktopServerPage> {
           )
         else
           Text(t.desktopServerPairOff, style: context.text.small),
+        const SizedBox(height: AppSpace.section),
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(t.hostShareDocuments, style: context.text.body),
+                  Text(t.hostShareDocumentsHint, style: context.text.small),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            Switch(
+              key: const Key('host-share-documents'),
+              value: ref.watch(settingsProvider).hostShareDocuments,
+              onChanged: _setShareDocuments,
+            ),
+          ],
+        ),
         if (Platform.isWindows && lanOn) ...[
           const SizedBox(height: AppSpace.section),
           const _NetworkCheck(),

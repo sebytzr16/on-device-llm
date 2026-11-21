@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 
+import '../../../inference/engine/engine_descriptor.dart';
 import '../../../core/platform/cpu_cores.dart';
 import '../../../core/platform/desktop_host.dart';
 import 'entities/inference_settings.dart';
@@ -41,7 +43,27 @@ class SettingSpec {
         'draftModelId',
         'chatTemplate',
       }.contains(key);
-  bool get available => DesktopHost.active || !desktopOnly;
+  bool get modelOnly => key == 'liteRtBackend';
+  bool get available =>
+      modelOnly ? Platform.isAndroid : DesktopHost.active || !desktopOnly;
+
+  bool usedBy(EngineCapabilities? engine) {
+    if (engine == null) return true;
+    if (modelOnly) return engine.loadKeys.contains(key);
+    final keys = engine.visibleSettingKeys;
+    return keys == null ||
+        !const {
+          groupGeneration,
+          groupReasoning,
+          groupHardware,
+          groupContext,
+          groupTools,
+          groupOutput,
+        }.contains(group) ||
+        keys.contains(key);
+  }
+
+  bool get availableForLiteRt => usedBy(liteRtLmEngine.capabilities);
 
   /// Sampling belongs to each model. Answer length also has an app-wide
   /// default (owner 2026-11-08), overridden by model/preset/chat choices.
@@ -58,7 +80,8 @@ class SettingSpec {
   static const groupPrompt = 'Prompt';
 
   /// Settings offered by the current host, independent of stored profiles.
-  static List<SettingSpec> get visible => [...all.where((s) => s.available)];
+  static List<SettingSpec> get visible =>
+      all.where((s) => s.available && !s.modelOnly).toList();
 
   static const nativeKeys = {
     'useMmap',
@@ -82,6 +105,13 @@ class SettingSpec {
 
   /// Inference overrides only; profiles cannot change privacy or credentials.
   static final all = <SettingSpec>[
+    const SettingSpec(
+      key: 'liteRtBackend',
+      label: 'LiteRT backend',
+      group: groupHardware,
+      kind: SettingKind.choice,
+      options: ['auto', 'gpu', 'cpu'],
+    ),
     const SettingSpec(
       key: 'projectorDevice',
       label: 'Vision projector',

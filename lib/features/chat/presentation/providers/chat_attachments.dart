@@ -21,7 +21,9 @@ extension _ChatAttachments on ChatNotifier {
         assistantPrefix: '',
         tools: tools,
       );
-      if (budget['fits'] == true || _cancelled) break;
+      // A fit the engine cannot judge yet (a LiteRT window it has not
+      // measured) is not a deficit: cut only against a known limit.
+      if (budget['fits'] != false || _cancelled) break;
       Map<String, Object>? biggest;
       for (final m in toolMessages) {
         if (m['role'] != 'tool') continue;
@@ -114,7 +116,8 @@ extension _ChatAttachments on ChatNotifier {
         settings: settings,
         assistantPrefix: '',
       );
-      if (budget['fits'] == true || _cancelled) break;
+      // An unknown fit is not a deficit (see _fitToolResults).
+      if (budget['fits'] != false || _cancelled) break;
       final blocks = RegExp(
         r'\[File: ([^\]]+)\]\n([\s\S]*?)\n\[End of file: \1\]',
       ).allMatches(content).toList();

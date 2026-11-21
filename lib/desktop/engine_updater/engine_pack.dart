@@ -2,13 +2,129 @@ import 'dart:convert';
 
 import 'package:cryptography/cryptography.dart';
 
+import '../../inference/engine/engine_descriptor.dart';
+
 /// Owner's Ed25519 public key (base64) compiled into the app; the private key
 /// stays with the maintainer, outside the repo. While the placeholder is here every
 /// engine pack stays untrusted, so no update is ever offered or installed.
 const kEngineSigningPublicKey = 'ue7Sz6hfeSIttHyVHE3rYaaV8R7gSkxCNqhzkbzYaUQ=';
 
-/// Release tags of engine packs: `engine-b<build>` or `engine-b<build>-<rev>`.
-final enginePackTag = RegExp(r'^engine-b(\d+)(?:-(\d+))?$');
+/// Which GGUF engine a signed pack carries. Each kind has its own release tag
+/// shape, asset names and install folder, so a pack verified for one engine is
+/// never installed for another.
+enum EnginePackKind {
+  llamaCpp(
+    engineId: llamaCppEngineId,
+    assetBase: 'engine-pack-windows-x64',
+    folder: '',
+  ),
+  ikLlama(
+    engineId: ikLlamaEngineId,
+    assetBase: 'ik-engine-pack-windows-x64',
+    folder: ikLlamaEngineId,
+  );
+
+  const EnginePackKind({
+    required this.engineId,
+    required this.assetBase,
+    required this.folder,
+  });
+
+  final String engineId;
+
+  /// Manifest, signature and zip names on the release.
+  final String assetBase;
+
+  /// Sub-folder of the engines root; empty for llama.cpp itself.
+  final String folder;
+
+  String get manifestAsset => '$assetBase.json';
+  String get signatureAsset => '$manifestAsset.sig';
+  String get zipAsset => '$assetBase.zip';
+
+  /// Release tag shape: `engine-b<build>[-<rev>]` for llama.cpp and
+  /// `ik-<commit 7..40>[-<rev>]` for ik_llama.cpp.
+  RegExp get tagPattern => this == llamaCpp
+      ? RegExp(r'^engine-b(\d+)(?:-(\d+))?$')
+      : RegExp(r'^ik-([0-9a-f]{7,40})(?:-(\d+))?$');
+
+  /// The engine identifier (a commit prefix for ik) and revision in a tag,
+  /// or null for any other tag.
+  ({String engine, int revision})? parseTag(String? tag) {
+    final match = tagPattern.firstMatch(tag ?? '');
+    if (match == null) return null;
+    final revision = match.group(2) == null ? 0 : int.tryParse(match.group(2)!);
+    if (revision == null) return null;
+    if (this == llamaCpp) {
+      final build = int.tryParse(match.group(1)!);
+      if (build == null) return null;
+      return (engine: 'b$build', revision: revision);
+    }
+    return (engine: match.group(1)!.toLowerCase(), revision: revision);
+  }
+
+  /// Orders two release tags of this kind; unparsable tags sort first so a
+  /// real pack always wins.
+  ///
+  /// A tag may name an ik_llama.cpp commit by any 7..40 character prefix, so
+  /// guessing at prefix overlap is not a strict weak ordering (A and B share a
+  /// prefix, B and C share one, but A and C do not). Every tag that is a
+  /// prefix of [pin] (the full 40-character pinned commit) is normalised to
+  /// that commit first, so revisions only compare inside one commit. Without
+  /// a pin the engine strings compare lexicographically, which is still a
+  /// deterministic total order.
+  int compareTags(String a, String b, {String? pin}) {
+    if (this == llamaCpp) return compareEnginePackVersions(a, b);
+    final x = parseTag(a), y = parseTag(b);
+    if (x == null || y == null) {
+      if (x == null && y == null) return a.compareTo(b);
+      return x == null ? -1 : 1;
+    }
+    final xEngine = _normaliseTagEngine(x.engine, pin);
+    final yEngine = _normaliseTagEngine(y.engine, pin);
+    final byEngine = xEngine.compareTo(yEngine);
+    return byEngine != 0 ? byEngine : x.revision.compareTo(y.revision);
+  }
+
+  /// The full pinned commit every prefix of it names, else the tag's own
+  /// engine string.
+  String _normaliseTagEngine(String engine, String? pin) =>
+      pin != null && pin.startsWith(engine) ? pin : engine;
+
+  /// True when [a] and [b] name the same release family: one llama.cpp build,
+  /// or one pinned ik_llama.cpp commit however long its prefix. Revisions of
+  /// the same family are ordered by [compareTags]; another family (a moved
+  /// pin or another build) is a different line of installs.
+  bool sameReleaseFamily(String a, String b, {String? pin}) {
+    final x = parseTag(a), y = parseTag(b);
+    if (x == null || y == null) return false;
+    return _normaliseTagEngine(x.engine, pin) ==
+        _normaliseTagEngine(y.engine, pin);
+  }
+
+  /// True when [name] is a folder a pack of this kind may own.
+  bool ownsFolder(String name) => parseTag(name) != null;
+
+  static EnginePackKind? fromEngineId(String? id) {
+    for (final kind in EnginePackKind.values) {
+      if (kind.engineId == id) return kind;
+    }
+    return null;
+  }
+}
+
+/// Release tags of llama.cpp engine packs: `engine-b<build>` or
+/// `engine-b<build>-<rev>`.
+final enginePackTag = EnginePackKind.llamaCpp.tagPattern;
+
+/// The signed manifest and its signature, copied into an installed pack folder
+/// at activation. A load re-verifies every DLL against this manifest instead
+/// of trusting the active marker alone (audit 2026-11-20, cx-review).
+const installedManifestName = 'engine-pack.json';
+const installedSignatureName = 'engine-pack.json.sig';
+
+/// The variants whose smoke test failed, saved for crash-guard rollback.
+const installedMetaName = 'engine-pack.meta.json';
 
 /// Bare `*.dll` names, the same rule EngineFiles.parse applies to the bundled
 /// manifest; `/`, `\`, `:` and `..` never reach a path.
@@ -90,6 +206,7 @@ class EnginePackFile {
 /// A signed `engine-pack-windows-x64.json` manifest. Only packs whose
 /// signature matches [kEngineSigningPublicKey] are looked at at all.
 class EnginePackManifest {
+  final EnginePackKind kind;
   final String engine;
   final int revision;
   final int bridgeApi;
@@ -98,6 +215,7 @@ class EnginePackManifest {
   final List<EnginePackFile> files;
   final String zipSha256;
   const EnginePackManifest({
+    this.kind = EnginePackKind.llamaCpp,
     required this.engine,
     this.revision = 0,
     required this.bridgeApi,
@@ -122,8 +240,29 @@ class EnginePackManifest {
     if (decoded['version'] is! int || decoded['version'] != 1) {
       throw const FormatException('Unsupported engine pack manifest version.');
     }
+    final rawKind = decoded['kind'];
+    final EnginePackKind kind;
+    if (rawKind == null) {
+      // Older llama.cpp packs predate the field.
+      kind = EnginePackKind.llamaCpp;
+    } else {
+      final found = rawKind is String
+          ? EnginePackKind.fromEngineId(rawKind)
+          : null;
+      if (found == null) {
+        throw const FormatException(
+          'Engine pack manifest has an unknown kind.',
+        );
+      }
+      kind = found;
+    }
     final engine = decoded['engine'];
-    if (engine is! String || !RegExp(r'^b\d+$').hasMatch(engine)) {
+    // An ik_llama.cpp manifest always names the full 40-character commit it
+    // was built from; the release tag may use a shorter prefix of it.
+    final enginePattern = kind == EnginePackKind.llamaCpp
+        ? RegExp(r'^b\d+$')
+        : RegExp(r'^[a-f0-9]{40}$');
+    if (engine is! String || !enginePattern.hasMatch(engine)) {
       throw const FormatException('Engine pack manifest has no engine tag.');
     }
     final revision = decoded.containsKey('revision') ? decoded['revision'] : 0;
@@ -189,6 +328,7 @@ class EnginePackManifest {
       throw const FormatException('Engine pack manifest lists no files.');
     }
     return EnginePackManifest(
+      kind: kind,
       engine: engine,
       revision: revision,
       bridgeApi: bridgeApi,
@@ -207,6 +347,12 @@ class EnginePackManifest {
     if (app == null || min == null) return false;
     return _compareSemver(app, min) >= 0;
   }
+
+  /// The load-time gate for an already installed, signature-verified pack.
+  /// Only the bridge ABI is enforced here: [minApp] belongs to [compatible]
+  /// and the update check, because a development build (`flutter run`) has no
+  /// released version string and would otherwise refuse every intact pack.
+  bool loadCompatible({required int bridgeApi}) => bridgeApi == this.bridgeApi;
 }
 
 /// True when [signature] is the maintainer's Ed25519 signature over [manifestBytes].

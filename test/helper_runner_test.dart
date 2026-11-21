@@ -16,6 +16,7 @@ import 'package:ondevice_llm/features/models/domain/model_recommendations.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_recommendations_provider.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
+import 'package:ondevice_llm/inference/engine/engine_descriptor.dart';
 import 'package:ondevice_llm/inference/engine/llama_engine.dart';
 import 'package:ondevice_llm/inference/remote/remote_engine.dart';
 import 'package:ondevice_llm/inference/remote/remote_provider.dart';
@@ -82,6 +83,7 @@ class _Engine extends LlamaEngine {
   int loads = 0, unloads = 0, cancels = 0;
   final prompts = <List<Map<String, Object>>>[];
   final settingsSeen = <InferenceSettings>[];
+  final engineIds = <String>[];
   List<String> output = ['result'];
   final rounds = <String>[];
   Duration partDelay = Duration.zero;
@@ -112,12 +114,14 @@ class _Engine extends LlamaEngine {
     required String modelPath,
     required InferenceSettings settings,
     String? mmprojPath,
+    String engineId = 'llama.cpp',
     List<({String path, double scale})> adapters = const [],
     String? draftModelPath,
     bool memoryGuard = true,
   }) async {
     loads++;
     settingsSeen.add(settings);
+    engineIds.add(engineId);
     await loadGate?.future;
     loaded = true;
   }
@@ -269,6 +273,8 @@ void main() {
     bool desktop = true,
     DeviceMemory? memory,
     LlamaEngine Function()? extraEngine,
+    EngineHelperMode Function(ModelInfo)? helperMode,
+    String Function(ModelInfo)? engineIdFor,
     int lanes = 1,
     Duration idle = const Duration(minutes: 3),
     Duration timeout = const Duration(seconds: 90),
@@ -285,6 +291,8 @@ void main() {
     engine: engine,
     chatEngine: chat,
     extraEngine: extraEngine,
+    helperMode: helperMode ?? (_) => EngineHelperMode.dedicated,
+    engineIdFor: engineIdFor ?? (_) => llamaCppEngineId,
     lanes: lanes,
     catalog: () => catalog ?? [model],
     loadedModelId: () => loadedId,
@@ -632,6 +640,15 @@ void main() {
       engine.prompts.last.first['content'],
       contains('Use bullet points.'),
     );
+  });
+
+  test('a helper lane loads with the engine chosen for its model', () async {
+    runner.dispose();
+    runner = create(engineIdFor: (_) => ikLlamaEngineId);
+    final reply = await runner.run(modelId: model.id, task: 'title');
+
+    expect(reply.text, 'result');
+    expect(engine.engineIds, [ikLlamaEngineId]);
   });
 
   test('turn cancellation removes an agent waiting for web approval', () async {

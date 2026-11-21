@@ -67,9 +67,18 @@ class DeviceHostingState {
   final String? activeClient;
   final String? error;
 
+  /// The last start failed on the host's TLS identity, so the pages offer
+  /// "Reset identity". A flag, not the [error] text: that text was localized
+  /// when it happened and a language change must not hide the only way out.
+  final bool tlsIdentityFailure;
+
   /// Why the server stopped itself (battery, heat), shown once stopped.
   final String? stoppedReason;
   final DateTime? startedAt;
+
+  /// True while the host identity or its shared token is being replaced:
+  /// starting a server meanwhile would use the identity being removed.
+  final bool resettingIdentity;
 
   /// Pieces streamed so far for the request being answered.
   final int liveTokens;
@@ -98,8 +107,10 @@ class DeviceHostingState {
     this.pooled = const [],
     this.activeClient,
     this.error,
+    this.tlsIdentityFailure = false,
     this.stoppedReason,
     this.startedAt,
+    this.resettingIdentity = false,
     this.liveTokens = 0,
     this.log = const [],
     this.answered = 0,
@@ -174,6 +185,8 @@ class DeviceHostingState {
     String? hostId,
     DateTime? pairExpiresAt,
     String? error,
+    bool? tlsIdentityFailure,
+    bool? resettingIdentity,
     int? liveTokens,
     List<ServedRequest>? log,
     int? answered,
@@ -208,8 +221,10 @@ class DeviceHostingState {
                 )
             ? null
             : this.error),
+    tlsIdentityFailure: tlsIdentityFailure ?? this.tlsIdentityFailure,
     stoppedReason: stoppedReason,
     startedAt: startedAt,
+    resettingIdentity: resettingIdentity ?? this.resettingIdentity,
     liveTokens: liveTokens ?? this.liveTokens,
     log: log ?? this.log,
     answered: answered ?? this.answered,
@@ -234,8 +249,16 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
   ModelPool? _pool;
   // True while the served model moves to its own runtime: requests wait.
   bool _moving = false;
+  // True from the start of an identity reset or token regeneration until it
+  // finished: either changes the identity a server started meanwhile would
+  // use, and the second must not clear the first's failure message.
+  bool _identityBusy = false;
+  // The startup in flight: a reset waits for it so a cancelled bind releases
+  // the port before a restart can try the same one.
+  Future<void>? _starting;
   Timer? _powerTimer;
   int _lifecycle = 0;
+  Object? _advertisement;
   bool _alive = true;
   HostingGuards guards = const HostingGuards();
 
@@ -249,11 +272,11 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
       _server = null;
       final pool = _pool;
       _pool = null;
-      unawaited(_closeRuntimes(server, pool));
+      final advertisement = _advertisement;
+      _advertisement = null;
+      unawaited(closeRuntimes(server, pool));
+      unawaited(withdrawAdvertisement(advertisement));
       if (server != null) {
-        if (HostDiscovery.canAdvertise) {
-          unawaited(HostDiscovery.stop().catchError((Object _) {}));
-        }
         unawaited(DevicePower.keepScreenOn(false));
       }
     });
@@ -271,6 +294,11 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
     }
   }
 
+  /// Closes the listener, the workspace and the pool. A test can hold it to
+  /// model a job that ignores cancellation (see [closeTimeout]).
+  Future<void> closeRuntimes(DeviceModelServer? server, ModelPool? pool) =>
+      _closeRuntimes(server, pool);
+
   Future<String> readAccessToken() async {
     var token = await _secure.read(key: _tokenKey);
     if (token != null && token.length >= 32) return token;
@@ -284,9 +312,20 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
 
   /// [lan] false listens on this computer only (the desktop's default).
   Future<void> start({required int port, bool lan = true}) async {
-    if (_server != null || state.starting) return;
+    if (_identityBusy || _server != null || state.starting) return;
+    final startup = _start(port: port, lan: lan);
+    _starting = startup;
+    try {
+      await startup;
+    } finally {
+      if (identical(_starting, startup)) _starting = null;
+    }
+  }
+
+  Future<void> _start({required int port, bool lan = true}) async {
     final lifecycle = ++_lifecycle;
     DeviceModelServer? startingServer;
+    var installed = false;
     state = const DeviceHostingState(starting: true);
     try {
       if (port < 1 || port > 65535) {
@@ -421,18 +460,28 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
         return;
       }
       _server = server;
-      final host = lan ? await _localAddress() : '127.0.0.1';
-      if (lan && host != null && HostDiscovery.canAdvertise) {
+      installed = true;
+      final host = lan ? await resolveLanAddress() : '127.0.0.1';
+      if (!_alive || lifecycle != _lifecycle) {
+        // A newer start or a stop took over while the address was resolved:
+        // this listener must not stay bound behind its back.
+        await server.stop();
+        return;
+      }
+      if (lan && host != null) {
         try {
-          await HostDiscovery.advertise(server.port!, address: host);
+          final advertisement = _advertisement = Object();
+          await publishAdvertisement(
+            server.port!,
+            host,
+            advertisement,
+            () => _alive && lifecycle == _lifecycle,
+          );
         } catch (_) {
           /* Manual pairing still works. */
         }
       }
-      if (!_alive || lifecycle != _lifecycle) {
-        await server.stop();
-        return;
-      }
+      if (!_alive || lifecycle != _lifecycle) return;
       state = DeviceHostingState(
         running: true,
         endpoint: endpointFor(
@@ -462,20 +511,22 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
       _powerTimer = Timer.periodic(powerInterval, (_) => checkPower());
       unawaited(checkPower());
     } catch (error) {
-      await startingServer?.stop();
+      if (!installed || identical(_server, startingServer)) {
+        await startingServer?.stop();
+      }
       if (_alive && lifecycle == _lifecycle) {
         _server = null;
         final pool = _pool;
         _pool = null;
         unawaited(pool?.close());
-        if (HostDiscovery.canAdvertise) {
-          try {
-            await HostDiscovery.stop();
-          } catch (e, st) {
-            quietFailure('device_hosting_provider:471', e, st);
-          }
-        }
-        state = DeviceHostingState(error: _message(error));
+        final advertisement = _advertisement;
+        _advertisement = null;
+        await withdrawAdvertisement(advertisement);
+        if (!_alive || lifecycle != _lifecycle) return;
+        state = DeviceHostingState(
+          error: _message(error),
+          tlsIdentityFailure: error is HostingTlsException,
+        );
       }
     }
   }
@@ -657,6 +708,10 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
   /// How long a model switch waits for the server's answer in progress.
   static Duration moveWait = const Duration(minutes: 2);
 
+  /// How long [stop] waits for the server and pool to close. A workspace job
+  /// that ignores its cancellation token must not keep hosting on.
+  static Duration closeTimeout = const Duration(seconds: 5);
+
   Future<void> stop({String? reason}) async {
     final lifecycle = ++_lifecycle;
     _powerTimer?.cancel();
@@ -665,19 +720,27 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
     _server = null;
     final pool = _pool;
     _pool = null;
+    final advertisement = _advertisement;
+    _advertisement = null;
     final own = state.ownEngine ? ref.read(serverEngineProvider) : null;
     if (_alive) {
-      state = DeviceHostingState(stoppedReason: reason);
+      state = DeviceHostingState(
+        stoppedReason: reason,
+        resettingIdentity: _identityBusy,
+      );
       ref.read(engineHandoffProvider.notifier).state = null;
     }
-    if (HostDiscovery.canAdvertise) {
-      try {
-        await HostDiscovery.stop();
-      } catch (_) {
-        /* Server stop must proceed. */
-      }
+    // Withdraw the LAN record before waiting for the runtimes: a job that
+    // ignores cancellation must neither keep a dead host advertised nor keep
+    // stop() from returning (audit 06a2-1, 06a1-14).
+    await withdrawAdvertisement(advertisement);
+    try {
+      await closeRuntimes(server, pool).timeout(closeTimeout);
+    } on TimeoutException catch (e, st) {
+      // The server closed its listeners and keeps winding a job down in the
+      // background; hosting is already off.
+      quietFailure('device hosting close', e, st);
     }
-    await _closeRuntimes(server, pool);
     if (server != null) unawaited(DevicePower.keepScreenOn(false));
     // The served model's own copy is only there for the server. A cancelled
     // answer keeps the engine busy for a moment, and unload refuses a busy
@@ -713,31 +776,71 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
   }
 
   Future<void> resetHostIdentity() async {
-    await stop();
-    final devices = await PairedDevices.load();
-    for (final device in devices.devices) {
-      await devices.revoke(device.id);
-    }
-    // The shared token was trusted under the old identity: replace it too.
-    await _secure.delete(key: _tokenKey);
-    await HostingTls.reset();
-    await devices.allowNewLegacyToken();
-    if (_alive) {
-      state = const DeviceHostingState();
+    if (_identityBusy) return;
+    _identityBusy = true;
+    if (_alive) state = state.copyWith(resettingIdentity: true);
+    try {
+      await stop();
+      // A cancelled startup may still be binding its socket: wait for it so
+      // the next start does not find the port still in use.
+      final starting = _starting;
+      if (starting != null) await starting;
+      final devices = await PairedDevices.load();
+      for (final device in devices.devices) {
+        await devices.revoke(device.id);
+      }
+      // The shared token was trusted under the old identity: replace it too.
+      await _secure.delete(key: _tokenKey);
+      await HostingTls.reset();
+      await devices.allowNewLegacyToken();
+      if (_alive) {
+        state = const DeviceHostingState();
+      }
+    } catch (e) {
+      // stop() already cleared the recovery state; a failed reset (rejected
+      // secure storage, unreadable devices) must keep the error and the
+      // "Reset identity" action so it can be retried.
+      if (_alive) {
+        state = DeviceHostingState(
+          error: _message(e),
+          tlsIdentityFailure: true,
+        );
+      }
+    } finally {
+      _identityBusy = false;
+      if (_alive && state.resettingIdentity) {
+        state = state.copyWith(resettingIdentity: false);
+      }
     }
   }
 
   Future<void> regenerateToken() async {
-    await stop();
-    await _secure.delete(key: _tokenKey);
-    await (await PairedDevices.load()).allowNewLegacyToken();
-    state = const DeviceHostingState();
+    // A reset in progress owns the identity: running both would clear the
+    // reset's message and leave a token minted under the old identity.
+    if (_identityBusy) return;
+    _identityBusy = true;
+    if (_alive) state = state.copyWith(resettingIdentity: true);
+    try {
+      await stop();
+      // Same as a reset: the cancelled startup must release the port before
+      // the next start can try it.
+      final starting = _starting;
+      if (starting != null) await starting;
+      await _secure.delete(key: _tokenKey);
+      await (await PairedDevices.load()).allowNewLegacyToken();
+      if (_alive) state = const DeviceHostingState();
+    } finally {
+      _identityBusy = false;
+      if (_alive && state.resettingIdentity) {
+        state = state.copyWith(resettingIdentity: false);
+      }
+    }
   }
 
   /// The address another device on the same network can reach. The first
   /// interface is often mobile data (rmnet, 192.0.0.2 on the S25+), which
   /// no other device can connect to; Wi-Fi and private LAN ranges win.
-  static Future<String?> _localAddress() async {
+  Future<String?> resolveLanAddress() async {
     final candidates = <(int, String)>[];
     for (final interface in await NetworkInterface.list(
       type: InternetAddressType.IPv4,
@@ -754,6 +857,32 @@ class DeviceHostingNotifier extends Notifier<DeviceHostingState> {
     if (candidates.isEmpty) return null;
     candidates.sort((a, b) => b.$1.compareTo(a.$1));
     return candidates.first.$2;
+  }
+
+  Future<void> publishAdvertisement(
+    int port,
+    String host,
+    Object owner,
+    bool Function() isCurrent,
+  ) async {
+    if (HostDiscovery.canAdvertise) {
+      await HostDiscovery.advertise(
+        port,
+        address: host,
+        owner: owner,
+        isCurrent: isCurrent,
+      );
+    }
+  }
+
+  /// Withdraws the LAN record this notifier published, if any.
+  Future<void> withdrawAdvertisement(Object? owner) async {
+    if (owner == null) return;
+    try {
+      await HostDiscovery.stop(owner);
+    } catch (e, st) {
+      quietFailure('device hosting discovery stop', e, st);
+    }
   }
 
   /// A missing address stays a display placeholder, never an mDNS input.

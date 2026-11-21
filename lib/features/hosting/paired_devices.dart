@@ -23,6 +23,7 @@ class PairedDevices {
   final Future<void> Function(String) save;
   PairedDevices({required this.save});
   final _devices = <PairedDevice>[];
+  final _principals = <String, String>{};
   List<PairedDevice> get devices => List.unmodifiable(_devices);
   bool legacyEnabled = true;
   Future<void> _writes = Future.value();
@@ -35,20 +36,46 @@ class PairedDevices {
     );
     final raw = await storage.read(key: storageKey);
     if (raw != null) {
-      final data = jsonDecode(raw) as Map;
-      result.legacyEnabled = data['legacyEnabled'] as bool;
-      for (final d in data['devices'] as List) {
-        result._devices.add(
-          PairedDevice(
-            d['id'] as String,
-            d['name'] as String,
-            d['hash'] as String,
-            DateTime.parse(d['pairedAt'] as String),
-          ),
-        );
+      Object? decoded;
+      try {
+        decoded = jsonDecode(raw);
+      } on FormatException {
+        // A truncated write must not stop hosting from ever starting: the
+        // in-app recovery path loads this storage too (audit 06a2-2).
+        decoded = null;
+      }
+      final stored = decoded is Map ? decoded : null;
+      // A stored record that cannot establish its state must not re-enable
+      // the installation token after it was revoked, so a corrupt record
+      // defaults to disabled (the token is kept separately) (audit 06a1-8).
+      final legacy = stored?['legacyEnabled'];
+      result.legacyEnabled = legacy is bool ? legacy : false;
+      final devices = stored?['devices'];
+      if (devices is List) {
+        for (final entry in devices) {
+          final device = _device(entry);
+          if (device != null) result._add(device);
+        }
       }
     }
     return result;
+  }
+
+  /// A stored entry, or null when a field is missing or has another type.
+  static PairedDevice? _device(Object? entry) {
+    if (entry is! Map) return null;
+    final id = entry['id'], name = entry['name'];
+    final hash = entry['hash'], pairedAt = entry['pairedAt'];
+    if (id is! String ||
+        id.isEmpty ||
+        name is! String ||
+        hash is! String ||
+        pairedAt is! String) {
+      return null;
+    }
+    final at = DateTime.tryParse(pairedAt);
+    if (at == null) return null;
+    return PairedDevice(id, name, hash, at);
   }
 
   Future<T> _change<T>(Future<T> Function() action) {
@@ -64,6 +91,11 @@ class PairedDevices {
     }),
   );
 
+  void _add(PairedDevice device) {
+    _devices.add(device);
+    _principals[device.tokenHash] = device.id;
+  }
+
   Future<String> issue(String name) => _change(() async {
     if (_devices.length >= 100) throw StateError('Paired device limit reached');
     final token = PairingCode.secret();
@@ -74,7 +106,7 @@ class PairedDevices {
       DateTime.now(),
     );
     await _persist([..._devices, device], legacyEnabled);
-    _devices.add(device);
+    _add(device);
     return token;
   });
 
@@ -82,9 +114,9 @@ class PairedDevices {
     final next = _devices.where((d) => d.id != id).toList();
     final legacy = id == 'legacy' ? false : legacyEnabled;
     await _persist(next, legacy);
-    _devices
-      ..clear()
-      ..addAll(next);
+    _devices.clear();
+    _principals.clear();
+    next.forEach(_add);
     legacyEnabled = legacy;
   });
 
@@ -95,12 +127,9 @@ class PairedDevices {
   });
 
   String? principal(String token) {
+    if (token.length != 44) return null; // Base64url-encoded 32-byte secret.
     final hash = sha256.convert(utf8.encode(token)).toString();
-    String? found;
-    for (final d in _devices) {
-      if (sameToken(hash, d.tokenHash)) found = d.id;
-    }
-    return found;
+    return _principals[hash];
   }
 
   static bool sameToken(String provided, String expected) {

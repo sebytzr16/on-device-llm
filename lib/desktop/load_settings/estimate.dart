@@ -101,7 +101,11 @@ extension _EstimateSection on _LoadSettingsDialogState {
         ? (await ModelStorage.modelFile(projector.fileName)).path
         : null;
     if (!mounted || generation != _generation) return;
-    final adapters = await ref.read(adaptersProvider.notifier).resolved(m.id);
+    // [resolvedNow], not [resolved]: the first estimate must not wait for the
+    // manifest read; the adapters listen above re-measures when it lands.
+    final adapters = await ref
+        .read(adaptersProvider.notifier)
+        .resolvedNow(m.id);
     if (!mounted || generation != _generation) return;
     final draft = settings.speculationMode == 'off'
         ? null

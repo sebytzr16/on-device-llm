@@ -70,6 +70,21 @@ class FakeEmbedder extends TextEmbedder {
   Future<List<Float32List>?> embedQueries(List<String> texts) => _embed(texts);
 }
 
+/// A real embedder can hand back a view into a larger buffer (a reused arena).
+/// The view is a valid [FakeEmbedder] vector, but its backing buffer is longer.
+class ViewEmbedder extends FakeEmbedder {
+  @override
+  Future<List<Float32List>?> embedQueries(List<String> texts) async {
+    final rows = await super.embedQueries(texts);
+    if (rows == null) return null;
+    return [
+      for (final row in rows)
+        Float32List.view(Float32List(row.length * 2).buffer, 0, row.length)
+          ..setAll(0, row),
+    ];
+  }
+}
+
 const boilerText =
     'Boiler manual.\n'
     'To reset the boiler after a lockout, hold the reset button for five seconds.\n'
@@ -244,5 +259,38 @@ void main() {
     expect(c.read(knowledgeIndexerProvider).running, false);
     await indexer.index('Manuals');
     expect(await db.countUnindexedKnowledgeChunks('Manuals', 'fake-v1'), 0);
+  });
+
+  test('a vector scan that fails falls back to the lexical hits', () async {
+    final c = container(ViewEmbedder());
+    final store = c.read(knowledgeStoreProvider);
+    await store.import(
+      collection: 'Manuals',
+      name: 'boiler.txt',
+      bytes: bytes(boilerText * 20),
+    );
+    await c.read(knowledgeIndexerProvider.notifier).index('Manuals');
+    // search() never throws: the semantic scan is best-effort.
+    final hits = await store.search('Manuals', 'reset the boiler');
+    expect(hits.single.title, 'boiler.txt');
+    expect(hits.single.pageText, contains('hold the reset button'));
+  });
+
+  test('a failed count still releases the index run token', () async {
+    final c = container(FakeEmbedder());
+    final store = c.read(knowledgeStoreProvider);
+    await store.import(
+      collection: 'Manuals',
+      name: 'boiler.txt',
+      bytes: bytes(boilerText * 20),
+    );
+    // A db error on the first count (closed db, disk full) must not leave
+    // running == true forever.
+    await db.close();
+    final indexer = c.read(knowledgeIndexerProvider.notifier);
+    await indexer.index('Manuals');
+    final state = c.read(knowledgeIndexerProvider);
+    expect(state.running, false);
+    expect(state.error, isNotNull);
   });
 }

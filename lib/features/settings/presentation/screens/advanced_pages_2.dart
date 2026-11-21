@@ -1,3 +1,5 @@
+import '../../../../inference/engine/engine_descriptor.dart';
+import '../../../../inference/engine/engine_registry_provider.dart';
 import '../widgets/answer_tokens_control.dart';
 import '../../../../core/platform/desktop_host.dart';
 import '../../../helper/helper_runner.dart';
@@ -15,6 +17,7 @@ import '../../../chat/presentation/providers/chat_provider.dart';
 import '../../../models/presentation/providers/model_manager_provider.dart';
 import '../../../models/presentation/widgets/model_categories.dart';
 import '../../domain/entities/inference_settings.dart';
+import '../providers/effective_settings_provider.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/settings_labels.dart';
 import '../widgets/settings_widgets.dart';

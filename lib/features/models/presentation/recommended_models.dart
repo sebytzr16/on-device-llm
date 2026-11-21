@@ -29,7 +29,7 @@ List<ModelInfo> rankRecommended(
       m.parameterCountB?.toDouble() ??
       m.sizeBytes / 1e9;
   final indexed = models
-      .where((m) => fit(m) != ModelFit.tooLarge)
+      .where((m) => !m.isLiteRt && fit(m) != ModelFit.tooLarge)
       .indexed
       .toList();
   indexed.sort((a, b) {

@@ -1,4 +1,5 @@
 import '../schedule/scheduled_prompt.dart';
+import '../settings/domain/entities/inference_settings.dart';
 import '../goals/goal_watch_store.dart';
 import '../goals/goal_watch.dart';
 import '../attachments/data/bounded_zip.dart';
@@ -27,6 +28,29 @@ import 'backup_cipher.dart';
 /// deliberately excluded.
 class LocalBackupService {
   static const maxEntries = 10000;
+
+  /// Android's "Save to file" hands the whole archive to the picker's byte
+  /// API, which holds it in memory; a bigger backup goes through Share
+  /// instead of being read whole into RAM (audit 08d-2).
+  static const androidSaveLimitBytes = 32 * 1024 * 1024;
+
+  /// Whether [sizeBytes] fits Android's in-memory save picker.
+  static bool androidCanSaveFile(int sizeBytes) =>
+      sizeBytes <= androidSaveLimitBytes;
+
+  /// Whether this process runs on Android. `dart:io`'s [Platform.isAndroid]
+  /// cannot be faked, so the save flow reads this seam: a widget test turns it
+  /// on to exercise the phone's in-memory picker (audit 08d-2).
+  static bool onAndroid = Platform.isAndroid;
+
+  /// The archive bytes for Android's picker, or null when it is over the cap:
+  /// [read] is then never called, so the file never enters memory
+  /// (audit 08d-2).
+  static Future<Uint8List?> androidPickerBytes(
+    int sizeBytes,
+    Future<Uint8List> Function() read,
+  ) async => androidCanSaveFile(sizeBytes) ? await read() : null;
+
   static const backedUpPreferenceKeys = [
     'imageGenImportedModels',
     'imageGenPreferredModels',
@@ -48,6 +72,7 @@ class LocalBackupService {
     'onboarding_done_v1',
     'prompt_shortcuts_v1',
     'chat_model_pins_v1',
+    'engine_overrides_v1',
     _schedules,
   ];
 
@@ -232,6 +257,23 @@ class LocalBackupService {
     }
   }
 
+  /// Hands a finished archive to the share sheet. Gmail and Drive open the
+  /// FileProvider URI after `share()` returned, so it must outlive the call
+  /// (audit 08d-3). It moves to a `backup-working-` directory: the next export
+  /// replaces it and the startup staging sweep removes it.
+  static Future<File> stageForShare(File archive) async {
+    final support = await _support();
+    final outbox = Directory(p.join(support.path, 'backup-working-share'));
+    try {
+      if (await outbox.exists()) await outbox.delete(recursive: true);
+    } on FileSystemException {
+      // A previous archive is still open in another app: the startup sweep
+      // removes the directory once it is free.
+    }
+    await outbox.create(recursive: true);
+    return archive.rename(p.join(outbox.path, p.basename(archive.path)));
+  }
+
   static Future<void> stageFile(File encrypted, String password) async {
     final support = await _support();
     final temp = await support.createTemp('backup-verify-');
@@ -335,6 +377,7 @@ class LocalBackupService {
         settings.keys.any((key) => !backedUpPreferenceKeys.contains(key))) {
       throw const FormatException('Backup settings are invalid.');
     }
+    _validatePreferences(settings);
     final support = await _support();
     final pending = Directory(p.join(support.path, 'restore_pending'));
     if (await pending.exists()) {
@@ -368,6 +411,7 @@ class LocalBackupService {
         await migrated.close();
       }
       _validateDatabase(staged);
+      await _validateSchema(staged);
       await _rewritePaths(
         pending,
         manifest['attachmentsRoot'] as String,
@@ -386,6 +430,128 @@ class LocalBackupService {
       RegExp(r'^[a-zA-Z0-9_.-]+$').hasMatch(name) &&
       name != '.' &&
       name != '..';
+
+  /// Preferences are applied only after the live database and attachments are
+  /// swapped, so a value this app cannot write must fail while staging.
+  static void _validatePreferences(Map<Object?, Object?> settings) {
+    const invalid = FormatException('Backup settings are invalid.');
+    for (final entry in settings.entries) {
+      final value = entry.value;
+      switch (entry.key) {
+        case 'tips_enabled_v1':
+        case 'onboarding_done_v1':
+          if (value is! bool) throw invalid;
+        case 'tips_seen_v1':
+        case 'text_recognition_options_v1':
+          if (value is! List || !value.every((item) => item is String)) {
+            throw invalid;
+          }
+        default:
+          if (value is! String) throw invalid;
+          try {
+            final decoded = jsonDecode(value);
+            switch (entry.key) {
+              case _schedules:
+                ScheduledPrompt.decodeList(value);
+              case 'goal_watches_v1':
+                if (decoded is! List ||
+                    decoded.any((item) => GoalWatch.fromJson(item) == null)) {
+                  throw invalid;
+                }
+              case 'imageGenImportedModels':
+              case 'goal_history_v1':
+              case 'prompt_shortcuts_v1':
+                if (decoded is! List || !decoded.every((item) => item is Map)) {
+                  throw invalid;
+                }
+              default:
+                if (decoded is! Map<String, dynamic>) throw invalid;
+                if (entry.key == 'inference_settings_v1') {
+                  InferenceSettings.fromJson(decoded);
+                }
+            }
+          } catch (_) {
+            throw invalid;
+          }
+      }
+    }
+  }
+
+  static Future<void> _validateSchema(File staged) async {
+    const invalid = FormatException(
+      'Backup database has an incompatible schema.',
+    );
+    final actual = sqlite3.open(staged.path, mode: OpenMode.readOnly);
+    final current = AppDatabase.forTesting(NativeDatabase.memory());
+    try {
+      for (final name in [
+        ...current.allTables.map((table) => table.actualTableName),
+        'compare_history',
+      ]) {
+        for (final pragma in ['table_info', 'foreign_key_list']) {
+          final sql = 'PRAGMA $pragma("$name")';
+          String signature(Map<String, Object?> row) => jsonEncode({
+            for (final entry in row.entries)
+              if (entry.key != 'cid') entry.key: entry.value,
+          });
+          final expected = await current.customSelect(sql).get();
+          if (!actual
+              .select(sql)
+              .map(signature)
+              .toSet()
+              .containsAll(expected.map((row) => signature(row.data)))) {
+            throw invalid;
+          }
+        }
+        final sql = 'PRAGMA index_list("$name")';
+        final expected = await current.customSelect(sql).get();
+        final indexes = actual.select(sql);
+        for (final index in expected.where(
+          (row) => row.read<int>('unique') == 1,
+        )) {
+          final indexName = index.read<String>('name');
+          if (!indexes.any(
+            (row) =>
+                row['name'] == indexName &&
+                row['unique'] == 1 &&
+                row['partial'] == 0,
+          )) {
+            throw invalid;
+          }
+          final columns = 'PRAGMA index_xinfo("$indexName")';
+          String indexedColumns(Iterable<Map<String, Object?>> rows) =>
+              jsonEncode([
+                for (final row in rows)
+                  if (row['key'] == 1) [row['name'], row['coll'], row['desc']],
+              ]);
+          if (indexedColumns(actual.select(columns)) !=
+              indexedColumns(
+                (await current.customSelect(columns).get()).map(
+                  (row) => row.data,
+                ),
+              )) {
+            throw invalid;
+          }
+        }
+        final definition =
+            "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = '$name'";
+        Set<String> checks(String sql) => RegExp(r'check\([a-z_]+in\(0,1\)\)')
+            .allMatches(sql.toLowerCase().replaceAll(RegExp(r'[\s"]'), ''))
+            .map((match) => match.group(0)!)
+            .toSet();
+        final expectedSql = (await current.customSelect(definition).getSingle())
+            .read<String>('sql');
+        if (!checks(
+          actual.select(definition).single['sql'] as String,
+        ).containsAll(checks(expectedSql))) {
+          throw invalid;
+        }
+      }
+    } finally {
+      actual.close();
+      await current.close();
+    }
+  }
 
   static void _validateDatabase(File file, {bool allowOlder = false}) {
     final sqlite = sqlite3.open(file.path, mode: OpenMode.readOnly);
@@ -670,8 +836,9 @@ class LocalBackupService {
     final prefs = await SharedPreferences.getInstance();
     // A backup replaces the schedules too (none in it: none after).
     final saved = savedPrefs[_schedules];
+    final savedWatches = savedPrefs[GoalWatchStore.key];
     final watches = GoalWatches.decode(
-      savedPrefs[GoalWatchStore.key] as String? ?? '[]',
+      savedWatches is String ? savedWatches : '[]',
     );
     for (final watch in await GoalWatchStore.list()) {
       await GoalWatchStore.remove(watch.id);

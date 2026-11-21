@@ -41,17 +41,29 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     if (_completing) return;
     setState(() => _completing = true);
     try {
-      final ok = await ref.read(onboardingDoneProvider.notifier).complete();
-      if (!ok && mounted) {
-        await _showRetryDialog();
+      // Retry in place: the dialog used to re-enter this guarded method and
+      // do nothing (audit 08d-1).
+      while (mounted) {
+        final ok = await ref.read(onboardingDoneProvider.notifier).complete();
+        if (ok || !mounted) return;
+        final retry = await _showRetryDialog();
+        if (retry == null) return;
+        if (!retry) {
+          // "Continue for this session": leave onboarding now, keep it for
+          // the next start (audit 08d-1).
+          ref.read(onboardingDoneProvider.notifier).completeForSession();
+          return;
+        }
       }
     } finally {
       if (mounted) setState(() => _completing = false);
     }
   }
 
-  Future<void> _showRetryDialog() async {
-    if (!mounted) return;
+  /// True to try saving again, false for this session only, null when the
+  /// dialog went away.
+  Future<bool?> _showRetryDialog() async {
+    if (!mounted) return null;
     final l10n = context.l10n;
     final result = await showDialog<bool>(
       context: context,
@@ -71,9 +83,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         ],
       ),
     );
-    if (result == true && mounted) {
-      await _complete();
-    }
+    return mounted ? result : null;
   }
 
   void _go(int step) {

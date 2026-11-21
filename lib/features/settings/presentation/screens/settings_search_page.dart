@@ -4,6 +4,7 @@ import '../../../../core/l10n/l10n.dart';
 import '../../domain/setting_specs.dart';
 import '../../domain/entities/inference_settings.dart';
 import '../providers/settings_provider.dart';
+import '../providers/effective_settings_provider.dart';
 import '../setting_labels.dart';
 import 'advanced_pages.dart';
 import 'advanced_pages_2.dart';
@@ -28,13 +29,16 @@ class _SettingsSearchPageState extends ConsumerState<SettingsSearchPage> {
     final t = context.l10n;
     final s = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
+    final engine = s.usesRemote ? null : ref.watch(activeModelEngineProvider);
     final q = _query.trim().toLowerCase();
     bool hit(String text) => q.isEmpty || text.toLowerCase().contains(q);
     final matches = SettingSpec.visible.where(
-      (spec) => hit(
-        '${spec.label} ${spec.labelIn(t)} ${spec.key} ${spec.group} '
-        '${spec.hint}',
-      ),
+      (spec) =>
+          spec.usedBy(engine?.capabilities) &&
+          hit(
+            '${spec.label} ${spec.labelIn(t)} ${spec.key} ${spec.group} '
+            '${spec.hint}',
+          ),
     );
     // Main-page switches are not overridable specs; they are found here and
     // flipped in place.
@@ -142,16 +146,19 @@ class _SettingsSearchPageState extends ConsumerState<SettingsSearchPage> {
                     ),
                   ),
                 ),
-                ActionChip(
-                  label: Text(t.settingsLessMemory),
-                  onPressed: () => notifier.update(
-                    s.copyWith(
-                      contextSize: 2048,
-                      kvCacheType: KvCacheType.q8_0,
-                      imageMaxTokens: 512,
+                if (SettingSpec.byKey(
+                  'contextSize',
+                )!.usedBy(engine?.capabilities))
+                  ActionChip(
+                    label: Text(t.settingsLessMemory),
+                    onPressed: () => notifier.update(
+                      s.copyWith(
+                        contextSize: 2048,
+                        kvCacheType: KvCacheType.q8_0,
+                        imageMaxTokens: 512,
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),

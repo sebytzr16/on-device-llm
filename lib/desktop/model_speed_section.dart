@@ -32,6 +32,8 @@ class _ModelSpeedSectionState extends ConsumerState<ModelSpeedSection> {
   TuneBenchmarkRun? _run;
   double _progress = 0;
   bool _failed = false;
+  // Set before the first await: a second press must not start a second run.
+  bool _starting = false;
   @override
   void dispose() {
     _run?.cancel();
@@ -39,7 +41,8 @@ class _ModelSpeedSectionState extends ConsumerState<ModelSpeedSection> {
   }
 
   Future<void> _start() async {
-    if (ref.read(sessionBusyProvider) ||
+    if (_starting ||
+        ref.read(sessionBusyProvider) ||
         ref.read(modelManagerProvider).isLoadingModel) {
       return;
     }
@@ -50,26 +53,44 @@ class _ModelSpeedSectionState extends ConsumerState<ModelSpeedSection> {
     final receipts = ref.read(benchmarkReceiptsProvider.notifier);
     final model = widget.model, settings = widget.settings;
     BenchmarkReceipt? measured;
-    final draftFile = await manager.draftPathFor(model, settings.draftModelId);
-    final run = TuneBenchmarkRun(
-      engine: engine,
-      model: model,
-      load: (s) async {
-        if (widget.load != null) {
-          await widget.load!();
-        } else {
-          await manager.ready;
-          await manager.loadModel(model, forChat: true, settings: s);
-        }
-      },
-      estimate: (_) async => {},
-      save: (receipt) async {
-        await receipts.save(receipt);
-        measured = receipt;
-      },
-      draftFile: draftFile,
-    );
+    _starting = true;
     busy.state = true;
+    final TuneBenchmarkRun run;
+    try {
+      final draftFile = await manager.draftPathFor(
+        model,
+        settings.draftModelId,
+      );
+      run = TuneBenchmarkRun(
+        engine: engine,
+        model: model,
+        load: (s) async {
+          if (widget.load != null) {
+            await widget.load!();
+          } else {
+            await manager.ready;
+            await manager.loadModel(model, forChat: true, settings: s);
+          }
+        },
+        estimate: (_) async => {},
+        save: (receipt) async {
+          await receipts.save(receipt);
+          measured = receipt;
+        },
+        draftFile: draftFile,
+      );
+    } catch (_) {
+      busy.state = false;
+      _starting = false;
+      if (mounted) setState(() => _failed = true);
+      return;
+    }
+    if (!mounted) {
+      // Closed while the draft file was resolved: nothing to show, no run.
+      busy.state = false;
+      _starting = false;
+      return;
+    }
     setState(() {
       _run = run;
       _progress = 0;
@@ -111,6 +132,7 @@ class _ModelSpeedSectionState extends ConsumerState<ModelSpeedSection> {
       if (mounted && !run.cancelled) setState(() => _failed = true);
     } finally {
       busy.state = false;
+      _starting = false;
       if (mounted) setState(() => _run = null);
     }
   }

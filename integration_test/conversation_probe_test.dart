@@ -146,7 +146,10 @@ class _Settings extends SettingsNotifier {
   }
 
   @override
-  Future<void> update(InferenceSettings next) async => state = next;
+  Future<void> update(
+    InferenceSettings next, {
+    bool requirePersistence = false,
+  }) async => state = next;
 }
 
 class _Models extends ModelManagerNotifier {
@@ -369,7 +372,7 @@ void main() {
         for (var rep = 1; rep <= 3; rep++) {
           final tag = '${c.key}$rep';
           // The tester's conversation as Whisper heard it.
-          n.newChat();
+          await n.newChat();
           await turn('$tag-greeting', 'Hi, how are you?', search: false);
           await turn(
             '$tag-misheard-1',
@@ -386,7 +389,7 @@ void main() {
             'Can you please tell me what do I like today in Denver?',
           );
           // The question meant, on its own.
-          n.newChat();
+          await n.newChat();
           await turn(
             '$tag-weather-fresh',
             "What's the weather like today in Denver?",
@@ -395,7 +398,7 @@ void main() {
           );
           // The tester's Bieber turn (2026-10-09): the earlier answer was
           // repeated word for word.
-          n.newChat();
+          await n.newChat();
           await turn('$tag-where', 'Hey, where are you?', search: false);
           await turn(
             '$tag-bieber',
@@ -412,7 +415,7 @@ void main() {
     if (_set == 'memory') {
       // "It forgets things" (tester, 2026-10-18): what the user said must
       // survive a turn that searched the web.
-      n.newChat();
+      await n.newChat();
       await turn(
         'mem-intro',
         'Hi, my name is Robin and I live in Denver.',
@@ -436,7 +439,7 @@ void main() {
         search: false,
         expectAny: ['toronto'],
       );
-      n.newChat();
+      await n.newChat();
       await turn('mem-cats', 'I have two cats, Milo and Luna.', search: false);
       await turn(
         'mem-bieber',
@@ -456,7 +459,7 @@ void main() {
         search: false,
         expectAny: ['two', '2'],
       );
-      n.newChat();
+      await n.newChat();
       await turn(
         'mem-capital',
         'What is the capital of Canada?',
@@ -475,7 +478,7 @@ void main() {
         search: false,
         expectAny: ['ottawa'],
       );
-      n.newChat();
+      await n.newChat();
       await turn(
         'mem-sum',
         'What is fifteen plus twenty-seven?',
@@ -493,7 +496,7 @@ void main() {
       return;
     }
     // One conversation, the way the tester talked to it.
-    n.newChat();
+    await n.newChat();
     await turn('greeting', 'Hi, how are you?', search: false);
     await turn(
       'self-search',
@@ -537,7 +540,7 @@ void main() {
       expectAny: ['4', 'four'],
     );
     // Things that change: these should be looked up.
-    n.newChat();
+    await n.newChat();
     await turn(
       'weather',
       'What is the weather like in Rome today?',
@@ -554,20 +557,20 @@ void main() {
       'after-search',
       'Thanks, that helps. Any tip for a rainy day there?',
     );
-    n.newChat();
+    await n.newChat();
     await turn(
       'news',
       'What is the latest news about the Mars missions?',
       search: true,
     );
-    n.newChat();
+    await n.newChat();
     await turn(
       'price',
       'How much does a Nintendo Switch 2 cost?',
       search: true,
     );
     // Other languages.
-    n.newChat();
+    await n.newChat();
     await turn('fr-greeting', 'Salut, ça va ?', search: false, lang: 'fr');
     await turn('es-greeting', 'Hola, ¿qué tal?', search: false, lang: 'es');
 

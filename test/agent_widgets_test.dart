@@ -21,7 +21,10 @@ class _Settings extends SettingsNotifier {
   }
 
   @override
-  Future<void> update(InferenceSettings value) async => state = value;
+  Future<void> update(
+    InferenceSettings value, {
+    bool requirePersistence = false,
+  }) async => state = value;
 }
 
 class _RemoteSettings extends _Settings {
@@ -146,6 +149,75 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('an empty agent number row restores the app default', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final container = ProviderContainer(
+      overrides: [settingsProvider.overrideWith(_Settings.new)],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: AppTheme.dark,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: const Scaffold(
+            body: SingleChildScrollView(child: AgentsSettingsSection()),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    const defaults = InferenceSettings();
+    // Values that differ from the app defaults, as a user would have set.
+    await container
+        .read(settingsProvider.notifier)
+        .update(
+          container
+              .read(settingsProvider)
+              .copyWith(
+                agentTemperature: 1.1,
+                agentContextSize: 8192,
+                agentInputBudget: 12000,
+              ),
+        );
+    await tester.pumpAndSettle();
+    Future<void> clear(String label) async {
+      await tester.ensureVisible(find.text(label));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+    }
+
+    // Empty used to send -999, which copyWith clamped to 0 (greedy agents)
+    // and 512 tokens (audit 2026-11-20 P1-1): it must mean the app default.
+    await clear('Temperature');
+    expect(
+      container.read(settingsProvider).agentTemperature,
+      defaults.agentTemperature,
+    );
+    await clear('Agent context size');
+    expect(
+      container.read(settingsProvider).agentContextSize,
+      defaults.agentContextSize,
+    );
+    await clear('Input budget (characters)');
+    expect(
+      container.read(settingsProvider).agentInputBudget,
+      defaults.agentInputBudget,
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   for (final allow in [true, false]) {
     testWidgets('approval card sends explicit ${allow ? 'allow' : 'deny'}', (

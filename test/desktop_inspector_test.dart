@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/core/l10n/l10n.dart';
 import 'package:ondevice_llm/desktop/desktop_app.dart';
 import 'package:ondevice_llm/desktop/inspector_panel.dart';
+import 'package:ondevice_llm/features/chat/presentation/providers/chat_provider.dart';
 import 'package:ondevice_llm/features/settings/presentation/providers/effective_settings_provider.dart';
 import 'package:ondevice_llm/features/settings/presentation/providers/model_profiles_provider.dart';
 import 'package:ondevice_llm/features/settings/presentation/providers/settings_provider.dart';
@@ -84,6 +85,41 @@ void main() {
     await tester.pumpAndSettle();
     expect(container.read(chatOverridesProvider), isEmpty);
     expect(find.byKey(const Key('desktop-structured-editor')), findsNothing);
+  });
+
+  testWidgets('a chat reset that reveals inherited web research asks first', (
+    tester,
+  ) async {
+    final container = await mountDesktopChat(
+      tester,
+      const DesktopInspectorPanel(),
+    );
+    // The model profile turns web research on; this chat's explicit Off is
+    // what keeps the next message local. Clearing it must ask.
+    await container.read(modelProfilesProvider.notifier).set('test', {
+      'webMode': 'auto',
+    });
+    await container.read(chatProvider.notifier).setChatOverrides({
+      'webMode': 'off',
+    });
+    await pickScope(tester, t.desktopInspectorScopeChat);
+    await tester.tap(find.byKey(resetModel));
+    await tester.pumpAndSettle();
+    expect(find.text(t.enableWebQuestion), findsOneWidget);
+    expect(container.read(chatOverridesProvider), isNotEmpty);
+    await tester.tap(find.text(t.cancel));
+    await tester.pumpAndSettle();
+    expect(container.read(chatOverridesProvider), isNotEmpty);
+    // The inspector's own chat reset clears the same overrides: it asks too.
+    await pickScope(tester, 'Test Model');
+    await tester.ensureVisible(find.byKey(resetChat));
+    await tester.tap(find.byKey(resetChat));
+    await tester.pumpAndSettle();
+    expect(find.text(t.enableWebQuestion), findsOneWidget);
+    expect(container.read(chatOverridesProvider), isNotEmpty);
+    await tester.tap(find.text(t.cancel));
+    await tester.pumpAndSettle();
+    expect(container.read(chatOverridesProvider), isNotEmpty);
   });
 
   testWidgets('This chat scope saves instructions to the chat only', (

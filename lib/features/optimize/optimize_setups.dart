@@ -1,10 +1,16 @@
 import 'dart:io';
+import 'dart:math' as math;
+
+import '../../core/logging/quiet_failure.dart';
 import '../../core/platform/cpu_cores.dart';
 import '../models/domain/entities/model_info.dart';
 import '../models/presentation/providers/model_manager_provider.dart';
 import '../settings/domain/entities/inference_settings.dart';
+import '../settings/domain/settings_scope.dart';
 import 'model_tuner.dart';
 import 'tune_benchmark_run.dart';
+
+export 'model_tuner.dart' show OptimizeBudgetExhausted;
 
 const pcOptimizationKeys = {
   'nGpuLayers',
@@ -116,7 +122,16 @@ bool _phoneGpu(GpuBackend backend, {required bool ios}) =>
     backend == (ios ? GpuBackend.metal : GpuBackend.opencl);
 
 /// Why Optimize kept the user's current settings instead of saving a setup.
-enum OptimizeKeepReason { slower, outputChanged, baselineUnavailable, noisy }
+enum OptimizeKeepReason {
+  slower,
+  outputChanged,
+  baselineUnavailable,
+  noisy,
+
+  /// The winning settings cannot be stored on this platform (desktop-only
+  /// keys on a phone), so nothing was claimed as saved.
+  unsupported,
+}
 
 /// Allow small greedy decoding differences across kernels and cache types.
 /// Compare each prompt separately so a broken answer cannot hide in an average.
@@ -179,12 +194,6 @@ pickOptimizeWinner({
 double optimizeRate(TuneMeasurement m) =>
     m.workloadRate > 0 ? m.workloadRate : m.tokensPerSecond;
 
-/// Verification ran past its time budget (slow models): the run keeps what
-/// is proven instead of reporting an error.
-class OptimizeBudgetExhausted implements Exception {
-  const OptimizeBudgetExhausted();
-}
-
 /// Treat a complete setup as one A/B candidate, retaining the tuner's A/A,
 /// paired repeats and original-output gate. Screening never authorizes a save.
 class OptimizeRunner implements TuneRunner {
@@ -196,7 +205,6 @@ class OptimizeRunner implements TuneRunner {
   int _done = 0;
   bool mismatched = false;
   final int rounds;
-  final Stopwatch elapsed = Stopwatch()..start();
   final measurements = <int, TuneMeasurement>{};
   final samples = <int, List<TuneMeasurement>>{};
   double medianTokens(int index) =>
@@ -215,35 +223,64 @@ class OptimizeRunner implements TuneRunner {
 
   @override
   Future<TuneMeasurement> measure(TuneSettings s) async {
-    if (elapsed.elapsed > const Duration(minutes: 15)) {
-      throw const OptimizeBudgetExhausted();
-    }
+    if (runner.outOfTime) throw const OptimizeBudgetExhausted();
     if (runner.cancelled) return const TuneMeasurement(0, '');
     final index = s['setup'] as int;
-    final m = await runner.benchmark(
-      setups[index].toJson(),
-      quick: true,
-      progress: (f) => progress((_done + f) / rounds),
-    );
-    _done++;
-    measurements[index] = m;
-    samples.putIfAbsent(index, () => []).add(m);
-    final same = optimizeOutputAcceptable(
-      baseline ?? TuneMeasurement(0, reference),
-      m,
-    );
+    final base = baseline ?? TuneMeasurement(0, reference);
+    TuneMeasurement? sample;
+    var same = false;
+    // A sample that differs from the reference is retried once before it
+    // counts: one throttled round used to discard the whole run as noise.
+    for (var attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0 && (runner.cancelled || runner.outOfTime)) break;
+      sample = await runner.benchmark(
+        setups[index].toJson(),
+        quick: true,
+        progress: (f) => progress((_done + f) / rounds),
+      );
+      _done++;
+      same = optimizeOutputAcceptable(base, sample);
+      if (same || runner.cancelled) break;
+    }
+    if (sample == null || runner.cancelled) {
+      return const TuneMeasurement(0, '');
+    }
     if (!same) mismatched = true;
+    measurements[index] = sample;
+    samples.putIfAbsent(index, () => []).add(sample);
     // A run that does not reproduce the baseline fails even the A/A drift gate.
     return TuneMeasurement(
-      m.tokensPerSecond,
+      sample.tokensPerSecond,
       same ? reference : '',
-      workloadRate: m.workloadRate,
-      relativeNoise: m.relativeNoise,
+      workloadRate: sample.workloadRate,
+      relativeNoise: sample.relativeNoise,
     );
   }
 
   @override
   void cancel() => runner.cancel();
+}
+
+/// Why no safe setup fitted the free memory. The run still measures the
+/// smallest variant, and the section names what was short.
+enum OptimizeUnfit { ram, vram }
+
+/// What Optimize starts from: the setup to measure first, and, when no
+/// estimate fitted, which memory was short.
+class OptimizeDefaultsPlan {
+  final InferenceSettings settings;
+  final OptimizeUnfit? unfit;
+
+  /// Whether the estimate answered with real numbers. False when the
+  /// estimator is missing or failing: its silence is unknown, not a refusal,
+  /// so the run may still measure and only a load that really fails is
+  /// skipped. A refusal from a usable estimate is a fact and is respected.
+  final bool estimateUsable;
+  const OptimizeDefaultsPlan(
+    this.settings, [
+    this.unfit,
+    this.estimateUsable = true,
+  ]);
 }
 
 /// Only the explicit Optimize action chooses a new GPU layer count.
@@ -253,6 +290,28 @@ Future<InferenceSettings> pcOptimizationDefaults({
   required InferenceSettings current,
   required InferenceSettings defaults,
   required Future<Map<String, dynamic>> Function(InferenceSettings) estimate,
+}) async => (await pcOptimizationPlan(
+  mobile: mobile,
+  ios: ios,
+  current: current,
+  defaults: defaults,
+  estimate: estimate,
+)).settings;
+
+/// The safe setup to measure first. This never throws for a missing layer
+/// count or a refused estimate: it falls back to the current settings and to
+/// safe variants (fewer GPU layers, a q8_0 KV cache, a smaller batch), and
+/// leaves the decision to the measurement. An estimator that is missing or
+/// failing is advice only, not a dead end. [outOfTime] shares the run's
+/// deadline with these estimates; [OptimizeDefaultsPlan.estimateUsable] tells
+/// a real refusal from an estimator that could not answer.
+Future<OptimizeDefaultsPlan> pcOptimizationPlan({
+  bool? mobile,
+  bool? ios,
+  required InferenceSettings current,
+  required InferenceSettings defaults,
+  required Future<Map<String, dynamic>> Function(InferenceSettings) estimate,
+  bool Function()? outOfTime,
 }) async {
   final json = current.toJson(), device = defaults.toJson();
   for (final key in pcOptimizationKeys) {
@@ -285,12 +344,23 @@ Future<InferenceSettings> pcOptimizationDefaults({
     }
   }
   var settings = InferenceSettings.fromJson(json);
-  final info = await estimate(settings);
-  final layers = (info['layers'] as num?)?.toInt();
-  if (layers == null || layers <= 0) throw StateError('Missing layer estimate');
   InferenceSettings keep(InferenceSettings s) => s.copyWith(
     explicitOverrides: current.explicitOverrides.difference(pcOptimizationKeys),
   );
+  Future<Map<String, dynamic>?> probe(InferenceSettings s) async {
+    // The run's deadline covers these estimates too: past it, stop asking
+    // the bridge and fall through to the safe variant below.
+    if (outOfTime?.call() ?? false) return null;
+    try {
+      return await estimate(s);
+    } catch (e, st) {
+      quietFailure('optimize_defaults_estimate', e, st);
+      return null;
+    }
+  }
+
+  final info = await probe(settings);
+  final layers = (info?['layers'] as num?)?.toInt() ?? 0;
   // Every layer on the card first, with either cache: a q8_0 cache with all
   // of Gemma 4 E4B's 43 layers decoded at 101 tok/s on an 8 GB card, F16
   // with 33 layers at 16. Asking for every layer also lets the engine move
@@ -300,34 +370,122 @@ Future<InferenceSettings> pcOptimizationDefaults({
   final canOffload = phone
       ? _phoneGpu(settings.backend, ios: iphone)
       : settings.backend != GpuBackend.cpu;
-  if (canOffload) {
+  if (canOffload && layers > 0) {
     for (final kv in [KvCacheType.fp16, KvCacheType.q8_0]) {
       final all = settings.copyWith(kvCacheType: kv, nGpuLayers: 999);
-      final fit = await estimate(all);
+      final fit = await probe(all);
+      if (fit == null) continue;
       final placed = (fit['gpuLayers'] as num?)?.toInt() ?? 0;
       final whole = fit['gpuExpertsOnCpu'] == true || placed >= layers;
-      if (whole && TuneBenchmarkRun.estimateFits(fit, all)) return keep(all);
-    }
-  }
-  for (final kv in [KvCacheType.fp16, KvCacheType.q8_0]) {
-    var low = 0, high = canOffload ? layers : 0;
-    settings = settings.copyWith(kvCacheType: kv);
-    while (low < high) {
-      final middle = (low + high + 1) ~/ 2;
-      final candidate = settings.copyWith(nGpuLayers: middle);
-      if (TuneBenchmarkRun.estimateFits(await estimate(candidate), candidate)) {
-        low = middle;
-      } else {
-        high = middle - 1;
+      if (whole && TuneBenchmarkRun.estimateFits(fit, all)) {
+        return OptimizeDefaultsPlan(keep(all));
       }
     }
-    final candidate = settings.copyWith(nGpuLayers: low);
-    if (TuneBenchmarkRun.estimateFits(await estimate(candidate), candidate)) {
-      // An empty draft id is MTP Auto: the matching sidecar is found at load.
-      return keep(candidate);
+  }
+  if (layers > 0) {
+    for (final kv in [KvCacheType.fp16, KvCacheType.q8_0]) {
+      var low = 0, high = canOffload ? layers : 0;
+      settings = settings.copyWith(kvCacheType: kv);
+      while (low < high) {
+        final middle = (low + high + 1) ~/ 2;
+        final candidate = settings.copyWith(nGpuLayers: middle);
+        final fit = await probe(candidate);
+        if (fit != null && TuneBenchmarkRun.estimateFits(fit, candidate)) {
+          low = middle;
+        } else {
+          high = middle - 1;
+        }
+      }
+      final candidate = settings.copyWith(nGpuLayers: low);
+      final fit = await probe(candidate);
+      if (fit != null && TuneBenchmarkRun.estimateFits(fit, candidate)) {
+        // An empty draft id is MTP Auto: the matching sidecar is found at load.
+        return OptimizeDefaultsPlan(keep(candidate));
+      }
     }
   }
-  throw StateError('No safe load settings');
+  // Safe variants, measured rather than refused: half the layers, a q8_0
+  // cache, the CPU, smaller batches.
+  final smallBatch = settings.effectiveBatchSize.clamp(32, 256);
+  final smallMicro = settings.effectiveMicroBatchSize.clamp(32, 128);
+  final variants = <InferenceSettings>[
+    if (layers > 1)
+      settings.copyWith(kvCacheType: KvCacheType.fp16, nGpuLayers: layers ~/ 2),
+    if (layers > 0)
+      settings.copyWith(kvCacheType: KvCacheType.q8_0, nGpuLayers: layers ~/ 2),
+    settings.copyWith(
+      kvCacheType: KvCacheType.fp16,
+      nGpuLayers: 0,
+      batchSize: smallBatch,
+      microBatchSize: smallMicro,
+    ),
+    settings.copyWith(
+      kvCacheType: KvCacheType.q8_0,
+      nGpuLayers: 0,
+      batchSize: smallBatch,
+      microBatchSize: smallMicro,
+    ),
+  ];
+  for (final candidate in variants) {
+    final fit = await probe(candidate);
+    if (fit != null && TuneBenchmarkRun.estimateFits(fit, candidate)) {
+      return OptimizeDefaultsPlan(keep(candidate));
+    }
+  }
+  // Nothing fits by the estimate: the smallest setup is returned with what
+  // was short. When that estimate was usable the controller stops before
+  // loading anything over budget; an estimate without numbers is unknown, so
+  // the run may still measure (and the load decides).
+  final smallest = variants.last;
+  final short = await probe(smallest);
+  final unfit = _unfitReason(short, smallest) ?? _unfitReason(info, settings);
+  return OptimizeDefaultsPlan(
+    keep(smallest),
+    unfit,
+    // A refusal only counts when the estimate gave numbers for this model.
+    unfit != null || _estimateUsable(info),
+  );
+}
+
+/// Whether the estimate answered with numbers at all. A bridge that is
+/// missing or failing reports nothing, and that silence is not a refusal.
+bool _estimateUsable(Map<String, dynamic>? e) =>
+    e != null &&
+    (e['ramNeedMb'] is num || e['vramNeedMb'] is num || e['layers'] is num);
+
+/// Which memory the estimate says is short, for the message the user reads.
+OptimizeUnfit? _unfitReason(Map<String, dynamic>? e, InferenceSettings s) {
+  if (e == null) return null;
+  final ram = e['ramNeedMb'] as num?, available = e['ramAvailableMb'] as num?;
+  if (ram != null && available != null) {
+    final budget =
+        (e['ramBudgetMb'] as num?) ??
+        available -
+            math.max(1024, ((e['ramTotalMb'] as num?) ?? available) / 8);
+    if (ram > budget) return OptimizeUnfit.ram;
+  }
+  final gpu = (e['gpuLayers'] as num?) ?? 0;
+  final need = e['vramNeedMb'] as num?, free = e['vramFreeMb'] as num?;
+  if (gpu > 0 &&
+      need != null &&
+      free != null &&
+      need + s.vramReserveMb > free) {
+    return OptimizeUnfit.vram;
+  }
+  return null;
+}
+
+/// The part of a measured winner the current platform stores in a profile.
+/// Desktop-only keys (and values the registry cannot coerce) are dropped by
+/// sanitization on phones, so Optimize never reports a save it did not make.
+Map<String, dynamic> optimizeProfileChanges(InferenceSettings winner) {
+  final json = winner.toJson();
+  return SettingsResolver.sanitize({
+    for (final key in pcOptimizationKeys) key: json[key],
+    // Null profile values are dropped by sanitization. Save the effective
+    // V precision so a global override cannot undo the measured cache.
+    'vCacheType': winner.effectiveVCacheType.name,
+  });
 }
 
 /// A downloaded model Optimize can try as [model]'s draft when the user has
@@ -358,13 +516,22 @@ ModelInfo? matchingDraftOnDisk(ModelInfo model, Iterable<ModelInfo> library) {
 /// models only). The engine's automatic fit leaves headroom; the fewest
 /// layers' experts in RAM that still fit (by the same estimate a load
 /// uses), and two and four more, are tried against it. Empty when every
-/// expert already fits, the model has no experts, or the run is CPU only.
+/// expert already fits, the model has no experts, the run is CPU only, or the
+/// estimate cannot run (unknown, so the run measures without MoE variants).
 Future<List<int>> moeExpertPlacements(
   InferenceSettings best, {
   required Future<Map<String, dynamic>> Function(InferenceSettings) estimate,
 }) async {
   if (best.backend == GpuBackend.cpu || best.nCpuMoe >= 0) return const [];
-  final auto = await estimate(best);
+  final Map<String, dynamic> auto;
+  try {
+    auto = await estimate(best);
+  } catch (e, st) {
+    // An estimate that cannot run is unknown, not a placement: the run
+    // measures without MoE variants instead of failing before a sample.
+    quietFailure('optimize_moe_estimate', e, st);
+    return const [];
+  }
   if (auto['gpuExpertsOnCpu'] != true) return const [];
   final layers = (auto['layers'] as num?)?.toInt() ?? 0;
   if (layers <= 0) return const [];

@@ -500,6 +500,9 @@ class TestModels extends ModelManagerNotifier {
     void Function()? onLoadStart,
     bool vision = false,
   }) async {}
+
+  /// What the Models screen does when a load starts: the chat refuses turns.
+  void markLoading() => state = state.copyWith(isLoadingModel: true);
 }
 
 class TestEngine extends LlamaEngine {
@@ -516,6 +519,7 @@ class TestEngine extends LlamaEngine {
     required String modelPath,
     required InferenceSettings settings,
     String? mmprojPath,
+    String engineId = 'llama.cpp',
     List<({String path, double scale})> adapters = const [],
     String? draftModelPath,
     bool memoryGuard = true,
@@ -546,6 +550,7 @@ class TestEngine extends LlamaEngine {
   }
 
   Completer<void>? pause;
+  Stream<String>? answerPieces;
   String? receivedPrefix;
 
   /// Called at the start of every generate(), before anything is yielded.
@@ -610,6 +615,10 @@ class TestEngine extends LlamaEngine {
     }
     receivedMessages = messages;
     receivedPrefix = assistantPrefix;
+    if (answerPieces case final pieces?) {
+      yield* pieces;
+      return;
+    }
     // Text tool protocol: a first round that asks for the calculator, then a
     // final answer once the tool result is in the history.
     if (toolBlock != null) {
@@ -762,10 +771,57 @@ class _EchoEngine extends TestEngine {
   }
 }
 
+/// Reports a message write, so a test can start a model load between a branch
+/// edit's transaction and the turn it then asks for.
+class _ModelLoadOnWrite extends AppDatabase {
+  _ModelLoadOnWrite(super.executor) : super.forTesting();
+  void Function()? onMessageWrite;
+  @override
+  Future<void> updateMessage(String id, MessagesCompanion m) {
+    onMessageWrite?.call();
+    return super.updateMessage(id, m);
+  }
+}
+
+/// Refuses the final answer row, as storage running out of space would.
+class _FullDiskDatabase extends AppDatabase {
+  _FullDiskDatabase(super.executor) : super.forTesting();
+  bool armed = false;
+  bool omitPlaceholder = false;
+  @override
+  Future<void> insertMessage(MessagesCompanion m) {
+    if (omitPlaceholder && m.status.present && m.status.value == 'generating') {
+      return Future.value();
+    }
+    if (armed &&
+        m.role.present &&
+        m.role.value == 'assistant' &&
+        m.status.present &&
+        m.status.value == 'complete') {
+      throw Exception('database or disk is full');
+    }
+    return super.insertMessage(m);
+  }
+}
+
 void main() {
   late AppDatabase db;
   late ProviderContainer container;
   late TestEngine engine;
+  Future<void> useDatabase(AppDatabase replacement) async {
+    container.dispose();
+    await db.close();
+    db = replacement;
+    container = ProviderContainer(
+      overrides: [
+        appDatabaseProvider.overrideWithValue(db),
+        llamaEngineProvider.overrideWithValue(engine),
+        settingsProvider.overrideWith(TestSettings.new),
+        modelManagerProvider.overrideWith(TestModels.new),
+      ],
+    );
+  }
+
   setUp(() {
     TurnPolicy.judgeLocalModels = true;
     addTearDown(() => TurnPolicy.judgeLocalModels = false);
@@ -1138,8 +1194,7 @@ void main() {
     final mid = await db.getMessages(chatId);
     expect(mid.length, 2, reason: 'user row plus the assistant placeholder');
     expect(mid.last.status, 'generating');
-    // The parser holds back the last six answer characters to catch a split
-    // <think> tag, so only the reasoning is guaranteed to be flushed here.
+    expect(mid.last.content, 'answer');
     expect(mid.last.reasoning, 'reason');
     engine.pause!.complete();
     expect(await sent, true);
@@ -1253,6 +1308,93 @@ void main() {
     expect(container.read(chatProvider).messages.last.content, 'answer tail');
   });
 
+  test(
+    'the live answer grows after long reasoning before completion',
+    () async {
+      final pieces = StreamController<String>();
+      engine.answerPieces = pieces.stream;
+      final thought = 'Considering the question. ' * 1000;
+      final reasoningPainted = Completer<ChatState>();
+      final firstAnswerPainted = Completer<ChatState>();
+      final longerAnswerPainted = Completer<ChatState>();
+      container.listen(chatProvider, (_, state) {
+        if (!state.isGenerating) return;
+        if (!reasoningPainted.isCompleted &&
+            state.reasoning?.content == thought) {
+          reasoningPainted.complete(state);
+        }
+        if (!firstAnswerPainted.isCompleted && state.partialAnswer == 'The') {
+          firstAnswerPainted.complete(state);
+        }
+        if (!longerAnswerPainted.isCompleted &&
+            state.partialAnswer == 'The answer') {
+          longerAnswerPainted.complete(state);
+        }
+      });
+      final sent = container.read(chatProvider.notifier).send('Hello');
+      const timeout = Duration(seconds: 3);
+      try {
+        pieces.add('<think>$thought');
+        expect(
+          (await reasoningPainted.future.timeout(timeout)).partialAnswer,
+          isEmpty,
+        );
+        pieces.add('</thi');
+        pieces.add('nk>The');
+        expect(
+          (await firstAnswerPainted.future.timeout(timeout)).reasoning?.content,
+          thought,
+        );
+        pieces.add(' answer');
+        final live = await longerAnswerPainted.future.timeout(timeout);
+        expect(live.reasoning?.content, thought);
+        expect(live.isGenerating, isTrue);
+      } finally {
+        unawaited(pieces.close());
+        await sent;
+      }
+      expect(container.read(chatProvider).messages.last.content, 'The answer');
+    },
+  );
+
+  test('a tool-enabled turn paints answer text after a closed block', () async {
+    container.dispose();
+    container = ProviderContainer(
+      overrides: [
+        appDatabaseProvider.overrideWithValue(db),
+        llamaEngineProvider.overrideWithValue(engine),
+        settingsProvider.overrideWith(ToolTestSettings.new),
+        modelManagerProvider.overrideWith(TestModels.new),
+      ],
+    );
+    final pieces = StreamController<String>();
+    engine.answerPieces = pieces.stream;
+    final first = Completer<void>(), continued = Completer<void>();
+    container.listen(chatProvider, (_, state) {
+      if (!state.isGenerating) return;
+      if (!first.isCompleted && state.partialAnswer == 'Let me check. ') {
+        first.complete();
+      }
+      if (!continued.isCompleted &&
+          state.partialAnswer == 'Let me check. The result is here.') {
+        continued.complete();
+      }
+    });
+    final sent = container
+        .read(chatProvider.notifier)
+        .send('What is six times seven?');
+    try {
+      pieces.add('Let me check. <tool_call>unfinished');
+      await first.future.timeout(const Duration(seconds: 3));
+      pieces.add('</tool_call>The result is here.');
+      await continued.future.timeout(const Duration(seconds: 3));
+      expect(engine.receivedMessages!.first['content'], contains('```tool'));
+    } finally {
+      unawaited(pieces.close());
+      await sent;
+    }
+  });
+
   test('a run the OS killed is shown as interrupted on reopen', () async {
     final n = container.read(chatProvider.notifier);
     await n.send('Hello');
@@ -1266,7 +1408,7 @@ void main() {
         content: Value('half an ans'),
       ),
     );
-    n.newChat();
+    await n.newChat();
     await n.openChat(chatId);
     final shown = container.read(chatProvider).messages;
     expect(shown.last.status, 'interrupted');
@@ -1315,6 +1457,144 @@ void main() {
     final rows = await db.getMessages(s.chatId!);
     expect(rows[1].status, startsWith('superseded:'));
     expect(rows.map((r) => r.sequence), [0, 1, 2]);
+  });
+
+  test('an edit whose turn is refused puts the set-aside turns back', () async {
+    final guarded = _ModelLoadOnWrite(NativeDatabase.memory());
+    await useDatabase(guarded);
+    final n = container.read(chatProvider.notifier);
+    await n.send('First question');
+    await n.send('Second question');
+    final first = container.read(chatProvider).messages.first;
+    // A model load starts between the edit's transaction and its turn, so
+    // `send` refuses: the chat must not be left with no live turns.
+    final manager = container.read(modelManagerProvider.notifier) as TestModels;
+    guarded.onMessageWrite = manager.markLoading;
+    expect(await n.editTurn(first, 'First question, revised'), false);
+    guarded.onMessageWrite = null;
+    expect(container.read(chatProvider).messages, hasLength(4));
+    expect(
+      container.read(chatProvider).messages.where((m) => m.isSuperseded),
+      isEmpty,
+    );
+    final rows = await db.getMessages(container.read(chatProvider).chatId!);
+    expect(rows.where((r) => r.status.startsWith('superseded:')), isEmpty);
+  });
+
+  test('a refused edit tells the user why the question was not sent', () async {
+    final guarded = _ModelLoadOnWrite(NativeDatabase.memory());
+    await useDatabase(guarded);
+    final n = container.read(chatProvider.notifier);
+    await n.send('Hello');
+    final manager = container.read(modelManagerProvider.notifier) as TestModels;
+    guarded.onMessageWrite = manager.markLoading;
+    expect(await n.editLast('Revised question'), isFalse);
+    expect(container.read(chatProvider).error, contains('engine is busy'));
+  });
+
+  test('refused edit rollback respects a newer branch restore', () async {
+    final guarded = _ModelLoadOnWrite(NativeDatabase.memory());
+    await useDatabase(guarded);
+    final n = container.read(chatProvider.notifier);
+    await n.send('Hello');
+    await n.regenerate();
+    final before = container.read(chatProvider);
+    final previousAnswer = before.messages[1];
+    final currentAnswer = before.messages.last;
+    final manager = container.read(modelManagerProvider.notifier) as TestModels;
+    guarded.onMessageWrite = manager.markLoading;
+    final restored = Completer<bool>();
+    final subscription = container.listen(chatProvider, (previous, next) {
+      if (previous?.housekeeping == true && !next.housekeeping) {
+        scheduleMicrotask(() {
+          if (!restored.isCompleted) {
+            restored.complete(n.restoreBranch(previousAnswer.branch!));
+          }
+        });
+      }
+    });
+    addTearDown(subscription.close);
+    expect(await n.editLast('Revised question'), isFalse);
+    expect(await restored.future, isTrue);
+    final after = container.read(chatProvider);
+    expect(after.messages.where(ChatNotifier.isLive).map((m) => m.id), [
+      before.messages.first.id,
+      previousAnswer.id,
+    ]);
+    final rows = await db.getMessages(after.chatId!);
+    expect(
+      rows.singleWhere((r) => r.id == currentAnswer.id).status,
+      startsWith('superseded:'),
+    );
+  });
+
+  for (final research in [false, true]) {
+    test(
+      '${research ? 'search again' : 'regenerate'} keeps a refused answer live',
+      () async {
+        final guarded = _ModelLoadOnWrite(NativeDatabase.memory());
+        await useDatabase(guarded);
+        final n = container.read(chatProvider.notifier);
+        await n.send('Hello');
+        final before = container.read(chatProvider);
+        final retry = research ? n.searchAgain : n.regenerate;
+        final busy = container.read(sessionBusyProvider.notifier);
+        busy.state = true;
+        expect(await retry(), isFalse);
+        expect(container.read(chatProvider).messages.last.status, 'complete');
+        busy.state = false;
+        final manager =
+            container.read(modelManagerProvider.notifier) as TestModels;
+        guarded.onMessageWrite = manager.markLoading;
+        expect(await retry(), isFalse);
+        final after = container.read(chatProvider);
+        expect(
+          after.messages.map((m) => m.id),
+          before.messages.map((m) => m.id),
+        );
+        expect(after.messages.last.status, 'complete');
+        expect((await db.getMessages(before.chatId!)).last.status, 'complete');
+      },
+    );
+  }
+
+  test('an answer the database refused is not reported as saved', () async {
+    final full = _FullDiskDatabase(NativeDatabase.memory());
+    await useDatabase(full);
+    final n = container.read(chatProvider.notifier);
+    full.armed = true;
+    await n.send('Hello');
+    final s = container.read(chatProvider);
+    expect(s.error, isNotNull);
+    // The answer stays on screen as a failed turn, never as a saved one.
+    expect(s.messages.last.status, 'error');
+    expect(s.messages.last.content, contains('answer'));
+    final rows = await full.getMessages(s.chatId!);
+    expect(
+      rows.where((r) => r.role == 'assistant' && r.status == 'complete'),
+      isEmpty,
+    );
+  });
+
+  test('the next question skips an answer with no stored row', () async {
+    final full = _FullDiskDatabase(NativeDatabase.memory())
+      ..armed = true
+      ..omitPlaceholder = true;
+    await useDatabase(full);
+    final n = container.read(chatProvider.notifier);
+    await n.send('First question');
+    final first = container.read(chatProvider);
+    expect(first.messages.last.status, 'error');
+    expect((await db.getMessages(first.chatId!)).map((r) => r.id), [
+      first.messages.first.id,
+    ]);
+    full
+      ..armed = false
+      ..omitPlaceholder = false;
+    expect(await n.send('Second question'), isTrue);
+    final rows = await db.getMessages(first.chatId!);
+    expect(rows[1].content, 'Second question');
+    expect(rows[1].parentId, rows.first.id);
   });
 
   test(
@@ -1489,7 +1769,7 @@ void main() {
     );
     expect(last['content'], isNot(contains('Write the answer in')));
     // A French question gets its language named after the English rules.
-    n.newChat();
+    await n.newChat();
     await n.send('Quel est le prix actuel du Nikon Z30 ?');
     expect(
       engine.receivedMessages!.last['content'],
@@ -1604,7 +1884,7 @@ void main() {
       await n.send('What does the report say?', attachments: [doc]);
       expect(engine.judgeCalls, 0);
       expect(search.calls, 0);
-      n.newChat();
+      await n.newChat();
       await n.send('What is the latest update?', attachments: [doc]);
       expect(search.calls, 1);
     },
@@ -1744,7 +2024,7 @@ void main() {
     }
     await Future<void>.delayed(const Duration(milliseconds: 20));
     final id = container.read(chatProvider).chatId;
-    n.newChat();
+    await n.newChat();
     expect(container.read(chatProvider).chatId, id);
     expect(await n.send('Duplicate'), false);
     n.cancel();
@@ -2350,7 +2630,7 @@ void main() {
           content: Value('Partial comparison'),
         ),
       );
-      n.newChat();
+      await n.newChat();
       await n.openChat(id);
       final m = container.read(chatProvider).messages.last;
       expect(m.status, 'alternative:interrupted');
@@ -2396,7 +2676,7 @@ void main() {
       BEGIN SELECT RAISE(ABORT, 'simulated write failure'); END;
     """);
       final edit = n.editLast('Replacement');
-      n.newChat();
+      await n.newChat();
       expect(
         container.read(chatProvider).chatId,
         before.chatId,
@@ -2787,7 +3067,7 @@ void main() {
       );
       // An ordinary turn, in a new chat, still gets the note that shares
       // its words.
-      n.newChat();
+      await n.newChat();
       expect(await n.send('Is my Flutter tablet too old?'), isTrue);
       final ordinary = engine.receivedMessages!.first['content'] as String;
       expect(ordinary, isNot(contains('Research before answering')));
@@ -2917,7 +3197,7 @@ void main() {
       expect(run.settings['temperature'], 0.05);
       expect(run.origins['temperature'], 'chat');
       // Reopening the chat restores the overrides; a new chat clears them.
-      n.newChat();
+      await n.newChat();
       expect(container.read(chatOverridesProvider), isEmpty);
       await n.openChat(id);
       expect(container.read(chatOverridesProvider), const {

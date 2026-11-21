@@ -11,6 +11,7 @@ import '../features/settings/domain/schema_validation.dart';
 import '../features/settings/domain/settings_scope.dart';
 import '../features/settings/presentation/providers/effective_settings_provider.dart';
 import '../features/settings/presentation/providers/model_profiles_provider.dart';
+import '../features/settings/presentation/widgets/settings_widgets.dart';
 import '../features/tools/presentation/tools_quick_panel.dart';
 import '../data/storage/gguf_metadata.dart';
 import 'context_auto_row.dart';
@@ -92,19 +93,38 @@ class _DesktopInspectorPanelState extends ConsumerState<DesktopInspectorPanel> {
     }
   }
 
-  void _reset(String? modelId) {
+  /// Resets this chat's overrides or the model's sampling. Either can clear
+  /// the value that kept web research Off and reveal an inherited Auto or
+  /// Always, so both ask the shared question first (audit 2026-11-20 P1-4).
+  Future<void> _reset(String? modelId) async {
     if (_chatScope || modelId == null) {
-      ref.read(chatProvider.notifier).setChatOverrides({});
+      if (!await confirmWebModeChange(
+        context,
+        ref,
+        const SettingsChange(chat: {}),
+      )) {
+        return;
+      }
+      if (!mounted) return;
+      await ref.read(chatProvider.notifier).setChatOverrides({});
       return;
     }
     final profiles = ref.read(modelProfilesProvider.notifier);
-    profiles.set(modelId, {
+    final next = {
       for (final e in profiles.of(modelId).entries)
         if (!desktopSamplingKeys.contains(e.key) &&
             e.key != 'contextSize' &&
             e.key != 'contextAuto')
           e.key: e.value,
-    });
+    };
+    if (!await confirmWebModeChange(
+      context,
+      ref,
+      SettingsChange(profileModelId: modelId, profile: next),
+    )) {
+      return;
+    }
+    await profiles.set(modelId, next);
   }
 
   @override
@@ -335,8 +355,7 @@ class _DesktopInspectorPanelState extends ConsumerState<DesktopInspectorPanel> {
               if (!chatScope && ref.watch(chatOverridesProvider).isNotEmpty)
                 TextButton(
                   key: const Key('desktop-inspector-reset-chat'),
-                  onPressed: () =>
-                      ref.read(chatProvider.notifier).setChatOverrides({}),
+                  onPressed: () => _reset(null),
                   child: Text(t.desktopInspectorReset),
                 ),
             ],
