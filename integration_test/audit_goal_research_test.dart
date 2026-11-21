@@ -169,97 +169,95 @@ class _Engine extends LlamaEngine {
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-  testWidgets(
-    'bounded live Goal research and action accounting',
-    (tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(body: Text('Audit: bounded Goal research')),
-        ),
-      );
-      expect(_path, isNotEmpty);
-      await (await SharedPreferences.getInstance()).remove('active_goal_v2');
-      final db = AppDatabase.forTesting(NativeDatabase.memory());
-      final clock = Stopwatch()..start();
-      final engine = _Engine(clock);
-      final container = ProviderContainer(
-        overrides: [
-          appDatabaseProvider.overrideWithValue(db),
-          llamaEngineProvider.overrideWithValue(engine),
-          settingsProvider.overrideWith(_Settings.new),
-          modelManagerProvider.overrideWith(_Models.new),
-        ],
-      );
-      addTearDown(() async {
-        container.dispose();
-        engine.dispose();
-        await db.close();
-      });
-      String last = '';
-      final sub = container.listen(goalProvider, (_, next) {
-        if (next == null) return;
-        engine.phase = next.preparingActions
-            ? 'preparingActions'
-            : next.phase.name;
-        final line =
-            '${next.status.name}/${engine.phase}/${next.steps}/${next.usedTokens}';
-        if (line == last) return;
-        last = line;
-        _report({
-          'kind': 'phase',
-          'ms': clock.elapsedMilliseconds,
-          'status': next.status.name,
-          'phase': engine.phase,
-          'steps': next.steps,
-          'usedTokens': next.usedTokens,
-          'sources': next.sources.length,
-        });
-      }, fireImmediately: true);
-      await container
-          .read(goalProvider.notifier)
-          .start(
-            const GoalSpec(
-              objective:
-                  'Find the official Nikon Z30 body weight including battery and memory card. Cite Nikon as the source, and prepare a text file with the answer.',
-              successCriteria:
-                  'State the official Nikon Z30 weight including battery and memory card, with a Nikon source citation.',
-              maxSteps: 2,
-              maxDuration: Duration(minutes: 4),
-              maxTokens: 20000,
-              maxToolCalls: 10,
-              specialization: GoalSpecialization.product,
-            ),
-          );
-      sub.close();
-      final goal = container.read(goalProvider)!;
+  testWidgets('bounded live Goal research and action accounting', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: Text('Audit: bounded Goal research')),
+      ),
+    );
+    expect(_path, isNotEmpty);
+    await (await SharedPreferences.getInstance()).remove('active_goal_v2');
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final clock = Stopwatch()..start();
+    final engine = _Engine(clock);
+    final container = ProviderContainer(
+      overrides: [
+        appDatabaseProvider.overrideWithValue(db),
+        llamaEngineProvider.overrideWithValue(engine),
+        settingsProvider.overrideWith(_Settings.new),
+        modelManagerProvider.overrideWith(_Models.new),
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      engine.dispose();
+      await db.close();
+    });
+    String last = '';
+    final sub = container.listen(goalProvider, (_, next) {
+      if (next == null) return;
+      engine.phase = next.preparingActions
+          ? 'preparingActions'
+          : next.phase.name;
+      final line =
+          '${next.status.name}/${engine.phase}/${next.steps}/${next.usedTokens}';
+      if (line == last) return;
+      last = line;
       _report({
-        'kind': 'result',
+        'kind': 'phase',
         'ms': clock.elapsedMilliseconds,
-        'status': goal.status.name,
-        'error': goal.error,
-        'usedTokens': goal.usedTokens,
-        'usedToolCalls': goal.usedToolCalls,
-        'coverage': goal.spec.coverage(goal.criteria),
-        'tasks': [
-          for (final task in goal.tasks)
-            {
-              'question': task.question,
-              'status': task.status.name,
-              'findings': task.findings,
-              'trace': task.trace?.toJson(),
-              'checks': [for (final check in task.checks) check.toJson()],
-            },
-        ],
-        'sources': [for (final source in goal.sources) source.toJson()],
-        'report': goal.report,
-        'checks': [for (final check in goal.reportChecks) check.toJson()],
-        'actions': [for (final action in goal.actions) action.toJson()],
-        'missing': goal.missing,
-        'quick': goal.spec.quick,
-        'rounds': engine.rounds,
+        'status': next.status.name,
+        'phase': engine.phase,
+        'steps': next.steps,
+        'usedTokens': next.usedTokens,
+        'sources': next.sources.length,
       });
-      expect(engine.rounds, isNotEmpty);
-    },
-    timeout: const Timeout(Duration(minutes: 6)),
-  );
+    }, fireImmediately: true);
+    await container
+        .read(goalProvider.notifier)
+        .start(
+          const GoalSpec(
+            objective:
+                'Find the official Nikon Z30 body weight including battery and memory card. Cite Nikon as the source, and prepare a text file with the answer.',
+            successCriteria:
+                'State the official Nikon Z30 weight including battery and memory card, with a Nikon source citation.',
+            maxSteps: 2,
+            maxDuration: Duration(minutes: 4),
+            maxTokens: 20000,
+            maxToolCalls: 10,
+            specialization: GoalSpecialization.product,
+          ),
+        );
+    sub.close();
+    final goal = container.read(goalProvider)!;
+    _report({
+      'kind': 'result',
+      'ms': clock.elapsedMilliseconds,
+      'status': goal.status.name,
+      'error': goal.error,
+      'usedTokens': goal.usedTokens,
+      'usedToolCalls': goal.usedToolCalls,
+      'coverage': goal.spec.coverage(goal.criteria),
+      'tasks': [
+        for (final task in goal.tasks)
+          {
+            'question': task.question,
+            'status': task.status.name,
+            'findings': task.findings,
+            'trace': task.trace?.toJson(),
+            'checks': [for (final check in task.checks) check.toJson()],
+          },
+      ],
+      'sources': [for (final source in goal.sources) source.toJson()],
+      'report': goal.report,
+      'checks': [for (final check in goal.reportChecks) check.toJson()],
+      'actions': [for (final action in goal.actions) action.toJson()],
+      'missing': goal.missing,
+      'quick': goal.spec.quick,
+      'rounds': engine.rounds,
+    });
+    expect(engine.rounds, isNotEmpty);
+  }, timeout: const Timeout(Duration(minutes: 6)));
 }
