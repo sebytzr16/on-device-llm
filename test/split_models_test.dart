@@ -370,11 +370,13 @@ void main() {
   );
 
   test('an unresolvable managed root prevents adoption and deletion', () async {
+    // The file appears after start-up, so the start-up orphan scan (which runs
+    // outside the overrides below) cannot adopt it first.
+    final notifier = await manager();
     final sub = await Directory(p.join(models.path, 'unverified')).create();
     final single = await File(
       p.join(sub.path, 'model.gguf'),
     ).writeAsBytes(bytes(1));
-    final notifier = await manager();
     final zone = Zone.current;
     await IOOverrides.runZoned(
       () async {
