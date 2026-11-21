@@ -380,8 +380,13 @@ void main() {
     final zone = Zone.current;
     await IOOverrides.runZoned(
       () async {
-        // Older SDKs (Flutter 3.44) do not route every Directory through
-        // IOOverrides; the check only means something where the fake is used.
+        // Older SDKs (Flutter 3.44, Dart 3.12) do not route every Directory
+        // through IOOverrides; releases build with Flutter 3.47.
+        final dart = Platform.version.split(' ').first.split('.');
+        if (int.parse(dart[0]) == 3 && int.parse(dart[1]) < 13) {
+          markTestSkipped('IOOverrides not applied on this SDK');
+          return;
+        }
         try {
           await Directory(models.path).resolveSymbolicLinks();
           markTestSkipped('IOOverrides.createDirectory not applied');
