@@ -771,6 +771,29 @@ class _EchoEngine extends TestEngine {
   }
 }
 
+/// A LiteRT-LM window the engine has not measured yet: `previewPrompt` says
+/// nothing about the fit until the host reports its context (review 2026-11-20
+/// P3-5).
+class _UnmeasuredWindowEngine extends TestEngine {
+  @override
+  Future<Map<String, dynamic>> previewPrompt({
+    required List<Map<String, Object>> messages,
+    required String fallbackTemplate,
+    required InferenceSettings settings,
+    String assistantPrefix = '',
+    List<ToolSpec> tools = const [],
+  }) async {
+    final budget = await super.previewPrompt(
+      messages: messages,
+      fallbackTemplate: fallbackTemplate,
+      settings: settings,
+      assistantPrefix: assistantPrefix,
+      tools: tools,
+    );
+    return {...budget, 'fits': null};
+  }
+}
+
 /// Reports a message write, so a test can start a model load between a branch
 /// edit's transaction and the turn it then asks for.
 class _ModelLoadOnWrite extends AppDatabase {
@@ -1489,7 +1512,13 @@ void main() {
     final manager = container.read(modelManagerProvider.notifier) as TestModels;
     guarded.onMessageWrite = manager.markLoading;
     expect(await n.editLast('Revised question'), isFalse);
-    expect(container.read(chatProvider).error, contains('engine is busy'));
+    // A load is the reason: the busy-answer wording sends the user to wait
+    // for an answer that is not running (review 2026-11-20 finding 9).
+    expect(container.read(chatProvider).error, contains('Loading model'));
+    expect(
+      container.read(chatProvider).error,
+      isNot(contains('engine is busy')),
+    );
   });
 
   test('refused edit rollback respects a newer branch restore', () async {
@@ -1708,9 +1737,11 @@ void main() {
     expect(SearchSteps.parseQueries('', fallback: 'the question'), [
       'the question',
     ]);
-    expect(SearchSteps.parseQueries('one\n' * 5, fallback: 'q'), [
-      'q',
-    ], reason: 'single words are not queries');
+    expect(
+      SearchSteps.parseQueries('one\n' * 5, fallback: 'q'),
+      ['q'],
+      reason: 'single words are not queries',
+    );
   });
 
   test('groundingNotice flags refusals, missing and bogus citations', () {
@@ -1776,6 +1807,46 @@ void main() {
       contains('Write the answer in French'),
     );
   });
+
+  test(
+    'web evidence is kept while the engine has not measured its window',
+    () async {
+      container.dispose();
+      // A LiteRT-LM turn before the host reported its context: `fits` is
+      // null, not false. The evidence must be judged against the configured
+      // window like the documents are, not dropped as if it overflowed
+      // (review 2026-11-20 P3-5).
+      engine = _UnmeasuredWindowEngine();
+      container = ProviderContainer(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          llamaEngineProvider.overrideWithValue(engine),
+          settingsProvider.overrideWith(WebTestSettings.new),
+          modelManagerProvider.overrideWith(TestModels.new),
+          duckDuckGoScraperProvider.overrideWithValue(TestSearch()),
+          webPageReaderProvider.overrideWithValue(TestReader()),
+        ],
+      );
+      final n = container.read(chatProvider.notifier);
+      await n.send('Latest facts');
+      expect(
+        engine.previews,
+        greaterThan(0),
+        reason: 'the evidence was fitted',
+      );
+      final last = engine.receivedMessages!.last;
+      expect(last['content'], contains('Verified page evidence'));
+      expect(last['content'], contains('Question: Latest facts'));
+      expect(
+        container.read(chatProvider).messages.last.sourcesJson,
+        isNot('[]'),
+      );
+      expect(
+        container.read(chatProvider).notice,
+        isNot(contains('could not fit')),
+      );
+    },
+  );
 
   test('a fact follow-up the read pages do not cover searches again', () async {
     container.dispose();
@@ -2317,6 +2388,40 @@ void main() {
     final rows = await db.getMessages(container.read(chatProvider).chatId!);
     expect(rows.where((r) => r.status == 'alternative').length, 1);
   });
+
+  test(
+    'memory notes ride with the system prompt when the turn ends on an answer',
+    () async {
+      container.dispose();
+      container = ProviderContainer(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          llamaEngineProvider.overrideWithValue(engine),
+          settingsProvider.overrideWith(MemoryTestSettings.new),
+          modelManagerProvider.overrideWith(TestModels.new),
+        ],
+      );
+      engine.memoryReply = 'NONE';
+      final notifier = container.read(chatProvider.notifier);
+      await notifier.send('I am a chef');
+      expect(await container.read(memoryStoreProvider).facts(), [
+        'The user is a chef',
+      ]);
+      // A compared answer leaves the assistant turn last, so the notes
+      // cannot go with the question: they must still reach the model.
+      expect(await notifier.compare(pinnable), true);
+      final prompt = engine.receivedMessages!;
+      expect(prompt.last['role'], 'assistant');
+      expect(prompt.first['role'], 'system');
+      final system = prompt.first['content'] as String;
+      expect(system, contains('- The user is a chef'));
+      // Counted once: the notes are fitted in the system prompt and put
+      // there by the turn's notes, not appended after fitting as well
+      // (review 2026-11-20 P3-3).
+      expect('- The user is a chef'.allMatches(system).length, 1);
+    },
+  );
+
   test(
     'branch restore can be toggled after reopening without mixing contexts',
     () async {

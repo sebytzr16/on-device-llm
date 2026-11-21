@@ -115,7 +115,16 @@ void main() {
             StateError('rollback failed'),
           ),
         ),
-        throwsStateError,
+        // The saved paths may point at the copies, so they stay and the
+        // paths, not the folder, are reported as the failure
+        // (release review 1.8.0 #5).
+        throwsA(
+          isA<ModelFolderException>().having(
+            (e) => e.reason,
+            'reason',
+            ModelFolderFailure.saveFailed,
+          ),
+        ),
       );
       // The catalog or the settings could not be rolled back: both the
       // originals and the copied files stay (audit 09-2).

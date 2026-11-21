@@ -11,6 +11,16 @@ import 'package:ondevice_llm/core/logging/quiet_failure.dart';
 const _kProfilesKey = 'model_profiles_v1';
 const _kThinkingOffKey = 'thinking_off_profiles_2026_09_28';
 
+/// A write the caller required to persist failed. The page maps it to its own
+/// localized sentence, so an English message never reaches an es/fr UI
+/// (review #3).
+class ModelProfileSaveFailure implements Exception {
+  const ModelProfileSaveFailure();
+
+  @override
+  String toString() => 'Model profile persistence failed';
+}
+
 /// Per-model setting overrides (roadmap P1.4 "model profile" layer): a
 /// map from catalog/import id to a partial settings JSON. A profile follows
 /// the model wherever it is used; chats and presets layer on top of it.
@@ -95,7 +105,7 @@ class ModelProfilesNotifier
       try {
         _prefs ??= await SharedPreferences.getInstance();
         if (!await _prefs!.setString(_kProfilesKey, encoded)) {
-          throw StateError('Model profile persistence failed');
+          throw const ModelProfileSaveFailure();
         }
       } catch (e, st) {
         if (requirePersistence) rethrow;

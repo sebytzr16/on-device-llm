@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ondevice_llm/core/l10n/l10n.dart';
 import 'package:ondevice_llm/core/theme/app_theme.dart';
 import 'package:ondevice_llm/features/models/domain/entities/model_info.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
@@ -13,9 +14,12 @@ import 'package:ondevice_llm/features/settings/presentation/providers/settings_p
 import 'package:ondevice_llm/features/settings/presentation/screens/advanced_pages_2.dart';
 import 'package:ondevice_llm/features/settings/presentation/screens/effective_settings_page.dart';
 import 'package:ondevice_llm/features/settings/presentation/screens/inference_contract_page.dart';
+import 'package:ondevice_llm/features/settings/presentation/screens/model_profile_page.dart';
 import 'package:ondevice_llm/features/settings/presentation/screens/overrides_page.dart';
 import 'package:ondevice_llm/features/tools/presentation/tools_quick_panel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
 const testModel = ModelInfo(
   id: 'test',
@@ -75,6 +79,17 @@ class TestModels extends ModelManagerNotifier {
       catalog: [testModel, draftModel],
       loadedModelId: 'test',
     );
+  }
+}
+
+/// A preferences store whose profile write fails, as a full disk would.
+class _FailingProfileStore extends InMemorySharedPreferencesStore {
+  _FailingProfileStore() : super.empty();
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async {
+    if (key == 'flutter.model_profiles_v1') return false;
+    return super.setValue(valueType, key, value);
   }
 }
 
@@ -724,5 +739,40 @@ void main() {
       palette.accent,
       isNot(AppTheme.palette(AccentChoice.amber, dark: false).accent),
     );
+  });
+
+  testWidgets('a model profile that does not persist says so in the app', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(412, 3600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final previousStore = SharedPreferencesStorePlatform.instance;
+    SharedPreferencesStorePlatform.instance = _FailingProfileStore();
+    addTearDown(() => SharedPreferencesStorePlatform.instance = previousStore);
+    await tester.pumpWidget(harness(const ModelProfilePage(model: testModel)));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('override-temperature')),
+      600,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.ensureVisible(find.byKey(const Key('override-temperature')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('override-temperature')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '0.2');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    // The profile write is required to persist, so the page tells the user in
+    // their own language instead of only logging the failure (#3).
+    final failed = AppLocalizationsEn().modelProfileSaveFailed;
+    await tester.scrollUntilVisible(
+      find.text(failed),
+      -400,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text(failed), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

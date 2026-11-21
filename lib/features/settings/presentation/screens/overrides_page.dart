@@ -12,6 +12,7 @@ import '../../domain/setting_specs.dart';
 import '../setting_labels.dart';
 import '../../domain/settings_scope.dart';
 import '../providers/effective_settings_provider.dart';
+import '../providers/model_profiles_provider.dart';
 import '../widgets/settings_widgets.dart';
 import '../../../../core/island/status_island.dart';
 import '../../../../core/design/app_dialog.dart';
@@ -90,9 +91,15 @@ class _OverridesPageState extends ConsumerState<OverridesPage> {
       await widget.onChanged(SettingsResolver.sanitize(_overrides));
       if (mounted) setState(() => _error = null);
     } catch (e) {
-      if (mounted) setState(() => _error = '$e');
+      if (mounted) setState(() => _error = _errorText(e));
     }
   }
+
+  /// A scope's save error as the user reads it: a failed profile write has its
+  /// own sentence instead of the English exception text (review #3).
+  String _errorText(Object error) => error is ModelProfileSaveFailure
+      ? context.l10n.modelProfileSaveFailed
+      : '$error';
 
   /// Off to Auto or Always sends the user's text off the device: this scope
   /// asks the same informed question the main switch does before saving it
@@ -129,7 +136,7 @@ class _OverridesPageState extends ConsumerState<OverridesPage> {
                 try {
                   await widget.onChanged(const {});
                 } catch (e) {
-                  if (mounted) setState(() => _error = '$e');
+                  if (mounted) setState(() => _error = _errorText(e));
                 }
               },
               child: Text(context.l10n.uiOverridesPageClearAll),

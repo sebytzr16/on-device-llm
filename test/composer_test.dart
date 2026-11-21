@@ -96,6 +96,55 @@ void main() {
     expect(ReaderActions.linkIn('no link'), isNull);
   });
 
+  testWidgets('a quick edit of the chat locks the composer and its button', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(412, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = TextEditingController(text: 'Half typed');
+    addTearDown(controller.dispose);
+    final tapped = <String>[];
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith(TestSettings.new),
+          modelManagerProvider.overrideWith(TestModels.new),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.dark,
+          home: Scaffold(
+            body: ChatComposer(
+              controller: controller,
+              // A quick edit of the saved chat (delete, undo, restore) holds
+              // the chat busy without a turn to stop (review 2026-11-20 P3-4).
+              busy: true,
+              housekeeping: true,
+              canSend: true,
+              onSend: () => tapped.add('send'),
+              onStop: () => tapped.add('stop'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    // The other controls stay locked: the globe must not ask, and write.
+    await tester.tap(find.byKey(const Key('web-pill')), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(find.text('Enable web search?'), findsNothing);
+    // The button has nothing to send or stop: it stays disabled, never an
+    // enabled arrow whose tap `_send` ignores.
+    final button = tester.widget<IconButton>(
+      find.byKey(const Key('send-stop')),
+    );
+    expect(button.onPressed, isNull);
+    await tester.tap(find.byKey(const Key('send-stop')), warnIfMissed: false);
+    await tester.pump();
+    expect(tapped, isEmpty);
+  });
+
   testWidgets('the globe asks every time it leaves Local, not once per run', (
     tester,
   ) async {

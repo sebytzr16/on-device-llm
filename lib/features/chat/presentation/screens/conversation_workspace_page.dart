@@ -225,10 +225,14 @@ class _WorkspacePageState extends ConsumerState<ConversationWorkspacePage> {
                     tooltip: t.newChat,
                     onPressed: busy
                         ? null
-                        : () {
-                            ref
+                        : () async {
+                            // Start the project's chat before closing the
+                            // sheet: a refused reset (still answering, or
+                            // the consent declined) keeps this page open.
+                            final reset = await ref
                                 .read(chatProvider.notifier)
                                 .newChat(projectId: _project);
+                            if (!reset || !context.mounted) return;
                             Navigator.pop(context);
                           },
                   ),

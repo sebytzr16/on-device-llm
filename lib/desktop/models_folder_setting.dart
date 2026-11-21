@@ -77,6 +77,10 @@ class _ModelsFolderSettingState extends ConsumerState<ModelsFolderSetting> {
               t.desktopModelsFolderConflict,
             ModelFolderException(reason: ModelFolderFailure.busy) =>
               t.desktopModelsFolderBusy,
+            // The files moved and were put back, but the paths could not be
+            // saved: the folder is not the problem (release review 1.8.0 #5).
+            ModelFolderException(reason: ModelFolderFailure.saveFailed) ||
+            ModelFolderKeptCopiesException() => t.desktopModelsFolderSaveFailed,
             _ => t.desktopModelsFolderWritable,
           },
         );

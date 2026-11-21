@@ -2,8 +2,46 @@ part of 'goal_provider.dart';
 
 /// Runner wiring; ownership and lifetime remain with GoalNotifier.
 extension _GoalExecution on GoalNotifier {
+  /// Refuses a goal whose chat the user turned local: every step researches,
+  /// so after "Stay local" on the new-chat consent it would spend its budget
+  /// on sourceless answers. The cascade follows the open
+  /// chat, so the goal's own chat is opened first (a step does the same);
+  /// the start and Continue are refused the same way (review 2026-11-20
+  /// finding 2 and P2-2). Null when the goal may run.
+  Future<GoalProgress?> _webOffRefusal(
+    GoalSpec spec,
+    GoalProgress? resume,
+  ) async {
+    final goalChat = _goalChatId;
+    if (goalChat != null && _goalRef.read(chatProvider).chatId != goalChat) {
+      await _goalRef.read(chatProvider.notifier).openChat(goalChat);
+    }
+    if (_goalRef.read(chatProvider).chatId != goalChat) {
+      // The goal's chat could not be opened: the run reports that itself.
+      return null;
+    }
+    // Only a chat the user turned local ("Stay local") is refused: web
+    // research is off by default, and a goal without it still runs.
+    if (_goalRef.read(chatOverridesProvider)['webMode'] != 'off') return null;
+    final current =
+        resume ??
+        GoalProgress(
+          spec: spec,
+          status: GoalStatus.failed,
+          steps: 0,
+          startedAt: DateTime.now(),
+        );
+    return current.copyWith(
+      status: GoalStatus.failed,
+      clearAwaitingInput: true,
+      error: stringsFor(_goalRef.read(settingsProvider).localeCode).goalWebOff,
+    );
+  }
+
   Future<void> _run(GoalSpec spec, {GoalProgress? resume}) async {
     if (_runner != null) return;
+    final refused = await _webOffRefusal(spec, resume);
+    if (refused != null) return _save(refused);
     final runner = GoalRunner(
       clarify: _clarify,
       research: _research,

@@ -49,8 +49,11 @@ class ModelProfilePage extends ConsumerWidget {
           overrides: profiles[model.id] ?? const {},
           inherited: inherited,
           change: (o) => SettingsChange(profileModelId: model.id, profile: o),
-          onChanged: (o) =>
-              ref.read(modelProfilesProvider.notifier).set(model.id, o),
+          // The page tells the user when the profile did not persist, so the
+          // write must report its failure instead of only logging it (#3).
+          onChanged: (o) => ref
+              .read(modelProfilesProvider.notifier)
+              .set(model.id, o, requirePersistence: true),
           actions: [
             PopupMenuButton<String>(
               key: const Key('config-menu'),

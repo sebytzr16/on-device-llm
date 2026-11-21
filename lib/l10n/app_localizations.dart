@@ -6453,6 +6453,12 @@ abstract class AppLocalizations {
   /// **'Model profile'**
   String get modelProfileScope;
 
+  /// No description provided for @modelProfileSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save this model\'s profile on this device. Try again.'**
+  String get modelProfileSaveFailed;
+
   /// No description provided for @conversationsLoadFailed.
   ///
   /// In en, this message translates to:
@@ -6476,6 +6482,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Not applied'**
   String get adapterNotApplied;
+
+  /// No description provided for @adapterListUnreadable.
+  ///
+  /// In en, this message translates to:
+  /// **'The adapter list could not be read. Reset it first to import, attach or delete adapters.'**
+  String get adapterListUnreadable;
+
+  /// No description provided for @adapterResetFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not reset the adapter list: {error}'**
+  String adapterResetFailed(String error);
+
+  /// No description provided for @adapterSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save the adapter list: {error}'**
+  String adapterSaveFailed(String error);
+
+  /// No description provided for @adapterImportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not import the adapter: {error}'**
+  String adapterImportFailed(String error);
 
   /// No description provided for @noticeUpdatingMemory.
   ///
@@ -10735,6 +10765,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Moving models…'**
   String get desktopModelsFolderMoving;
+
+  /// No description provided for @desktopModelsFolderSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The model paths could not be saved. Choose the folder and try again.'**
+  String get desktopModelsFolderSaveFailed;
 
   /// No description provided for @desktopModelsFolderWritable.
   ///
@@ -17125,6 +17161,54 @@ abstract class AppLocalizations {
   /// **'GitHub could not be reached.'**
   String get engineUpdateNoGitHub;
 
+  /// Engine update failure: this app build has no ik_llama.cpp commit to install.
+  ///
+  /// In en, this message translates to:
+  /// **'No ik_llama.cpp build is pinned in this app version.'**
+  String get engineUpdateProblemNoPinnedBuild;
+
+  /// Engine update failure: the install ran without a pack found by the check.
+  ///
+  /// In en, this message translates to:
+  /// **'No engine update is available.'**
+  String get engineUpdateProblemNoUpdate;
+
+  /// Engine update failure: the release list could not be read.
+  ///
+  /// In en, this message translates to:
+  /// **'The engine update check failed.'**
+  String get engineUpdateProblemCheck;
+
+  /// Engine update failure: the download, checksum or extraction failed.
+  ///
+  /// In en, this message translates to:
+  /// **'The engine pack could not be downloaded.'**
+  String get engineUpdateProblemDownload;
+
+  /// Engine update failure: the downloaded pack could not be opened.
+  ///
+  /// In en, this message translates to:
+  /// **'The engine pack failed its smoke test.'**
+  String get engineUpdateProblemSmoke;
+
+  /// Engine update failure: the verified pack could not be promoted.
+  ///
+  /// In en, this message translates to:
+  /// **'The engine pack could not be installed.'**
+  String get engineUpdateProblemInstall;
+
+  /// Engine update failure: the engines folder refused the switch to the bundled engine.
+  ///
+  /// In en, this message translates to:
+  /// **'The app could not switch to the built-in engine.'**
+  String get engineUpdateProblemUseBuiltIn;
+
+  /// Engine update failure: deleting the downloaded engines failed.
+  ///
+  /// In en, this message translates to:
+  /// **'The downloaded engines could not be removed.'**
+  String get engineUpdateProblemRemove;
+
   /// No description provided for @liteRtBackend.
   ///
   /// In en, this message translates to:
@@ -17173,6 +17257,18 @@ abstract class AppLocalizations {
   /// **'Tools are unavailable with {engine} models.'**
   String engineToolsUnavailable(String engine);
 
+  /// No description provided for @engineRunsOwnEngine.
+  ///
+  /// In en, this message translates to:
+  /// **'{engine} models run on their own engine.'**
+  String engineRunsOwnEngine(String engine);
+
+  /// No description provided for @engineNotHosting.
+  ///
+  /// In en, this message translates to:
+  /// **'Hosting is unavailable with {engine} models.'**
+  String engineNotHosting(String engine);
+
   /// No description provided for @liteRtToolsUnavailable.
   ///
   /// In en, this message translates to:
@@ -17203,11 +17299,11 @@ abstract class AppLocalizations {
   /// **'Choose a .gguf or .litertlm model file.'**
   String get liteRtImportHint;
 
-  /// No description provided for @liteRtImportedLicense.
+  /// No description provided for @importedFileLicense.
   ///
   /// In en, this message translates to:
   /// **'Imported file · check publisher license'**
-  String get liteRtImportedLicense;
+  String get importedFileLicense;
 
   /// No description provided for @liteRtNotLoaded.
   ///

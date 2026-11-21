@@ -29,11 +29,43 @@ class OptimizeSettingsRow extends ConsumerWidget {
         model != null &&
         (ref.watch(optimizedModelsProvider).value?.contains(model.id) ?? false);
     final mobile = ref.watch(optimizeMobileProvider);
+    // This row's own run holds the session lock too, so the controller's
+    // state wins: a running Optimize must name itself instead of blaming
+    // another task, as ModelOptimizeSection does (review #6). Only the two
+    // flags are watched, so progress ticks do not rebuild the row.
+    final optimize = model == null
+        ? null
+        : ref.watch(
+            optimizeControllerProvider(
+              model.id,
+            ).select((s) => (running: s.running, busy: s.busy)),
+          );
+    final busyReason = optimize == null
+        ? null
+        : optimize.running
+        ? OptimizeBusyReason.running
+        : optimize.busy;
     // While the chat, a load or another model task holds the model, the row
     // says so instead of opening a run that could not start.
-    final busy =
-        ref.watch(sessionBusyProvider) ||
-        ref.watch(modelManagerProvider.select((m) => m.isLoadingModel));
+    final sessionBusy = ref.watch(sessionBusyProvider);
+    final loading = ref.watch(
+      modelManagerProvider.select((m) => m.isLoadingModel),
+    );
+    final busy = (optimize?.running ?? false) || sessionBusy || loading;
+    // A blocked start leaves `busy` set until the next start, so only a reason
+    // whose live flag still applies may speak for the lock; anything else is
+    // another task's lock, as model_tune_section.dart guards (review #5).
+    final liveReason = switch (busyReason) {
+      null => null,
+      OptimizeBusyReason.running => busyReason,
+      OptimizeBusyReason.notLoaded => busyReason,
+      OptimizeBusyReason.loadingModel => loading ? busyReason : null,
+      OptimizeBusyReason.generating =>
+        sessionBusy && ref.read(optimizeGeneratingProvider)()
+            ? busyReason
+            : null,
+      OptimizeBusyReason.otherRun => sessionBusy ? busyReason : null,
+    };
     return SettingsRow(
       key: const Key('optimize-settings-row'),
       leading: Icon(Icons.auto_fix_high_rounded, color: c.accent),
@@ -44,7 +76,7 @@ class OptimizeSettingsRow extends ConsumerWidget {
             : !canOptimize
             ? t.engineUnusedSettings(engine.displayName)
             : busy
-            ? t.optimizeBusyOther
+            ? _busyReason(t, liveReason)
             : t.optimizeSettingsHint(model.displayName),
       ),
       trailing: done
@@ -69,3 +101,14 @@ class OptimizeSettingsRow extends ConsumerWidget {
     );
   }
 }
+
+/// Why the row cannot start now. A null reason is another task's lock, which
+/// the row has always explained as such.
+String _busyReason(AppLocalizations t, OptimizeBusyReason? reason) =>
+    switch (reason) {
+      OptimizeBusyReason.running => t.optimizeBusyRunning,
+      OptimizeBusyReason.loadingModel => t.optimizeBusyLoading,
+      OptimizeBusyReason.generating => t.optimizeBusyGenerating,
+      OptimizeBusyReason.notLoaded => t.optimizeSettingsNoModel,
+      OptimizeBusyReason.otherRun || null => t.optimizeBusyOther,
+    };

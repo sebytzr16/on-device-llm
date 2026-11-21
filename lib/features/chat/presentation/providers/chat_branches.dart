@@ -95,9 +95,13 @@ mixin _ChatBranches on _ChatBase {
     List<ChatMessage> members,
     Future<bool> Function() start,
   ) async {
-    if (ref.read(sessionBusyProvider) ||
-        ref.read(modelManagerProvider).isLoadingModel) {
-      state = state.copyWith(error: _t.desktopCompareBusy);
+    final loading = ref.read(modelManagerProvider).isLoadingModel;
+    if (ref.read(sessionBusyProvider) || loading) {
+      // A model load is not a busy answer: waiting for the answer to finish
+      // sends the user to the wrong place (review 2026-11-20 finding 9).
+      state = state.copyWith(
+        error: loading ? _t.loadingModel : _t.desktopCompareBusy,
+      );
       return false;
     }
     if (members.isEmpty) return start();
@@ -163,6 +167,11 @@ mixin _ChatBranches on _ChatBase {
         final current = {
           for (final row in await db.getMessages(chatId)) row.id: row.status,
         };
+        // The chat moved on (reopened, or a branch restore rewrote every
+        // row): a newer restore may leave a row's superseded marker exactly
+        // as this refused replacement wrote it, so the per-row status test below
+        // cannot tell them apart and would resurrect a turn the restore set
+        // aside. Roll back nothing then: the newer action is the truth.
         if (_alive && state.chatId == chatId && _navigation != navigation) {
           return;
         }
@@ -184,8 +193,13 @@ mixin _ChatBranches on _ChatBase {
       restored.clear();
     }
     if (!_alive || _navigation != navigation) return;
+    // The replacement was refused: say why it was (a model load is not a
+    // busy answer, review 2026-11-20 finding 9).
+    final reason = ref.read(modelManagerProvider).isLoadingModel
+        ? _t.loadingModel
+        : _t.desktopCompareBusy;
     state = state.copyWith(
-      error: state.error ?? _t.desktopCompareBusy,
+      error: state.error ?? reason,
       messages: [
         for (final m in state.messages)
           restored.containsKey(m.id) && m.status == superseded[m.id]

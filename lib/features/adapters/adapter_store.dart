@@ -75,17 +75,39 @@ class AdapterAttachment {
   Map<String, dynamic> toJson() => {'adapterId': adapterId, 'scale': scale};
 }
 
+/// Why the adapters page's note is showing. The store records the kind and,
+/// where an exception has one, its technical detail; the page owns the
+/// sentence, so no English store text reaches an es/fr UI (review #4).
+enum AdaptersFailure {
+  /// The stored manifest could not be read; saves stay blocked.
+  unreadable,
+
+  /// Writing the manifest failed.
+  saveFailed,
+
+  /// Moving the unreadable manifest aside failed.
+  resetFailed,
+
+  /// Importing an adapter file failed.
+  importFailed,
+}
+
 class AdaptersState {
   final List<LoraAdapter> adapters;
 
   /// Model id → adapters applied when that model loads.
   final Map<String, List<AdapterAttachment>> attachments;
   final bool importing;
+  final AdaptersFailure? failure;
+
+  /// The technical detail of [failure]: an exception message, never the
+  /// store's own sentence, which the page localizes.
   final String? error;
   const AdaptersState({
     this.adapters = const [],
     this.attachments = const {},
     this.importing = false,
+    this.failure,
     this.error,
   });
 
@@ -93,12 +115,14 @@ class AdaptersState {
     List<LoraAdapter>? adapters,
     Map<String, List<AdapterAttachment>>? attachments,
     bool? importing,
+    AdaptersFailure? failure,
     String? error,
     bool clearError = false,
   }) => AdaptersState(
     adapters: adapters ?? this.adapters,
     attachments: attachments ?? this.attachments,
     importing: importing ?? this.importing,
+    failure: clearError ? null : failure ?? this.failure,
     error: clearError ? null : error ?? this.error,
   );
 
@@ -106,6 +130,15 @@ class AdaptersState {
       attachments[modelId] ?? const [];
 
   LoraAdapter? byId(String id) => adapters.where((a) => a.id == id).firstOrNull;
+}
+
+/// A save refused because the stored manifest could not be read. It stays a
+/// [StateError] for the callers that report a failed save that way, and the
+/// adapters page maps it to its own localized sentence (review #4).
+class AdaptersUnreadable extends StateError {
+  AdaptersUnreadable() : super(_message);
+
+  static const _message = 'The adapter list could not be read; reset it first.';
 }
 
 /// Manifest `models/adapters.json`: imported adapter files plus which
@@ -171,17 +204,22 @@ class AdaptersNotifier extends Notifier<AdaptersState> {
       }
       if (_alive) {
         _loadFailed = false;
-        state = state.copyWith(adapters: adapters, attachments: attachments);
+        // A manifest that reads again clears the note about the failed read.
+        state = state.copyWith(
+          adapters: adapters,
+          attachments: attachments,
+          clearError: true,
+        );
       }
     } on MissingPluginException {
       // Platform channel not available (e.g. in tests); treat as empty manifest.
       if (_alive) state = const AdaptersState();
-    } catch (e) {
+    } catch (_) {
       // The stored manifest is still on disk, unread: saving from the empty
       // state would erase it, so saves stay blocked until a reload works
-      // (audit 08c-1).
+      // (audit 08c-1). The page localizes the reason from the kind.
       _loadFailed = true;
-      if (_alive) state = state.copyWith(error: 'Adapter list unreadable: $e');
+      if (_alive) state = state.copyWith(failure: AdaptersFailure.unreadable);
     }
   }
 
@@ -209,7 +247,12 @@ class AdaptersNotifier extends Notifier<AdaptersState> {
       }
     } catch (e) {
       _loadFailed = true;
-      if (_alive) state = state.copyWith(error: 'Could not reset: $e');
+      if (_alive) {
+        state = state.copyWith(
+          failure: AdaptersFailure.resetFailed,
+          error: '$e',
+        );
+      }
       rethrow;
     }
     _loadFailed = false;
@@ -218,7 +261,7 @@ class AdaptersNotifier extends Notifier<AdaptersState> {
 
   Future<void> _save() async {
     if (_loadFailed) {
-      throw StateError('The adapter list could not be read; reset it first.');
+      throw AdaptersUnreadable();
     }
     final encoded = jsonEncode({
       'v': 1,
@@ -235,7 +278,12 @@ class AdaptersNotifier extends Notifier<AdaptersState> {
         await tmp.writeAsString(encoded, flush: true);
         await tmp.rename(f.path);
       } catch (e) {
-        if (_alive) state = state.copyWith(error: 'Could not save: $e');
+        if (_alive) {
+          state = state.copyWith(
+            failure: AdaptersFailure.saveFailed,
+            error: '$e',
+          );
+        }
       }
     });
     await _writes;
@@ -300,7 +348,14 @@ class AdaptersNotifier extends Notifier<AdaptersState> {
       }
       return adapter;
     } catch (e) {
-      if (_alive) state = state.copyWith(error: '$e');
+      if (_alive) {
+        state = state.copyWith(
+          failure: e is AdaptersUnreadable
+              ? AdaptersFailure.unreadable
+              : AdaptersFailure.importFailed,
+          error: e is AdaptersUnreadable ? null : '$e',
+        );
+      }
       rethrow;
     } finally {
       if (partial != null && await partial.exists()) await partial.delete();
@@ -374,15 +429,20 @@ class AdaptersNotifier extends Notifier<AdaptersState> {
     await _saveReported();
   }
 
-  /// A save the user triggered must be visible when it fails: the reason goes
-  /// into `state.error` (shown by the adapters page) as well as the throw the
-  /// caller reports (review #5).
+  /// A save the user triggered must be visible when it fails: the kind goes
+  /// into `state.failure` (turned into a localized sentence by the adapters
+  /// page) as well as the throw the caller reports (review #5).
   Future<void> _saveReported() async {
     try {
       await _save();
     } catch (e) {
       if (_alive) {
-        state = state.copyWith(error: e is StateError ? e.message : '$e');
+        state = state.copyWith(
+          failure: e is AdaptersUnreadable
+              ? AdaptersFailure.unreadable
+              : AdaptersFailure.saveFailed,
+          error: e is AdaptersUnreadable ? null : '$e',
+        );
       }
       rethrow;
     }

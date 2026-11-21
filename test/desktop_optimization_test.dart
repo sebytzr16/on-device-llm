@@ -510,7 +510,7 @@ void main() {
         profiles.set(testModel.id, {
           'nGpuLayers': 24,
         }, requirePersistence: true),
-        throwsStateError,
+        throwsA(isA<ModelProfileSaveFailure>()),
       );
       expect(profiles.of(testModel.id), isEmpty);
       store.failProfileWrite = false;

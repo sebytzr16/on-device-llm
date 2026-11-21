@@ -82,247 +82,250 @@ class _Engine {
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-  testWidgets('speech recognition on the tester\'s voice', (tester) async {
-    final prompt = ValueNotifier<String>('Getting ready…');
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          backgroundColor: Colors.black,
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: ValueListenableBuilder<String>(
-                valueListenable: prompt,
-                builder: (_, text, _) => Text(
-                  text,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white, fontSize: 34),
+  testWidgets(
+    'speech recognition on the tester\'s voice',
+    (tester) async {
+      final prompt = ValueNotifier<String>('Getting ready…');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            backgroundColor: Colors.black,
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: ValueListenableBuilder<String>(
+                  valueListenable: prompt,
+                  builder: (_, text, _) => Text(
+                    text,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontSize: 34),
+                  ),
                 ),
               ),
             ),
-          ),
-        ),
-      ),
-    );
-    sherpa.initBindings();
-    final support = await getApplicationSupportDirectory();
-    final files = support.parent.path; // files/ (support dir is files/…)
-    String find(String dir, String name) {
-      for (final d in [dir, '$files/$dir', '${support.path}/$dir']) {
-        final f = File('$d/$name');
-        if (f.existsSync()) return f.path;
-      }
-      return '';
-    }
-
-    final voice = find('voice', 'silero_vad.onnx').isNotEmpty
-        ? File(find('voice', 'silero_vad.onnx')).parent.path
-        : '';
-    expect(voice, isNotEmpty, reason: 'Run with -VoicePack');
-    final media = Directory('$files/media').existsSync()
-        ? '$files/media'
-        : '${support.path}/media';
-    _report({'voice': voice, 'media': media});
-
-    final engines = <_Engine>[];
-    sherpa.OfflineRecognizer whisper(String enc, String dec, String tok) =>
-        sherpa.OfflineRecognizer(
-          sherpa.OfflineRecognizerConfig(
-            model: sherpa.OfflineModelConfig(
-              whisper: sherpa.OfflineWhisperModelConfig(
-                encoder: enc,
-                decoder: dec,
-                language: 'en',
-                task: 'transcribe',
-              ),
-              tokens: tok,
-              numThreads: 4,
-              debug: false,
-            ),
-          ),
-        );
-    engines.add(
-      _Engine(
-        'base',
-        whisper(
-          '$voice/whisper-base-encoder.int8.onnx',
-          '$voice/whisper-base-decoder.int8.onnx',
-          '$voice/whisper-base-tokens.txt',
-        ),
-      ),
-    );
-    if (File('$media/small-encoder.int8.onnx').existsSync()) {
-      final clock = Stopwatch()..start();
-      engines.add(
-        _Engine(
-          'small',
-          whisper(
-            '$media/small-encoder.int8.onnx',
-            '$media/small-decoder.int8.onnx',
-            '$media/small-tokens.txt',
           ),
         ),
       );
-      _report({'load': 'small', 'ms': clock.elapsedMilliseconds});
-    }
-    if (File('$media/joiner.int8.onnx').existsSync()) {
-      final clock = Stopwatch()..start();
-      engines.add(
-        _Engine(
-          'parakeet',
+      sherpa.initBindings();
+      final support = await getApplicationSupportDirectory();
+      final files = support.parent.path; // files/ (support dir is files/…)
+      String find(String dir, String name) {
+        for (final d in [dir, '$files/$dir', '${support.path}/$dir']) {
+          final f = File('$d/$name');
+          if (f.existsSync()) return f.path;
+        }
+        return '';
+      }
+
+      final voice = find('voice', 'silero_vad.onnx').isNotEmpty
+          ? File(find('voice', 'silero_vad.onnx')).parent.path
+          : '';
+      expect(voice, isNotEmpty, reason: 'Run with -VoicePack');
+      final media = Directory('$files/media').existsSync()
+          ? '$files/media'
+          : '${support.path}/media';
+      _report({'voice': voice, 'media': media});
+
+      final engines = <_Engine>[];
+      sherpa.OfflineRecognizer whisper(String enc, String dec, String tok) =>
           sherpa.OfflineRecognizer(
             sherpa.OfflineRecognizerConfig(
               model: sherpa.OfflineModelConfig(
-                transducer: sherpa.OfflineTransducerModelConfig(
-                  encoder: '$media/encoder.int8.onnx',
-                  decoder: '$media/decoder.int8.onnx',
-                  joiner: '$media/joiner.int8.onnx',
+                whisper: sherpa.OfflineWhisperModelConfig(
+                  encoder: enc,
+                  decoder: dec,
+                  language: 'en',
+                  task: 'transcribe',
                 ),
-                tokens: '$media/tokens.txt',
-                modelType: 'nemo_transducer',
+                tokens: tok,
                 numThreads: 4,
                 debug: false,
               ),
             ),
+          );
+      engines.add(
+        _Engine(
+          'base',
+          whisper(
+            '$voice/whisper-base-encoder.int8.onnx',
+            '$voice/whisper-base-decoder.int8.onnx',
+            '$voice/whisper-base-tokens.txt',
           ),
         ),
       );
-      _report({'load': 'parakeet', 'ms': clock.elapsedMilliseconds});
-    }
-    // Warm each engine once (the first decode pays for allocations).
-    for (final e in engines) {
-      e.run(Float32List(16000));
-    }
+      if (File('$media/small-encoder.int8.onnx').existsSync()) {
+        final clock = Stopwatch()..start();
+        engines.add(
+          _Engine(
+            'small',
+            whisper(
+              '$media/small-encoder.int8.onnx',
+              '$media/small-decoder.int8.onnx',
+              '$media/small-tokens.txt',
+            ),
+          ),
+        );
+        _report({'load': 'small', 'ms': clock.elapsedMilliseconds});
+      }
+      if (File('$media/joiner.int8.onnx').existsSync()) {
+        final clock = Stopwatch()..start();
+        engines.add(
+          _Engine(
+            'parakeet',
+            sherpa.OfflineRecognizer(
+              sherpa.OfflineRecognizerConfig(
+                model: sherpa.OfflineModelConfig(
+                  transducer: sherpa.OfflineTransducerModelConfig(
+                    encoder: '$media/encoder.int8.onnx',
+                    decoder: '$media/decoder.int8.onnx',
+                    joiner: '$media/joiner.int8.onnx',
+                  ),
+                  tokens: '$media/tokens.txt',
+                  modelType: 'nemo_transducer',
+                  numThreads: 4,
+                  debug: false,
+                ),
+              ),
+            ),
+          ),
+        );
+        _report({'load': 'parakeet', 'ms': clock.elapsedMilliseconds});
+      }
+      // Warm each engine once (the first decode pays for allocations).
+      for (final e in engines) {
+        e.run(Float32List(16000));
+      }
 
-    sherpa.VoiceActivityDetector detector() => sherpa.VoiceActivityDetector(
-      config: sherpa.VadModelConfig(
-        sileroVad: sherpa.SileroVadModelConfig(
-          model: '$voice/silero_vad.onnx',
-          minSilenceDuration: 0.7,
-          minSpeechDuration: 0.25,
-          maxSpeechDuration: 28,
+      sherpa.VoiceActivityDetector detector() => sherpa.VoiceActivityDetector(
+        config: sherpa.VadModelConfig(
+          sileroVad: sherpa.SileroVadModelConfig(
+            model: '$voice/silero_vad.onnx',
+            minSilenceDuration: 0.7,
+            minSpeechDuration: 0.25,
+            maxSpeechDuration: 28,
+          ),
+          numThreads: 1,
+          debug: false,
         ),
-        numThreads: 1,
-        debug: false,
-      ),
-      bufferSizeInSeconds: 40,
-    );
+        bufferSizeInSeconds: 40,
+      );
 
-    final out = await getApplicationDocumentsDirectory();
-    final totals = <String, List<double>>{};
-    // Two rounds: the recognition microphone (new default), then the call
-    // microphone with echo cancelling and noise suppression (talk over).
-    for (final call in [false, true]) {
-      final source = call ? 'call' : 'recognition';
-      await VoiceAudioChannel.conversation(true, call: call);
-      for (var p = 0; p < _phrases.length; p++) {
-        final phrase = _phrases[p];
-        final frames = <Float32List>[];
-        final sub = VoiceAudioChannel.frames().listen(frames.add);
-        prompt.value = 'Get ready to say:\n\n“$phrase”';
-        await tester.pump();
-        // For scripts/speak-asr-phrases.ps1, which says it from the
-        // computer's speakers when nobody reads it: told now, its voice
-        // reaches the phone about when the microphone opens (told after,
-        // it arrived 3 s into the window and was cut off, 2026-10-20).
-        _report({'say': p, 'source': source, 'phrase': phrase});
-        await Future<void>.delayed(const Duration(milliseconds: 1500));
-        prompt.value = 'Say it now:\n\n“$phrase”';
-        await tester.pump();
-        frames.clear();
-        if (!await VoiceAudioChannel.startMic()) {
-          fail('Microphone refused');
-        }
-        await Future<void>.delayed(const Duration(seconds: _window));
-        await VoiceAudioChannel.stopMic();
-        await sub.cancel();
-        prompt.value = 'Thanks…';
-        await tester.pump();
+      final out = await getApplicationDocumentsDirectory();
+      final totals = <String, List<double>>{};
+      // Two rounds: the recognition microphone (new default), then the call
+      // microphone with echo cancelling and noise suppression (talk over).
+      for (final call in [false, true]) {
+        final source = call ? 'call' : 'recognition';
+        await VoiceAudioChannel.conversation(true, call: call);
+        for (var p = 0; p < _phrases.length; p++) {
+          final phrase = _phrases[p];
+          final frames = <Float32List>[];
+          final sub = VoiceAudioChannel.frames().listen(frames.add);
+          prompt.value = 'Get ready to say:\n\n“$phrase”';
+          await tester.pump();
+          // For scripts/speak-asr-phrases.ps1, which says it from the
+          // computer's speakers when nobody reads it: told now, its voice
+          // reaches the phone about when the microphone opens (told after,
+          // it arrived 3 s into the window and was cut off, 2026-10-20).
+          _report({'say': p, 'source': source, 'phrase': phrase});
+          await Future<void>.delayed(const Duration(milliseconds: 1500));
+          prompt.value = 'Say it now:\n\n“$phrase”';
+          await tester.pump();
+          frames.clear();
+          if (!await VoiceAudioChannel.startMic()) {
+            fail('Microphone refused');
+          }
+          await Future<void>.delayed(const Duration(seconds: _window));
+          await VoiceAudioChannel.stopMic();
+          await sub.cancel();
+          prompt.value = 'Thanks…';
+          await tester.pump();
 
-        final all = Float32List(frames.length * 512);
-        for (var i = 0; i < frames.length; i++) {
-          all.setAll(i * 512, frames[i]);
-        }
-        File('${out.path}/asr-$source-$p.wav').writeAsBytesSync(_wav(all));
-        // The detector, as in the app; a new one per phrase, so segment
-        // starts count from this clip. One kept across phrases drifted:
-        // clear() does not reset its count, the second phrase's segment
-        // started 3.9 s before its clip, and the third crashed sherpa's
-        // decoder (2026-10-18, again 2026-10-20).
-        final vad = detector();
-        final segments = <sherpa.SpeechSegment>[];
-        for (final f in frames) {
-          vad.acceptWaveform(f);
+          final all = Float32List(frames.length * 512);
+          for (var i = 0; i < frames.length; i++) {
+            all.setAll(i * 512, frames[i]);
+          }
+          File('${out.path}/asr-$source-$p.wav').writeAsBytesSync(_wav(all));
+          // The detector, as in the app; a new one per phrase, so segment
+          // starts count from this clip. One kept across phrases drifted:
+          // clear() does not reset its count, the second phrase's segment
+          // started 3.9 s before its clip, and the third crashed sherpa's
+          // decoder (2026-10-18, again 2026-10-20).
+          final vad = detector();
+          final segments = <sherpa.SpeechSegment>[];
+          for (final f in frames) {
+            vad.acceptWaveform(f);
+            while (!vad.isEmpty()) {
+              segments.add(vad.front());
+              vad.pop();
+            }
+          }
+          vad.flush();
           while (!vad.isEmpty()) {
             segments.add(vad.front());
             vad.pop();
           }
-        }
-        vad.flush();
-        while (!vad.isEmpty()) {
-          segments.add(vad.front());
-          vad.pop();
-        }
-        vad.free();
-        if (segments.isEmpty) {
-          _report({'source': source, 'phrase': phrase, 'heard': 'nothing'});
-          continue;
-        }
-        final first = segments.first, last = segments.last;
-        final tight = Float32List.fromList([
-          for (final s in segments) ...s.samples,
-        ]);
-        // The new way: 0.5 s before the first word to 0.7 s after the last.
-        final from = (first.start - 8000).clamp(0, all.length);
-        final to = (last.start + last.samples.length + 11200).clamp(
-          from,
-          all.length,
-        );
-        final padded = Float32List.sublistView(all, from, to);
-        if (padded.length < SherpaVoice.minSamples) {
-          _report({'source': source, 'phrase': phrase, 'heard': 'nothing'});
-          continue;
-        }
-        for (final e in engines) {
-          final runs = e.name == 'base'
-              ? {'base-tight': tight, 'base': padded}
-              : {e.name: padded};
-          for (final r in runs.entries) {
-            final clock = Stopwatch()..start();
-            final text = e.run(r.value);
-            final ms = clock.elapsedMilliseconds;
-            final wer = _wer(phrase, text);
-            (totals['${r.key}/$source'] ??= []).add(wer);
-            _report({
-              'source': source,
-              'engine': r.key,
-              'phrase': phrase,
-              'heard': text,
-              'wer': double.parse(wer.toStringAsFixed(2)),
-              'ms': ms,
-              'audioS': r.value.length / 16000,
-            });
+          vad.free();
+          if (segments.isEmpty) {
+            _report({'source': source, 'phrase': phrase, 'heard': 'nothing'});
+            continue;
+          }
+          final first = segments.first, last = segments.last;
+          final tight = Float32List.fromList([
+            for (final s in segments) ...s.samples,
+          ]);
+          // The new way: 0.5 s before the first word to 0.7 s after the last.
+          final from = (first.start - 8000).clamp(0, all.length);
+          final to = (last.start + last.samples.length + 11200).clamp(
+            from,
+            all.length,
+          );
+          final padded = Float32List.sublistView(all, from, to);
+          if (padded.length < SherpaVoice.minSamples) {
+            _report({'source': source, 'phrase': phrase, 'heard': 'nothing'});
+            continue;
+          }
+          for (final e in engines) {
+            final runs = e.name == 'base'
+                ? {'base-tight': tight, 'base': padded}
+                : {e.name: padded};
+            for (final r in runs.entries) {
+              final clock = Stopwatch()..start();
+              final text = e.run(r.value);
+              final ms = clock.elapsedMilliseconds;
+              final wer = _wer(phrase, text);
+              (totals['${r.key}/$source'] ??= []).add(wer);
+              _report({
+                'source': source,
+                'engine': r.key,
+                'phrase': phrase,
+                'heard': text,
+                'wer': double.parse(wer.toStringAsFixed(2)),
+                'ms': ms,
+                'audioS': r.value.length / 16000,
+              });
+            }
           }
         }
+        await VoiceAudioChannel.conversation(false);
       }
-      await VoiceAudioChannel.conversation(false);
-    }
-    prompt.value = 'Done — thank you!';
-    await tester.pump();
-    _report({
-      'summary': {
-        for (final e in totals.entries)
-          e.key: double.parse(
-            (e.value.reduce((a, b) => a + b) / e.value.length).toStringAsFixed(
-              2,
+      prompt.value = 'Done — thank you!';
+      await tester.pump();
+      _report({
+        'summary': {
+          for (final e in totals.entries)
+            e.key: double.parse(
+              (e.value.reduce((a, b) => a + b) / e.value.length)
+                  .toStringAsFixed(2),
             ),
-          ),
-      },
-    });
-    for (final e in engines) {
-      e.recognizer.free();
-    }
-  }, timeout: const Timeout(Duration(minutes: 15)));
+        },
+      });
+      for (final e in engines) {
+        e.recognizer.free();
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 15)),
+  );
 }
 
 Uint8List _wav(Float32List samples) {

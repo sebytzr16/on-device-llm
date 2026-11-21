@@ -3,8 +3,9 @@ import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:ondevice_llm/core/providers/shared_providers.dart';
 import 'package:ondevice_llm/core/island/status_island.dart';
+import 'package:ondevice_llm/core/l10n/l10n.dart';
+import 'package:ondevice_llm/core/providers/shared_providers.dart';
 import 'package:ondevice_llm/data/local/database/app_database.dart';
 import 'package:ondevice_llm/features/models/data/last_model_store.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
@@ -140,7 +141,7 @@ void main() {
   }
 
   test(
-    'restore waits for settings, profiles and presets; failure stays quiet',
+    'restore waits for settings, profiles and presets; failure is one notice',
     () async {
       final restore = manager.restoreLastModel();
       await pumpEventQueue();
@@ -155,7 +156,11 @@ void main() {
       await restore;
       expect(loads, 1);
       expect(c.read(modelManagerProvider).error, isNull);
-      expect(c.read(islandProvider).toast, isNull);
+      // The silent start-up load still says why it failed: the chat's error
+      // card is not the place for it (release review 1.8.0 #7).
+      final toast = c.read(islandProvider).toast;
+      expect(toast?.tone, IslandTone.warning);
+      expect(toast?.text, stringsFor('').notEnoughMemory(4096, 128));
       expect(c.read(islandProvider).activity, isNull);
       expect(await LastModelStore.read(), isNull);
     },

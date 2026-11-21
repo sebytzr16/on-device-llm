@@ -13,6 +13,7 @@ import 'package:ondevice_llm/features/goals/goal_runner.dart';
 import 'package:ondevice_llm/features/goals/presentation/goal_provider.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
+import 'package:ondevice_llm/features/settings/presentation/providers/effective_settings_provider.dart';
 import 'package:ondevice_llm/features/settings/presentation/providers/settings_provider.dart';
 import 'package:ondevice_llm/features/tools/domain/tool_spec.dart';
 import 'package:ondevice_llm/inference/remote/remote_engine.dart';
@@ -269,4 +270,95 @@ void main() {
       }
     },
   );
+
+  test(
+    '"Stay local" at goal start saves the goal instead of running it',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      final engine = _GoalRemoteEngine();
+      final search = _CameraSearch();
+      final container = ProviderContainer(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          remoteEngineProvider.overrideWithValue(engine),
+          settingsProvider.overrideWith(_GoalRemoteSettings.new),
+          modelManagerProvider.overrideWith(TestModels.new),
+          duckDuckGoScraperProvider.overrideWithValue(search),
+          webPageReaderProvider.overrideWithValue(_CameraReader()),
+        ],
+      );
+      addTearDown(() async {
+        container.dispose();
+        engine.dispose();
+        await db.close();
+      });
+      // The chat the user was reading had web research off, so the new-chat
+      // consent appears and is declined: the goal's chat would never search.
+      container.read(chatOverridesProvider.notifier).state = {'webMode': 'off'};
+      await container
+          .read(goalProvider.notifier)
+          .start(
+            const GoalSpec(
+              objective: 'Compare the Nikon Z30 to the Sony ZV-E10',
+              successCriteria: 'Compare sensor resolutions and recommend one',
+              maxSteps: null,
+              maxDuration: null,
+              maxTokens: null,
+              maxToolCalls: null,
+            ),
+          );
+      final goal = container.read(goalProvider)!;
+      expect(goal.steps, 0);
+      expect(goal.status, GoalStatus.failed);
+      expect(goal.error, contains('Web research is off'));
+      expect(engine.phases, isEmpty, reason: 'no step runs without sources');
+      expect(search.calls, 0);
+    },
+  );
+
+  test('Continue does not bypass a goal chat with web research off', () async {
+    SharedPreferences.setMockInitialValues({});
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final engine = _GoalRemoteEngine();
+    final search = _CameraSearch();
+    final container = ProviderContainer(
+      overrides: [
+        appDatabaseProvider.overrideWithValue(db),
+        remoteEngineProvider.overrideWithValue(engine),
+        settingsProvider.overrideWith(_GoalRemoteSettings.new),
+        modelManagerProvider.overrideWith(TestModels.new),
+        duckDuckGoScraperProvider.overrideWithValue(search),
+        webPageReaderProvider.overrideWithValue(_CameraReader()),
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      engine.dispose();
+      await db.close();
+    });
+    final notifier = container.read(goalProvider.notifier);
+    container.read(chatOverridesProvider.notifier).state = {'webMode': 'off'};
+    await notifier.start(
+      const GoalSpec(
+        objective: 'Compare the Nikon Z30 to the Sony ZV-E10',
+        successCriteria: 'Compare sensor resolutions and recommend one',
+        maxSteps: null,
+        maxDuration: null,
+        maxTokens: null,
+        maxToolCalls: null,
+      ),
+    );
+    expect(container.read(goalProvider)!.status, GoalStatus.failed);
+    // The Goals page offers Continue on a failed goal: it must be refused
+    // for the same reason, not run the whole goal without sources (review
+    // 2026-11-20 P2-2).
+    await notifier.continueGoal();
+    final goal = container.read(goalProvider)!;
+    expect(goal.status, GoalStatus.failed);
+    expect(goal.error, contains('Web research is off'));
+    expect(goal.steps, 0);
+    expect(engine.phases, isEmpty, reason: 'no step runs without sources');
+    expect(search.calls, 0);
+  });
 }

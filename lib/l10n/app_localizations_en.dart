@@ -3678,6 +3678,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get modelProfileScope => 'Model profile';
 
   @override
+  String get modelProfileSaveFailed =>
+      'Could not save this model\'s profile on this device. Try again.';
+
+  @override
   String conversationsLoadFailed(String error) {
     return 'Could not load conversations.\n$error';
   }
@@ -3692,6 +3696,25 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get adapterNotApplied => 'Not applied';
+
+  @override
+  String get adapterListUnreadable =>
+      'The adapter list could not be read. Reset it first to import, attach or delete adapters.';
+
+  @override
+  String adapterResetFailed(String error) {
+    return 'Could not reset the adapter list: $error';
+  }
+
+  @override
+  String adapterSaveFailed(String error) {
+    return 'Could not save the adapter list: $error';
+  }
+
+  @override
+  String adapterImportFailed(String error) {
+    return 'Could not import the adapter: $error';
+  }
 
   @override
   String get noticeUpdatingMemory => 'Updating memory…';
@@ -6324,6 +6347,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get desktopModelsFolderMoving => 'Moving models…';
+
+  @override
+  String get desktopModelsFolderSaveFailed =>
+      'The model paths could not be saved. Choose the folder and try again.';
 
   @override
   String get desktopModelsFolderWritable =>
@@ -10229,6 +10256,36 @@ class AppLocalizationsEn extends AppLocalizations {
   String get engineUpdateNoGitHub => 'GitHub could not be reached.';
 
   @override
+  String get engineUpdateProblemNoPinnedBuild =>
+      'No ik_llama.cpp build is pinned in this app version.';
+
+  @override
+  String get engineUpdateProblemNoUpdate => 'No engine update is available.';
+
+  @override
+  String get engineUpdateProblemCheck => 'The engine update check failed.';
+
+  @override
+  String get engineUpdateProblemDownload =>
+      'The engine pack could not be downloaded.';
+
+  @override
+  String get engineUpdateProblemSmoke =>
+      'The engine pack failed its smoke test.';
+
+  @override
+  String get engineUpdateProblemInstall =>
+      'The engine pack could not be installed.';
+
+  @override
+  String get engineUpdateProblemUseBuiltIn =>
+      'The app could not switch to the built-in engine.';
+
+  @override
+  String get engineUpdateProblemRemove =>
+      'The downloaded engines could not be removed.';
+
+  @override
   String get liteRtBackend => 'LiteRT backend';
 
   @override
@@ -10259,6 +10316,16 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String engineRunsOwnEngine(String engine) {
+    return '$engine models run on their own engine.';
+  }
+
+  @override
+  String engineNotHosting(String engine) {
+    return 'Hosting is unavailable with $engine models.';
+  }
+
+  @override
   String get liteRtToolsUnavailable =>
       'Tools are unavailable with LiteRT models.';
 
@@ -10276,7 +10343,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get liteRtImportHint => 'Choose a .gguf or .litertlm model file.';
 
   @override
-  String get liteRtImportedLicense => 'Imported file · check publisher license';
+  String get importedFileLicense => 'Imported file · check publisher license';
 
   @override
   String get liteRtNotLoaded => 'Load a LiteRT model first.';

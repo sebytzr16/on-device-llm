@@ -764,16 +764,20 @@ abstract final class PhoneActions {
           await DeviceEncryption.instance.read(file),
           flush: true,
         );
-        await SharePlus.instance.share(
+        final result = await SharePlus.instance.share(
           ShareParams(files: [XFile(clear.path)], subject: a.fileName),
         );
+        // A dismissed sheet leaves no clear-text copy behind; a successful
+        // handover keeps it for the target app, which opens the file after
+        // the chooser returns (audit 05b-3). An unavailable result is
+        // returned at launch, before the target may have read the file, so
+        // its copy stays for the next sweep too (release review 1.8.0 #2).
+        if (result.status == ShareResultStatus.dismissed) {
+          await _dropSharedCopy(temporary);
+        }
       } catch (_) {
         // No app took the file: the decrypted copy must not stay behind.
-        try {
-          await temporary.delete(recursive: true);
-        } on FileSystemException catch (e, st) {
-          quietFailure('phone_actions:shareFailed', e, st);
-        }
+        await _dropSharedCopy(temporary);
         rethrow;
       }
       return true;
@@ -785,6 +789,16 @@ abstract final class PhoneActions {
       return false;
     } on MissingPluginException {
       return false;
+    }
+  }
+
+  /// Deletes the decrypted copy a share left behind; a copy still open
+  /// elsewhere stays for the next [sweepSharedCopies].
+  static Future<void> _dropSharedCopy(Directory temporary) async {
+    try {
+      await temporary.delete(recursive: true);
+    } on FileSystemException catch (e, st) {
+      quietFailure('phone_actions:shareFailed', e, st);
     }
   }
 }

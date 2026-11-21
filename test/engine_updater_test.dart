@@ -153,6 +153,10 @@ class _Server {
   int get apiRequests =>
       requests.where((r) => r.url.path.endsWith('/releases')).length;
 
+  /// Zip asset requests, so a test can prove that nothing was downloaded.
+  int get downloadRequests =>
+      requests.where((r) => r.url.path.endsWith('.zip')).length;
+
   /// Puts the release list on the one endpoint the updater may call.
   void publish(List<Map<String, dynamic>> releases) {
     routes[_releasesApi] = utf8.encode(jsonEncode(releases));
@@ -285,13 +289,37 @@ void main() {
   Future<EngineUpdater> installed(
     _Server server, {
     required String publicKey,
+    DateTime Function()? clock,
   }) async {
-    final up = updater(server, publicKey: publicKey);
+    final up = updater(server, publicKey: publicKey, clock: clock);
     final check = await up.check();
     expect(check.state, EngineCheckState.available);
     expect((await up.download()).state, EngineDownloadState.done);
     expect(await up.activate(tag: check.tag), isTrue);
     return up;
+  }
+
+  /// Turns the pack [tag] into one an earlier build installed: no copied
+  /// manifest and no `verifiedTag` in the marker or in state.json, so only
+  /// the marker's tag can remember it.
+  Future<void> makeLegacy(String tag) async {
+    final dir = p.join(root.path, tag);
+    File(p.join(dir, installedManifestName)).deleteSync();
+    File(p.join(dir, installedSignatureName)).deleteSync();
+    final marker = File(p.join(root.path, 'active.json'));
+    final active = jsonDecode(marker.readAsStringSync()) as Map;
+    active.remove('verifiedTag');
+    marker.writeAsStringSync(jsonEncode(active));
+    final stateFile = File(p.join(root.path, 'state.json'));
+    final state = jsonDecode(stateFile.readAsStringSync()) as Map;
+    state.remove('verifiedTag');
+    stateFile.writeAsStringSync(jsonEncode(state));
+  }
+
+  /// The persisted updater state, as the next start would read it.
+  Map savedState() {
+    final file = File(p.join(root.path, 'state.json'));
+    return jsonDecode(file.readAsStringSync()) as Map;
   }
 
   group('manifest', () {
@@ -575,7 +603,7 @@ void main() {
       now = now.add(const Duration(hours: 25));
       expect((await up.check()).state, EngineCheckState.available);
       expect(server.apiRequests, 2);
-      expect((await up.check(force: true)).state, EngineCheckState.available);
+      expect((await up.check(manual: true)).state, EngineCheckState.available);
       expect(server.apiRequests, 3);
     });
 
@@ -595,7 +623,7 @@ void main() {
       expect(result.message, contains('no network'));
       await up.check();
       expect(attempts, 1);
-      await up.check(force: true);
+      await up.check(manual: true);
       expect(attempts, 2);
     });
 
@@ -846,28 +874,76 @@ void main() {
       expect(await up.activate(), isFalse);
     });
 
-    test('a failing smoke test marks the tag bad for good', () async {
+    test(
+      'a failing smoke test excludes the tag from automatic checks',
+      () async {
+        final key = await _testKey();
+        final newest = await _release(key.keyPair, tag: 'engine-b12510');
+        final older = await _release(key.keyPair, tag: 'engine-b12505');
+        final server = _Server({});
+        for (final release in [newest, older]) {
+          server.add(release);
+        }
+        server.publish([newest.releaseJson, older.releaseJson]);
+        final up = updater(
+          server,
+          publicKey: key.publicKey,
+          openSmoke: (_) async => false,
+        );
+        expect((await up.check()).tag, newest.tag);
+        expect((await up.download()).state, EngineDownloadState.error);
+        expect(
+          Directory(p.join(root.path, 'staging', newest.tag)).existsSync(),
+          isFalse,
+        );
+        expect((await up.check(ignoreInterval: true)).tag, older.tag);
+        expect((await up.check(manual: true)).tag, newest.tag);
+        expect((await up.download()).problem, EngineUpdateProblem.smokeFailed);
+        expect(savedState()['badTags'], [newest.tag]);
+      },
+    );
+
+    test('a legacy bad tag is offered only by a manual check', () async {
       final key = await _testKey();
-      final newest = await _release(key.keyPair, tag: 'engine-b12510');
-      final older = await _release(key.keyPair, tag: 'engine-b12505');
-      final server = _Server({});
-      for (final release in [newest, older]) {
-        server.add(release);
-      }
-      server.publish([newest.releaseJson, older.releaseJson]);
-      final up = updater(
+      final release = await _release(key.keyPair);
+      final server = _Server({})
+        ..add(release)
+        ..publish([release.releaseJson]);
+      await File(p.join(root.path, 'state.json')).writeAsString(
+        jsonEncode({
+          'badTags': [release.tag],
+        }),
+      );
+      final up = updater(server, publicKey: key.publicKey);
+
+      expect((await up.check()).state, EngineCheckState.upToDate);
+      expect((await up.check(manual: true)).tag, release.tag);
+    });
+
+    test('the next daily check retries a transient HTTP failure', () async {
+      final key = await _testKey();
+      final release = await _release(key.keyPair);
+      final server = _Server({})
+        ..add(release)
+        ..publish([release.releaseJson]);
+      server.routes.remove(release.url(_zipName));
+      var now = DateTime.utc(2026, 11, 18, 12);
+      final up = updater(server, publicKey: key.publicKey, clock: () => now);
+
+      expect((await up.check()).tag, release.tag);
+      expect((await up.download()).problem, EngineUpdateProblem.downloadFailed);
+      expect(savedState()['inFlightTag'], isNull);
+      expect(savedState()['interruptedTags'], isEmpty);
+
+      server.add(release);
+      now = now.add(const Duration(hours: 25));
+      final restarted = updater(
         server,
         publicKey: key.publicKey,
-        openSmoke: (_) async => false,
+        clock: () => now,
       );
-      expect((await up.check()).tag, newest.tag);
-      expect((await up.download()).state, EngineDownloadState.error);
-      expect(
-        Directory(p.join(root.path, 'staging', newest.tag)).existsSync(),
-        isFalse,
-      );
-      // The next check skips the bad pack and offers the one before it.
-      expect((await up.check(force: true)).tag, older.tag);
+      expect((await restarted.check()).tag, release.tag);
+      expect((await restarted.download()).state, EngineDownloadState.done);
     });
 
     test('resumes a partial download with a Range request', () async {
@@ -921,6 +997,8 @@ void main() {
       );
       await up.check();
       expect((await up.download()).state, EngineDownloadState.error);
+      expect(savedState()['inFlightTag'], isNull);
+      expect(savedState()['interruptedTags'], isEmpty);
       expect((await up.download()).state, EngineDownloadState.done);
       expect(ranges, [null, '$half']);
       expect(await up.activate(), isTrue);
@@ -949,7 +1027,7 @@ void main() {
         ..publish([current.releaseJson]);
       final up = await installed(server, publicKey: key.publicKey);
       server.publish([retagged.releaseJson]);
-      expect((await up.check(force: true)).state, EngineCheckState.upToDate);
+      expect((await up.check(manual: true)).state, EngineCheckState.upToDate);
       expect(up.activePackDir(), p.join(root.path, current.tag));
     });
 
@@ -1081,7 +1159,7 @@ void main() {
         expect((await stale.download()).state, EngineDownloadState.done);
         server.publish([newer.releaseJson]);
         final current = updater(server, publicKey: key.publicKey);
-        expect((await current.check(force: true)).tag, newer.tag);
+        expect((await current.check(manual: true)).tag, newer.tag);
         expect((await current.download()).state, EngineDownloadState.done);
         expect(await current.activate(), isTrue);
 
@@ -1095,7 +1173,7 @@ void main() {
         await current.useBundled();
         server.publish([older.releaseJson]);
         expect(
-          (await current.check(force: true)).state,
+          (await current.check(manual: true)).state,
           EngineCheckState.upToDate,
         );
       },
@@ -1184,7 +1262,10 @@ void main() {
           p.join(aside.path, installedMetaName),
         ).writeAsStringSync(jsonEncode({'promotion': promotion}));
         server.publish([newer.releaseJson]);
-        expect((await up.check(force: true)).state, EngineCheckState.available);
+        expect(
+          (await up.check(manual: true)).state,
+          EngineCheckState.available,
+        );
         expect((await up.download()).state, EngineDownloadState.done);
         expect(await up.activate(), isTrue);
         expect(up.activePackDir(), p.join(root.path, newer.tag));
@@ -1207,6 +1288,472 @@ void main() {
       expect(Directory(packDir).existsSync(), isTrue);
     });
 
+    test(
+      'the automatic check never reinstalls the tag the user left',
+      () async {
+        final key = await _testKey();
+        final removed = await _release(key.keyPair, tag: 'engine-b12510');
+        final newer = await _release(key.keyPair, tag: 'engine-b12511');
+        final server = _Server({})
+          ..add(removed)
+          ..add(newer)
+          ..publish([removed.releaseJson]);
+        var now = DateTime.utc(2026, 11, 18, 12);
+        final up = updater(server, publicKey: key.publicKey, clock: () => now);
+        expect((await up.check()).tag, removed.tag);
+        expect((await up.download()).state, EngineDownloadState.done);
+        expect(await up.activate(), isTrue);
+        await up.useBundled();
+        expect(up.activePackDir(), isNull);
+
+        // The next daily automatic check must not bring the same tag back...
+        now = now.add(const Duration(hours: 25));
+        expect((await up.check()).state, EngineCheckState.upToDate);
+        // ...while a manual Check now may still offer it (P1).
+        expect((await up.check(manual: true)).tag, removed.tag);
+        // A strictly newer pack is still installed automatically.
+        server.publish([newer.releaseJson]);
+        now = now.add(const Duration(hours: 25));
+        expect((await up.check()).tag, newer.tag);
+      },
+    );
+
+    test('useBundled keeps failed tags out of automatic installs', () async {
+      final key = await _testKey();
+      final release = await _release(key.keyPair);
+      final server = _Server({})
+        ..add(release)
+        ..publish([release.releaseJson]);
+      final up = await installed(server, publicKey: key.publicKey);
+      final stateFile = File(p.join(root.path, 'state.json'));
+      final state = jsonDecode(stateFile.readAsStringSync()) as Map;
+      state['failedTags'] = [release.tag];
+      stateFile.writeAsStringSync(jsonEncode(state));
+      await up.useBundled();
+      // Clearing them here would let the automatic check reinstall the very
+      // tag the user just left (P1).
+      expect(savedState()['failedTags'], contains(release.tag));
+    });
+
+    test('two interrupted smoke tests still allow a manual retry', () async {
+      final key = await _testKey();
+      final release = await _release(key.keyPair);
+      final server = _Server({})
+        ..add(release)
+        ..publish([release.releaseJson]);
+      // The process dies while the smoke test runs: its future never
+      // completes, so the in-flight marker stays in state.json.
+      final smokeStarted = Completer<void>();
+      final first = updater(
+        server,
+        publicKey: key.publicKey,
+        openSmoke: (_) {
+          smokeStarted.complete();
+          return Completer<bool>().future;
+        },
+      );
+      expect((await first.check()).state, EngineCheckState.available);
+      unawaited(first.download());
+      await smokeStarted.future;
+      // The abandoned install is not a failed pack.
+      expect(savedState()['badTags'], isNot(contains(release.tag)));
+
+      // Next start: the staging is deleted and the tag may be retried.
+      final second = updater(server, publicKey: key.publicKey);
+      await second.prepare();
+      expect(
+        Directory(p.join(root.path, 'staging', release.tag)).existsSync(),
+        isFalse,
+      );
+      expect((await second.check(manual: true)).tag, release.tag);
+
+      final secondSmokeStarted = Completer<void>();
+      final again = updater(
+        server,
+        publicKey: key.publicKey,
+        openSmoke: (_) {
+          secondSmokeStarted.complete();
+          return Completer<bool>().future;
+        },
+      );
+      expect((await again.check(manual: true)).tag, release.tag);
+      unawaited(again.download());
+      await secondSmokeStarted.future;
+      final third = updater(server, publicKey: key.publicKey);
+      await third.prepare();
+      final saved = savedState();
+      expect(saved['badTags'], isEmpty);
+      expect(saved['interruptedTags'], [release.tag]);
+      expect(saved['inFlightTag'], isNull);
+      expect(
+        (await third.check(ignoreInterval: true)).state,
+        EngineCheckState.upToDate,
+      );
+      expect((await third.check(manual: true)).tag, release.tag);
+      expect((await third.download()).state, EngineDownloadState.done);
+      expect(savedState()['interruptedTags'], [release.tag]);
+      expect(await third.activate(), isTrue);
+      expect(savedState()['interruptedTags'], isEmpty);
+    });
+
+    test(
+      'one interrupted install is excluded from every automatic check',
+      () async {
+        final key = await _testKey();
+        final release = await _release(key.keyPair);
+        final server = _Server({})
+          ..add(release)
+          ..publish([release.releaseJson]);
+        var now = DateTime.utc(2026, 11, 18, 12);
+        // The process dies while the CPU smoke test runs.
+        final smokeStarted = Completer<void>();
+        final first = updater(
+          server,
+          publicKey: key.publicKey,
+          clock: () => now,
+          openSmoke: (_) {
+            smokeStarted.complete();
+            return Completer<bool>().future;
+          },
+        );
+        expect((await first.check()).state, EngineCheckState.available);
+        unawaited(first.download());
+        await smokeStarted.future;
+
+        // Next start records the interruption durably for the tag before it
+        // touches the staging folder.
+        final second = updater(
+          server,
+          publicKey: key.publicKey,
+          clock: () => now,
+        );
+        await second.prepare();
+        expect(savedState()['interruptedTags'], [release.tag]);
+        expect(
+          Directory(p.join(root.path, 'staging', release.tag)).existsSync(),
+          isFalse,
+        );
+        // The daily check never retries the tag, not even a day later...
+        now = now.add(const Duration(hours: 25));
+        expect((await second.check()).state, EngineCheckState.upToDate);
+        // ...while the user's own Check now may still offer it.
+        expect((await second.check(manual: true)).tag, release.tag);
+
+        // The startup check of a fresh controller downloads nothing either.
+        SharedPreferences.setMockInitialValues({});
+        now = now.add(const Duration(hours: 25));
+        final downloadsBefore = server.downloadRequests;
+        final container = ProviderContainer(
+          overrides: [
+            engineUpdaterProvider.overrideWithValue(
+              updater(server, publicKey: key.publicKey, clock: () => now),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+        await container.read(engineUpdateProvider.notifier).start();
+        expect(container.read(engineUpdateProvider).installed, isNull);
+        expect(server.downloadRequests, downloadsBefore);
+      },
+    );
+
+    test('the in-flight marker survives a quit during a GPU probe', () async {
+      final key = await _testKey();
+      final release = await _release(key.keyPair);
+      final server = _Server({})
+        ..add(release)
+        ..publish([release.releaseJson]);
+      var now = DateTime.utc(2026, 11, 18, 12);
+      final gpuProbe = Completer<void>();
+      final up = updater(
+        server,
+        publicKey: key.publicKey,
+        clock: () => now,
+        openSmoke: (path) {
+          if (p.basename(path) == _cudaDll) {
+            gpuProbe.complete();
+            return Completer<bool>().future;
+          }
+          return Future.value(true);
+        },
+      );
+      expect((await up.check()).state, EngineCheckState.available);
+      unawaited(up.download());
+      await gpuProbe.future;
+      // The CPU probes reported but the GPU probe is still running: the
+      // install is in flight, so a crash here must be recorded (P2).
+      final inFlight = savedState();
+      expect(inFlight['inFlightTag'], release.tag);
+
+      final restarted = updater(
+        server,
+        publicKey: key.publicKey,
+        clock: () => now,
+      );
+      await restarted.prepare();
+      expect(savedState()['interruptedTags'], contains(release.tag));
+      now = now.add(const Duration(hours: 25));
+      expect((await restarted.check()).state, EngineCheckState.upToDate);
+    });
+
+    test('a failed recovery write still blocks automatic install', () async {
+      SharedPreferences.setMockInitialValues({});
+      final key = await _testKey();
+      final release = await _release(key.keyPair);
+      final server = _Server({})
+        ..add(release)
+        ..publish([release.releaseJson]);
+      File(
+        p.join(root.path, 'state.json'),
+      ).writeAsStringSync(jsonEncode({'inFlightTag': release.tag}));
+      // Prevent recovery from taking the lock required to write state.json.
+      final blockedLock = Directory(p.join(root.path, 'pack.lock'))
+        ..createSync();
+      final up = updater(server, publicKey: key.publicKey);
+      await up.prepare();
+      expect(savedState()['inFlightTag'], release.tag);
+      expect(savedState()['interruptedTags'], isNull);
+      blockedLock.deleteSync();
+
+      final container = ProviderContainer(
+        overrides: [engineUpdaterProvider.overrideWithValue(up)],
+      );
+      addTearDown(container.dispose);
+      await container.read(engineUpdateProvider.notifier).start();
+      expect(server.apiRequests, 1);
+      expect(server.downloadRequests, 0);
+      expect(container.read(engineUpdateProvider).installed, isNull);
+      expect(savedState()['inFlightTag'], release.tag);
+      expect(savedState()['interruptedTags'], isEmpty);
+      expect((await up.check(manual: true)).tag, release.tag);
+    });
+
+    test(
+      'a confirmed failure is persisted before the staging cleanup',
+      () async {
+        final key = await _testKey();
+        final release = await _release(key.keyPair);
+        final server = _Server({})
+          ..add(release)
+          ..publish([release.releaseJson]);
+        var now = DateTime.utc(2026, 11, 18, 12);
+        final up = updater(
+          server,
+          publicKey: key.publicKey,
+          clock: () => now,
+          openSmoke: (path) async {
+            // The cleanup itself fails: the staging folder is replaced by a
+            // file the updater cannot delete as a directory.
+            final staging = Directory(
+              p.join(root.path, 'staging', release.tag),
+            );
+            if (await staging.exists()) {
+              await staging.delete(recursive: true);
+              await File(staging.path).writeAsString('blocks the cleanup');
+            }
+            return false;
+          },
+        );
+        await up.check();
+        final result = await up.download();
+        expect(result.state, EngineDownloadState.error);
+        expect(result.problem, EngineUpdateProblem.smokeFailed);
+        // The smoke failure was recorded before cleanup ran.
+        final saved = savedState();
+        expect(saved['badTags'], contains(release.tag));
+        expect(saved['interruptedTags'], isEmpty);
+        expect(saved['inFlightTag'], isNull);
+
+        now = now.add(const Duration(hours: 25));
+        final restarted = updater(
+          server,
+          publicKey: key.publicKey,
+          clock: () => now,
+        );
+        await restarted.prepare();
+        expect((await restarted.check()).state, EngineCheckState.upToDate);
+        expect((await restarted.check(manual: true)).tag, release.tag);
+      },
+    );
+
+    for (final broken in ['zip', 'file']) {
+      test('a $broken hash failure allows only a manual retry', () async {
+        final key = await _testKey();
+        final contents = {_cpuDll: utf8.encode('cpu bridge')};
+        final _FakeRelease release;
+        if (broken == 'zip') {
+          release = await _release(key.keyPair);
+        } else {
+          release = await _release(
+            key.keyPair,
+            contents: contents,
+            manifestFiles: [
+              {
+                'name': _cpuDll,
+                'size': contents[_cpuDll]!.length,
+                'sha256': 'b' * 64,
+              },
+            ],
+          );
+        }
+        final server = _Server({})
+          ..add(release)
+          ..publish([release.releaseJson]);
+        if (broken == 'zip') {
+          server.routes[release.url(_zipName)] = [...release.zip, 0];
+        }
+        var now = DateTime.utc(2026, 11, 18, 12);
+        final up = updater(server, publicKey: key.publicKey, clock: () => now);
+        await up.check();
+        expect((await up.download()).state, EngineDownloadState.error);
+        expect(savedState()['badTags'], isEmpty);
+        expect(savedState()['interruptedTags'], [release.tag]);
+        server.add(release);
+
+        // A fresh start after the check interval still requires manual retry.
+        now = now.add(const Duration(hours: 25));
+        final restarted = updater(
+          server,
+          publicKey: key.publicKey,
+          clock: () => now,
+        );
+        await restarted.prepare();
+        expect((await restarted.check()).state, EngineCheckState.upToDate);
+        expect((await restarted.check(manual: true)).tag, release.tag);
+        if (broken == 'zip') {
+          expect((await restarted.download()).state, EngineDownloadState.done);
+          expect(await restarted.activate(), isTrue);
+          expect(savedState()['interruptedTags'], isEmpty);
+        }
+      });
+    }
+
+    test('a pack without a CPU bridge allows only a manual retry', () async {
+      final key = await _testKey();
+      final release = await _release(
+        key.keyPair,
+        contents: {
+          _cudaDll: [1],
+        },
+      );
+      final server = _Server({})
+        ..add(release)
+        ..publish([release.releaseJson]);
+      var now = DateTime.utc(2026, 11, 18, 12);
+      final up = updater(server, publicKey: key.publicKey, clock: () => now);
+      await up.check();
+      expect((await up.download()).state, EngineDownloadState.error);
+      expect(savedState()['badTags'], isEmpty);
+      expect(savedState()['interruptedTags'], [release.tag]);
+      expect(savedState()['inFlightTag'], isNull);
+
+      now = now.add(const Duration(hours: 25));
+      final restarted = updater(
+        server,
+        publicKey: key.publicKey,
+        clock: () => now,
+      );
+      await restarted.prepare();
+      expect((await restarted.check()).state, EngineCheckState.upToDate);
+      expect((await restarted.check(manual: true)).tag, release.tag);
+    });
+
+    test('an activation hash failure allows only a manual retry', () async {
+      final key = await _testKey();
+      final release = await _release(key.keyPair);
+      final server = _Server({})
+        ..add(release)
+        ..publish([release.releaseJson]);
+      var now = DateTime.utc(2026, 11, 18, 12);
+      final up = updater(server, publicKey: key.publicKey, clock: () => now);
+      expect((await up.check()).state, EngineCheckState.available);
+      expect((await up.download()).state, EngineDownloadState.done);
+      // The staged DLL changes after the smoke test, before promotion.
+      final staged = File(p.join(root.path, 'staging', release.tag, _cpuDll));
+      staged.writeAsBytesSync([...staged.readAsBytesSync(), 0]);
+      expect(await up.activate(), isFalse);
+      expect(savedState()['badTags'], isEmpty);
+      expect(savedState()['interruptedTags'], [release.tag]);
+
+      now = now.add(const Duration(hours: 25));
+      final restarted = updater(
+        server,
+        publicKey: key.publicKey,
+        clock: () => now,
+      );
+      await restarted.prepare();
+      expect((await restarted.check()).state, EngineCheckState.upToDate);
+      expect((await restarted.check(manual: true)).tag, release.tag);
+    });
+
+    test(
+      'useBundled advances an older floor to the legacy marker tag',
+      () async {
+        final key = await _testKey();
+        final release = await _release(key.keyPair);
+        final server = _Server({})
+          ..add(release)
+          ..publish([release.releaseJson]);
+        var now = DateTime.utc(2026, 11, 18, 12);
+        final up = await installed(
+          server,
+          publicKey: key.publicKey,
+          clock: () => now,
+        );
+        await makeLegacy(release.tag);
+        File(p.join(root.path, 'state.json')).writeAsStringSync(
+          jsonEncode(savedState()..['verifiedTag'] = 'engine-b12500'),
+        );
+        await up.useBundled();
+        expect(savedState()['verifiedTag'], release.tag);
+
+        // A new updater over the same root, a day later: the tag is not
+        // installed by itself, while a manual check may still offer it.
+        now = now.add(const Duration(hours: 25));
+        final restarted = updater(
+          server,
+          publicKey: key.publicKey,
+          clock: () => now,
+        );
+        await restarted.prepare();
+        expect((await restarted.check()).state, EngineCheckState.upToDate);
+        expect((await restarted.check(manual: true)).tag, release.tag);
+      },
+    );
+
+    test(
+      'removeAll advances an older floor to the legacy marker tag',
+      () async {
+        final key = await _testKey();
+        final release = await _release(key.keyPair);
+        final server = _Server({})
+          ..add(release)
+          ..publish([release.releaseJson]);
+        var now = DateTime.utc(2026, 11, 18, 12);
+        final up = await installed(
+          server,
+          publicKey: key.publicKey,
+          clock: () => now,
+        );
+        await makeLegacy(release.tag);
+        File(p.join(root.path, 'state.json')).writeAsStringSync(
+          jsonEncode(savedState()..['verifiedTag'] = 'engine-b12500'),
+        );
+        await up.removeAll();
+        expect(savedState()['verifiedTag'], release.tag);
+
+        now = now.add(const Duration(hours: 25));
+        final restarted = updater(
+          server,
+          publicKey: key.publicKey,
+          clock: () => now,
+        );
+        await restarted.prepare();
+        expect(Directory(p.join(root.path, release.tag)).existsSync(), isFalse);
+        expect((await restarted.check()).state, EngineCheckState.upToDate);
+      },
+    );
+
     test('activate keeps the active pack and one previous one', () async {
       final key = await _testKey();
       final older = await _release(key.keyPair, tag: 'engine-b12505');
@@ -1223,7 +1770,7 @@ void main() {
       expect(await up.activate(), isTrue);
       // Then the newer one; the older stays as the fallback.
       server.publish([newer.releaseJson]);
-      await up.check(force: true);
+      await up.check(manual: true);
       await up.download();
       expect(await up.activate(), isTrue);
       expect(up.activePackDir(), p.join(root.path, newer.tag));
@@ -1233,7 +1780,7 @@ void main() {
       final newest = await _release(key.keyPair, tag: 'engine-b12511');
       server.add(newest);
       server.publish([newest.releaseJson]);
-      await up.check(force: true);
+      await up.check(manual: true);
       await up.download();
       expect(await up.activate(), isTrue);
       expect(Directory(p.join(root.path, older.tag)).existsSync(), isFalse);
@@ -1360,7 +1907,7 @@ void main() {
       final view = container.read(engineUpdateProvider);
       expect(view.installed, isNull);
       expect(view.phase, EngineUpdatePhase.error);
-      expect(view.message, contains('cleanup denied'));
+      expect(view.problem, EngineUpdateProblem.removeFailed);
       expect(failing.activePackDir(), isNull);
     });
 
@@ -1394,8 +1941,98 @@ void main() {
       await controller.useBundled();
       final view = container.read(engineUpdateProvider);
       expect(view.phase, EngineUpdatePhase.error);
-      expect(view.message, contains('marker denied'));
+      expect(view.problem, EngineUpdateProblem.useBundledFailed);
     });
+
+    for (final action in ['useBundled', 'removeAll']) {
+      test(
+        'a fresh controller never reinstalls the released tag after $action',
+        () async {
+          SharedPreferences.setMockInitialValues({});
+          final key = await _testKey();
+          final release = await _release(key.keyPair);
+          final server = _Server({})
+            ..add(release)
+            ..publish([release.releaseJson]);
+          var now = DateTime.utc(2026, 11, 18, 12);
+          final up = await installed(
+            server,
+            publicKey: key.publicKey,
+            clock: () => now,
+          );
+          await makeLegacy(release.tag);
+          final downloadsBefore = server.downloadRequests;
+          final first = ProviderContainer(
+            overrides: [engineUpdaterProvider.overrideWithValue(up)],
+          );
+          final controller = first.read(engineUpdateProvider.notifier);
+          if (action == 'useBundled') {
+            await controller.useBundled();
+          } else {
+            await controller.removeAll();
+          }
+          first.dispose();
+
+          // A new controller and updater over the same root, a day later: the
+          // tag the user released is not downloaded again by itself (P2).
+          now = now.add(const Duration(hours: 25));
+          final restarted = ProviderContainer(
+            overrides: [
+              engineUpdaterProvider.overrideWithValue(
+                updater(server, publicKey: key.publicKey, clock: () => now),
+              ),
+            ],
+          );
+          addTearDown(restarted.dispose);
+          await restarted.read(engineUpdateProvider.notifier).start();
+          final view = restarted.read(engineUpdateProvider);
+          expect(view.installed, isNull);
+          expect(server.downloadRequests, downloadsBefore);
+        },
+      );
+    }
+
+    for (final excludedBy in [
+      null,
+      'interruptedTags',
+      'failedTags',
+      'badTags',
+    ]) {
+      test('startup migration with exclusion list $excludedBy', () async {
+        SharedPreferences.setMockInitialValues({});
+        final key = await _testKey();
+        final release = await _release(key.keyPair);
+        final server = _Server({})
+          ..add(release)
+          ..publish([release.releaseJson]);
+        final now = DateTime.utc(2026, 11, 18, 12);
+        await installed(server, publicKey: key.publicKey, clock: () => now);
+        await makeLegacy(release.tag);
+        if (excludedBy != null) {
+          File(p.join(root.path, 'state.json')).writeAsStringSync(
+            jsonEncode(savedState()..[excludedBy] = [release.tag]),
+          );
+        }
+        final downloadsBefore = server.downloadRequests;
+        final checksBefore = server.apiRequests;
+
+        final container = ProviderContainer(
+          overrides: [
+            engineUpdaterProvider.overrideWithValue(
+              updater(server, publicKey: key.publicKey, clock: () => now),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+        await container.read(engineUpdateProvider.notifier).start();
+        final view = container.read(engineUpdateProvider);
+        final migrates = excludedBy == null;
+        expect(server.downloadRequests, downloadsBefore + (migrates ? 1 : 0));
+        expect(server.apiRequests, checksBefore + 1);
+        expect(view.installed, migrates ? isNotNull : isNull);
+        expect(view.unverified, !migrates);
+      });
+    }
 
     test(
       'closing the panel during a refresh touches no notifier state',
@@ -1436,7 +2073,7 @@ void main() {
       final view = container.read(engineUpdateProvider);
       expect(view.phase, EngineUpdatePhase.error);
       expect(view.busy, isFalse);
-      expect(view.message, contains('engines folder is read-only'));
+      expect(view.problem, EngineUpdateProblem.installFailed);
       expect(view.installed, isNull);
     });
 
@@ -1499,7 +2136,7 @@ void main() {
         expect(up.unverifiedNotice, isTrue);
         // The folder is kept and the same tag is offered for a signed reinstall.
         expect(Directory(dir).existsSync(), isTrue);
-        final check = await up.check(force: true);
+        final check = await up.check(manual: true);
         expect(check.state, EngineCheckState.available);
         expect(check.tag, release.tag);
         expect((await up.download()).state, EngineDownloadState.done);
@@ -1536,6 +2173,9 @@ void main() {
         // Six attempts, no lost update: the crash guard sees every load.
         expect(state['crashCount'], 6);
       },
+      // POSIX record locks are per process, so isolates do not exclude each
+      // other there; the updater only runs on Windows (LockFileEx per handle).
+      skip: Platform.isWindows ? false : 'Windows file locks only',
     );
 
     test(
@@ -1559,11 +2199,11 @@ void main() {
 
         // An older signed release must not roll the install back...
         server.publish([older.releaseJson]);
-        expect((await up.check(force: true)).state, EngineCheckState.upToDate);
+        expect((await up.check(manual: true)).state, EngineCheckState.upToDate);
         // ...while the same tag and revision may be reinstalled from its signed
         // release, which is what migration needs.
         server.publish([newest.releaseJson]);
-        final reinstall = await up.check(force: true);
+        final reinstall = await up.check(manual: true);
         expect(reinstall.state, EngineCheckState.available);
         expect(reinstall.tag, newest.tag);
       },
@@ -1629,10 +2269,13 @@ void main() {
         // engine-b12510 is still installed: an older signed release must not
         // be installed over it while its reinstall is pending (P3-3).
         server.publish([older.releaseJson]);
-        expect((await up.check(force: true)).state, EngineCheckState.upToDate);
+        expect(
+          (await up.check(ignoreInterval: true)).state,
+          EngineCheckState.upToDate,
+        );
         // Its own tag stays reinstallable.
         server.publish([newest.releaseJson]);
-        final reinstall = await up.check(force: true);
+        final reinstall = await up.check(manual: true);
         expect(reinstall.state, EngineCheckState.available);
         expect(reinstall.tag, newest.tag);
       },
@@ -1654,7 +2297,7 @@ void main() {
         File(p.join(dir, installedSignatureName)).deleteSync();
         await up.prepare();
         expect(up.needsMigration, isTrue);
-        expect((await up.check(force: true)).tag, release.tag);
+        expect((await up.check(manual: true)).tag, release.tag);
         expect((await up.download()).state, EngineDownloadState.done);
 
         // The marker cannot be switched: the legacy folder must survive, and
@@ -1730,6 +2373,11 @@ void main() {
       up.acknowledgeRevert();
       expect(up.revertedNotice, isFalse);
       expect(up.activePackDir(), isNull);
+      await up.useBundled();
+      expect(up.revertedNotice, isFalse);
+      await up.removeAll();
+      expect(up.revertedNotice, isFalse);
+      expect(savedState()['revertAcknowledged'], isTrue);
     });
 
     test(

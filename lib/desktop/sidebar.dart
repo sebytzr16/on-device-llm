@@ -112,10 +112,13 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                     dimension: 38,
                     child: OutlinedButton(
                       key: const Key('desktop-new-temporary'),
-                      onPressed: () {
-                        ref
+                      onPressed: () async {
+                        // A refused reset (still answering, or the web
+                        // consent declined) leaves the panel where it is.
+                        final reset = await ref
                             .read(chatProvider.notifier)
                             .newChat(temporary: true);
+                        if (!reset) return;
                         nav.show(DesktopSection.chat);
                       },
                       style: OutlinedButton.styleFrom(

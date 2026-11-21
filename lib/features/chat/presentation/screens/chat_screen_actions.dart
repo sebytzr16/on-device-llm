@@ -888,10 +888,12 @@ extension _ChatScreenActions on _ChatScreenState {
         unawaited(_switchDraft(null));
         showIslandToast(context, context.l10n.temporaryChatHint);
       case 'workspace':
-        Navigator.push(
-          context,
-          MaterialPageRoute<void>(
-            builder: (_) => const ConversationWorkspacePage(),
+        unawaited(
+          Navigator.push(
+            context,
+            MaterialPageRoute<void>(
+              builder: (_) => const ConversationWorkspacePage(),
+            ),
           ),
         );
       case 'document':
@@ -907,13 +909,15 @@ extension _ChatScreenActions on _ChatScreenState {
       case 'save-knowledge':
         unawaited(_saveToKnowledge());
       case 'models':
-        Navigator.pushNamed(context, AppRoutes.models);
+        unawaited(Navigator.pushNamed(context, AppRoutes.models));
       case 'settings':
-        Navigator.pushNamed(context, AppRoutes.settings);
+        unawaited(Navigator.pushNamed(context, AppRoutes.settings));
       case 'chat-settings':
-        Navigator.push(
-          context,
-          MaterialPageRoute<void>(builder: (_) => const _ChatOverridesPage()),
+        unawaited(
+          Navigator.push(
+            context,
+            MaterialPageRoute<void>(builder: (_) => const _ChatOverridesPage()),
+          ),
         );
       case 'metrics':
         unawaited(showMetricsSheet(context));

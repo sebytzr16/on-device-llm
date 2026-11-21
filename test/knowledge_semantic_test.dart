@@ -85,6 +85,16 @@ class ViewEmbedder extends FakeEmbedder {
   }
 }
 
+/// A model that is on disk but whose load failed (no free memory, a corrupt
+/// file): the index must report that reason, not ask for a download.
+class LoadFailingEmbedder extends FakeEmbedder {
+  @override
+  Future<List<Float32List>?> embedDocuments(List<String> texts) async => null;
+
+  @override
+  Object? get loadFailure => 'Not enough free memory for this model';
+}
+
 const boilerText =
     'Boiler manual.\n'
     'To reset the boiler after a lockout, hold the reset button for five seconds.\n'
@@ -236,6 +246,20 @@ void main() {
     );
     final hits = await store.search('Manuals', 'reset the boiler');
     expect(hits.single.title, 'boiler.txt');
+  });
+
+  test('a failed embedding load is reported with its own reason', () async {
+    final c = container(LoadFailingEmbedder());
+    final store = c.read(knowledgeStoreProvider);
+    await store.import(
+      collection: 'Manuals',
+      name: 'boiler.txt',
+      bytes: bytes(boilerText * 20),
+    );
+    await c.read(knowledgeIndexerProvider.notifier).index('Manuals');
+    final error = c.read(knowledgeIndexerProvider).error!;
+    expect(error, contains('Not enough free memory for this model'));
+    expect(error, isNot(contains('not downloaded')));
   });
 
   test('indexing can be stopped and resumed where it left off', () async {

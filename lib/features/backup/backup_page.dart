@@ -290,7 +290,8 @@ enum _SaveAction { saveToFile, share }
 ///
 /// [android] and [read] exist so a widget test can reach the phone's branch
 /// (`dart:io`'s `Platform.isAndroid` cannot be faked) and prove the archive is
-/// not read above the cap.
+/// not read above the cap. Production always reads [Platform.isAndroid]: no
+/// mutable static may change the real save path (review #7).
 @visibleForTesting
 Future<bool> saveBackupArchive(
   BuildContext context,
@@ -299,7 +300,7 @@ Future<bool> saveBackupArchive(
   bool? android,
   Future<Uint8List> Function()? read,
 }) async {
-  final onAndroid = android ?? LocalBackupService.onAndroid;
+  final onAndroid = android ?? Platform.isAndroid;
   try {
     // Android writes through the system picker and needs the bytes; the
     // desktop picker returns a path and the file is copied there.

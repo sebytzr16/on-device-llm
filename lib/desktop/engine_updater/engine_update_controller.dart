@@ -58,7 +58,10 @@ class EngineUpdateView {
   /// The newer pack found by the last check.
   final String? latest;
   final int received, total;
-  final String? message;
+
+  /// Why the last check or install failed; the panel localizes it. Raw
+  /// exception detail stays in the log (release review P2 l10n).
+  final EngineUpdateProblem? problem;
   final DateTime? lastCheck;
   final bool autoCheck;
 
@@ -77,19 +80,25 @@ class EngineUpdateView {
   /// The installed ik_llama.cpp pack no longer verifies.
   final bool ikUnverified;
 
+  /// A pack folder (active, reverted, unverified or awaiting deletion) is
+  /// still on disk. The panel keeps its removal row visible from this alone,
+  /// whatever the revert notice says.
+  final bool packsOnDisk;
+
   const EngineUpdateView({
     this.phase = EngineUpdatePhase.idle,
     this.installed,
     this.latest,
     this.received = 0,
     this.total = 0,
-    this.message,
+    this.problem,
     this.lastCheck,
     this.autoCheck = true,
     this.reverted = false,
     this.unverified = false,
     this.ikInstalled,
     this.ikUnverified = false,
+    this.packsOnDisk = false,
   });
 
   bool get busy =>
@@ -103,8 +112,8 @@ class EngineUpdateView {
     String? latest,
     int? received,
     int? total,
-    String? message,
-    bool clearMessage = false,
+    EngineUpdateProblem? problem,
+    bool clearProblem = false,
     DateTime? lastCheck,
     bool? autoCheck,
     bool? reverted,
@@ -112,19 +121,21 @@ class EngineUpdateView {
     String? ikInstalled,
     bool clearIkInstalled = false,
     bool? ikUnverified,
+    bool? packsOnDisk,
   }) => EngineUpdateView(
     phase: phase ?? this.phase,
     installed: clearInstalled ? null : installed ?? this.installed,
     latest: latest ?? this.latest,
     received: received ?? this.received,
     total: total ?? this.total,
-    message: clearMessage ? null : message ?? this.message,
+    problem: clearProblem ? null : problem ?? this.problem,
     lastCheck: lastCheck ?? this.lastCheck,
     autoCheck: autoCheck ?? this.autoCheck,
     reverted: reverted ?? this.reverted,
     unverified: unverified ?? this.unverified,
     ikInstalled: clearIkInstalled ? null : ikInstalled ?? this.ikInstalled,
     ikUnverified: ikUnverified ?? this.ikUnverified,
+    packsOnDisk: packsOnDisk ?? this.packsOnDisk,
   );
 }
 
@@ -155,13 +166,15 @@ class EngineUpdateController extends Notifier<EngineUpdateView> {
     if (!auto) return;
     // A pack installed by an earlier build has no copied manifest (P2-2).
     // Re-offer its tag at startup instead of quietly running the bundled
-    // engine; the old folder stays until the signed reinstall succeeds.
+    // engine; the old folder stays until the signed reinstall succeeds. This
+    // bypasses the daily interval but is not a manual request: a tag an
+    // earlier interruption excluded is never installed by it (P2).
     if (_updater.needsMigration) {
       _log.info('Re-offering the installed engine pack for a signed reinstall');
-      await _check(force: true, install: true);
+      await _check(install: true, ignoreInterval: true);
       return;
     }
-    await _check(force: false, install: true);
+    await _check(install: true);
   }
 
   Future<void> setAutoCheck(bool value) async {
@@ -173,7 +186,9 @@ class EngineUpdateController extends Notifier<EngineUpdateView> {
     }
   }
 
-  Future<void> checkNow() => _check(force: true, install: false);
+  /// The user's own check: it ignores the interval and is the only path that
+  /// may retry a tag an earlier interruption excluded.
+  Future<void> checkNow() => _check(manual: true);
 
   /// Optional ik_llama.cpp engine pack: check GitHub and, when [install] is
   /// true, download, verify, smoke test and activate it. It is never installed
@@ -184,15 +199,18 @@ class EngineUpdateController extends Notifier<EngineUpdateView> {
     if (!ref.read(ikEngineAvailableProvider)) {
       return const EngineCheckResult(
         EngineCheckState.error,
-        message: 'No ik_llama.cpp build is pinned in this app version.',
+        problem: EngineUpdateProblem.noPinnedBuild,
       );
     }
     final EngineCheckResult result;
     try {
-      result = await _ik.check(force: true);
+      result = await _ik.check(manual: true);
     } catch (e) {
       _log.info('ik_llama.cpp pack check failed: $e');
-      return EngineCheckResult(EngineCheckState.error, message: '$e');
+      return const EngineCheckResult(
+        EngineCheckState.error,
+        problem: EngineUpdateProblem.checkFailed,
+      );
     }
     if (install) {
       if (result.state != EngineCheckState.available) {
@@ -205,21 +223,24 @@ class EngineUpdateController extends Notifier<EngineUpdateView> {
           await _refreshInstalled();
           return EngineCheckResult(
             EngineCheckState.error,
-            message:
-                download.message ?? 'The ik_llama.cpp pack download failed.',
+            problem: download.problem ?? EngineUpdateProblem.downloadFailed,
+            message: download.message,
           );
         }
         if (!await _ik.activate()) {
           await _refreshInstalled();
           return const EngineCheckResult(
             EngineCheckState.error,
-            message: 'The ik_llama.cpp pack could not be installed.',
+            problem: EngineUpdateProblem.installFailed,
           );
         }
       } catch (e) {
         _log.info('ik_llama.cpp pack install failed: $e');
         await _refreshInstalled();
-        return EngineCheckResult(EngineCheckState.error, message: '$e');
+        return const EngineCheckResult(
+          EngineCheckState.error,
+          problem: EngineUpdateProblem.installFailed,
+        );
       }
     }
     await _refreshInstalled();
@@ -255,14 +276,17 @@ class EngineUpdateController extends Notifier<EngineUpdateView> {
       await _updater.useBundled();
       await _refreshInstalled();
       if (!ref.mounted) return;
-      state = state.copyWith(phase: EngineUpdatePhase.idle, clearMessage: true);
+      state = state.copyWith(phase: EngineUpdatePhase.idle, clearProblem: true);
     } catch (e) {
       // A read-only engines folder makes the marker deletion fail; the panel
       // must say so instead of the press doing nothing.
       _log.info('Reverting to the built-in engine failed: $e');
       await _refreshInstalled();
       if (!ref.mounted) return;
-      state = state.copyWith(phase: EngineUpdatePhase.error, message: '$e');
+      state = state.copyWith(
+        phase: EngineUpdatePhase.error,
+        problem: EngineUpdateProblem.useBundledFailed,
+      );
     }
   }
 
@@ -279,13 +303,16 @@ class EngineUpdateController extends Notifier<EngineUpdateView> {
       }
       await _refreshInstalled();
       if (!ref.mounted) return;
-      state = state.copyWith(phase: EngineUpdatePhase.idle, clearMessage: true);
+      state = state.copyWith(phase: EngineUpdatePhase.idle, clearProblem: true);
       _log.info('Engine pack removal scheduled for next startup');
     } catch (e) {
       _log.info('Engine pack removal failed: $e');
       await _refreshInstalled();
       if (!ref.mounted) return;
-      state = state.copyWith(phase: EngineUpdatePhase.error, message: '$e');
+      state = state.copyWith(
+        phase: EngineUpdatePhase.error,
+        problem: EngineUpdateProblem.removeFailed,
+      );
     }
   }
 
@@ -296,18 +323,28 @@ class EngineUpdateController extends Notifier<EngineUpdateView> {
     state = state.copyWith(reverted: false);
   }
 
-  Future<void> _check({required bool force, required bool install}) async {
+  Future<void> _check({
+    bool manual = false,
+    bool install = false,
+    bool ignoreInterval = false,
+  }) async {
     if (state.busy) return;
     state = state.copyWith(
       phase: EngineUpdatePhase.checking,
-      clearMessage: true,
+      clearProblem: true,
     );
     final EngineCheckResult result;
     try {
-      result = await _updater.check(force: force);
+      result = await _updater.check(
+        manual: manual,
+        ignoreInterval: ignoreInterval,
+      );
     } catch (e) {
       _log.info('Engine update check: error ($e)');
-      state = state.copyWith(phase: EngineUpdatePhase.error, message: '$e');
+      state = state.copyWith(
+        phase: EngineUpdatePhase.error,
+        problem: EngineUpdateProblem.checkFailed,
+      );
       return;
     }
     _log.info(switch (result.state) {
@@ -330,7 +367,7 @@ class EngineUpdateController extends Notifier<EngineUpdateView> {
       },
       latest: result.tag,
       total: result.size ?? 0,
-      message: result.message,
+      problem: result.problem,
     );
     if (install && result.state == EngineCheckState.available) {
       await _install();
@@ -341,7 +378,7 @@ class EngineUpdateController extends Notifier<EngineUpdateView> {
     state = state.copyWith(
       phase: EngineUpdatePhase.downloading,
       received: 0,
-      clearMessage: true,
+      clearProblem: true,
     );
     _log.info('Engine download started: ${state.latest}');
     try {
@@ -361,7 +398,9 @@ class EngineUpdateController extends Notifier<EngineUpdateView> {
           phase: result.state == EngineDownloadState.cancelled
               ? EngineUpdatePhase.available
               : EngineUpdatePhase.error,
-          message: result.message,
+          problem: result.state == EngineDownloadState.cancelled
+              ? null
+              : result.problem ?? EngineUpdateProblem.downloadFailed,
         );
         return;
       }
@@ -375,7 +414,7 @@ class EngineUpdateController extends Notifier<EngineUpdateView> {
       if (!ref.mounted) return;
       state = state.copyWith(
         phase: activated ? EngineUpdatePhase.ready : EngineUpdatePhase.error,
-        message: activated ? null : 'The engine pack could not be installed.',
+        problem: activated ? null : EngineUpdateProblem.installFailed,
       );
     } catch (e) {
       // A failed install (read-only or full engines folder) must not leave the
@@ -383,7 +422,10 @@ class EngineUpdateController extends Notifier<EngineUpdateView> {
       // for the rest of the session.
       _log.info('Engine installation failed: $e');
       if (!ref.mounted) return;
-      state = state.copyWith(phase: EngineUpdatePhase.error, message: '$e');
+      state = state.copyWith(
+        phase: EngineUpdatePhase.error,
+        problem: EngineUpdateProblem.installFailed,
+      );
       await _refreshInstalled();
     }
   }
@@ -393,12 +435,17 @@ class EngineUpdateController extends Notifier<EngineUpdateView> {
     String? ikDir;
     var unverified = false;
     var ikUnverified = false;
+    var packsOnDisk = false;
     try {
       await _updater.prepare();
       // One lookup per refresh, and it is the verified one: the marker alone
       // can point at a pack whose manifest no longer verifies (P2-3).
       llamaDir = _updater.verifiedPackDir();
       unverified = _updater.unverifiedNotice;
+      // Rows that act on the folders must not depend on the marker or on the
+      // revert notice: a reverted, unverified or already released pack still
+      // occupies hundreds of MB until it is removed (P2).
+      packsOnDisk = await _updater.packFilesOnDisk();
     } catch (e) {
       _log.fine('Engine packs unreadable', e);
     }
@@ -407,6 +454,7 @@ class EngineUpdateController extends Notifier<EngineUpdateView> {
       ikDir = _ik.verifiedPackDir();
       ikUnverified = _ik.unverifiedNotice;
       unverified = unverified || ikUnverified;
+      packsOnDisk = packsOnDisk || await _ik.packFilesOnDisk();
     } catch (e) {
       // A read-only or missing folder keeps ik_llama.cpp unavailable; the
       // llama.cpp engine and the panel are unaffected.
@@ -439,6 +487,7 @@ class EngineUpdateController extends Notifier<EngineUpdateView> {
       ikInstalled: ikTag,
       clearIkInstalled: ikTag == null,
       ikUnverified: ikUnverified,
+      packsOnDisk: packsOnDisk,
     );
   }
 }

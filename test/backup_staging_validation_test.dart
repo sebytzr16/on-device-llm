@@ -143,4 +143,33 @@ void main() {
     });
     await expectStagingRefuses(bytes);
   });
+
+  test(
+    'staging refuses a table row without a definition for its exact name',
+    () async {
+      final bytes = await backup((entries) {
+        final file = File(p.join(root.path, 'data.sqlite'));
+        file.writeAsBytesSync(entries['data.sqlite']!);
+        final database = sqlite3.open(file.path);
+        try {
+          // A foreign archive can name the table differently in sqlite_schema
+          // while its columns stay readable: PRAGMA resolves a table name
+          // case-insensitively, so the version and integrity checks above pass
+          // and only the exact-name definition lookup misses. `single` used
+          // to surface that as a StateError ("No element") instead of the
+          // incompatible-schema FormatException (review #5).
+          database.execute('PRAGMA writable_schema = ON');
+          database.execute(
+            "UPDATE sqlite_schema SET name = 'Compare_History' "
+            "WHERE type = 'table' AND name = 'compare_history'",
+          );
+          database.execute('PRAGMA writable_schema = OFF');
+        } finally {
+          database.close();
+        }
+        entries['data.sqlite'] = file.readAsBytesSync();
+      });
+      await expectStagingRefuses(bytes);
+    },
+  );
 }

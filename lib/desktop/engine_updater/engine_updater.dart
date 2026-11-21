@@ -67,19 +67,54 @@ class EngineHttpResponse {
 
 enum EngineCheckState { upToDate, available, offline, error }
 
+/// Why a check or install failed. The panel maps it to a localized message;
+/// [EngineCheckResult.message] keeps only diagnostic detail for the log, so no
+/// raw exception text is ever shown in the UI (release review P2 l10n).
+enum EngineUpdateProblem {
+  /// No ik_llama.cpp commit is pinned in this app build.
+  noPinnedBuild,
+
+  /// [EngineUpdater.download] ran without a pack found by [EngineUpdater.check].
+  noUpdateAvailable,
+
+  /// The release list or one of its assets could not be fetched or read.
+  checkFailed,
+
+  /// The download, its signed checksum or the extraction failed.
+  downloadFailed,
+
+  /// The pack was extracted but failed its CPU smoke test.
+  smokeFailed,
+
+  /// The verified pack could not be promoted into its engines folder.
+  installFailed,
+
+  /// Switching back to the bundled engine could not write its state.
+  useBundledFailed,
+
+  /// Deleting the downloaded engines could not be scheduled.
+  removeFailed,
+}
+
 /// What one check found: nothing new, a verified pack with its download size,
-/// no network, or a concrete failure to show.
+/// no network, or a typed failure (see [EngineUpdateProblem]).
 class EngineCheckResult {
   final EngineCheckState state;
   final String? tag;
   final int? size;
+
+  /// Diagnostic detail for the log, never shown in the UI.
   final String? message;
+
+  /// The localized failure the panel shows; null unless [state] is an error.
+  final EngineUpdateProblem? problem;
   final DateTime? lastCheck;
   const EngineCheckResult(
     this.state, {
     this.tag,
     this.size,
     this.message,
+    this.problem,
     this.lastCheck,
   });
 }
@@ -88,8 +123,13 @@ enum EngineDownloadState { done, cancelled, error }
 
 class EngineDownloadResult {
   final EngineDownloadState state;
+
+  /// Diagnostic detail for the log, never shown in the UI.
   final String? message;
-  const EngineDownloadResult(this.state, {this.message});
+
+  /// The localized failure the panel shows; null unless [state] is an error.
+  final EngineUpdateProblem? problem;
+  const EngineDownloadResult(this.state, {this.message, this.problem});
 }
 
 /// Checks GitHub for engine packs, verifies and stages them, and writes the
@@ -153,13 +193,25 @@ class EngineUpdater {
         : EnginePins.ikLlamaCommit;
   }
 
-  /// Checks for a newer verified pack at most once a day unless [force].
-  Future<EngineCheckResult> check({bool force = false}) async {
+  /// Checks for a newer verified pack at most once a day. [manual] is the
+  /// user's own request (Check now / Install): it ignores the stored interval
+  /// and may retry a tag an earlier smoke failure, interruption or crash
+  /// excluded from automatic checks.
+  /// Startup migration uses [ignoreInterval] to bypass the interval and may
+  /// reinstall the active legacy tag at the floor. All automatic exclusions
+  /// still apply.
+  Future<EngineCheckResult> check({
+    bool manual = false,
+    bool ignoreInterval = false,
+  }) async {
     final root = await _rootPath();
     final state = _readState(root);
     final last = state.lastCheck;
     final now = clock();
-    if (!force && last != null && now.difference(last) < _checkInterval) {
+    if (!manual &&
+        !ignoreInterval &&
+        last != null &&
+        now.difference(last) < _checkInterval) {
       return EngineCheckResult(EngineCheckState.upToDate, lastCheck: last);
     }
     _pending = null;
@@ -172,6 +224,7 @@ class EngineUpdater {
       return EngineCheckResult(
         EngineCheckState.error,
         message: e.message,
+        problem: EngineUpdateProblem.checkFailed,
         lastCheck: now,
       );
     } catch (e) {
@@ -188,6 +241,7 @@ class EngineUpdater {
       return EngineCheckResult(
         EngineCheckState.error,
         message: 'The release list could not be read: ${e.message}',
+        problem: EngineUpdateProblem.checkFailed,
         lastCheck: now,
       );
     }
@@ -195,6 +249,7 @@ class EngineUpdater {
       return EngineCheckResult(
         EngineCheckState.error,
         message: 'The release list was not a list.',
+        problem: EngineUpdateProblem.checkFailed,
         lastCheck: now,
       );
     }
@@ -222,6 +277,10 @@ class EngineUpdater {
     await _files!.prepare();
     final activeDir = _files!.verifiedPackDir();
     final activeTag = activeDir == null ? null : p.basename(activeDir);
+    final markedDir = ignoreInterval ? _markedPackDir(root, kind) : null;
+    final legacyTag = markedDir != null && _files!.isLegacyInstall(markedDir)
+        ? p.basename(markedDir)
+        : null;
     final currentState = _readState(root);
     // The anti-rollback floor is the newest signed install, kept in state even
     // when the active pack itself no longer verifies: migration must never
@@ -232,16 +291,29 @@ class EngineUpdater {
     // [pinnedTag], production uses the compiled pin.
     for (final candidate in candidates) {
       final tag = candidate.tag;
-      if (state.badTags.contains(tag)) continue;
-      // A failed build is never installed automatically again, but a manual
-      // check can offer a fixed build that reuses its tag.
-      if (!force && currentState.failedTags.contains(tag)) continue;
+      // A manual check can retry tags excluded by a smoke failure, an
+      // interrupted install or the crash guard.
+      if (!manual &&
+          (currentState.inFlightTag == tag ||
+              currentState.badTags.contains(tag) ||
+              currentState.failedTags.contains(tag) ||
+              currentState.interruptedTags.contains(tag))) {
+        continue;
+      }
       final version = kind.parseTag(tag)!;
       if (kind == EnginePackKind.llamaCpp &&
           compareEnginePackVersions(tag, 'engine-b$bundled') <= 0) {
         continue;
       }
       if (_belowRevisionFloor(root, tag, currentState, kind, pinnedCommit)) {
+        continue;
+      }
+      // An automatic check must never bring back the release the user just
+      // left: only a tag strictly newer than the stored floor may be installed
+      // by itself, except when migrating that exact active legacy tag.
+      if (!manual &&
+          tag != legacyTag &&
+          _notNewerThanFloor(root, tag, currentState, kind, pinnedCommit)) {
         continue;
       }
       // A verified active pack blocks its own and older revisions. An active
@@ -262,6 +334,7 @@ class EngineUpdater {
         return EngineCheckResult(
           EngineCheckState.error,
           message: e.message,
+          problem: EngineUpdateProblem.checkFailed,
           lastCheck: now,
         );
       } catch (e) {
@@ -325,7 +398,7 @@ class EngineUpdater {
     if (pending == null) {
       return const EngineDownloadResult(
         EngineDownloadState.error,
-        message: 'No engine update is available.',
+        problem: EngineUpdateProblem.noUpdateAvailable,
       );
     }
     _ready = null;
@@ -333,7 +406,13 @@ class EngineUpdater {
     final staging = Directory(p.join(root, 'staging', pending.tag));
     final part = File(p.join(staging.path, 'pack.zip.part'));
     final zip = File(p.join(staging.path, 'pack.zip'));
+    var verifying = false;
     try {
+      _updateState(
+        root,
+        (state) => state.copyWith(inFlightTag: pending.tag),
+        requiredWrite: true,
+      );
       await staging.create(recursive: true);
       final existing = await part.exists() ? await part.length() : 0;
       final response = await _openDownload(pending.zipUrl, existing);
@@ -358,14 +437,18 @@ class EngineUpdater {
       }
       if (cancelled) {
         // The partial file stays for the next attempt's Range request.
+        _recordInterruptedTag(root, pending.tag);
         return const EngineDownloadResult(EngineDownloadState.cancelled);
       }
+      verifying = true;
       final digest = await sha256.bind(part.openRead()).first;
       if (digest.toString() != pending.manifest.zipSha256) {
-        await _delete(staging);
+        _recordInterruptedTag(root, pending.tag);
+        await _discardStaging(staging);
         return const EngineDownloadResult(
           EngineDownloadState.error,
           message: 'The engine pack zip did not match its signed checksum.',
+          problem: EngineUpdateProblem.downloadFailed,
         );
       }
       if (await zip.exists()) await zip.delete();
@@ -378,23 +461,27 @@ class EngineUpdater {
         problem = 'The engine pack archive could not be read: $e';
       }
       if (problem != null) {
-        await _delete(staging);
+        _recordInterruptedTag(root, pending.tag);
+        await _discardStaging(staging);
         return EngineDownloadResult(
           EngineDownloadState.error,
           message: problem,
+          problem: EngineUpdateProblem.downloadFailed,
         );
       }
       if (await zip.exists()) await zip.delete();
-      // Persist before native code runs: a process crash cannot report back.
-      _addBadTag(root, pending.tag);
       final cpuFiles = pending.manifest.files
           .where((file) => LlamaBindings.windowsCpuOf(file.name) != null)
           .toList();
       if (cpuFiles.isEmpty) {
-        await _delete(staging);
+        // A signed pack without a CPU bridge is a verification failure: the
+        // exclusion is persisted before the staging is removed (P2).
+        _recordInterruptedTag(root, pending.tag);
+        await _discardStaging(staging);
         return const EngineDownloadResult(
           EngineDownloadState.error,
           message: 'The engine pack has no CPU bridge.',
+          problem: EngineUpdateProblem.downloadFailed,
         );
       }
       for (final file in cpuFiles) {
@@ -407,21 +494,19 @@ class EngineUpdater {
           healthy = false;
         }
         if (healthy) continue;
-        await _delete(staging);
+        // Persist the smoke failure before cleaning up staging so automatic
+        // checks skip this tag. A manual retry runs the smoke test again.
         _addBadTag(root, pending.tag);
+        await _discardStaging(staging);
         return const EngineDownloadResult(
           EngineDownloadState.error,
           message: 'The engine pack failed its smoke test.',
+          problem: EngineUpdateProblem.smokeFailed,
         );
       }
-      _updateState(
-        root,
-        (state) => state.copyWith(
-          badTags: state.badTags.where((tag) => tag != pending.tag).toList(),
-        ),
-      );
-      // GPU runtimes are optional. CPU validation is complete, so a GPU
-      // probe must not blacklist an otherwise usable pack.
+      // GPU runtimes are optional. CPU validation is complete, so a GPU probe
+      // must not blacklist an otherwise usable pack. The in-flight marker stays
+      // through these probes: a crash here is an interrupted install too (P2).
       pending.unavailableFiles.clear();
       for (final file in pending.manifest.files) {
         if (cpuFiles.contains(file)) continue;
@@ -433,16 +518,31 @@ class EngineUpdater {
       }
       _ready = pending;
       return const EngineDownloadResult(EngineDownloadState.done);
-    } on _HttpFailure catch (e) {
-      await _delete(staging);
-      return EngineDownloadResult(
-        EngineDownloadState.error,
-        message: e.message,
-      );
     } catch (e) {
+      try {
+        if (verifying) {
+          _recordInterruptedTag(root, pending.tag);
+        } else {
+          // Let the next automatic check retry a failed transfer.
+          _updateState(
+            root,
+            (state) => state.inFlightTag == pending.tag
+                ? state.copyWith(clearInFlight: true)
+                : state,
+            requiredWrite: true,
+          );
+        }
+        if (e is _HttpFailure) await _discardStaging(staging);
+      } on FileSystemException catch (error, stack) {
+        // The in-flight marker still excludes the tag from automatic checks.
+        quietFailure('engine_updater:interruption-record', error, stack);
+      }
       return EngineDownloadResult(
         EngineDownloadState.error,
-        message: 'The engine pack download failed: $e',
+        message: e is _HttpFailure
+            ? e.message
+            : 'The engine pack download failed: $e',
+        problem: EngineUpdateProblem.downloadFailed,
       );
     }
   }
@@ -460,7 +560,10 @@ class EngineUpdater {
     // Recheck the exact staged set immediately before promotion: only the
     // files the signed manifest lists, each with its signed hash.
     if (!await verifyPackContent(staging.path, ready.manifest)) {
-      await _delete(staging);
+      // An activation hash failure is a verification failure: the retry
+      // exclusion is persisted before the staging is removed (P2).
+      _recordInterruptedTag(root, wanted);
+      await _discardStaging(staging);
       _ready = null;
       return false;
     }
@@ -513,22 +616,32 @@ class EngineUpdater {
     // the user just removed (P3-2).
     _withPackLock(root, () {
       final state = _readState(root);
-      final floor = _revisionFloor(
-        root,
-        state,
-        kind,
-        _pinCommit ?? EnginePins.ikLlamaCommit,
-      );
+      final marker = _readActive(root);
+      final markerTag = marker?['tag'];
+      final pin = _pinCommit ?? EnginePins.ikLlamaCommit;
+      final floor = _revisionFloor(root, state, kind, pin);
+      // The tag the user is leaving becomes the anti-rollback floor, even when
+      // a legacy marker carries no verifiedTag of its own: without it the next
+      // automatic check could reinstall the release the user just left. It is
+      // written under the lock before the marker is deleted (P2).
+      var optedOut = floor;
+      if (marker?['verifiedTag'] is! String &&
+          markerTag is String &&
+          kind.parseTag(markerTag) != null &&
+          (floor == null || kind.compareTags(markerTag, floor, pin: pin) > 0)) {
+        optedOut = markerTag;
+      }
       _writeStateLocked(
         root,
         state.copyWith(
-          verifiedTag: floor,
+          verifiedTag: optedOut,
           crashCount: 0,
-          revertAcknowledged: false,
-          clearFailedTags: true,
+          // The failed and interrupted tags are kept: switching to the
+          // built-in engine must not let the automatic check reinstall the tag
+          // the user left. A manual check can still offer it (P1, P2).
           clearUnverified: true,
         ),
-        requiredWrite: floor != state.verifiedTag,
+        requiredWrite: optedOut != state.verifiedTag,
       );
       final active = File(p.join(root, 'active.json'));
       if (active.existsSync()) active.deleteSync();
@@ -563,6 +676,25 @@ class EngineUpdater {
   /// The active pack folder after every DLL matched the saved signed manifest;
   /// null means the load must fall back to the bundled engine.
   String? verifiedPackDir() => _files?.verifiedPackDir();
+
+  /// True when a pack folder (active, reverted, unverified or scheduled for
+  /// deletion) or the staging folder is still on disk. The panel keeps its
+  /// removal row visible from this, whatever the revert notice says (P2).
+  Future<bool> packFilesOnDisk() async {
+    final root = await _rootPath();
+    try {
+      await for (final entity in Directory(root).list(followLinks: false)) {
+        final name = p.basename(entity.path);
+        if (entity is Directory &&
+            (kind.ownsFolder(name) || name == 'staging')) {
+          return true;
+        }
+      }
+    } on FileSystemException catch (e, st) {
+      quietFailure('engine_updater:pack-files', e, st);
+    }
+    return false;
+  }
 
   /// True when the installed pack's manifest no longer verifies (or never had
   /// one). The panel shows the localized notice; the next load refuses it.
@@ -628,6 +760,8 @@ class EngineUpdater {
     final path = p.normalize(p.absolute(directory.path));
     await _recoverLegacyPacks(path, kind);
     await _deleteScheduledPacks(path, kind);
+    // A quit or a crash during installation leaves its in-flight marker here.
+    await _recoverInFlight(path, kind);
     _rootDir = path;
     _files ??= EnginePackFiles(
       path,
@@ -639,7 +773,10 @@ class EngineUpdater {
     );
     for (final tag in _readState(path).badTags) {
       if (kind.parseTag(tag) != null) {
-        await _delete(Directory(p.join(path, 'staging', tag)));
+        // A rejected pack's staging is deleted best-effort: the tag is already
+        // excluded from automatic checks, so a folder that cannot be removed
+        // now must not stop the app from starting.
+        await _discardStaging(Directory(p.join(path, 'staging', tag)));
       }
     }
     // The loader runs in this isolate too (probing, estimates), so it must see
@@ -755,18 +892,32 @@ class EngineUpdater {
 
   bool _isRedirect(int status) => status >= 300 && status < 400;
 
+  /// Records a CPU smoke-test failure to exclude the tag from automatic checks.
   void _addBadTag(String root, String tag) {
-    _updateState(
-      root,
-      (state) => state.badTags.contains(tag)
-          ? state
-          : state.copyWith(badTags: [...state.badTags, tag]),
-      requiredWrite: true,
-    );
+    _updateState(root, (state) {
+      return state.copyWith(
+        badTags: state.badTags.contains(tag)
+            ? state.badTags
+            : [...state.badTags, tag],
+        clearInFlight: state.inFlightTag == tag,
+      );
+    }, requiredWrite: true);
   }
 
   Future<void> _delete(Directory staging) async {
     await _deletePackDirectory(staging.path);
+  }
+
+  /// Deletes a staging folder whose pack was already rejected. The failure is
+  /// recorded in state.json first, so a folder that cannot be removed now must
+  /// not turn that rejection back into a retryable interruption.
+  Future<void> _discardStaging(Directory staging) async {
+    try {
+      await _delete(staging);
+    } on FileSystemException catch (e, st) {
+      // Startup recovery and the bad-tag sweep remove it at the next start.
+      quietFailure('engine_updater:staging-cleanup', e, st);
+    }
   }
 
   /// Writes every entry after checking it against the signed manifest;
@@ -1376,7 +1527,11 @@ Future<bool> _promotePackInWorker({
         <String>[file.name, '${file.size}', file.sha256],
     ];
     if (!_hashPackFolder(target, expected)) {
-      discardPromotion();
+      try {
+        _writeStateLocked(root, state.interrupt(tag), requiredWrite: true);
+      } finally {
+        discardPromotion();
+      }
       return false;
     }
     try {
@@ -1415,12 +1570,19 @@ Future<bool> _promotePackInWorker({
     }
 
     // Keep the floor in state.json too so it survives switching to bundled.
+    // The promoted tag passed every check, so its earlier interruption or
+    // failure records go with it.
     _writeStateLocked(
       root,
       state.copyWith(
         crashCount: 0,
         revertAcknowledged: state.failedTags.isNotEmpty,
         failedTags: state.failedTags.where((failed) => failed != tag).toList(),
+        badTags: state.badTags.where((bad) => bad != tag).toList(),
+        interruptedTags: state.interruptedTags
+            .where((pending) => pending != tag)
+            .toList(),
+        clearInFlight: state.inFlightTag == tag,
         clearUnverified: true,
         verifiedTag: tag,
       ),
@@ -1472,6 +1634,42 @@ Future<void> _cleanQuarantine(String path) async {
 
 String _quarantinePath(String root, String tag) =>
     p.join(root, '$tag$_brokenSuffix.${const Uuid().v4()}');
+
+void _recordInterruptedTag(String root, String tag) {
+  _updateState(root, (state) => state.interrupt(tag), requiredWrite: true);
+}
+
+/// Resolves an install that was still in flight when the process died. The
+/// interruption is recorded durably for the tag before the staging folder is
+/// touched, so neither a failed cleanup nor a restart can lose it: the tag is
+/// never installed automatically again and only a manual check may retry it.
+Future<void> _recoverInFlight(String root, EnginePackKind kind) async {
+  final state = _readState(root);
+  final tag = state.inFlightTag;
+  if (tag == null) return;
+  if (kind.parseTag(tag) == null) {
+    _updateState(root, (current) => current.copyWith(clearInFlight: true));
+    return;
+  }
+  try {
+    final recovered = _updateState(
+      root,
+      (current) =>
+          current.inFlightTag == tag ? current.interrupt(tag) : current,
+      requiredWrite: true,
+    );
+    if (!recovered.interruptedTags.contains(tag)) return;
+  } on FileSystemException catch (e, st) {
+    // The marker stays, so the next start records the interruption again.
+    quietFailure('engine_updater:in-flight-record', e, st);
+    return;
+  }
+  try {
+    await _deletePackDirectory(p.join(root, 'staging', tag));
+  } on FileSystemException catch (e, st) {
+    quietFailure('engine_updater:in-flight-cleanup', e, st);
+  }
+}
 
 Future<void> _recoverLegacyPacks(String root, EnginePackKind kind) async {
   final directory = Directory(root);
@@ -1710,6 +1908,23 @@ bool _belowRevisionFloor(
       kind.compareTags(tag, floor, pin: pin) < 0;
 }
 
+/// True when [tag] is the revision floor itself or older. The automatic check
+/// uses it so the pack the user switched away from never comes back by itself
+/// (P1); a manual check may still offer it.
+bool _notNewerThanFloor(
+  String root,
+  String tag,
+  _State state,
+  EnginePackKind kind,
+  String? pin,
+) {
+  final floor = _revisionFloor(root, state, kind, pin);
+  return floor != null &&
+      (kind == EnginePackKind.llamaCpp ||
+          kind.sameReleaseFamily(tag, floor, pin: pin)) &&
+      kind.compareTags(tag, floor, pin: pin) <= 0;
+}
+
 void _markUnverified(String root, String tag) {
   try {
     _updateState(
@@ -1786,15 +2001,21 @@ void _markLoadSucceeded(String root) {
   }
 }
 
-/// Last check, packs that must never be offered again, the crash guard and the
-/// integrity of the installed pack.
+/// Last check, automatic update exclusions, the crash guard and the integrity
+/// of the installed pack.
 class _State {
   final DateTime? lastCheck;
+
+  /// Tags that failed the CPU smoke test and require a manual retry.
   final List<String> badTags;
 
   /// Packs the crash guard reverted. They stay out of automatic installs until
   /// a manual check reinstalls one (a fixed build may reuse the tag).
   final List<String> failedTags;
+
+  /// Tags whose install was interrupted or failed verification. They stay out
+  /// of automatic installs until a manual retry succeeds.
+  final List<String> interruptedTags;
   final int crashCount;
   final bool revertAcknowledged;
 
@@ -1804,20 +2025,33 @@ class _State {
   /// The newest signed install of the release family. Anti-rollback floor:
   /// it outlives a pack that stopped verifying (P2 re-review).
   final String? verifiedTag;
+
+  /// The pack with an installation in progress.
+  final String? inFlightTag;
   const _State({
     this.lastCheck,
     this.badTags = const [],
     this.failedTags = const [],
+    this.interruptedTags = const [],
     this.crashCount = 0,
     this.revertAcknowledged = false,
     this.unverifiedTag,
     this.verifiedTag,
+    this.inFlightTag,
   });
+
+  _State interrupt(String tag) => copyWith(
+    interruptedTags: interruptedTags.contains(tag)
+        ? interruptedTags
+        : [...interruptedTags, tag],
+    clearInFlight: inFlightTag == tag,
+  );
 
   _State copyWith({
     DateTime? lastCheck,
     List<String>? badTags,
     List<String>? failedTags,
+    List<String>? interruptedTags,
     bool clearFailedTags = false,
     int? crashCount,
     bool? revertAcknowledged,
@@ -1825,6 +2059,8 @@ class _State {
     bool clearUnverified = false,
     String? failedTag,
     String? verifiedTag,
+    String? inFlightTag,
+    bool clearInFlight = false,
   }) => _State(
     lastCheck: lastCheck ?? this.lastCheck,
     badTags: badTags ?? this.badTags,
@@ -1834,10 +2070,12 @@ class _State {
               (failedTag == null || this.failedTags.contains(failedTag)
                   ? this.failedTags
                   : [...this.failedTags, failedTag]),
+    interruptedTags: interruptedTags ?? this.interruptedTags,
     crashCount: crashCount ?? this.crashCount,
     revertAcknowledged: revertAcknowledged ?? this.revertAcknowledged,
     unverifiedTag: clearUnverified ? null : unverifiedTag ?? this.unverifiedTag,
     verifiedTag: verifiedTag ?? this.verifiedTag,
+    inFlightTag: clearInFlight ? null : inFlightTag ?? this.inFlightTag,
   );
 }
 
@@ -1855,6 +2093,9 @@ _State _readState(String root) {
       failedTags: (decoded['failedTags'] as List? ?? const [])
           .whereType<String>()
           .toList(),
+      interruptedTags: (decoded['interruptedTags'] as List? ?? const [])
+          .whereType<String>()
+          .toList(),
       crashCount: (decoded['crashCount'] as num?)?.toInt() ?? 0,
       revertAcknowledged: decoded['revertAcknowledged'] == true,
       unverifiedTag: decoded['unverifiedTag'] is String
@@ -1862,6 +2103,9 @@ _State _readState(String root) {
           : null,
       verifiedTag: decoded['verifiedTag'] is String
           ? decoded['verifiedTag'] as String
+          : null,
+      inFlightTag: decoded['inFlightTag'] is String
+          ? decoded['inFlightTag'] as String
           : null,
     );
   } catch (_) {
@@ -1948,10 +2192,12 @@ void _writeStateLocked(
             'lastCheck': state.lastCheck!.toUtc().toIso8601String(),
           'badTags': state.badTags,
           'failedTags': state.failedTags,
+          'interruptedTags': state.interruptedTags,
           'crashCount': state.crashCount,
           'revertAcknowledged': state.revertAcknowledged,
           if (state.unverifiedTag != null) 'unverifiedTag': state.unverifiedTag,
           if (state.verifiedTag != null) 'verifiedTag': state.verifiedTag,
+          if (state.inFlightTag != null) 'inFlightTag': state.inFlightTag,
         }),
         flush: true,
       );

@@ -39,6 +39,11 @@ class ChatComposer extends ConsumerStatefulWidget {
   /// Lets the screen put the cursor in the box (widget, shared text).
   final FocusNode? focusNode;
   final bool busy, canSend;
+
+  /// A quick edit of the saved chat (delete, undo, restore) is not an answer:
+  /// the other controls stay locked by [busy], and the button has nothing to
+  /// send or stop (review 2026-11-20 P3-4).
+  final bool housekeeping;
   final VoidCallback onSend;
 
   /// Null while there is nothing to stop (a quick edit of the saved chat).
@@ -63,6 +68,7 @@ class ChatComposer extends ConsumerStatefulWidget {
     this.focusNode,
     required this.busy,
     required this.canSend,
+    this.housekeeping = false,
     required this.onSend,
     this.onStop,
     this.attachments = const [],
@@ -573,10 +579,15 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                       // Sits on the input's baseline row even when it grows.
                       padding: const EdgeInsets.only(bottom: 2),
                       child: SendButton(
-                        busy: busy,
-                        ready: hasText && widget.canSend,
+                        // A quick edit of the saved chat has nothing to stop,
+                        // and nothing to send either: the arrow stays greyed
+                        // out instead of ignoring the tap (review 2026-11-20
+                        // P3-4).
+                        busy: busy && !widget.housekeeping,
+                        ready:
+                            hasText && widget.canSend && !widget.housekeeping,
                         onSend: widget.onSend,
-                        onStop: widget.onStop,
+                        onStop: widget.housekeeping ? null : widget.onStop,
                       ),
                     );
                   },

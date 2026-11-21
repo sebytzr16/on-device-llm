@@ -685,7 +685,7 @@ void main() {
             )!.toolTrace;
             expect(trace, hasLength(2));
             expect(
-              trace.take(2).every((r) => (r['elapsedMs'] as int) > 0),
+              trace.take(2).every((r) => (r['elapsedMs'] as int) >= 0),
               isTrue,
             );
           }

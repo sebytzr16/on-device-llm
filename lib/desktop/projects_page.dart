@@ -429,10 +429,14 @@ class _DesktopProjectsPageState extends ConsumerState<DesktopProjectsPage> {
                                 tooltip: t.newChat,
                                 onPressed: busy
                                     ? null
-                                    : () {
-                                        ref
+                                    : () async {
+                                        // A refused reset keeps the panel,
+                                        // and the consent dialog is done
+                                        // before the view changes.
+                                        final reset = await ref
                                             .read(chatProvider.notifier)
                                             .newChat(projectId: project.id);
+                                        if (!reset || !mounted) return;
                                         ref
                                             .read(
                                               desktopSectionProvider.notifier,

@@ -35,8 +35,12 @@ class AdaptersPage extends ConsumerWidget {
         ),
       ],
       children: [
-        if (a.error != null) ...[
-          SettingsNote(a.error!, tone: c.danger, icon: Icons.error_outline),
+        if (a.failure case final failure?) ...[
+          SettingsNote(
+            _failureText(context, failure, a.error),
+            tone: c.danger,
+            icon: Icons.error_outline,
+          ),
           if (notifier.loadFailed)
             SettingsGroup(
               children: [
@@ -68,7 +72,7 @@ class AdaptersPage extends ConsumerWidget {
                       await notifier.remove(ad.id);
                     } catch (e) {
                       if (context.mounted) {
-                        showIslandToast(context, '$e');
+                        _reportSaveFailure(context, notifier, e);
                       }
                     }
                   },
@@ -91,6 +95,22 @@ class AdaptersPage extends ConsumerWidget {
   }
 }
 
+/// The store's failure as the user reads it: the kind picks the localized
+/// sentence and the store's technical detail stays the placeholder, so its
+/// English sentences never reach the page (review #4).
+String _failureText(
+  BuildContext context,
+  AdaptersFailure failure,
+  String? detail,
+) => switch (failure) {
+  AdaptersFailure.unreadable => context.l10n.adapterListUnreadable,
+  AdaptersFailure.saveFailed => context.l10n.adapterSaveFailed(detail ?? ''),
+  AdaptersFailure.resetFailed => context.l10n.adapterResetFailed(detail ?? ''),
+  AdaptersFailure.importFailed => context.l10n.adapterImportFailed(
+    detail ?? '',
+  ),
+};
+
 /// Moves an unreadable manifest aside and starts from an empty list; the only
 /// way out of the corrupt-manifest dead end (review #5).
 Future<void> _resetAdapters(
@@ -103,7 +123,7 @@ Future<void> _resetAdapters(
     if (!context.mounted) return;
     showIslandToast(
       context,
-      error is StateError ? error.message : '$error',
+      context.l10n.adapterResetFailed('$error'),
       tone: IslandTone.error,
     );
   }
@@ -127,16 +147,27 @@ Future<void> _updateAttachment(
     }
   } catch (error) {
     if (!context.mounted) return;
-    showIslandToast(
-      context,
-      error is StateError ? error.message : '$error',
-      tone: IslandTone.error,
-      action: IslandAction(
-        context.l10n.reset,
-        () => _resetAdapters(context, notifier),
-      ),
-    );
+    _reportSaveFailure(context, notifier, error);
   }
+}
+
+/// A refused adapter save (attach, detach or delete) as the user reads it:
+/// the blocked save gets the localized sentence and the reset that unblocks
+/// it, anything unexpected keeps its technical detail (review #4).
+void _reportSaveFailure(
+  BuildContext context,
+  AdaptersNotifier notifier,
+  Object error,
+) {
+  showIslandToast(
+    context,
+    error is AdaptersUnreadable ? context.l10n.adapterListUnreadable : '$error',
+    tone: IslandTone.error,
+    action: IslandAction(
+      context.l10n.reset,
+      () => _resetAdapters(context, notifier),
+    ),
+  );
 }
 
 class _AttachRow extends StatelessWidget {

@@ -3,7 +3,16 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum ModelFolderFailure { notWritable, insufficientSpace, conflict, busy }
+enum ModelFolderFailure {
+  notWritable,
+  insufficientSpace,
+  conflict,
+  busy,
+
+  /// The folder is writable and the files moved, but the catalog or the
+  /// settings could not record their new paths (release review 1.8.0 #5).
+  saveFailed,
+}
 
 class ModelFolderException implements Exception {
   final ModelFolderFailure reason;
@@ -13,7 +22,8 @@ class ModelFolderException implements Exception {
 /// Thrown by a [ModelFolders.change] `updatePaths` callback that could not
 /// undo its catalog or settings write. Saved paths still point at the copies
 /// in the new folder, so they must stay on disk (audit 09-2). [cause] is the
-/// failure to report.
+/// failure that started the rollback; the caller is told the save failed
+/// (release review 1.8.0 #5).
 class ModelFolderKeptCopiesException implements Exception {
   final Object cause;
   const ModelFolderKeptCopiesException(this.cause);
@@ -157,9 +167,10 @@ class ModelFolders {
       var failure = error;
       if (error is ModelFolderKeptCopiesException) {
         // The rollback failed, so saved paths still point at the copies:
-        // they stay and the original cause is reported (audit 09-2).
+        // they stay and the paths, not the folder, are what failed
+        // (audit 09-2, release review 1.8.0 #5).
         pathsUpdated = true;
-        failure = error.cause;
+        failure = const ModelFolderException(ModelFolderFailure.saveFailed);
       }
       // A failed preference write must not remove files the committed catalog
       // can already reference. Originals are retained on every failure.

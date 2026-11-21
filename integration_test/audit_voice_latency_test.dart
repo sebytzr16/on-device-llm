@@ -136,90 +136,95 @@ Future<Map<String, Object?>> _generate(
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-  testWidgets('audit speech latency and CPU contention', (tester) async {
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(body: Text('Audit: silent speech latency probe')),
-      ),
-    );
-    expect(_model, isNotEmpty);
-    final pack = Directory(
-      '${(await getApplicationSupportDirectory()).path}/voice',
-    );
-    final modelDir = await ModelStorage.modelsDir();
-    for (final file in pack.listSync(recursive: true).whereType<File>()) {
-      final target = File(
-        '${modelDir.path}/${file.path.substring(pack.path.length + 1)}',
+  testWidgets(
+    'audit speech latency and CPU contention',
+    (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(body: Text('Audit: silent speech latency probe')),
+        ),
       );
-      if (target.existsSync() && target.lengthSync() == file.lengthSync()) {
-        continue;
+      expect(_model, isNotEmpty);
+      final pack = Directory(
+        '${(await getApplicationSupportDirectory()).path}/voice',
+      );
+      final modelDir = await ModelStorage.modelsDir();
+      for (final file in pack.listSync(recursive: true).whereType<File>()) {
+        final target = File(
+          '${modelDir.path}/${file.path.substring(pack.path.length + 1)}',
+        );
+        if (target.existsSync() && target.lengthSync() == file.lengthSync()) {
+          continue;
+        }
+        target.parent.createSync(recursive: true);
+        file.copySync(target.path);
       }
-      target.parent.createSync(recursive: true);
-      file.copySync(target.path);
-    }
-    final voice = SherpaVoice(speakThreads: 2);
-    addTearDown(voice.dispose);
-    final kokoro = KokoroVoice.forLanguage('en');
-    final loadClock = Stopwatch()..start();
-    await voice.warmSpeaking(kokoro);
-    _report({
-      'kind': 'voice_load',
-      'ms': loadClock.elapsedMilliseconds,
-      'rssKb': await _rssKb(),
-    });
-    for (final text in [
-      'Hello there.',
-      'The sky looks blue because air scatters light.',
-      'The sky looks blue because air scatters the short blue waves of sunlight more than the long red ones.',
-    ]) {
-      for (var sample = 0; sample < 3; sample++) {
-        final clock = Stopwatch()..start();
-        final audio = await voice.synthesize(text, voice: kokoro);
-        expect(audio, isNotNull);
-        _report({
-          'kind': 'tts_alone',
-          'text': text,
-          'sample': sample,
-          'synthMs': clock.elapsedMilliseconds,
-          'audioMs': audio!.pcm.length * 1000 ~/ audio.sampleRate,
-          'rssKb': await _rssKb(),
-        });
-      }
-    }
-    for (final threads in [2, 4, 6]) {
-      final engine = LlamaEngine(
-        cacheDirectory: () async => (await getApplicationCacheDirectory()).path,
-      );
-      final settings = InferenceSettings(
-        backend: GpuBackend.cpu,
-        cpuThreads: threads,
-        contextSize: 4096,
-        maxTokens: 96,
-        temperature: 0,
-        thinkingModeEnabled: false,
-        promptCache: false,
-      );
-      final load = Stopwatch()..start();
-      await engine.loadModel(modelPath: _model, settings: settings);
+      final voice = SherpaVoice(speakThreads: 2);
+      addTearDown(voice.dispose);
+      final kokoro = KokoroVoice.forLanguage('en');
+      final loadClock = Stopwatch()..start();
+      await voice.warmSpeaking(kokoro);
       _report({
-        'kind': 'model_load',
-        'threads': threads,
-        'ms': load.elapsedMilliseconds,
+        'kind': 'voice_load',
+        'ms': loadClock.elapsedMilliseconds,
+        'rssKb': await _rssKb(),
       });
-      await _generate(engine, settings.copyWith(maxTokens: 8));
-      for (var sample = 0; sample < 3; sample++) {
-        _report({
-          'kind': 'llm_alone',
-          'sample': sample,
-          ...await _generate(engine, settings),
-        });
+      for (final text in [
+        'Hello there.',
+        'The sky looks blue because air scatters light.',
+        'The sky looks blue because air scatters the short blue waves of sunlight more than the long red ones.',
+      ]) {
+        for (var sample = 0; sample < 3; sample++) {
+          final clock = Stopwatch()..start();
+          final audio = await voice.synthesize(text, voice: kokoro);
+          expect(audio, isNotNull);
+          _report({
+            'kind': 'tts_alone',
+            'text': text,
+            'sample': sample,
+            'synthMs': clock.elapsedMilliseconds,
+            'audioMs': audio!.pcm.length * 1000 ~/ audio.sampleRate,
+            'rssKb': await _rssKb(),
+          });
+        }
       }
-      _report({
-        'kind': 'llm_with_speech',
-        ...await _generate(engine, settings, voice: voice),
-      });
-      engine.dispose();
-      await Future<void>.delayed(const Duration(seconds: 1));
-    }
-  }, timeout: const Timeout(Duration(minutes: 10)));
+      for (final threads in [2, 4, 6]) {
+        final engine = LlamaEngine(
+          cacheDirectory: () async =>
+              (await getApplicationCacheDirectory()).path,
+        );
+        final settings = InferenceSettings(
+          backend: GpuBackend.cpu,
+          cpuThreads: threads,
+          contextSize: 4096,
+          maxTokens: 96,
+          temperature: 0,
+          thinkingModeEnabled: false,
+          promptCache: false,
+        );
+        final load = Stopwatch()..start();
+        await engine.loadModel(modelPath: _model, settings: settings);
+        _report({
+          'kind': 'model_load',
+          'threads': threads,
+          'ms': load.elapsedMilliseconds,
+        });
+        await _generate(engine, settings.copyWith(maxTokens: 8));
+        for (var sample = 0; sample < 3; sample++) {
+          _report({
+            'kind': 'llm_alone',
+            'sample': sample,
+            ...await _generate(engine, settings),
+          });
+        }
+        _report({
+          'kind': 'llm_with_speech',
+          ...await _generate(engine, settings, voice: voice),
+        });
+        engine.dispose();
+        await Future<void>.delayed(const Duration(seconds: 1));
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 10)),
+  );
 }

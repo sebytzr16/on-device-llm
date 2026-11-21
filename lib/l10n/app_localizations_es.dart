@@ -3723,6 +3723,10 @@ class AppLocalizationsEs extends AppLocalizations {
   String get modelProfileScope => 'Perfil del modelo';
 
   @override
+  String get modelProfileSaveFailed =>
+      'No se pudo guardar el perfil de este modelo en este dispositivo. Inténtalo de nuevo.';
+
+  @override
   String conversationsLoadFailed(String error) {
     return 'No se pudieron cargar las conversaciones.\n$error';
   }
@@ -3737,6 +3741,25 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get adapterNotApplied => 'No aplicado';
+
+  @override
+  String get adapterListUnreadable =>
+      'No se pudo leer la lista de adaptadores. Restablézcala primero para importar, adjuntar o eliminar adaptadores.';
+
+  @override
+  String adapterResetFailed(String error) {
+    return 'No se pudo restablecer la lista de adaptadores: $error';
+  }
+
+  @override
+  String adapterSaveFailed(String error) {
+    return 'No se pudo guardar la lista de adaptadores: $error';
+  }
+
+  @override
+  String adapterImportFailed(String error) {
+    return 'No se pudo importar el adaptador: $error';
+  }
 
   @override
   String get noticeUpdatingMemory => 'Actualizando la memoria…';
@@ -6389,6 +6412,10 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get desktopModelsFolderMoving => 'Moviendo modelos…';
+
+  @override
+  String get desktopModelsFolderSaveFailed =>
+      'No se pudieron guardar las rutas de los modelos. Elige la carpeta e inténtalo de nuevo.';
 
   @override
   String get desktopModelsFolderWritable =>
@@ -10347,6 +10374,38 @@ class AppLocalizationsEs extends AppLocalizations {
   String get engineUpdateNoGitHub => 'No se pudo conectar con GitHub.';
 
   @override
+  String get engineUpdateProblemNoPinnedBuild =>
+      'No hay ninguna compilación de ik_llama.cpp fijada en esta versión de la aplicación.';
+
+  @override
+  String get engineUpdateProblemNoUpdate =>
+      'No hay ninguna actualización del motor disponible.';
+
+  @override
+  String get engineUpdateProblemCheck =>
+      'No se pudo comprobar si hay actualizaciones del motor.';
+
+  @override
+  String get engineUpdateProblemDownload =>
+      'No se pudo descargar el paquete de motor.';
+
+  @override
+  String get engineUpdateProblemSmoke =>
+      'El paquete de motor ha fallado su prueba de inicio.';
+
+  @override
+  String get engineUpdateProblemInstall =>
+      'No se pudo instalar el paquete de motor.';
+
+  @override
+  String get engineUpdateProblemUseBuiltIn =>
+      'La aplicación no pudo volver al motor integrado.';
+
+  @override
+  String get engineUpdateProblemRemove =>
+      'No se pudieron eliminar los motores descargados.';
+
+  @override
   String get liteRtBackend => 'Motor LiteRT';
 
   @override
@@ -10377,6 +10436,16 @@ class AppLocalizationsEs extends AppLocalizations {
   }
 
   @override
+  String engineRunsOwnEngine(String engine) {
+    return 'Los modelos de $engine usan su propio motor.';
+  }
+
+  @override
+  String engineNotHosting(String engine) {
+    return 'El alojamiento no está disponible con los modelos de $engine.';
+  }
+
+  @override
   String get liteRtToolsUnavailable =>
       'Las herramientas no están disponibles con los modelos LiteRT.';
 
@@ -10395,7 +10464,7 @@ class AppLocalizationsEs extends AppLocalizations {
       'Elige un archivo de modelo .gguf o .litertlm.';
 
   @override
-  String get liteRtImportedLicense =>
+  String get importedFileLicense =>
       'Archivo importado · consulta la licencia del editor';
 
   @override

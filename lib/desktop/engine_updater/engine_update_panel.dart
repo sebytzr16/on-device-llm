@@ -9,6 +9,24 @@ import '../../inference/engine/engine_registry_provider.dart';
 import 'engine_update_controller.dart';
 import 'engine_updater.dart';
 
+/// The localized text for a failed engine check or install: the updater
+/// returns a typed reason and keeps the raw detail in the log, so no English
+/// from the engine code reaches the UI (release review P2 l10n).
+String engineUpdateProblemText(
+  AppLocalizations t,
+  EngineUpdateProblem? problem,
+) => switch (problem) {
+  EngineUpdateProblem.noPinnedBuild => t.engineUpdateProblemNoPinnedBuild,
+  EngineUpdateProblem.noUpdateAvailable => t.engineUpdateProblemNoUpdate,
+  EngineUpdateProblem.downloadFailed => t.engineUpdateProblemDownload,
+  EngineUpdateProblem.smokeFailed => t.engineUpdateProblemSmoke,
+  EngineUpdateProblem.installFailed => t.engineUpdateProblemInstall,
+  EngineUpdateProblem.useBundledFailed => t.engineUpdateProblemUseBuiltIn,
+  EngineUpdateProblem.removeFailed => t.engineUpdateProblemRemove,
+  EngineUpdateProblem.checkFailed => t.engineUpdateProblemCheck,
+  null => t.engineUpdateProblemCheck,
+};
+
 /// Settings -> Engine updates (Windows): what engine runs, the automatic
 /// switch, a manual check with install, and the way back to the built-in
 /// engine. Everything applies on the next model load.
@@ -124,9 +142,11 @@ class EngineUpdatePanel extends ConsumerWidget {
                   : context.text.bodyMuted,
             ),
           ),
-        // An installed pack that no longer verifies is still on disk: keep both
-        // rows so it can be removed or switched away from (P2-1).
-        if (installed != null || v.unverified)
+        // An installed pack that no longer verifies, or one the crash guard
+        // reverted, is still on disk: keep both rows so it can be removed or
+        // switched away from (P2-1, P3). Removal follows the folders alone, so
+        // acknowledging the revert notice does not hide it (P2).
+        if (installed != null || v.unverified || v.reverted)
           SettingsTile(
             key: const Key('engine-update-use-built-in'),
             leading: const Icon(Icons.settings_backup_restore),
@@ -134,7 +154,9 @@ class EngineUpdatePanel extends ConsumerWidget {
             onTap: v.busy ? null : n.useBundled,
           ),
         if (installed != null ||
+            v.packsOnDisk ||
             v.unverified ||
+            v.reverted ||
             v.phase == EngineUpdatePhase.ready)
           SettingsTile(
             key: const Key('engine-update-remove'),
@@ -164,7 +186,9 @@ class EngineUpdatePanel extends ConsumerWidget {
       ),
       EngineUpdatePhase.ready => t.engineUpdateReady,
       EngineUpdatePhase.offline => t.engineUpdateNoGitHub,
-      EngineUpdatePhase.error => t.engineUpdateFailed(v.message ?? ''),
+      EngineUpdatePhase.error => t.engineUpdateFailed(
+        engineUpdateProblemText(t, v.problem),
+      ),
     };
   }
 
@@ -188,13 +212,14 @@ class _IkEnginePackRow extends ConsumerStatefulWidget {
 class _IkEnginePackRowState extends ConsumerState<_IkEnginePackRow> {
   bool _busy = false;
   bool _upToDate = false;
-  String? _error;
+  bool _offline = false;
+  EngineUpdateProblem? _problem;
 
   Future<void> _install() async {
-    final t = context.l10n;
     setState(() {
       _busy = true;
-      _error = null;
+      _problem = null;
+      _offline = false;
     });
     final result = await ref
         .read(engineUpdateProvider.notifier)
@@ -207,11 +232,11 @@ class _IkEnginePackRowState extends ConsumerState<_IkEnginePackRow> {
       _upToDate =
           result.state == EngineCheckState.upToDate &&
           ref.read(engineUpdateProvider).ikInstalled == null;
-      _error = switch (result.state) {
-        EngineCheckState.error => result.message ?? t.engineUpdateFailed(''),
-        EngineCheckState.offline => result.message ?? t.engineUpdateNoGitHub,
-        _ => null,
-      };
+      // Only the typed reason reaches the UI; the raw detail stays in the log.
+      _problem = result.state == EngineCheckState.error
+          ? result.problem ?? EngineUpdateProblem.checkFailed
+          : null;
+      _offline = result.state == EngineCheckState.offline;
     });
   }
 
@@ -219,7 +244,11 @@ class _IkEnginePackRowState extends ConsumerState<_IkEnginePackRow> {
   Widget build(BuildContext context) {
     final t = context.l10n;
     final view = ref.watch(engineUpdateProvider);
-    final status = _error;
+    final status = _offline
+        ? t.engineUpdateNoGitHub
+        : _problem == null
+        ? null
+        : t.engineUpdateFailed(engineUpdateProblemText(t, _problem));
     final subtitle = status != null
         ? Text(
             status,

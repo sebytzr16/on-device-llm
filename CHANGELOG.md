@@ -6,6 +6,8 @@
 - Groundwork for ik_llama.cpp as a second engine on Windows (signed packs, chosen per model); the pack itself ships in a later update
 - Engine packs are checked again at every load: only files named in the signed manifest are used, a pack can never replace a newer signed build, bridge libraries load only from trusted folders, and a pack that fails twice is rolled back and set aside
 - Load and Stop: Stop works at once while a model is still loading, the next Load waits for the old model to close, and a load that leaves an engine behind says so
+- Engine updates: "Use the built-in engine" and "Remove" stay that way, an install interrupted by quitting or a failed check is only retried when you press Check now, Remove stays available after a rollback, and update errors are translated
+- Pressing Stop twice during a load no longer leaves the stopped model in memory
 
 ### Android
 - LiteRT-LM engine (issue #10): .litertlm models with streaming, Stop and photo input; settings show only what the engine supports, and helpers and hosting leave those models alone
@@ -24,10 +26,13 @@
 - Drafts survive a crash: the newest saved draft comes back, and one unreadable attachment no longer empties the composer
 - Undo after deleting turns refuses when the chat has changed, and a failed Edit puts the turns back and says why
 - DOCX export tables open correctly in Word; a failed answer no longer breaks the next turn
+- Goals: a chat set to "Stay local" refuses a goal, also on Continue, instead of running it without sources
+- Memory notes reach continued and compared answers; web sources are kept on the first LiteRT turn; Send stays greyed out during a quick edit of the chat; the busy message names a model that is still loading
 
 ### Speed
 - Optimize: one time limit for the whole run, a failed sample no longer stops it, your own settings come back afterwards, only measured settings are saved, and it never loads past the real memory budget
 - Engines report benchmark and Optimize support separately, so a model can be speed-tested even when it cannot be auto-tuned
+- Optimize puts back exactly the model that was loaded before the run, and its row no longer shows an outdated reason
 
 ### Security
 - MCP: turning a server on uses the settings you reviewed, and saving the page keeps the servers that are already running

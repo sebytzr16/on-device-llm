@@ -1148,12 +1148,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ChatComposer(
             controller: _input,
             focusNode: _inputFocus,
+            // A quick edit of the saved chat (delete, undo, restore) is not
+            // an answer: the composer's controls stay locked and its button
+            // has nothing to send or stop (review 2026-11-20 finding 8, P3-4).
             busy: busy,
+            housekeeping: state.housekeeping,
             canSend: !models.isLoadingModel,
             onSend: _send,
-            // A quick edit of the saved chat (delete, restore) has nothing
-            // to stop: Stop only showed "Stopping" for it.
-            onStop: state.housekeeping ? null : notifier.cancel,
+            onStop: notifier.cancel,
             attachments: _pending,
             textOnly: diffusion,
             onAttach: diffusion ? null : (from) => _attach(from: from),

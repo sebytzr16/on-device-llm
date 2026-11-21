@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/platform/device_info.dart';
 import '../../../core/providers/shared_providers.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../data/network/web_search/search_models.dart';
 import '../../../inference/engine/text_engine.dart';
 import '../../../inference/engine/turn_budget.dart';
@@ -19,6 +20,7 @@ import '../../models/presentation/providers/model_manager_provider.dart';
 import '../../retrieval/domain/subject_terms.dart';
 import '../../retrieval/domain/evidence.dart';
 import '../../settings/domain/entities/inference_settings.dart';
+import '../../settings/presentation/providers/effective_settings_provider.dart';
 import '../../settings/presentation/providers/settings_provider.dart';
 import '../../tools/domain/tool_spec.dart';
 import '../../tools/phone_actions.dart';

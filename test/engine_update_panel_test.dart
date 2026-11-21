@@ -109,6 +109,42 @@ void main() {
     );
   });
 
+  testWidgets('a reverted pack keeps the way back and removal', (tester) async {
+    // The crash guard reverted the pack but kept its folder: both rows must
+    // stay so its DLLs can still be deleted from Settings (P3).
+    await _pump(
+      tester,
+      const EngineUpdateView(phase: EngineUpdatePhase.upToDate, reverted: true),
+    );
+    expect(find.byKey(const Key('engine-update-use-built-in')), findsOneWidget);
+    expect(find.byKey(const Key('engine-update-remove')), findsOneWidget);
+  });
+
+  testWidgets(
+    'acknowledging the revert notice keeps Remove while files remain',
+    (tester) async {
+      // The notice is gone and no pack verifies, but its DLLs are still on
+      // disk: Remove must follow the files, not the acknowledgement (P2).
+      await _pump(
+        tester,
+        const EngineUpdateView(
+          phase: EngineUpdatePhase.upToDate,
+          packsOnDisk: true,
+        ),
+      );
+      expect(find.byKey(const Key('engine-update-use-built-in')), findsNothing);
+      expect(find.byKey(const Key('engine-update-remove')), findsOneWidget);
+    },
+  );
+
+  testWidgets('no pack on disk shows no removal row', (tester) async {
+    await _pump(
+      tester,
+      const EngineUpdateView(phase: EngineUpdatePhase.upToDate),
+    );
+    expect(find.byKey(const Key('engine-update-remove')), findsNothing);
+  });
+
   testWidgets('downloading shows progress', (tester) async {
     await _pump(
       tester,

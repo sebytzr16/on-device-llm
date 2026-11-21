@@ -159,15 +159,17 @@ void main() {
       notifier.attach('model-1', 'lora-a', 1.0),
       throwsStateError,
     );
-    // The page shows the save failure itself (the load failure was only
-    // "unreadable"), and without a "Bad state:" prefix.
-    final error = container.read(adaptersProvider).error;
-    expect(error, contains('reset it first'));
-    expect(error, isNot(contains('Bad state')));
+    // The store records the kind of failure and keeps no English text; the
+    // adapters page turns it into its own localized sentence (review #4).
+    final failed = container.read(adaptersProvider);
+    expect(failed.failure, AdaptersFailure.unreadable);
+    expect(failed.error, isNull);
 
     await notifier.resetUnreadable();
-    expect(container.read(adaptersProvider).error, isNull);
-    expect(container.read(adaptersProvider).adapters, isEmpty);
+    final recovered = container.read(adaptersProvider);
+    expect(recovered.failure, isNull);
+    expect(recovered.error, isNull);
+    expect(recovered.adapters, isEmpty);
     // The unreadable bytes are kept aside for recovery, not thrown away.
     final aside = File('${manifest.path}.unreadable');
     expect(await aside.readAsString(), '{"v": 1, "adapters": [');

@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/core/platform/desktop_host.dart';
 import 'package:ondevice_llm/data/local/database/app_database.dart';
+import 'package:ondevice_llm/data/storage/model_folders.dart';
 import 'package:ondevice_llm/data/storage/model_storage.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
 import 'package:ondevice_llm/features/settings/data/remote_key_store.dart';
@@ -187,12 +188,13 @@ void main() {
         setup.container
             .read(modelManagerProvider.notifier)
             .changeModelsFolder(setup.target, move: true),
-        // The rolled-back move reports the save failure, not a silent null.
+        // The rolled-back move reports the failed save, not an unwritable
+        // folder (release review 1.8.0 #5).
         throwsA(
-          isA<StateError>().having(
-            (e) => e.message,
-            'message',
-            contains('could not be saved'),
+          isA<ModelFolderException>().having(
+            (e) => e.reason,
+            'reason',
+            ModelFolderFailure.saveFailed,
           ),
         ),
       );
@@ -222,7 +224,15 @@ void main() {
       setup.container
           .read(modelManagerProvider.notifier)
           .changeModelsFolder(setup.target, move: true),
-      throwsStateError,
+      // The failed rollback is the same failed save, not a wrong folder
+      // cause (release review 1.8.0 #5).
+      throwsA(
+        isA<ModelFolderException>().having(
+          (e) => e.reason,
+          'reason',
+          ModelFolderFailure.saveFailed,
+        ),
+      ),
     );
 
     // The saved paths may still point at the moved files, so they stay

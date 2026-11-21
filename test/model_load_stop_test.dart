@@ -9,12 +9,14 @@ import 'package:ondevice_llm/core/providers/shared_providers.dart';
 import 'package:ondevice_llm/data/local/database/app_database.dart';
 import 'package:ondevice_llm/features/adapters/adapter_store.dart';
 import 'package:ondevice_llm/features/chat/presentation/providers/chat_provider.dart';
+import 'package:ondevice_llm/features/models/domain/entities/model_catalog.dart';
 import 'package:ondevice_llm/features/models/domain/entities/model_info.dart';
 import 'package:ondevice_llm/features/models/presentation/providers/model_manager_provider.dart';
 import 'package:ondevice_llm/features/presets/presentation/providers/presets_provider.dart';
 import 'package:ondevice_llm/features/settings/domain/entities/inference_settings.dart';
 import 'package:ondevice_llm/features/settings/presentation/providers/model_profiles_provider.dart';
 import 'package:ondevice_llm/features/settings/presentation/providers/settings_provider.dart';
+import 'package:ondevice_llm/inference/engine/litert_engine.dart';
 import 'package:ondevice_llm/inference/engine/llama_engine.dart';
 import 'chat_test.dart' show testModel;
 
@@ -30,6 +32,17 @@ const otherModel = ModelInfo(
   localPath: 'other.gguf',
 );
 
+/// Two LiteRT files: their load runs in the engine's own runtime, which a
+/// Stop cannot abort (a phone MethodChannel call).
+final liteRtA = liteRtCatalog[0].copyWith(
+  isDownloaded: true,
+  localPath: 'a.litertlm',
+);
+final liteRtB = liteRtCatalog[1].copyWith(
+  isDownloaded: true,
+  localPath: 'b.litertlm',
+);
+
 class _Adapters extends AdaptersNotifier {
   @override
   AdaptersState build() {
@@ -43,6 +56,15 @@ class _Models extends ModelManagerNotifier {
   ModelManagerState build() {
     ready = Future.value();
     return const ModelManagerState(catalog: [testModel, otherModel]);
+  }
+}
+
+/// The manager over the two LiteRT files of the file-engine test.
+class _FileEngineModels extends ModelManagerNotifier {
+  @override
+  ModelManagerState build() {
+    ready = Future.value();
+    return ModelManagerState(catalog: [liteRtA, liteRtB]);
   }
 }
 
@@ -179,6 +201,81 @@ class _SlowEngine extends LlamaEngine {
   Future<void> stopAndWait() async {}
 }
 
+/// A llama load its `cancel()` cannot abort, like a worker stuck in the native
+/// bridge: the manager's stop signal is only read once the call returns.
+class _DeafEngine extends _SlowEngine {
+  @override
+  void cancel() {}
+
+  @override
+  Future<void> loadModel({
+    required String modelPath,
+    required InferenceSettings settings,
+    String? mmprojPath,
+    String engineId = 'llama.cpp',
+    List<({String path, double scale})> adapters = const [],
+    String? draftModelPath,
+    bool memoryGuard = true,
+  }) async {
+    loads.add(modelPath);
+    loading = modelPath;
+    if (!started.isCompleted) started.complete();
+    try {
+      await gate(modelPath).future;
+      // As the real engine: a Stop seen after the native call gives way.
+      if (loadStop?.call() ?? false) throw const ModelLoadStopped();
+      loaded = true;
+    } finally {
+      if (loading == modelPath) loading = null;
+    }
+  }
+}
+
+/// A LiteRT load that only finishes when the native host answers, like the
+/// phone's MethodChannel call: a Stop cannot abort it.
+class _SlowLiteRt extends LiteRtEngine {
+  final List<String> loads = [];
+  final List<String> unloads = [];
+  final Map<String, Completer<void>> gates = {};
+  final started = Completer<void>();
+  String? _held;
+
+  @override
+  bool get isLoaded => _held != null;
+
+  @override
+  bool holdsLoad(String path, LiteRtBackend backend, {required bool vision}) =>
+      _held == path;
+
+  @override
+  Future<void> loadModel(
+    String path, {
+    required LiteRtBackend backend,
+    required bool vision,
+  }) async {
+    loads.add(path);
+    if (!started.isCompleted) started.complete();
+    await gate(path).future;
+    _held = path;
+  }
+
+  Completer<void> gate(String path) =>
+      gates.putIfAbsent(path, Completer<void>.new);
+
+  @override
+  Future<void> unload() async {
+    final held = _held;
+    if (held != null) unloads.add(held);
+    _held = null;
+  }
+
+  @override
+  void cancel() {}
+
+  @override
+  void dispose() {}
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late ProviderContainer c;
@@ -303,6 +400,171 @@ void main() {
       expect(engine.loaded, isTrue);
     },
   );
+
+  test('a superseded file engine load never marks itself loaded or clears '
+      'the next load spinner', () async {
+    final liteRt = _SlowLiteRt();
+    final llama = _SlowEngine();
+    final fileDb = _Database();
+    final container = ProviderContainer(
+      overrides: [
+        appDatabaseProvider.overrideWithValue(fileDb),
+        llamaEngineProvider.overrideWithValue(llama),
+        liteRtAvailableProvider.overrideWithValue(true),
+        liteRtEngineProvider.overrideWithValue(liteRt),
+        adaptersProvider.overrideWith(_Adapters.new),
+        modelManagerProvider.overrideWith(_FileEngineModels.new),
+        settingsProvider.overrideWith(_Settings.new),
+        modelProfilesProvider.overrideWith(_Profiles.new),
+        presetsProvider.overrideWith(_Presets.new),
+        chatProvider.overrideWith(_Chat.new),
+      ],
+    );
+    addTearDown(() async {
+      llama.dispose();
+      container.dispose();
+      await fileDb.close();
+    });
+    final fileManager = container.read(modelManagerProvider.notifier);
+    const settings = InferenceSettings(
+      backend: GpuBackend.cpu,
+      speculationMode: 'off',
+    );
+    final first = fileManager.loadModel(liteRtA, settings: settings);
+    await liteRt.started.future;
+    expect(liteRt.loads, [liteRtA.localPath]);
+
+    fileManager.stopLoad();
+    final failed = expectLater(first, throwsA(isA<ModelLoadStopped>()));
+    // The next Load owns the spinner while it waits for the stopped load's
+    // teardown.
+    final second = fileManager.loadModel(liteRtB, settings: settings);
+    expect(container.read(modelManagerProvider).loadingModelId, liteRtB.id);
+    expect(container.read(modelManagerProvider).isLoadingModel, isTrue);
+
+    // The stopped load finishes only now, as the phone's MethodChannel call
+    // would: it may not mark itself loaded nor end the next load's spinner.
+    liteRt.gate(liteRtA.localPath!).complete();
+    await failed;
+    await pumpEventQueue();
+    expect(liteRt.unloads, [liteRtA.localPath]);
+    var state = container.read(modelManagerProvider);
+    expect(state.loadedModelId, isNull);
+    expect(state.isLoadingModel, isTrue);
+    expect(state.loadingModelId, liteRtB.id);
+
+    liteRt.gate(liteRtB.localPath!).complete();
+    await second;
+    state = container.read(modelManagerProvider);
+    expect(state.loadedModelId, liteRtB.id);
+    expect(state.isLoadingModel, isFalse);
+    expect(liteRt.loads, [liteRtA.localPath, liteRtB.localPath]);
+  });
+
+  test('a second Stop still frees the file engine model the first Stop left '
+      'loading', () async {
+    final liteRt = _SlowLiteRt();
+    final llama = _SlowEngine();
+    final fileDb = _Database();
+    final container = ProviderContainer(
+      overrides: [
+        appDatabaseProvider.overrideWithValue(fileDb),
+        llamaEngineProvider.overrideWithValue(llama),
+        liteRtAvailableProvider.overrideWithValue(true),
+        liteRtEngineProvider.overrideWithValue(liteRt),
+        adaptersProvider.overrideWith(_Adapters.new),
+        modelManagerProvider.overrideWith(_FileEngineModels.new),
+        settingsProvider.overrideWith(_Settings.new),
+        modelProfilesProvider.overrideWith(_Profiles.new),
+        presetsProvider.overrideWith(_Presets.new),
+        chatProvider.overrideWith(_Chat.new),
+      ],
+    );
+    addTearDown(() async {
+      llama.dispose();
+      container.dispose();
+      await fileDb.close();
+    });
+    final fileManager = container.read(modelManagerProvider.notifier);
+    const settings = InferenceSettings(
+      backend: GpuBackend.cpu,
+      speculationMode: 'off',
+    );
+    final first = fileManager.loadModel(liteRtA, settings: settings);
+    await liteRt.started.future;
+    expect(liteRt.loads, [liteRtA.localPath]);
+
+    fileManager.stopLoad();
+    final failed = expectLater(first, throwsA(isA<ModelLoadStopped>()));
+    final second = fileManager.loadModel(liteRtB, settings: settings);
+    expect(container.read(modelManagerProvider).loadingModelId, liteRtB.id);
+    // A second Stop before A's MethodChannel call answers: the stopped epoch
+    // is B's now, so A's own branch no longer matches it (finding #1).
+    fileManager.stopLoad();
+    final secondFailed = expectLater(second, throwsA(isA<ModelLoadStopped>()));
+
+    liteRt.gate(liteRtA.localPath!).complete();
+    await failed;
+    await secondFailed;
+    await pumpEventQueue();
+    // The runtime A mapped is freed even though the second Stop took the
+    // stopped epoch: the phone must not keep the model resident.
+    expect(liteRt.unloads, [liteRtA.localPath]);
+    final state = container.read(modelManagerProvider);
+    expect(state.loadedModelId, isNull);
+    expect(state.isLoadingModel, isFalse);
+    expect(liteRt.loads, [liteRtA.localPath]);
+  });
+
+  test('a Stop reaches a load whose cancel() cannot abort it', () async {
+    // The engine only reads the manager's stop signal when its native call
+    // returns: the Stop alone ends nothing.
+    final deaf = _DeafEngine();
+    final deafDb = _Database();
+    final container = ProviderContainer(
+      overrides: [
+        appDatabaseProvider.overrideWithValue(deafDb),
+        llamaEngineProvider.overrideWithValue(deaf),
+        adaptersProvider.overrideWith(_Adapters.new),
+        modelManagerProvider.overrideWith(_Models.new),
+        settingsProvider.overrideWith(_Settings.new),
+        modelProfilesProvider.overrideWith(_Profiles.new),
+        presetsProvider.overrideWith(_Presets.new),
+        chatProvider.overrideWith(_Chat.new),
+      ],
+    );
+    addTearDown(() async {
+      deaf.dispose();
+      container.dispose();
+      await deafDb.close();
+    });
+    final deafManager = container.read(modelManagerProvider.notifier);
+    final first = deafManager.loadModel(testModel, forChat: true);
+    await deaf.started.future;
+    expect(deaf.loads, [testModel.localPath]);
+
+    deafManager.stopLoad();
+    final failed = expectLater(first, throwsA(isA<ModelLoadStopped>()));
+    final second = deafManager.loadModel(otherModel);
+    await pumpEventQueue();
+    // The stopped load still holds the engine: the next one does not start on
+    // top of it.
+    expect(deaf.loads, [testModel.localPath]);
+
+    // The native call returns and asks the per-load stop signal: the load the
+    // user stopped ends as a Stop instead of loading the model.
+    deaf.gate(testModel.localPath!).complete();
+    await failed;
+    await pumpEventQueue();
+    expect(deaf.loads, [testModel.localPath, otherModel.localPath]);
+
+    deaf.gate(otherModel.localPath!).complete();
+    await second;
+    final state = container.read(modelManagerProvider);
+    expect(state.loadedModelId, otherModel.id);
+    expect(state.isLoadingModel, isFalse);
+    expect(deaf.loaded, isTrue);
+  });
 
   test('a second Load while one is really running says so, cleanly', () async {
     final loading = manager.loadModel(testModel, forChat: true);

@@ -1,17 +1,34 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ondevice_llm/core/theme/app_theme.dart';
 import 'package:ondevice_llm/features/chat/domain/retrieval_plan.dart';
 import 'package:ondevice_llm/features/tools/domain/tool_spec.dart';
 import 'package:ondevice_llm/features/tools/phone_actions.dart';
 import 'package:ondevice_llm/features/tools/presentation/phone_action_cards.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'local_backup_service_test.dart' show BackupPaths;
+
+/// The phone's folders, with the cache directory the share copies go to.
+class _SharePaths extends BackupPaths {
+  _SharePaths(super.support, super.documents, this.temporary);
+  final String temporary;
+  @override
+  Future<String?> getTemporaryPath() async => temporary;
+}
 
 ToolCall call(String name, Map<String, Object?> args) =>
     ToolCall(id: '1', name: name, arguments: jsonEncode(args));
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('PhoneActions.wanted', () {
     test('recognises requests to act on the phone in EN/FR/ES', () {
       for (final t in [
@@ -548,5 +565,129 @@ void main() {
       expect(find.text('Duration'), findsNothing);
       expect(find.text('Tea').evaluate().length, lessThan(expanded));
     });
+  });
+
+  test('a dismissed share deletes its decrypted copy', () async {
+    SharedPreferences.setMockInitialValues({});
+    final root = await Directory.systemTemp.createTemp('share-dismissed-');
+    final temporary = Directory(p.join(root.path, 'temp'));
+    await temporary.create();
+    final paths = PathProviderPlatform.instance;
+    PathProviderPlatform.instance = _SharePaths(
+      root.path,
+      root.path,
+      temporary.path,
+    );
+    addTearDown(() async {
+      PathProviderPlatform.instance = paths;
+      await root.delete(recursive: true);
+    });
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const channel = MethodChannel('dev.fluttercommunity.plus/share');
+    // The user backs out of the share sheet: dismissed, not a failure.
+    messenger.setMockMethodCallHandler(channel, (call) async => '');
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+    expect(
+      await PhoneActions.launch(
+        const PhoneAction('save_file', {
+          'name': 'notes.md',
+          'content': 'secret',
+        }),
+      ),
+      isTrue,
+    );
+    // The clear-text copy of an abandoned share must not stay in the cache
+    // (release review 1.8.0 #2).
+    expect([
+      await for (final entry in temporary.list())
+        if (p.basename(entry.path).startsWith('shared-goal-')) entry.path,
+    ], isEmpty);
+  });
+
+  test('a successful share keeps its copy for the target app', () async {
+    SharedPreferences.setMockInitialValues({});
+    final root = await Directory.systemTemp.createTemp('share-success-');
+    final temporary = Directory(p.join(root.path, 'temp'));
+    await temporary.create();
+    final paths = PathProviderPlatform.instance;
+    PathProviderPlatform.instance = _SharePaths(
+      root.path,
+      root.path,
+      temporary.path,
+    );
+    addTearDown(() async {
+      PathProviderPlatform.instance = paths;
+      await root.delete(recursive: true);
+    });
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const channel = MethodChannel('dev.fluttercommunity.plus/share');
+    // The user picked an app: a component name is a successful hand-over.
+    messenger.setMockMethodCallHandler(
+      channel,
+      (call) async => 'com.example.target',
+    );
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+    expect(
+      await PhoneActions.launch(
+        const PhoneAction('save_file', {
+          'name': 'notes.md',
+          'content': 'secret',
+        }),
+      ),
+      isTrue,
+    );
+    // The target app opens the file after the chooser returns, so its copy
+    // stays until the next sweep (audit 05b-3, release review 1.8.0 #2).
+    expect([
+      await for (final entry in temporary.list())
+        if (p.basename(entry.path).startsWith('shared-goal-')) entry.path,
+    ], hasLength(1));
+  });
+
+  test('an unavailable share keeps its decrypted copy', () async {
+    SharedPreferences.setMockInitialValues({});
+    final root = await Directory.systemTemp.createTemp('share-unavailable-');
+    final temporary = Directory(p.join(root.path, 'temp'));
+    await temporary.create();
+    final paths = PathProviderPlatform.instance;
+    PathProviderPlatform.instance = _SharePaths(
+      root.path,
+      root.path,
+      temporary.path,
+    );
+    addTearDown(() async {
+      PathProviderPlatform.instance = paths;
+      await root.delete(recursive: true);
+    });
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const channel = MethodChannel('dev.fluttercommunity.plus/share');
+    // Android answers this at launch when it cannot report the user's choice:
+    // the target app may still be opening the file.
+    messenger.setMockMethodCallHandler(
+      channel,
+      (call) async => 'dev.fluttercommunity.plus/share/unavailable',
+    );
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+    expect(
+      await PhoneActions.launch(
+        const PhoneAction('save_file', {
+          'name': 'notes.md',
+          'content': 'secret',
+        }),
+      ),
+      isTrue,
+    );
+    // Not a dismissal: only the next sweep may take the copy (release review
+    // 1.8.0 #2).
+    expect([
+      await for (final entry in temporary.list())
+        if (p.basename(entry.path).startsWith('shared-goal-')) entry.path,
+    ], hasLength(1));
   });
 }

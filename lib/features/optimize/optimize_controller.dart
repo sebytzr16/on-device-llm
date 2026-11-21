@@ -211,11 +211,21 @@ class OptimizeController extends Notifier<OptimizeState> {
     final clock = ref.read(optimizeClockProvider);
     final budget = ref.read(optimizeRunBudgetProvider);
     final original = current;
-    final wasLoaded = ref.read(modelManagerProvider).loadedModelId == model.id;
-    // A loaded model holds the memory the estimates read as free, so every
-    // layer count looked over budget; the estimates below unload it and the
-    // run loads the model again at the end with the chat's own settings (or
-    // the saved winner).
+    // What the runtime held before the run: the finally puts exactly that
+    // back, so a run on another model neither leaves the user's own model
+    // unloaded nor keeps the measured one (review #1). A loaded model also
+    // holds the memory the estimates read as free, so every layer count
+    // looked over budget; the estimates below unload it and the finally
+    // restores the model with its own settings (or the saved winner).
+    final beforeId = ref.read(modelManagerProvider).loadedModelId;
+    final beforeLoad = ref.read(modelManagerProvider.notifier).loadedConfig;
+    final beforeModel = beforeId == null
+        ? null
+        : ref
+              .read(modelManagerProvider)
+              .catalog
+              .where((m) => m.id == beforeId)
+              .firstOrNull;
     final runner = TuneBenchmarkRun(
       engine: ref.read(modelSpeedEngineProvider),
       model: model,
@@ -540,12 +550,44 @@ class OptimizeController extends Notifier<OptimizeState> {
       // back before the loaded model is trusted again. Only a load-time
       // setting can linger: the benchmark's sampling is per request. A saved
       // run restores the winner, otherwise the user's settings, in one load.
+      //
+      // The model that was loaded before the run is the one to put back; the
+      // tuned model is only loaded again if it was that one, because a saved
+      // winner is carried by its profile. The planning estimates unload the
+      // model before the first sample, and the manager's state, not the run's
+      // record of its last load, tells whether a load is still needed
+      // (review #1). A run that started with nothing loaded may not keep the
+      // benchmark's last load (review #2).
       final restore = changed ? finalSettings : original;
-      if (wasLoaded && !runner.sameLoadAs(restore)) {
+      final loadedNow = ref.mounted
+          ? ref.read(modelManagerProvider).loadedModelId
+          : null;
+      final restoreModel = beforeId == model.id ? model : beforeModel;
+      final restoreSettings = beforeId == model.id
+          ? restore
+          : beforeLoad?.settings;
+      final needsRestore =
+          beforeId != null &&
+          (loadedNow != restoreModel?.id ||
+              (beforeId == model.id && !runner.sameLoadAs(restore)));
+      if (needsRestore && restoreModel != null) {
         try {
-          await manager.loadModel(model, forChat: true, settings: restore);
+          await manager.loadModel(
+            restoreModel,
+            forChat: true,
+            settings: restoreSettings,
+          );
         } catch (e, st) {
           // Reported, not thrown: the result of the run stands.
+          _fail(OptimizeFailure.reload, e, st);
+        }
+      } else if (loadedNow != null && loadedNow != beforeId) {
+        // Nothing was loaded before the run (or that model is gone from the
+        // catalog): the benchmark's last load must not stay behind holding
+        // RAM at measured settings.
+        try {
+          await manager.unloadModel(ownsBusy: true);
+        } catch (e, st) {
           _fail(OptimizeFailure.reload, e, st);
         }
       }

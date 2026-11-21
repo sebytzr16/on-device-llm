@@ -151,7 +151,11 @@ extension _ChatPrompt on ChatNotifier {
             if (note.isNotEmpty) note,
             ?clockLine,
           ].map((n) => '\n\n$n').join()
-        : '';
+        // A turn that ends on an answer keeps the notes in the system prompt,
+        // but they are still counted while the documents and the evidence are
+        // fitted: added after fitting, the whole memory block could grow the
+        // prompt past the window (review 2026-11-20 P3-3).
+        : (memory.isEmpty ? '' : '\n\n$memory');
     final fitSystem = '$system$carried';
     messages.first = {'role': 'system', 'content': fitSystem};
     if (t.attachments.any((a) => a.isImage) && !vision && t.resume == null) {
@@ -342,14 +346,24 @@ extension _ChatPrompt on ChatNotifier {
     return (note: note, sum: sum);
   }
 
-  /// Puts [note] after the question and [clockLine] before it.
+  /// Puts [note] after the question and [clockLine] before it. A turn whose
+  /// last message is not the question (a compared answer) keeps the notes in
+  /// the system prompt, so the memory they carry is not lost.
   void _addTurnNotes(
     List<Map<String, Object>> messages, {
     required String note,
     required String? clockLine,
     String memory = '',
   }) {
-    if (messages.last['role'] != 'user') return;
+    if (messages.last['role'] != 'user') {
+      if (memory.isNotEmpty) {
+        messages.first = {
+          ...messages.first,
+          'content': '${messages.first['content']}\n\n$memory',
+        };
+      }
+      return;
+    }
     final request = messages.last['content'];
     if (request is! String) return;
     messages.last = {

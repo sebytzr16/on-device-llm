@@ -1,5 +1,23 @@
 part of 'chat_provider.dart';
 
+/// The window a preview is judged against: the engine's own measurement, or
+/// the context size the model is configured with while the engine has not
+/// reported one yet (LiteRT-LM measures it on its first decode).
+int _contextLimit(Map<String, dynamic> budget, InferenceSettings settings) =>
+    (budget['contextSize'] as num?)?.toInt() ?? settings.contextSize;
+
+/// Whether the preview's prompt fits. An engine that cannot judge yet is
+/// not assumed to fit: it does not truncate, so an over-long prompt fails
+/// there (review 2026-11-20 finding 3). Every fitter of one prompt uses this
+/// rule, the web evidence too (review 2026-11-20 P3-5).
+bool _fits(Map<String, dynamic> budget, InferenceSettings settings) {
+  final fits = budget['fits'];
+  if (fits is bool) return fits;
+  final prompt = (budget['promptTokens'] as num?)?.toInt() ?? 0;
+  final reserved = (budget['reservedTokens'] as num?)?.toInt() ?? 0;
+  return prompt + reserved <= _contextLimit(budget, settings);
+}
+
 extension _ChatAttachments on ChatNotifier {
   /// Shortens the largest tool results (in place, keeping their beginning)
   /// until the prompt fits. Returns a notice when something was cut.
@@ -21,9 +39,7 @@ extension _ChatAttachments on ChatNotifier {
         assistantPrefix: '',
         tools: tools,
       );
-      // A fit the engine cannot judge yet (a LiteRT window it has not
-      // measured) is not a deficit: cut only against a known limit.
-      if (budget['fits'] != false || _cancelled) break;
+      if (_fits(budget, settings) || _cancelled) break;
       Map<String, Object>? biggest;
       for (final m in toolMessages) {
         if (m['role'] != 'tool') continue;
@@ -116,8 +132,9 @@ extension _ChatAttachments on ChatNotifier {
         settings: settings,
         assistantPrefix: '',
       );
-      // An unknown fit is not a deficit (see _fitToolResults).
-      if (budget['fits'] != false || _cancelled) break;
+      // An engine that cannot judge yet is cut against its configured
+      // context (see _fits).
+      if (_fits(budget, settings) || _cancelled) break;
       final blocks = RegExp(
         r'\[File: ([^\]]+)\]\n([\s\S]*?)\n\[End of file: \1\]',
       ).allMatches(content).toList();
@@ -151,7 +168,7 @@ extension _ChatAttachments on ChatNotifier {
       final over =
           prompt +
           ((budget['reservedTokens'] as num?)?.toInt() ?? 0) -
-          ((budget['contextSize'] as num?)?.toInt() ?? 0);
+          _contextLimit(budget, settings);
       final perToken = prompt > 0 ? content.length / prompt : 4.0;
       final current = biggest.group(2)!.length;
       target = max(

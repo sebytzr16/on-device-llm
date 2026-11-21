@@ -87,8 +87,29 @@ class _OverBudgetEstimator extends LlamaEngine {
   };
 }
 
+/// An estimate that cancels the run while it answers the planning probes.
+class _CancellingEstimator extends LlamaEngine {
+  _CancellingEstimator(this.onEstimate);
+  final void Function() onEstimate;
+
+  @override
+  Future<Map<String, dynamic>> estimate({
+    required String modelPath,
+    required InferenceSettings settings,
+    String? mmprojPath,
+    List<({String path, double scale})> adapters = const [],
+    String? draftModelPath,
+  }) async {
+    onEstimate();
+    return _estimate(settings);
+  }
+}
+
 class _Models extends TestModels {
   final loads = <InferenceSettings>[];
+
+  /// The model each load was for, in the same order as [loads].
+  final loadIds = <String>[];
   int stopLoads = 0;
   void Function(InferenceSettings)? onLoad;
 
@@ -102,11 +123,92 @@ class _Models extends TestModels {
   }) async {
     final s = settings!;
     loads.add(s);
+    loadIds.add(info.id);
     onLoad?.call(s);
   }
 
   @override
   void stopLoad() => stopLoads++;
+}
+
+const _otherModel = ModelInfo(
+  id: 'other',
+  displayName: 'Other Model',
+  fileName: 'other.gguf',
+  sizeBytes: 80,
+  family: ModelFamily.qwen,
+  quantization: ModelQuantization.q4_k_m,
+  isDownloaded: true,
+  localPath: 'other.gguf',
+);
+
+/// The settings the other model was loaded with before the run.
+const _otherSettings = InferenceSettings(
+  contextSize: 4096,
+  nGpuLayers: 9,
+  kvCacheType: KvCacheType.fp16,
+);
+
+/// A manager that keeps its own loaded-model state in step with the loads and
+/// unloads a run makes, so the restore path is checked against the runtime
+/// rather than the run's record of its last load.
+class _TrackingModels extends _Models {
+  _TrackingModels({this.loaded = true, this.before, this.beforeSettings});
+
+  /// Whether any model is loaded at all.
+  final bool loaded;
+
+  /// The loaded model when it is not [testModel] itself.
+  final ModelInfo? before;
+  final InferenceSettings? beforeSettings;
+
+  @override
+  ModelManagerState build() {
+    // TestModels sets `ready`; a model the user never loaded starts unloaded.
+    final base = super.build();
+    final catalog = before == null ? base.catalog : [...base.catalog, before!];
+    return ModelManagerState(
+      catalog: catalog,
+      loadedModelId: loaded ? before?.id ?? testModel.id : null,
+    );
+  }
+
+  @override
+  ChatLoad? get loadedConfig {
+    final model = before;
+    if (model == null) return null;
+    return (
+      modelId: model.id,
+      modelPath: model.localPath!,
+      settings: beforeSettings ?? const InferenceSettings(),
+      mmprojPath: null,
+      draftModelPath: null,
+      adapters: const [],
+    );
+  }
+
+  @override
+  Future<void> loadModel(
+    ModelInfo info, {
+    bool forChat = false,
+    InferenceSettings? settings,
+    void Function()? onLoadStart,
+    bool vision = false,
+  }) async {
+    await super.loadModel(
+      info,
+      forChat: forChat,
+      settings: settings,
+      onLoadStart: onLoadStart,
+      vision: vision,
+    );
+    state = state.copyWith(loadedModelId: info.id);
+  }
+
+  @override
+  Future<void> unloadModel({bool ownsBusy = false}) async {
+    state = state.copyWith(clearLoaded: true);
+  }
 }
 
 class _Engine extends Fake implements TextEngine {
@@ -344,23 +446,32 @@ void main() {
     );
   });
 
-  test('a real estimate that nothing fits loads nothing', () async {
-    final models = _Models();
-    final c = _container(
-      models: () => models,
-      estimator: _OverBudgetEstimator(),
-    );
-    final provider = optimizeControllerProvider(testModel.id);
-    await c.read(provider.notifier).start(testModel, _current);
-    final state = c.read(provider);
-    expect(state.failed, isFalse);
-    expect(state.saved, isFalse);
-    expect(state.unfit, OptimizeUnfit.ram);
-    // Over-budget settings are not loaded to "measure anyway": the exhausted
-    // estimate is a fact, and the load could end the process on a phone.
-    expect(models.loads, isEmpty);
-    expect(c.read(sessionBusyProvider), isFalse);
-  });
+  test(
+    'a real estimate that nothing fits loads only the user\'s own settings back',
+    () async {
+      final models = _TrackingModels();
+      final c = _container(
+        models: () => models,
+        estimator: _OverBudgetEstimator(),
+      );
+      final provider = optimizeControllerProvider(testModel.id);
+      await c.read(provider.notifier).start(testModel, _current);
+      final state = c.read(provider);
+      expect(state.failed, isFalse);
+      expect(state.saved, isFalse);
+      expect(state.unfit, OptimizeUnfit.ram);
+      // Over-budget settings are not loaded to "measure anyway": the exhausted
+      // estimate is a fact, and the load could end the process on a phone.
+      // The planning estimates unloaded the model, so the only load is the
+      // user's own settings put back, exactly once (review #6).
+      expect(models.loads, hasLength(1));
+      expect(models.loads.single.nGpuLayers, _current.nGpuLayers);
+      expect(models.loads.single.kvCacheType, _current.kvCacheType);
+      expect(models.loads.single.contextSize, _current.contextSize);
+      expect(c.read(modelManagerProvider).loadedModelId, testModel.id);
+      expect(c.read(sessionBusyProvider), isFalse);
+    },
+  );
 
   test('the plan stops estimating past the run deadline', () async {
     var calls = 0;
@@ -429,19 +540,26 @@ void main() {
     expect(c.read(provider).running, isFalse);
   });
 
-  test('cancel stops the load in progress and skips the reload', () async {
-    final models = _Models();
-    final c = _container(models: () => models);
+  test('cancel during planning loads the pre-run model back once', () async {
+    final models = _TrackingModels();
+    OptimizeController? controller;
+    final c = _container(
+      models: () => models,
+      estimator: _CancellingEstimator(() => controller?.cancel()),
+    );
     final provider = optimizeControllerProvider(testModel.id);
-    final run = c.read(provider.notifier).start(testModel, _current);
-    c.read(provider.notifier).cancel();
-    await run;
+    controller = c.read(provider.notifier);
+    await controller!.start(testModel, _current);
     expect(models.stopLoads, greaterThanOrEqualTo(1));
     expect(c.read(provider).running, isFalse);
     expect(c.read(sessionBusyProvider), isFalse);
-    // A run cancelled before its first sample loaded nothing, so the chat's
-    // model is left alone: no multi-GB load starts for it.
-    expect(models.loads, isEmpty);
+    // The planning estimates emptied the runtime before the run was
+    // cancelled, so the model the chat had loaded is loaded back exactly
+    // once, with its own settings (review #1, #6).
+    expect(models.loads, hasLength(1));
+    expect(models.loads.single.nGpuLayers, _current.nGpuLayers);
+    expect(models.loads.single.contextSize, _current.contextSize);
+    expect(c.read(modelManagerProvider).loadedModelId, testModel.id);
   });
 
   test(
@@ -488,6 +606,70 @@ void main() {
     expect(models.loads.last.nGpuLayers, _current.nGpuLayers);
     expect(models.loads.last.temperature, _current.temperature);
   });
+
+  test(
+    'a run that stops before its first sample loads the model back',
+    () async {
+      final models = _TrackingModels();
+      final c = _container(
+        models: () => models,
+        estimator: _OverBudgetEstimator(),
+      );
+      final provider = optimizeControllerProvider(testModel.id);
+      await c.read(provider.notifier).start(testModel, _current);
+      final state = c.read(provider);
+      // The planning estimates unloaded the model, then the run stopped because
+      // nothing fit: no benchmark ever loaded it again, so the runtime is empty
+      // and the user's settings must be loaded back (review #1).
+      expect(state.unfit, OptimizeUnfit.ram);
+      expect(state.failed, isFalse);
+      expect(models.loads, hasLength(1));
+      expect(models.loads.single.nGpuLayers, _current.nGpuLayers);
+      expect(models.loads.single.kvCacheType, _current.kvCacheType);
+      expect(c.read(modelManagerProvider).loadedModelId, testModel.id);
+    },
+  );
+
+  test('a run on a model that was not loaded leaves it unloaded', () async {
+    final models = _TrackingModels(loaded: false);
+    final c = _container(
+      models: () => models,
+      engine: _Engine()..changeOutput = true,
+    );
+    final provider = optimizeControllerProvider(testModel.id);
+    await c.read(provider.notifier).start(testModel, _current);
+    expect(c.read(provider).kept, OptimizeKeepReason.outputChanged);
+    // The benchmark loaded the model for its last sample; the user never had
+    // it loaded, so the run must free it again instead of holding RAM with
+    // the measured setup (review #2).
+    expect(models.loads, isNotEmpty);
+    expect(c.read(modelManagerProvider).loadedModelId, isNull);
+  });
+
+  test(
+    'a run on an unloaded model restores the model the chat had loaded',
+    () async {
+      final models = _TrackingModels(
+        before: _otherModel,
+        beforeSettings: _otherSettings,
+      );
+      final c = _container(
+        models: () => models,
+        engine: _Engine()..changeOutput = true,
+      );
+      final provider = optimizeControllerProvider(testModel.id);
+      await c.read(provider.notifier).start(testModel, _current);
+      expect(c.read(provider).kept, OptimizeKeepReason.outputChanged);
+      // The benchmark measured testModel, but the chat's own model was the
+      // loaded one: it is put back with its own settings, and testModel does
+      // not stay loaded (review #1).
+      expect(models.loadIds.where((id) => id == _otherModel.id), hasLength(1));
+      expect(models.loadIds.last, _otherModel.id);
+      expect(models.loads.last.contextSize, _otherSettings.contextSize);
+      expect(models.loads.last.nGpuLayers, _otherSettings.nGpuLayers);
+      expect(c.read(modelManagerProvider).loadedModelId, _otherModel.id);
+    },
+  );
 
   // 5. A save only claims the keys the platform keeps.
   test('the saved profile holds only the keys this platform stores', () {

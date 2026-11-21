@@ -38,11 +38,6 @@ class LocalBackupService {
   static bool androidCanSaveFile(int sizeBytes) =>
       sizeBytes <= androidSaveLimitBytes;
 
-  /// Whether this process runs on Android. `dart:io`'s [Platform.isAndroid]
-  /// cannot be faked, so the save flow reads this seam: a widget test turns it
-  /// on to exercise the phone's in-memory picker (audit 08d-2).
-  static bool onAndroid = Platform.isAndroid;
-
   /// The archive bytes for Android's picker, or null when it is over the cap:
   /// [read] is then never called, so the file never enters memory
   /// (audit 08d-2).
@@ -539,11 +534,17 @@ class LocalBackupService {
             .allMatches(sql.toLowerCase().replaceAll(RegExp(r'[\s"]'), ''))
             .map((match) => match.group(0)!)
             .toSet();
-        final expectedSql = (await current.customSelect(definition).getSingle())
-            .read<String>('sql');
-        if (!checks(
-          actual.select(definition).single['sql'] as String,
-        ).containsAll(checks(expectedSql))) {
+        // A table the archive lacks, or one whose row has no definition,
+        // makes the schema incompatible; `getSingle`/`single` used to throw a
+        // StateError here instead of the FormatException (review #5).
+        final expectedRows = await current.customSelect(definition).get();
+        final expectedSql = expectedRows.isEmpty
+            ? null
+            : expectedRows.first.read<String>('sql');
+        final actualRows = actual.select(definition);
+        final actualSql = actualRows.isEmpty ? null : actualRows.first['sql'];
+        if (expectedSql == null || actualSql is! String) throw invalid;
+        if (!checks(actualSql).containsAll(checks(expectedSql))) {
           throw invalid;
         }
       }

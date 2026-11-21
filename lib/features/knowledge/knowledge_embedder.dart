@@ -25,6 +25,10 @@ abstract class TextEmbedder {
   String get modelId;
   Future<List<Float32List>?> embedQueries(List<String> texts);
   Future<List<Float32List>?> embedDocuments(List<String> texts);
+
+  /// Why the last load failed, when it did (out of memory, a corrupt file):
+  /// null while no load was tried or the model is simply not downloaded.
+  Object? get loadFailure => null;
   Future<List<Float32List>?> embedDocumentsWithin(
     List<String> texts,
     bool Function() cancelled,
@@ -72,6 +76,14 @@ class LlamaEmbedder implements TextEmbedder {
   DateTime? _retryAfter;
   int? _failedRevision;
 
+  /// Why the last load failed (no RAM, a corrupt file): kept so the index
+  /// reports the real reason instead of "not downloaded".
+  Object? _failure;
+
+  /// What [available] answered last, so a model that was just downloaded (or
+  /// removed) is tried at once instead of after the backoff.
+  bool? _wasAvailable;
+
   Future<T> _background<T>(
     Future<T> Function() action,
     bool Function() cancelled,
@@ -104,17 +116,29 @@ class LlamaEmbedder implements TextEmbedder {
   String get modelId =>
       '${model.id}:${model.sha256}:d${model.dimensions}:media-384-16k60-v2';
 
+  @override
+  Object? get loadFailure => _failure;
+
   /// Text needs only the model; photos and recordings also need the
   /// projector, which roughly triples the memory, so it is loaded only for
   /// media and kept until the idle release.
   Future<bool> _ready({bool media = false}) async {
     if (engine.isLoaded && (!media || engine.embedsMedia)) return true;
+    final here = await available();
+    // A model that just arrived (or went away) is tried at once: the backoff
+    // waits for chat memory to change, not for a download.
+    if (_wasAvailable != here) {
+      _wasAvailable = here;
+      _retryAfter = null;
+      _failedRevision = null;
+      _failure = null;
+    }
+    if (!here) return false;
     if (_failedRevision == LlamaEngine.memoryRevision &&
         _retryAfter != null &&
         DateTime.now().isBefore(_retryAfter!)) {
       return false;
     }
-    if (!await available()) return false;
     final projector = model.projector;
     if (media && (projector == null || !await mediaAvailable())) return false;
     try {
@@ -127,9 +151,11 @@ class LlamaEmbedder implements TextEmbedder {
         placement: placement?.call(),
       );
       _retryAfter = null;
+      _failure = null;
     } catch (error) {
       _failedRevision = LlamaEngine.memoryRevision;
       _retryAfter = DateTime.now().add(const Duration(minutes: 2));
+      _failure = error;
       Logger('knowledge.embedder').info(
         'Embedding unavailable; using lexical ranking for two minutes or until chat memory changes: $error',
       );
@@ -342,8 +368,11 @@ class KnowledgeIndexer extends Notifier<KnowledgeIndexState> {
         final vectors = await _embedChunks(embedder, collection, chunks);
         if (_cancel || !ref.mounted) break;
         if (vectors == null) {
+          final failure = embedder.loadFailure;
           throw StateError(
-            'The embedding model is not downloaded. Settings > Knowledge library.',
+            failure == null
+                ? 'The embedding model is not downloaded. Settings > Knowledge library.'
+                : 'The embedding model could not be loaded: $failure',
           );
         }
         await db.storeKnowledgeVectors({

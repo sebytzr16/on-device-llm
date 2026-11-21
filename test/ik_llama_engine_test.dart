@@ -516,7 +516,7 @@ void main() {
         );
         await bumped.prepare();
         expect(bumped.verifiedPackDir(), isNull);
-        expect((await bumped.check(force: true)).tag, next.tag);
+        expect((await bumped.check(manual: true)).tag, next.tag);
       },
     );
 
@@ -559,7 +559,7 @@ void main() {
       expect((await up.download()).state, EngineDownloadState.done);
       expect(await up.activate(), isTrue);
       server.publish([long.releaseJson]);
-      expect((await up.check(force: true)).state, EngineCheckState.upToDate);
+      expect((await up.check(manual: true)).state, EngineCheckState.upToDate);
     });
 
     test('compareTags is a consistent total order across commit prefixes', () {
@@ -635,7 +635,7 @@ void main() {
         expect(files.verifiedPackDir(), isNull);
         await files.prepare();
         expect(files.verifiedPackDir(), isNull);
-        expect((await up.check(force: true)).tag, pack.tag);
+        expect((await up.check(manual: true)).tag, pack.tag);
       },
     );
 
@@ -700,7 +700,7 @@ void main() {
 
         Future<void> install(EngineUpdater updater, _Pack pack) async {
           server.publish([pack.releaseJson]);
-          expect((await updater.check(force: true)).tag, pack.tag);
+          expect((await updater.check(manual: true)).tag, pack.tag);
           expect((await updater.download()).state, EngineDownloadState.done);
           expect(await updater.activate(), isTrue);
         }
@@ -800,7 +800,10 @@ void main() {
           signingPublicKey: key.publicKey,
           openSmoke: (_) async => true,
         );
-        expect((await ik.check(force: true)).state, EngineCheckState.available);
+        expect(
+          (await ik.check(manual: true)).state,
+          EngineCheckState.available,
+        );
         expect((await ik.download()).state, EngineDownloadState.done);
         expect(await ik.activate(), isTrue);
 
@@ -840,7 +843,7 @@ void main() {
           .read(engineUpdateProvider.notifier)
           .checkIkEnginePack(install: true);
       expect(result.state, EngineCheckState.error);
-      expect(result.message, contains('pinned'));
+      expect(result.problem, EngineUpdateProblem.noPinnedBuild);
     });
 
     test(
@@ -859,7 +862,10 @@ void main() {
           signingPublicKey: key.publicKey,
           openSmoke: (_) async => true,
         );
-        expect((await ik.check(force: true)).state, EngineCheckState.available);
+        expect(
+          (await ik.check(manual: true)).state,
+          EngineCheckState.available,
+        );
         expect((await ik.download()).state, EngineDownloadState.done);
         expect(await ik.activate(), isTrue);
         final dir = ik.activePackDir()!;
@@ -900,7 +906,7 @@ void main() {
         signingPublicKey: key.publicKey,
         openSmoke: (_) async => true,
       );
-      await ik.check(force: true);
+      await ik.check(manual: true);
       await ik.download();
       expect(await ik.activate(), isTrue);
 
@@ -947,7 +953,7 @@ void main() {
       final controller = _FixedIkController(
         const EngineCheckResult(
           EngineCheckState.error,
-          message: 'The ik_llama.cpp pack download failed.',
+          problem: EngineUpdateProblem.downloadFailed,
         ),
       );
       await _pumpPanel(tester, controller, ikAvailable: true);
@@ -957,8 +963,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(controller.installs, 1);
+      // Only the typed reason reaches the UI, localized; raw detail stays in
+      // the log.
       expect(
-        find.text('The ik_llama.cpp pack download failed.'),
+        find.textContaining('The engine pack could not be downloaded.'),
         findsOneWidget,
       );
     });
@@ -1044,6 +1052,37 @@ void main() {
         second.read(engineRegistryProvider).descriptorFor(model('m.gguf')),
         ikLlamaCppEngine,
       );
+    });
+
+    test('a pick made before the stored choices load is kept', () async {
+      SharedPreferences.setMockInitialValues({});
+      final first = ProviderContainer(
+        overrides: [enginePlatformProvider.overrideWithValue('windows')],
+      );
+      addTearDown(first.dispose);
+      await first.read(engineOverridesProvider.notifier).ready;
+      await first
+          .read(engineOverridesProvider.notifier)
+          .set('other', ikLlamaEngineId);
+
+      // A new launch: the user picks an engine before the stored choices
+      // have been read back. The pick must not be overwritten by the load.
+      final second = ProviderContainer(
+        overrides: [enginePlatformProvider.overrideWithValue('windows')],
+      );
+      addTearDown(second.dispose);
+      await second
+          .read(engineOverridesProvider.notifier)
+          .set('mini', ikLlamaEngineId);
+      expect(second.read(engineOverridesProvider), {
+        'other': ikLlamaEngineId,
+        'mini': ikLlamaEngineId,
+      });
+      await second.read(engineOverridesProvider.notifier).ready;
+      expect(second.read(engineOverridesProvider), {
+        'other': ikLlamaEngineId,
+        'mini': ikLlamaEngineId,
+      });
     });
 
     testWidgets('the install hint sits on the disabled engine entry', (

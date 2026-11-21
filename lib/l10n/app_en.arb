@@ -1837,6 +1837,7 @@
     }
   },
   "modelProfileScope": "Model profile",
+  "modelProfileSaveFailed": "Could not save this model's profile on this device. Try again.",
   "conversationsLoadFailed": "Could not load conversations.\n{error}",
   "@conversationsLoadFailed": {
     "placeholders": {
@@ -1855,6 +1856,31 @@
     }
   },
   "adapterNotApplied": "Not applied",
+  "adapterListUnreadable": "The adapter list could not be read. Reset it first to import, attach or delete adapters.",
+  "adapterResetFailed": "Could not reset the adapter list: {error}",
+  "@adapterResetFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "adapterSaveFailed": "Could not save the adapter list: {error}",
+  "@adapterSaveFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "adapterImportFailed": "Could not import the adapter: {error}",
+  "@adapterImportFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "noticeUpdatingMemory": "Updating memory…",
   "noticeWeatherLoading": "Weather for {place} from DuckDuckGo…",
   "@noticeWeatherLoading": {
@@ -3432,6 +3458,7 @@
   "desktopModelsFolderMove": "Move existing models",
   "desktopModelsFolderLeave": "Leave them where they are",
   "desktopModelsFolderMoving": "Moving models…",
+  "desktopModelsFolderSaveFailed": "The model paths could not be saved. Choose the folder and try again.",
   "desktopModelsFolderWritable": "Cannot write to this folder. Choose a writable local folder and try again.",
   "desktopModelsFolderSpace": "Not enough free space in the destination. Free up space and try again.",
   "desktopModelsFolderConflict": "The destination contains conflicting files or is inside an existing models folder. Choose a separate folder.",
@@ -5920,6 +5947,38 @@
   "engineUpdateReverted": "The downloaded engine failed to load twice, so the built-in engine is in use again.",
   "engineUpdateUnverified": "The downloaded engine pack could not be verified, so the built-in engine is in use. Install it again from Settings → Engines.",
   "engineUpdateNoGitHub": "GitHub could not be reached.",
+  "engineUpdateProblemNoPinnedBuild": "No ik_llama.cpp build is pinned in this app version.",
+  "@engineUpdateProblemNoPinnedBuild": {
+    "description": "Engine update failure: this app build has no ik_llama.cpp commit to install."
+  },
+  "engineUpdateProblemNoUpdate": "No engine update is available.",
+  "@engineUpdateProblemNoUpdate": {
+    "description": "Engine update failure: the install ran without a pack found by the check."
+  },
+  "engineUpdateProblemCheck": "The engine update check failed.",
+  "@engineUpdateProblemCheck": {
+    "description": "Engine update failure: the release list could not be read."
+  },
+  "engineUpdateProblemDownload": "The engine pack could not be downloaded.",
+  "@engineUpdateProblemDownload": {
+    "description": "Engine update failure: the download, checksum or extraction failed."
+  },
+  "engineUpdateProblemSmoke": "The engine pack failed its smoke test.",
+  "@engineUpdateProblemSmoke": {
+    "description": "Engine update failure: the downloaded pack could not be opened."
+  },
+  "engineUpdateProblemInstall": "The engine pack could not be installed.",
+  "@engineUpdateProblemInstall": {
+    "description": "Engine update failure: the verified pack could not be promoted."
+  },
+  "engineUpdateProblemUseBuiltIn": "The app could not switch to the built-in engine.",
+  "@engineUpdateProblemUseBuiltIn": {
+    "description": "Engine update failure: the engines folder refused the switch to the bundled engine."
+  },
+  "engineUpdateProblemRemove": "The downloaded engines could not be removed.",
+  "@engineUpdateProblemRemove": {
+    "description": "Engine update failure: deleting the downloaded engines failed."
+  },
   "liteRtBackend": "LiteRT backend",
   "liteRtBackendAuto": "Auto (GPU with CPU fallback)",
   "liteRtBackendGpu": "GPU (OpenCL)",
@@ -5928,6 +5987,22 @@
   "engineUnusedSettings": "Not used by {engine} models",
   "engineUnavailable": "{engine} is unavailable on this device.",
   "engineToolsUnavailable": "Tools are unavailable with {engine} models.",
+  "engineRunsOwnEngine": "{engine} models run on their own engine.",
+  "engineNotHosting": "Hosting is unavailable with {engine} models.",
+  "@engineRunsOwnEngine": {
+    "placeholders": {
+      "engine": {
+        "type": "String"
+      }
+    }
+  },
+  "@engineNotHosting": {
+    "placeholders": {
+      "engine": {
+        "type": "String"
+      }
+    }
+  },
   "@engineUnusedSettings": {
     "placeholders": {
       "engine": {
@@ -5954,7 +6029,7 @@
   "liteRtHelperLoadFirst": "Load this LiteRT model and wait for chat to finish before using it with a helper.",
   "liteRtImportModel": "Import a model",
   "liteRtImportHint": "Choose a .gguf or .litertlm model file.",
-  "liteRtImportedLicense": "Imported file · check publisher license",
+  "importedFileLicense": "Imported file · check publisher license",
   "liteRtNotLoaded": "Load a LiteRT model first.",
   "liteRtBusy": "The LiteRT model is busy.",
   "liteRtInvalidModelFilename": "Choose a single model filename.",

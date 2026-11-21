@@ -843,13 +843,11 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         clearError: true,
       );
     }
-    // This load really starts: only now is a Stop before it meaningless.
-    _loadStopped = false;
     // Only this load may write state: a Stop, a dispose or a newer selection
     // supersedes it.
     bool current() => _alive && ref.mounted && epoch == _loadEpoch;
     try {
-      _checkStopped();
+      _checkStopped(epoch);
       if (teardown != null) {
         // The stopped load is still releasing its runtime. The UI already
         // shows this load, so only the engine has to wait for the teardown.
@@ -860,45 +858,52 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       }
       // A local server sharing this runtime keeps its model on its own.
       await ref.read(engineHandoffProvider)?.call(info.id);
-      _checkStopped();
+      _checkStopped(epoch);
       final engine = ref.read(llamaEngineProvider);
       if (runtime != null) {
         await engine.unload();
-        _checkStopped();
+        _checkStopped(epoch);
         ref.read(diffusionGemmaEngineProvider).dispose();
         _chatLoad = null;
-        _checkStopped();
+        _checkStopped(epoch);
         for (final other in ref.read(availableFileEnginesProvider)) {
           if (identical(runtime.engine, other.engine)) continue;
           await other.unload();
-          _checkStopped();
+          _checkStopped(epoch);
         }
         await runtime.load(info.localPath!, resolved);
-        if (_loadStopped || !_alive || !ref.mounted) {
+        // A second Stop moved `_stoppedEpoch` on, so this load is told it was
+        // superseded by `current()` alone: its runtime is still mapped and
+        // must be freed before it goes (release review 1.8.0 #1).
+        if (!current()) {
           await runtime.unload();
-          _checkStopped();
-          return;
+          throw const ModelLoadStopped();
         }
-        state = state.copyWith(
-          loadedModelId: info.id,
-          loadedEngineId: descriptor.id,
-          isLoadingModel: false,
-          clearLoadingModel: true,
-          clearLoadProgress: true,
-        );
-        unawaited(LastModelStore.remember(info.id));
+        // The file engine's load may finish long after the Stop (a
+        // MethodChannel call cannot be aborted): only a load that is still
+        // current marks itself loaded or clears the spinner (review 1.8.0 #1).
+        if (current()) {
+          state = state.copyWith(
+            loadedModelId: info.id,
+            loadedEngineId: descriptor.id,
+            isLoadingModel: false,
+            clearLoadingModel: true,
+            clearLoadProgress: true,
+          );
+          unawaited(LastModelStore.remember(info.id));
+        }
         return;
       }
       for (final other in ref.read(availableFileEnginesProvider)) {
         await other.unload();
-        _checkStopped();
+        _checkStopped(epoch);
       }
       if (info.id == diffusionGemmaModelId) {
         if (!DesktopHost.active || !Platform.isWindows) {
           throw UnsupportedError('DiffusionGemma requires Windows desktop.');
         }
         await engine.unload();
-        _checkStopped();
+        _checkStopped(epoch);
         // The host honours context, GPU layers, threads and seed; the rest
         // of the profile is disabled in its load settings (audit E23).
         await ref
@@ -915,7 +920,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         }
         return;
       }
-      _checkStopped();
+      _checkStopped(epoch);
       ref.read(diffusionGemmaEngineProvider).dispose();
       final loads = engine.loadCount;
       double? pendingProgress;
@@ -933,7 +938,12 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
           }
         });
       });
-      engine.loadStop = () => _loadStopped;
+      // The stop signal belongs to this load's epoch: a Stop after it can
+      // neither cancel nor keep a later load (release review 1.8.0 #1).
+      // One closure object: it is compared by identity when the load ends.
+      // ignore: prefer_function_declarations_over_variables
+      final stopSignal = () => _isStopped(epoch);
+      engine.loadStop = stopSignal;
       try {
         _chatLoad = await _loadOn(
           engine,
@@ -943,7 +953,9 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
           selectedEngine: descriptor,
         );
       } finally {
-        if (epoch == _loadEpoch) engine.loadStop = null;
+        // Clear only the signal this load installed: a later load, or a
+        // helper, may already own the engine's stop signal.
+        if (identical(engine.loadStop, stopSignal)) engine.loadStop = null;
       }
       if (current()) {
         state = state.copyWith(
@@ -975,7 +987,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       final superseded = epoch != _loadEpoch;
       final stopped =
           e is ModelLoadStopped ||
-          ((superseded || _loadStopped) && e is! ModelLoadException);
+          ((superseded || _isStopped(epoch)) && e is! ModelLoadException);
       final memory = stopped ? null : _memoryError(e);
       if (current()) {
         state = state.copyWith(
@@ -987,6 +999,19 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         );
       }
       if (stopped) Error.throwWithStackTrace(const ModelLoadStopped(), st);
+      if (background && _alive && ref.mounted) {
+        // The start-up restore runs before the chat shows an error card: its
+        // failure reaches the user as a one-line notice instead of vanishing
+        // with the spinner (release review 1.8.0 #7).
+        ref
+            .read(islandProvider.notifier)
+            .toast(
+              modelLoadErrorMessage(memory ?? e),
+              tone: IslandTone.warning,
+              icon: Icons.memory_rounded,
+              duration: const Duration(seconds: 8),
+            );
+      }
       if (memory != null) {
         if (!background) {
           _offerLoadAnyway(info, forChat: forChat, vision: vision);
@@ -995,10 +1020,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       }
       rethrow;
     } finally {
-      if (epoch == _loadEpoch) {
-        _loadStopped = false;
-        _stopLoadProgress();
-      }
+      if (epoch == _loadEpoch) _stopLoadProgress();
     }
   }
 
@@ -1008,8 +1030,8 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
   /// Loads the model that was loaded last time, once per app run, so the
   /// first message does not wait for it. It does nothing when a model is
   /// already loaded or loading, the chat answers through a remote server,
-  /// or that model is no longer downloaded. Failures stay quiet: the next
-  /// send loads (and reports) as before.
+  /// or that model is no longer downloaded. A failure shows a one-line
+  /// notice, not the chat's error card: the next send loads (and reports).
   Future<void> restoreLastModel() async {
     if (_restoredLastModel) return;
     _restoredLastModel = true;
@@ -1128,7 +1150,10 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
         );
   }
 
-  bool _loadStopped = false;
+  /// The load epoch a Stop cancelled. The stop signal belongs to that one
+  /// load, so a Stop can neither un-cancel the load it superseded nor clear
+  /// the spinner of the load that replaced it (release review 1.8.0 #1).
+  int? _stoppedEpoch;
 
   /// The load in flight, so a Stop and the load that follows it can wait for
   /// the cancelled load's native teardown instead of colliding with it.
@@ -1146,8 +1171,11 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
   /// Vulkan; later loads in this session stay quiet.
   bool _ternaryCpuNoticed = false;
 
-  void _checkStopped() {
-    if (_loadStopped || !ref.mounted) throw const ModelLoadStopped();
+  /// Whether the load with [epoch] is the one a Stop cancelled.
+  bool _isStopped(int epoch) => _stoppedEpoch == epoch;
+
+  void _checkStopped(int epoch) {
+    if (_isStopped(epoch) || !ref.mounted) throw const ModelLoadStopped();
   }
 
   /// Whether this load may still touch the manager: it must not have been
@@ -1180,7 +1208,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
   void stopLoad() {
     if (!state.isLoadingModel && _loadFuture == null) return;
     if (_loadTeardown != null) return; // Already stopping.
-    _loadStopped = true;
+    _stoppedEpoch = _loadEpoch;
     _loadEpoch++;
     _stopLoadProgress();
     if (_alive) {
@@ -1248,7 +1276,9 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     if (descriptor.id != llamaCppEngine.id &&
         descriptor.id != ikLlamaCppEngine.id) {
       throw UnsupportedError(
-        '${descriptor.displayName} models run on their own engine.',
+        stringsFor(
+          ref.read(settingsProvider).localeCode,
+        ).engineRunsOwnEngine(descriptor.displayName),
       );
     }
     final plan = await _plan(info, resolved, vision: vision);
@@ -1478,6 +1508,7 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     LlamaEngine engine, {
     bool vision = false,
   }) async {
+    final t = stringsFor(ref.read(settingsProvider).localeCode);
     if (info.id == diffusionGemmaModelId) {
       throw UnsupportedError(
         'DiffusionGemma runs in desktop chat only; local server hosting is unavailable.',
@@ -1485,14 +1516,10 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
     }
     final descriptor = ref.read(engineRegistryProvider).descriptorFor(info);
     if (!descriptor.capabilities.hosting) {
-      throw UnsupportedError(
-        '${descriptor.displayName} does not support hosting.',
-      );
+      throw UnsupportedError(t.engineNotHosting(descriptor.displayName));
     }
     if (!info.isDownloaded || info.localPath == null) {
-      throw StateError(
-        stringsFor(ref.read(settingsProvider).localeCode).modelDownloadFirst,
-      );
+      throw StateError(t.modelDownloadFirst);
     }
     try {
       // A text-only server load leaves the projector out. The server's first
@@ -1794,6 +1821,10 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
       }
       if (finished &&
           await ModelStorage.validateAndHash(existing.path) == info.sha256) {
+        // A Cancel during the hash deletes the partials and writes the
+        // cancelled history row: the verified file must not be saved behind
+        // it (release review 1.8.0 #6).
+        if (_cancelledWhilePreparing(info.id)) return;
         await DownloadManager.dropStalePart(existing);
         await _downloader.pause(info.id);
         await save(info, localPath: existing.path);
@@ -2389,11 +2420,11 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
             ? null
             : (parameterCount / 1000000000).round(),
         sha256: hash,
-        license: descriptor.id == liteRtLmEngine.id
-            ? stringsFor(
-                ref.read(settingsProvider).localeCode,
-              ).liteRtImportedLicense
-            : 'Imported file · check publisher license',
+        // An imported file says the same thing whatever engine runs it, in
+        // the app's language (release review 1.8.0 #3).
+        license: stringsFor(
+          ref.read(settingsProvider).localeCode,
+        ).importedFileLicense,
         projector: projector,
       );
       await save(info, localPath: destinationPath);
@@ -2477,8 +2508,8 @@ class ModelManagerNotifier extends Notifier<ModelManagerState> {
             }
             // The catalog is back on the originals, so the folder did not
             // change: report the failed save instead of swallowing it
-            // (audit 09-2).
-            throw StateError('The model paths could not be saved: $e');
+            // (audit 09-2, release review 1.8.0 #5).
+            throw const ModelFolderException(ModelFolderFailure.saveFailed);
           }
         },
       );

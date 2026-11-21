@@ -170,7 +170,10 @@ extension _ChatWebEvidence on ChatNotifier {
           assistantPrefix: prefix,
         );
         if (_cancelled || !_alive) return null;
-        if (budget['fits'] == true) {
+        // The same rule as the documents and tool results: a window the
+        // engine has not measured yet is judged against the configured
+        // context, not treated as a deficit (review 2026-11-20 P3-5).
+        if (_fits(budget, settings)) {
           sources = candidates;
           break;
         }

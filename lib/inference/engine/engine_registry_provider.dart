@@ -50,6 +50,9 @@ class EngineOverridesNotifier extends Notifier<Map<String, String>> {
 
   /// Chooses [engineId] for [modelId]; null removes the choice.
   Future<void> set(String modelId, String? engineId) async {
+    // A pick made while the stored choices are still loading would be
+    // overwritten by them: wait for the load, then merge on top of it.
+    await ready;
     final next = Map<String, String>.from(state);
     if (engineId == null) {
       next.remove(modelId);
